@@ -805,6 +805,12 @@ fn read_mesh_cache(
             }
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
+        crate::wire::reserve_collection(
+            expand.ctx(),
+            &mut cache_children,
+            1,
+            "Rhino extrusion mesh-cache children",
+        )?;
         cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
@@ -835,6 +841,12 @@ fn read_mesh_cache(
                 userdata: &userdata,
             },
             mesh_budget,
+        )?;
+        crate::wire::reserve_collection(
+            expand.ctx(),
+            &mut meshes,
+            1,
+            "Rhino extrusion mesh-cache meshes",
         )?;
         meshes.push(mesh);
         finish_anonymous(
@@ -910,6 +922,12 @@ fn read_v5_mesh_cache(
                         userdata: &nested_userdata,
                     },
                     mesh_budget,
+                )?;
+                crate::wire::reserve_collection(
+                    expand.ctx(),
+                    &mut meshes,
+                    1,
+                    "Rhino V5 extrusion mesh-cache meshes",
                 )?;
                 meshes.push(mesh);
             } else if class.class_uuid != Uuid::nil() {
@@ -1068,8 +1086,8 @@ pub(crate) mod tests {
 
     use super::{
         active_miter, cap_frame, cap_pcurve, copy_nurbs, exact_orientation, mitered_local,
-        read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE,
-        ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+        read_mesh_cache, read_v5_mesh_cache, split_profiles, transform_nurbs, ANONYMOUS,
+        CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;
@@ -1958,6 +1976,52 @@ pub(crate) mod tests {
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "rhino_mesh_buffer"
         ));
+    }
+
+    #[test]
+    fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
+        let bytes = one_mesh_cache();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root view");
+        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+            .expect("valid cache range");
+        let refusal = read_mesh_cache(
+            crate::mesh::MeshExpand::new(&ctx, root),
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            None,
+            MillimeterScale::IDENTITY,
+            &mut crate::mesh::MeshBudget::new(),
+            &mut Diagnostics::new(),
+        )
+        .expect_err("one cache child exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino extrusion mesh-cache children"
+        ));
+
+        let meshes = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+                .expect("valid cache range");
+            read_mesh_cache(
+                expand,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                None,
+                MillimeterScale::IDENTITY,
+                &mut crate::mesh::MeshBudget::new(),
+                &mut Diagnostics::new(),
+            )
+        })
+        .expect("service profile admits the cache");
+        assert_eq!(meshes.len(), 1);
     }
 
     #[test]
