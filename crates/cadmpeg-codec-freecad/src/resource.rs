@@ -271,6 +271,37 @@ pub(crate) fn materialized_bytes<'a>(
     Ok((bytes, reservation))
 }
 
+pub(crate) fn materialized_vec<'a, T>(
+    ctx: &'a DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
+    let bytes = count
+        .checked_mul(std::mem::size_of::<T>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| materialized_allocation_failed(ctx, u64::MAX, operation))?;
+    let reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut items = Vec::new();
+    items.try_reserve_exact(count)
+        .map_err(|_| materialized_allocation_failed(ctx, bytes, operation))?;
+    Ok((items, reservation))
+}
+
+fn materialized_allocation_failed(
+    ctx: &DecodeContext<'_>,
+    count: u64,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension: ResourceDimension::MaterializedBytes,
+        reason: ResourceFailure::AllocationFailed,
+        limit: ctx.policy().limits.max_materialized_bytes,
+        used: 0,
+        additional: count,
+        operation,
+    })
+}
+
 pub(crate) fn retained_allocation_failed(
     ctx: &DecodeContext<'_>,
     count: u64,

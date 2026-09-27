@@ -2556,7 +2556,11 @@ fn parse_text(
     let topology_version = topology_version.ok_or_else(|| {
         CodecError::Malformed("text B-rep has no supported topology header".into())
     })?;
-    let tokens = text.split_ascii_whitespace().collect::<Vec<_>>();
+    let token_count = text.split_ascii_whitespace().count();
+    let (mut tokens, _token_reservation) = crate::resource::materialized_vec::<&str>(
+        ctx, token_count, "FreeCAD text B-rep tokens",
+    )?;
+    tokens.extend(text.split_ascii_whitespace());
     let mut section_counts = BTreeMap::new();
     let mut previous_section = None;
     for section in [
@@ -6319,6 +6323,8 @@ fn append_text_surface(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod allocation_tests;
+
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
