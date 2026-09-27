@@ -50,6 +50,20 @@ fn collect_pmi_set<T: Ord>(
     Ok(values)
 }
 
+fn collect_pmi_references(
+    values: &[Value],
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Vec<u64>, CodecError> {
+    let mut ids = Vec::new();
+    for value in values {
+        for id in references(value) {
+            push_pmi_vec(&mut ids, id, ctx, operation)?;
+        }
+    }
+    Ok(ids)
+}
+
 fn insert_pmi_set<T: Ord>(
     values: &mut BTreeSet<T>,
     item: T,
@@ -433,11 +447,11 @@ pub(super) fn decode(
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
-        let refs = record
-            .parameters()
-            .iter()
-            .flat_map(references)
-            .collect::<Vec<_>>();
+        let refs = collect_pmi_references(
+            record.parameters(),
+            ctx,
+            "step_pmi_plus_minus_references",
+        )?;
         let dimension = refs
             .iter()
             .find_map(|reference| annotations.get(*reference));
@@ -597,26 +611,16 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let refs = record
+        let reference_values = record
             .partials
             .iter()
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
-            .map_or_else(
-                || {
-                    record
-                        .parameters()
-                        .iter()
-                        .flat_map(references)
-                        .collect::<Vec<_>>()
-                },
-                |partial| {
-                    partial
-                        .parameters
-                        .iter()
-                        .flat_map(references)
-                        .collect::<Vec<_>>()
-                },
-            );
+            .map_or(record.parameters(), |partial| partial.parameters.as_slice());
+        let refs = collect_pmi_references(
+            reference_values,
+            ctx,
+            "step_pmi_geometric_tolerance_references",
+        )?;
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let magnitude = first_measure(record
             .partials
