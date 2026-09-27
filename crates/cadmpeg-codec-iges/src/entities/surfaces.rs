@@ -1334,11 +1334,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                losses.push(
-                    IgesLossCode::NurbsTransformNonFinite
-                        .note("IGES reversed second rail knots are non-finite")
-                        .with_provenance(entry.loss_provenance()),
-                );
+                super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES reversed second rail knots are non-finite"))?;
                 continue;
             }
         }
@@ -1381,11 +1377,7 @@ pub(super) fn project(
                 ),
             ),
         );
-        losses.push(
-            IgesLossCode::RuledDevelopabilityNotTransferred
-                .note("Type 118 developability is retained only in the native entity record")
-                .with_provenance(entry.loss_provenance()),
-        );
+        super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::RuledDevelopabilityNotTransferred, format_args!("{}", "Type 118 developability is retained only in the native entity record"))?;
         crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
@@ -1585,11 +1577,7 @@ pub(super) fn project(
                 })
                 .is_err()
         {
-            losses.push(
-                IgesLossCode::NurbsTransformNonFinite
-                    .note("IGES placement produces non-finite directrix poles")
-                    .with_provenance(entry.loss_provenance()),
-            );
+            super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES placement produces non-finite directrix poles"))?;
             continue;
         }
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
@@ -2025,11 +2013,7 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                losses.push(
-                    IgesLossCode::NurbsTransformNonFinite
-                        .note("IGES placement produces non-finite generatrix poles")
-                        .with_provenance(entry.loss_provenance()),
-                );
+                super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES placement produces non-finite generatrix poles"))?;
                 continue;
             }
             procedural_directrix = crate::ids::curve(

@@ -122,26 +122,42 @@ pub(crate) fn placed_tabulated_line_file() -> Vec<u8> {
 }
 
 pub(crate) fn placed_tabulated_line_file_with_global(global: &[u8]) -> Vec<u8> {
-    let line = b"110,0,0,0,1,0,0;";
-    let transform = b"124,1,0,0,10,0,1,0,20,0,0,1,30;";
+    placed_tabulated_curve_file_with_transform(
+        global,
+        "110",
+        b"110,0,0,0,1,0,0;",
+        b"124,1,0,0,10,0,1,0,20,0,0,1,30;",
+    )
+}
+
+pub(crate) fn placed_tabulated_nurbs_overflow_file() -> Vec<u8> {
+    placed_tabulated_curve_file_with_transform(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+        "126",
+        b"126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,9D307,0,0,0,1,0,0,1;",
+        b"124,1,0,0,9D307,0,1,0,0,0,0,1,0;",
+    )
+}
+
+fn placed_tabulated_curve_file_with_transform(global: &[u8], entity_type: &str, directrix: &[u8], transform: &[u8]) -> Vec<u8> {
     let tabulated = b"122,1,0,0,2;";
-    let line_count = u32::try_from(parameter_fragment_count(line)).unwrap();
-    let transform_start = 1 + line_count;
+    let directrix_count = u32::try_from(parameter_fragment_count(directrix)).unwrap();
+    let transform_start = 1 + directrix_count;
     let transform_count = u32::try_from(parameter_fragment_count(transform)).unwrap();
     let tabulated_start = transform_start + transform_count;
     let tabulated_count = u32::try_from(parameter_fragment_count(tabulated)).unwrap();
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
-        ["110", "1", "0", "1", "0", "0", "0", "0", "00010000"],
+        [entity_type, "1", "0", "1", "0", "0", "0", "0", "00010000"],
         1,
     ));
     bytes.extend(directory_card(
         [
-            "110",
+            entity_type,
             "0",
             "0",
-            &line_count.to_string(),
+            &directrix_count.to_string(),
             "0",
             "",
             "",
@@ -206,7 +222,7 @@ pub(crate) fn placed_tabulated_line_file_with_global(global: &[u8]) -> Vec<u8> {
         ],
         6,
     ));
-    bytes.extend(parameter_cards(line, 1, 1));
+    bytes.extend(parameter_cards(directrix, 1, 1));
     bytes.extend(parameter_cards(transform, 3, transform_start));
     bytes.extend(parameter_cards(tabulated, 5, tabulated_start));
     let global_cards = global_card_count(global);

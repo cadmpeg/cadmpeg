@@ -30,7 +30,8 @@ use crate::test_support::test_surface_fixtures::{
     line_surface_of_revolution_file, line_surface_of_revolution_file_with_global,
     multispan_degree_zero_nurbs_surface_file, nurbs_surface_file, offset_cylinder_file,
     offset_nurbs_surface_file, offset_plane_file, offset_plane_file_with_indicator,
-    placed_hyperbola_surface_of_revolution_file, placed_surface_of_revolution_file, plane_file,
+    placed_hyperbola_surface_of_revolution_file, placed_overflow_surface_of_revolution_file,
+    placed_surface_of_revolution_file, plane_file,
     rational_ruled_surface_file, ruled_surface_file,
     ruled_surface_file_with_developable_flag, surface_of_revolution_file, tabulated_cylinder_file,
     tabulated_hyperbola_file, tabulated_hyperbola_file_with_global,
@@ -40,6 +41,7 @@ use crate::test_support::test_surface_fixtures::{
 use crate::test_support::test_tabulated_surfaces::{
     placed_tabulated_hyperbola_file, placed_tabulated_hyperbola_file_with_global,
     placed_tabulated_line_file, placed_tabulated_line_file_with_global,
+    placed_tabulated_nurbs_overflow_file,
 };
 use crate::IgesCodec;
 
@@ -131,6 +133,69 @@ fn surface_projectors_refuse_neutral_and_placed_curve_slots() {
     ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
+}
+
+#[test]
+fn ruled_developability_loss_refuses_unadmitted_slot() {
+    let bytes = ruled_surface_file();
+    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
+    let result = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()
+    }));
+}
+
+#[test]
+fn tabulated_nonfinite_placement_loss_refuses_unadmitted_slot() {
+    let bytes = placed_tabulated_nurbs_overflow_file();
+    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
+    }), "{:#?}", result.report().losses);
+    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
+}
+
+#[test]
+fn revolution_nonfinite_generatrix_loss_refuses_unadmitted_slot() {
+    let bytes = placed_overflow_surface_of_revolution_file();
+    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
+    }), "{:#?}", result.report().losses);
+    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
+}
+
+#[test]
+fn reversed_ruled_knots_loss_refuses_unadmitted_slot() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL1".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RAIL2".into(),
+            status: "00010000",
+            parameters: "126,1,1,1,0,1,0,8D307,8D307,1D308,1D308,1,1,0,1,0,1,1,0,8D307,1D308,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 1,
+            label: "RULED".into(),
+            status: "00000000",
+            parameters: "118,1,3,1,1;".into(),
+        },
+    ]);
+    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
+            && loss.message == "IGES reversed second rail knots are non-finite"
+    }), "{:#?}", result.report().losses);
+    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
 }
 
 #[test]
