@@ -3133,8 +3133,9 @@ pub(super) fn associate_surface_curve_supports(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) {
-    let retained = retained_surface_curve_ids(exchange, index, owned);
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let retained = retained_surface_curve_ids(exchange, index, owned, ctx)?;
     for (surface_curve_id, record) in
         exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
     {
@@ -3160,13 +3161,15 @@ pub(super) fn associate_surface_curve_supports(
             }
         }
     }
+    Ok(())
 }
 
 fn retained_surface_curve_ids(
     exchange: &Exchange,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
-) -> BTreeSet<u64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut retained = BTreeSet::new();
 
     for (_, edge) in exchange.entities("EDGE_CURVE") {
@@ -3187,7 +3190,7 @@ fn retained_surface_curve_ids(
             .get(&basis)
             .is_some_and(|curve| owned.curves.contains(curve))
         {
-            retained.insert(surface_curve);
+            insert_geometry_set(&mut retained, surface_curve, ctx, "step_retained_surface_curve_ids")?;
         }
     }
 
@@ -3200,7 +3203,7 @@ fn retained_surface_curve_ids(
         };
         for member in members.iter().filter_map(Value::reference) {
             if decoded_surface_curve(member, exchange, index) {
-                retained.insert(member);
+                insert_geometry_set(&mut retained, member, ctx, "step_retained_surface_curve_ids")?;
             }
         }
     }
@@ -3216,7 +3219,7 @@ fn retained_surface_curve_ids(
         };
         for item in items {
             if decoded_surface_curve(item, exchange, index) {
-                retained.insert(item);
+                insert_geometry_set(&mut retained, item, ctx, "step_retained_surface_curve_ids")?;
             }
         }
     }
@@ -3224,7 +3227,7 @@ fn retained_surface_curve_ids(
     for record in exchange.records().values() {
         if let Some(target) = super::presentation::styled_item_target(record) {
             if decoded_surface_curve(target, exchange, index) {
-                retained.insert(target);
+                insert_geometry_set(&mut retained, target, ctx, "step_retained_surface_curve_ids")?;
             }
         }
     }
@@ -3236,13 +3239,13 @@ fn retained_surface_curve_ids(
         {
             for target in super::reference::references(parameter) {
                 if decoded_surface_curve(target, exchange, index) {
-                    retained.insert(target);
+                    insert_geometry_set(&mut retained, target, ctx, "step_retained_surface_curve_ids")?;
                 }
             }
         }
     }
 
-    retained
+    Ok(retained)
 }
 
 fn decoded_surface_curve(id: u64, exchange: &Exchange, index: &CarrierIndex) -> bool {
@@ -3262,17 +3265,16 @@ fn is_surface_curve_record(record: &RawRecord) -> bool {
     })
 }
 
-fn surface_curve_supports(
-    record: &RawRecord,
-    exchange: &Exchange,
-    index: &CarrierIndex,
-) -> Vec<u64> {
-    let Some(associated_geometry) = surface_curve_associated_geometry(record) else {
-        return Vec::new();
-    };
-    associated_geometry
+fn surface_curve_supports<'a>(
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
+    index: &'a CarrierIndex,
+) -> impl Iterator<Item = u64> + 'a {
+    surface_curve_associated_geometry(record)
         .into_iter()
-        .filter_map(|associated| {
+        .flatten()
+        .filter_map(Value::reference)
+        .filter_map(move |associated| {
             let surface = exchange
                 .records()
                 .get(&associated)
@@ -3286,10 +3288,9 @@ fn surface_curve_supports(
                 });
             surface.filter(|surface| index.surfaces.contains_key(surface))
         })
-        .collect()
 }
 
-fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
+fn surface_curve_associated_geometry(record: &RawRecord) -> Option<&[Value]> {
     let values = if record.partials.len() == 1 {
         record.parameter(2)?.list()?
     } else {
@@ -3299,7 +3300,7 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
             .or_else(|| record.partial("INTERSECTION_CURVE"))
             .and_then(|partial| partial.parameters.iter().find_map(Value::list))?
     };
-    Some(values.iter().filter_map(Value::reference).collect())
+    Some(values)
 }
 
 fn resolve_unit_scales(

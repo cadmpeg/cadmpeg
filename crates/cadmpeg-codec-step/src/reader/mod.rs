@@ -444,7 +444,8 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-    );
+        session.ctx,
+    )?;
     session.charge_stage("step_product_decode")?;
     let mut product = product::decode(
         exchange,

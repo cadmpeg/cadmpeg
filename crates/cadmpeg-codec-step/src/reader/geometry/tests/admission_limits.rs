@@ -315,3 +315,18 @@ fn curve_strip_source_name_refuses_retained_limit() {
                 && refusal.operation == "step_curve_strip_source_name"
     ));
 }
+
+#[test]
+fn retained_surface_curve_ids_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_geometry_set(&mut BTreeSet::new(), 1, &ctx, "step_retained_surface_curve_ids"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_retained_surface_curve_ids"
+    ));
+}
