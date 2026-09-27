@@ -1522,10 +1522,14 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         body_offset: offset + 1,
         offset,
     };
+    let checked_classes = |rows: &[crate::feature::rows::FeatureRow]| {
+        crate::decode::with_test_decode_ctx(|ctx| row_feature_schema_classes(ctx, rows, 6))
+            .expect("schema classes fit service limits")
+    };
     assert_eq!(
         resolved_feature_schema_class_from_classes(
             &[],
-            row_feature_schema_classes(&[row(917, 20), row(917, 30)], 6),
+            checked_classes(&[row(917, 20), row(917, 30)]),
             6,
         ),
         Some(crate::feature::schema::SchemaClass::Protrusion)
@@ -1533,7 +1537,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     assert_eq!(
         resolved_feature_schema_class_from_classes(
             &[],
-            row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+            checked_classes(&[row(913, 20), row(914, 30)]),
             6,
         ),
         None
@@ -1541,7 +1545,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     assert_eq!(
         resolved_feature_schema_class_from_classes(
             std::slice::from_ref(&operation),
-            row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+            checked_classes(&[row(913, 20), row(914, 30)]),
             6,
         ),
         Some(crate::feature::schema::SchemaClass::Protrusion)
@@ -1549,13 +1553,13 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     assert_eq!(
         resolved_feature_schema_class_from_classes(
             std::slice::from_ref(&operation),
-            row_feature_schema_classes(&[row(913, 20), row(913, 30)], 6),
+            checked_classes(&[row(913, 20), row(913, 30)]),
             6,
         ),
         Some(crate::feature::schema::SchemaClass::Protrusion)
     );
     assert_eq!(
-        row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
+        checked_classes(&[row(913, 20), row(914, 30)]),
         BTreeSet::from([
             crate::feature::schema::SchemaClass::Round,
             crate::feature::schema::SchemaClass::Chamfer
