@@ -162,14 +162,18 @@ fn named_feature(id: &str, name: &str) -> Feature {
 
 #[test]
 fn empty_subtype_requires_established_count_semantics() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let record = dimension("", 2.0);
     assert_eq!(
-        dimension_subtype(&record, false),
+        dimension_subtype(&ctx, &record, false).unwrap(),
         PmiDimensionSubtype::Native(String::new())
     );
-    assert_eq!(dimension_subtype(&record, true), PmiDimensionSubtype::Count);
+    assert_eq!(dimension_subtype(&ctx, &record, true).unwrap(), PmiDimensionSubtype::Count);
     assert_eq!(
-        dimension_subtype(&dimension("", 2.5), true),
+        dimension_subtype(&ctx, &dimension("", 2.5), true).unwrap(),
         PmiDimensionSubtype::Native(String::new())
     );
 }
@@ -921,17 +925,7 @@ fn pmi_projection_collection_refusal(
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
-    ));
-    source.extend(make_block(
-        0x49,
-        "Contents/PMISemanticDataDB",
-        &pmi_semantic_payload(),
-    ));
+    let source = pmi_projection_source();
     let mut options = DecodeOptions {
         container_only,
         ..DecodeOptions::default()
@@ -956,6 +950,61 @@ fn pmi_projection_collection_refusal(
     panic!("PMI projection collection charge was not reached");
 }
 
+fn pmi_projection_source() -> Vec<u8> {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload(),
+    ));
+    source
+}
+
+fn pmi_projection_retained_refusal(
+    container_only: bool,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = pmi_projection_source();
+    let mut options = DecodeOptions {
+        container_only,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 0;
+    for _ in 0..1024 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect_err("retained limit must refuse the PMI projection route");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a retained resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        if limit.operation == operation {
+            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(&source), &options)
+                .expect_err("one byte below PMI retained copy must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation
+            ));
+            return limit;
+        }
+        options.policy.limits.max_retained_bytes = limit.used + limit.additional;
+    }
+    panic!("PMI projection retained charge was not reached");
+}
+
 #[test]
 fn geometry_pmi_projection_refuses_collection_limit() {
     let limit = pmi_projection_collection_refusal(false, "group SLDPRT PMI dimension names");
@@ -966,6 +1015,18 @@ fn geometry_pmi_projection_refuses_collection_limit() {
 fn metadata_pmi_projection_refuses_collection_limit() {
     let limit = pmi_projection_collection_refusal(true, "group SLDPRT PMI dimension names");
     assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_pmi_projection_refuses_retained_limit() {
+    let limit = pmi_projection_retained_refusal(false, "retain SLDPRT PMI parameter native ID");
+    assert!(limit.additional > 1);
+}
+
+#[test]
+fn metadata_pmi_projection_refuses_retained_limit() {
+    let limit = pmi_projection_retained_refusal(true, "retain SLDPRT PMI parameter native ID");
+    assert!(limit.additional > 1);
 }
 
 #[test]

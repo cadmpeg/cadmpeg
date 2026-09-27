@@ -28,12 +28,13 @@ fn exact_count(value: f64) -> Option<i64> {
 }
 
 fn dimension_subtype(
+    ctx: &DecodeContext<'_>,
     record: &PmiDimension,
     empty_subtype_is_count: bool,
-) -> cadmpeg_ir::features::PmiDimensionSubtype {
+) -> Result<cadmpeg_ir::features::PmiDimensionSubtype, CodecError> {
     use cadmpeg_ir::features::PmiDimensionSubtype;
 
-    match record.subtype.as_str() {
+    Ok(match record.subtype.as_str() {
         "Linear" => PmiDimensionSubtype::Linear,
         "Angle" => PmiDimensionSubtype::Angle,
         "Diameter" => PmiDimensionSubtype::Diameter,
@@ -42,8 +43,12 @@ fn dimension_subtype(
         "" if empty_subtype_is_count && exact_count(record.value.get()).is_some() => {
             PmiDimensionSubtype::Count
         }
-        other => PmiDimensionSubtype::Native(other.to_string()),
-    }
+        other => PmiDimensionSubtype::Native(copy_pmi_text(
+            ctx,
+            other,
+            "retain SLDPRT PMI native subtype",
+        )?),
+    })
 }
 
 fn neutral_parameter_is_count(
@@ -203,7 +208,7 @@ pub(crate) fn enrich_history_parameters_with_features(
             neutral.native_ref.as_deref() == Some(feature.id.as_str())
                 && neutral_parameter_is_count(neutral, name, None)
         });
-        let expression = match dimension_subtype(record, empty_subtype_is_count) {
+        let expression = match dimension_subtype(ctx, record, empty_subtype_is_count)? {
             cadmpeg_ir::features::PmiDimensionSubtype::Linear
             | cadmpeg_ir::features::PmiDimensionSubtype::Ordinate => {
                 format!("{millimetres}mm")
@@ -223,15 +228,19 @@ pub(crate) fn enrich_history_parameters_with_features(
             }
             cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
         };
-        histories[*history_index].features[*feature_index]
-            .parameters
-            .entry(
-                match cadmpeg_core::text::NonBlankString::new(name.to_string()) {
-                    Some(name) => name,
-                    None => continue,
-                },
-            )
-            .or_insert(expression);
+        let parameters = &mut histories[*history_index].features[*feature_index].parameters;
+        if parameters.contains_key(name) {
+            continue;
+        }
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(copy_pmi_text(
+            ctx,
+            name,
+            "retain SLDPRT PMI history parameter name",
+        )?) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "insert SLDPRT PMI history parameter")?;
+        parameters.insert(name, expression);
     }
     Ok(())
 }
@@ -280,7 +289,15 @@ pub(crate) fn patch_payload(
             )));
         }
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
-        let subtype = dimension_subtype(record, empty_subtype_is_count);
+        let subtype = {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(
+                payload,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )?;
+            dimension_subtype(&ctx, record, empty_subtype_is_count)?
+        };
         if semantic.subtype != subtype {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "SLDPRT PMI record {} changes dimension subtype",
@@ -404,7 +421,7 @@ pub(crate) fn apply_to_parameters(
             name,
             existing_parameter.and_then(|index| parameters[index].value.as_ref()),
         );
-        let subtype = dimension_subtype(record, empty_subtype_is_count);
+        let subtype = dimension_subtype(ctx, record, empty_subtype_is_count)?;
         let millimetres = record.value.get() * 1000.0;
         let (expression, display, value) = match subtype {
             PmiDimensionSubtype::Linear => (
@@ -473,11 +490,14 @@ pub(crate) fn apply_to_parameters(
         let semantic = ParameterPmi {
             subtype,
             precision: record.precision,
-            display_text: record.display_text().map(str::to_owned),
+            display_text: record
+                .display_text()
+                .map(|text| copy_pmi_text(ctx, text, "retain SLDPRT PMI parameter display text"))
+                .transpose()?,
             basic: record.basic,
             inspection: record.inspection,
             reference_only: record.reference_only,
-            native_ref: record.id.clone(),
+            native_ref: copy_pmi_text(ctx, &record.id, "retain SLDPRT PMI parameter native ID")?,
         };
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
@@ -492,11 +512,16 @@ pub(crate) fn apply_to_parameters(
             .map(|parameter| parameter.ordinal)
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
+        ctx.reserve_collection_vec(parameters, 1, "collect SLDPRT PMI parameters")?;
         parameters.push(DesignParameter {
             id: ParameterId::compose(
                 &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
                 cadmpeg_ir::identity_key!("pmi:").then(
-                    cadmpeg_ir::ids::IdentityKey::try_new(record.guid.clone()).map_err(
+                    cadmpeg_ir::ids::IdentityKey::try_new(copy_pmi_text(
+                        ctx,
+                        &record.guid,
+                        "retain SLDPRT PMI parameter identity key",
+                    )?).map_err(
                         |error| {
                             cadmpeg_core::CodecError::malformed(format_args!(
                                 "SLDPRT PMI record guid is not identity key text: {error}"
@@ -505,9 +530,13 @@ pub(crate) fn apply_to_parameters(
                     )?,
                 ),
             ),
-            owner: Some(owner.id.clone()),
+            owner: Some(cadmpeg_ir::features::FeatureId::mint(copy_pmi_text(
+                ctx,
+                owner.id.as_str(),
+                "retain SLDPRT PMI parameter owner ID",
+            )?).map_err(cadmpeg_core::CodecError::malformed)?),
             ordinal,
-            name: name.to_string(),
+            name: copy_pmi_text(ctx, name, "retain SLDPRT PMI parameter name")?,
             expression,
             display,
             value,
