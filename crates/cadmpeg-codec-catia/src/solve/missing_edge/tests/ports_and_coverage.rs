@@ -7,6 +7,96 @@ use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };
 
+#[test]
+fn port_candidate_search_refuses_collection_depth_and_work_limits() {
+    use crate::solve::missing_edge::bind_edge_port_candidates;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let ports = [[10, 11], [11, 12]];
+    let candidates = [vec![[0, 1]], vec![[1, 2]]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    assert_eq!(
+        bind_edge_port_candidates(&ctx, &ports, &candidates).expect("service resource budget"),
+        Some(vec![[0, 1], [1, 2]]),
+    );
+
+    let mut operations = HashSet::new();
+    for cap in 0..=128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        match bind_edge_port_candidates(&ctx, &ports, &candidates) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                operations.insert(limit.operation);
+            }
+            Ok(Some(pairs)) => assert_eq!(pairs, vec![[0, 1], [1, 2]]),
+            Ok(None) => panic!("unique port assignment must be admitted"),
+            Err(error) => panic!("unexpected port refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_port_dependency_union",
+        "catia_port_dependency_ports",
+        "catia_port_dependency_points",
+        "catia_port_component_edges",
+        "catia_port_component_roots",
+        "catia_port_components",
+        "catia_port_component_ports",
+        "catia_port_component_candidate_pairs",
+        "catia_port_component_candidates",
+        "catia_edge_port_solution",
+        "catia_edge_port_pairs",
+        "catia_port_search_points",
+        "catia_port_search_reverse_points",
+        "catia_port_search_inserted",
+        "catia_port_search_propagated",
+        "catia_port_search_solution",
+        "catia_port_assignment_result",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+
+    let ambiguous = [vec![[0, 1], [0, 2]]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    assert!(bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous)
+        .expect("service resource budget")
+        .is_none());
+    for (depth, work, dimension) in [
+        (
+            1,
+            DecodePolicy::service().limits.max_work_units,
+            ResourceDimension::RecursionDepth,
+        ),
+        (
+            DecodePolicy::service().limits.max_recursion_depth,
+            0,
+            ResourceDimension::WorkUnits,
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = depth;
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(matches!(
+            bind_edge_port_candidates(&ctx, &[[10, 11]], &ambiguous),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension
+        ));
+    }
+}
+
 fn mesh_coverage_limit_operation(max_collection_items: u64) -> Option<&'static str> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

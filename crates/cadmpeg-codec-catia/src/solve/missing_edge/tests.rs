@@ -92,16 +92,27 @@ fn edge_port_solution_propagates_collection_refusal() {
         Some(vec![[0, 1]])
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
-        .expect_err("the solution exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_edge_port_solution"));
+    let mut reached = false;
+    for cap in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        if let Err(CodecError::ResourceLimit(limit)) =
+            super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        {
+            if limit.operation == "catia_edge_port_solution" {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                reached = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        reached,
+        "the solution must refuse at its collection boundary"
+    );
 }
 
 #[test]
@@ -118,16 +129,27 @@ fn edge_port_component_pairs_propagate_collection_refusal() {
         Some(vec![[0, 1]])
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
-        .expect_err("component pairs exceed the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_edge_port_pairs"));
+    let mut reached = false;
+    for cap in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        if let Err(CodecError::ResourceLimit(limit)) =
+            super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        {
+            if limit.operation == "catia_edge_port_pairs" {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                reached = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        reached,
+        "component pairs must refuse at their collection boundary"
+    );
 }
 
 fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
