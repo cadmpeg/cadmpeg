@@ -8,6 +8,8 @@ use crate::container::ContainerScan;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use crate::vecmath::{cross, dot};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     AngularTermination, FeatureId as IrFeatureId, PlanarProfileRef, ProfileRef, RevolutionAxis,
@@ -278,69 +280,90 @@ pub(in super::super) struct GeometryGeneratorFeature {
 }
 
 pub(in super::super) fn geometry_generator_features(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<GeometryGeneratorFeature> {
-    let operation_feature_ids = scan
-        .features
-        .operations
-        .iter()
-        .map(|operation| operation.feature_id)
-        .collect::<BTreeSet<_>>();
-    let row_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
-    let datum_feature_ids = scan
-        .planes
-        .datums
-        .iter()
-        .map(|datum| datum.feature_id)
-        .collect::<BTreeSet<_>>();
+) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
+    let mut operation_feature_ids = BTreeSet::new();
+    for operation in &scan.features.operations {
+        insert_numeric_feature_id(ctx, &mut operation_feature_ids, operation.feature_id,
+            "creo generator operation feature nodes")?;
+    }
+    let mut row_feature_ids = BTreeSet::new();
+    for row in &scan.features.rows {
+        insert_numeric_feature_id(ctx, &mut row_feature_ids, row.feature_id,
+            "creo generator row feature nodes")?;
+    }
+    let mut datum_feature_ids = BTreeSet::new();
+    for datum in &scan.planes.datums {
+        insert_numeric_feature_id(ctx, &mut datum_feature_ids, datum.feature_id,
+            "creo generator datum feature nodes")?;
+    }
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in &scan.surfaces.rows {
         if row.feature_id == 0 {
             continue;
         }
-        let generator =
-            generators
-                .entry(row.feature_id)
-                .or_insert_with(|| GeometryGeneratorFeature {
+        let generator = match generators.entry(row.feature_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo generator feature map nodes")?;
+                entry.insert(GeometryGeneratorFeature {
                     feature_id: row.feature_id,
                     offset: row.offset,
                     surface_ids: Vec::new(),
                     curve_ids: Vec::new(),
-                });
+                })
+            }
+        };
         generator.offset = generator.offset.min(row.offset);
+        ctx.try_reserve_items(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
         generator.surface_ids.push(row.id);
     }
     for row in &scan.curves.topology_rows {
         if row.feature_id == 0 {
             continue;
         }
-        let generator =
-            generators
-                .entry(row.feature_id)
-                .or_insert_with(|| GeometryGeneratorFeature {
+        let generator = match generators.entry(row.feature_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo generator feature map nodes")?;
+                entry.insert(GeometryGeneratorFeature {
                     feature_id: row.feature_id,
                     offset: row.offset,
                     surface_ids: Vec::new(),
                     curve_ids: Vec::new(),
-                });
+                })
+            }
+        };
         generator.offset = generator.offset.min(row.offset);
+        ctx.try_reserve_items(&mut generator.curve_ids, 1, "creo generator curve IDs")?;
         generator.curve_ids.push(row.id);
     }
-    let mut generators = generators
-        .into_values()
-        .filter(|generator| {
-            !operation_feature_ids.contains(&generator.feature_id)
-                && !row_feature_ids.contains(&generator.feature_id)
-                && !datum_feature_ids.contains(&generator.feature_id)
-        })
-        .collect::<Vec<_>>();
-    generators.sort_by_key(|generator| generator.offset);
-    generators
+    let mut output = Vec::new();
+    for generator in generators.into_values() {
+        if operation_feature_ids.contains(&generator.feature_id)
+            || row_feature_ids.contains(&generator.feature_id)
+            || datum_feature_ids.contains(&generator.feature_id) {
+            continue;
+        }
+        ctx.try_reserve_items(&mut output, 1, "creo geometry generator features")?;
+        output.push(generator);
+    }
+    output.sort_by_key(|generator| generator.offset);
+    Ok(output)
+}
+
+fn insert_numeric_feature_id(
+    ctx: &DecodeContext<'_>,
+    ids: &mut BTreeSet<u32>,
+    id: u32,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !ids.contains(&id) {
+        ctx.charge_collection_items(1, operation)?;
+        ids.insert(id);
+    }
+    Ok(())
 }
 
 /// Return the feature identities that the model-transfer pass will emit.
@@ -350,22 +373,156 @@ pub(in super::super) fn geometry_generator_features(
 /// row-backed producer that has not been inserted into `ir.model.features`
 /// yet. Derive the complete emitted identity set from the scan instead of
 /// using the construction-time prefix of the IR.
-pub(in super::super) fn model_feature_ids(scan: &ContainerScan) -> BTreeSet<IrFeatureId> {
-    let mut ids = scan
+pub(in super::super) fn model_feature_ids(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeSet<IrFeatureId>, CodecError> {
+    let mut ids = BTreeSet::new();
+    let mut numeric_ids = BTreeSet::new();
+    for feature_id in scan
         .features
         .operations
         .iter()
         .map(|operation| operation.feature_id)
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
-        .map(|feature_id| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id))
-        .collect::<BTreeSet<_>>();
-    ids.extend(
-        geometry_generator_features(scan)
-            .into_iter()
-            .map(|generator| {
-                IrFeatureId::compose(&crate::identity::MODEL_FEATURE, generator.feature_id)
-            }),
-    );
-    ids
+        .chain(geometry_generator_features(ctx, scan)?.into_iter().map(|generator| generator.feature_id))
+    {
+        if numeric_ids.contains(&feature_id) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "creo model feature numeric identity nodes")?;
+        numeric_ids.insert(feature_id);
+        let text = ctx.format_retained(
+            format_args!("creo:model:feature#{feature_id}"),
+            "creo model feature identity text",
+        )?;
+        let id = IrFeatureId::mint(text)
+            .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
+        ctx.charge_collection_items(1, "creo model feature identity nodes")?;
+        ids.insert(id);
+    }
+    Ok(ids)
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::{geometry_generator_features, insert_numeric_feature_id, model_feature_ids};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeSet;
+
+    fn generator_scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id: 61,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 50,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 200,
+        });
+        scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
+            id: 59,
+            type_byte: 8,
+            feature_id: 50,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
+            next_edges: [59, 59],
+            offset: 100,
+        });
+        scan
+    }
+
+    fn generator_limit_error(limit: u64, model_ids: bool, operation: &'static str) {
+        let scan = generator_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = if model_ids {
+            model_feature_ids(&ctx, &scan).map(|_| ())
+        } else {
+            geometry_generator_features(&ctx, &scan).map(|_| ())
+        }
+        .expect_err("one generator exceeds the collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == operation), "{error:?}");
+    }
+
+    fn feature_set_limit_error(operation: &'static str) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let mut ids = BTreeSet::new();
+        let error = insert_numeric_feature_id(&ctx, &mut ids, 50, operation)
+            .expect_err("one source feature exceeds the collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == operation), "{error:?}");
+    }
+
+    #[test]
+    fn generator_operation_feature_nodes_refuse_collection_limit() {
+        feature_set_limit_error("creo generator operation feature nodes");
+    }
+
+    #[test]
+    fn generator_row_feature_nodes_refuse_collection_limit() {
+        feature_set_limit_error("creo generator row feature nodes");
+    }
+
+    #[test]
+    fn generator_datum_feature_nodes_refuse_collection_limit() {
+        feature_set_limit_error("creo generator datum feature nodes");
+    }
+
+    #[test]
+    fn generator_feature_map_nodes_refuse_collection_limit() {
+        generator_limit_error(0, false, "creo generator feature map nodes");
+    }
+
+    #[test]
+    fn generator_surface_ids_refuse_collection_limit() {
+        generator_limit_error(1, false, "creo generator surface IDs");
+    }
+
+    #[test]
+    fn generator_curve_ids_refuse_collection_limit() {
+        generator_limit_error(2, false, "creo generator curve IDs");
+    }
+
+    #[test]
+    fn geometry_generator_features_refuse_collection_limit() {
+        generator_limit_error(3, false, "creo geometry generator features");
+    }
+
+    #[test]
+    fn model_feature_numeric_identity_nodes_refuse_collection_limit() {
+        generator_limit_error(4, true, "creo model feature numeric identity nodes");
+    }
+
+    #[test]
+    fn model_feature_identity_nodes_refuse_collection_limit() {
+        generator_limit_error(5, true, "creo model feature identity nodes");
+    }
+
+    #[test]
+    fn model_feature_identity_text_refuses_retained_limit() {
+        let scan = generator_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = model_feature_ids(&ctx, &scan)
+            .expect_err("one feature ID exceeds the retained limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo model feature identity text"), "{error:?}");
+    }
 }

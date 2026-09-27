@@ -105,7 +105,7 @@ pub(super) fn thicken_feature_definition(
                 .iter()
                 .map(|(source_id, _)| *source_id)
                 .collect::<Vec<_>>();
-            let available_features = model_feature_ids(scan);
+            let available_features = model_feature_ids(ctx, scan)?;
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 ctx,
                 &scan.features.entity_tables,
@@ -301,7 +301,7 @@ pub(in super::super) fn schema_feature_definition(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         )?;
-        let available_features = model_feature_ids(scan);
+        let available_features = model_feature_ids(ctx, scan)?;
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id);

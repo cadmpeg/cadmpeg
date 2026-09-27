@@ -1090,7 +1090,8 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
         });
 
     assert_eq!(
-        geometry_generator_features(&scan),
+        crate::decode::with_test_decode_ctx(|ctx| geometry_generator_features(ctx, &scan))
+            .expect("service profile admits generator features"),
         [GeometryGeneratorFeature {
             feature_id: 50,
             offset: 100,
@@ -1132,7 +1133,8 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 100,
         });
 
-    let available_features = model_feature_ids(&scan);
+    let available_features = crate::decode::with_test_decode_ctx(|ctx| model_feature_ids(ctx, &scan))
+        .expect("service profile admits feature identities");
     assert_eq!(
         available_features,
         BTreeSet::from([

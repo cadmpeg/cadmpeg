@@ -119,7 +119,7 @@ pub(in super::super) fn feature_edge_selection(
     } else if let Some(edges) = generated_curve_edge_refs(
         ids,
         &scan.curves.topology_rows,
-        &model_feature_ids(scan),
+        &model_feature_ids(ctx, scan)?,
         &result_edge_ids,
     ) {
         Ok(Some(

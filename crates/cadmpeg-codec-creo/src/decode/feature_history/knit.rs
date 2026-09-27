@@ -218,7 +218,7 @@ pub(super) fn knit_surface_feature_definition(
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            let available_features = model_feature_ids(scan);
+            let available_features = model_feature_ids(ctx, scan)?;
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 ctx,
                 &scan.features.entity_tables,
