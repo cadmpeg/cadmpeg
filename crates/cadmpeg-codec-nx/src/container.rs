@@ -476,11 +476,35 @@ impl<'a> Container<'a> {
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
-    pub(crate) fn external_reference_paths(&self) -> Vec<String> {
-        self.external_reference_strings()
-            .into_iter()
-            .map(|(_, _, path)| path)
-            .collect()
+    pub(crate) fn external_reference_paths(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<String>, CodecError> {
+        let strings = self.external_reference_strings();
+        let count = strings.len();
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        ctx.charge_collection_items(count_u64, "nx external reference paths")?;
+        let slot_bytes = count
+            .checked_mul(std::mem::size_of::<String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference paths", 0, count_u64))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(slot_bytes),
+            "nx external reference paths",
+        )?;
+        let mut paths = Vec::new();
+        paths
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("nx external reference paths", 0, count_u64))?;
+        for (_, _, path) in strings {
+            let path_len = cadmpeg_core::decode::u64_from_index(path.len());
+            ctx.charge_retained(path_len, "nx external reference path")?;
+            let mut copy = String::new();
+            copy.try_reserve_exact(path.len())
+                .map_err(|_| ctx.refuse_codec_limit("nx external reference path", 0, path_len))?;
+            copy.push_str(&path);
+            paths.push(copy);
+        }
+        Ok(paths)
     }
 
     /// Extract child-part strings with their owning entry and payload offset.

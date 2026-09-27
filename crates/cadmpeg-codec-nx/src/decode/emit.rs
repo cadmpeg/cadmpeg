@@ -1569,7 +1569,7 @@ pub(super) fn source_meta(
     )?;
     for (index, path) in scan
         .container
-        .external_reference_paths()
+        .external_reference_paths(ctx)?
         .into_iter()
         .enumerate()
     {
