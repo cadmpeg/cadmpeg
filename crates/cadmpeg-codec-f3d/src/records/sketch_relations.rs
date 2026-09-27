@@ -821,6 +821,50 @@ impl SketchRelation {
     }
 }
 
+fn collect_wire_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, SketchRelationWireError> {
+    let Some(ctx) = ctx else {
+        return Ok(items.into_iter().collect());
+    };
+    let mut collected = Vec::new();
+    for item in items {
+        ctx.charge_collection_items(1, operation)
+            .map_err(SketchRelationWireError::Resource)?;
+        collected.try_reserve(1).map_err(|_| {
+            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+        })?;
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
+fn collect_wire_results<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = Result<T, SketchRelationPayloadError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, SketchRelationWireError> {
+    let Some(ctx) = ctx else {
+        return items
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into);
+    };
+    let mut collected = Vec::new();
+    for item in items {
+        let item = item?;
+        ctx.charge_collection_items(1, operation)
+            .map_err(SketchRelationWireError::Resource)?;
+        collected.try_reserve(1).map_err(|_| {
+            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+        })?;
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
 fn zip_relation_members(
     ctx: Option<&DecodeContext<'_>>,
     members: Vec<u32>,
@@ -830,17 +874,17 @@ fn zip_relation_members(
 ) -> Result<SketchRelationMembers, SketchRelationWireError> {
     let len = members.len();
     let offsets = pad_or_check(ctx, "member_offsets", offsets, len)?;
+    let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        (0..len).map(|_| None).collect::<Vec<_>>()
+        collect_wire_items(ctx, (0..len).map(|_| None), "admit sketch relation ordinals")?
     } else if ordinals.len() == len {
-        ordinals.into_iter().map(Some).collect()
+        collect_wire_items(ctx, ordinals.into_iter().map(Some), "admit sketch relation ordinals")?
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
         ).into());
     };
-    let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
-    members
+    collect_wire_results(ctx, members
         .into_iter()
         .zip(offsets)
         .zip(ordinals)
@@ -855,8 +899,7 @@ fn zip_relation_members(
                 offset,
                 relation_ordinal,
             })
-        })
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
+        }), "admit sketch relation members")?
         .try_into()
         .map_err(Into::into)
 }
@@ -870,7 +913,7 @@ fn zip_return_members(
     let len = members.len();
     let offsets = pad_or_check(ctx, "return_member_offsets", offsets, len)?;
     let resolved = pad_resolved(ctx, "resolved_return_members", resolved, len)?;
-    members
+    collect_wire_results(ctx, members
         .into_iter()
         .zip(offsets)
         .zip(resolved)
@@ -883,8 +926,7 @@ fn zip_return_members(
                 )?,
                 offset,
             })
-        })
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
+        }), "admit sketch relation return members")?
         .try_into()
         .map_err(Into::into)
 }
@@ -932,7 +974,7 @@ fn pad_resolved(
                 }),
         }
     } else if values.len() == len {
-        Ok(values.into_iter().map(Some).collect())
+        collect_wire_items(ctx, values.into_iter().map(Some), "admit sketch relation resolutions")
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
@@ -1044,11 +1086,11 @@ impl SketchRelation {
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::located(
-                wire.auxiliary_references
+                collect_wire_items(ctx, wire.auxiliary_references
                     .into_iter()
                     .zip(wire.auxiliary_reference_offsets)
-                    .map(|(value, offset)| Located { value, offset })
-                    .collect(),
+                    .map(|(value, offset)| Located { value, offset }),
+                    "admit sketch relation auxiliary references")?,
             ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
