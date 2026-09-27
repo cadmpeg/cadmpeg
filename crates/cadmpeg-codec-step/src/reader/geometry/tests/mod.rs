@@ -5,4 +5,5 @@ mod parameters;
 mod pcurves;
 mod replicas;
 mod trims;
+mod unit_limits;
 pub(crate) mod units;

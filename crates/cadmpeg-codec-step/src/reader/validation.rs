@@ -285,18 +285,29 @@ fn measure_scale(
     let resolved = measure_unit(record)
         .and_then(|unit| exchange.records().get(&unit))
         .and_then(derived_unit_elements)
-        .and_then(ValueExt::list)
-        .and_then(|elements| {
-            elements.iter().try_fold(1.0, |scale, element| {
+        .and_then(ValueExt::list);
+    let resolved = if let Some(elements) = resolved {
+        let mut scale = Some(1.0);
+        for element in elements {
+            let fields = (|| {
                 let element = exchange.records().get(&element.reference()?)?;
                 let element = element.partial("DERIVED_UNIT_ELEMENT")?;
-                let base = element.parameters.first()?.reference()?;
-                let exponent = element.parameters.get(1)?.number()?;
-                let base =
-                    super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
-                Some(scale * base.get().powf(exponent))
-            })
-        });
+                Some((element.parameters.first()?.reference()?, element.parameters.get(1)?.number()?))
+            })();
+            let Some((base, exponent)) = fields else {
+                scale = None;
+                break;
+            };
+            let Some(base) = super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), Some(ctx))? else {
+                scale = None;
+                break;
+            };
+            scale = scale.map(|scale| scale * base.get().powf(exponent));
+        }
+        scale
+    } else {
+        None
+    };
     match resolved {
         Some(scale) => Ok(scale),
         None => {
