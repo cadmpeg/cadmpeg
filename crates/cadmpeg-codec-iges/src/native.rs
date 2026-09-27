@@ -335,14 +335,15 @@ impl Serialize for NativeDisplayAttributes {
 }
 
 fn resolve_display_ref(
+    ctx: &DecodeContext<'_>,
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
     pointer: i64,
     kind: ReferenceKind,
     arena: &str,
-) -> DisplayRef {
+) -> Result<DisplayRef, CodecError> {
     if pointer >= 0 {
-        return DisplayRef::Number(pointer as u64);
+        return Ok(DisplayRef::Number(pointer.unsigned_abs()));
     }
     let target = references
         .get(&source_sequence)
@@ -351,8 +352,15 @@ fn resolve_display_ref(
                 .iter()
                 .find_map(|reference| reference.resolved_target_sequence_for(kind))
         })
-        .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"));
-    DisplayRef::Definition { pointer, target }
+        .map(|sequence| {
+            format_retained(
+                ctx,
+                format_args!("iges:presentation:{arena}#D{sequence}"),
+                "iges native display definition",
+            )
+        })
+        .transpose()?;
+    Ok(DisplayRef::Definition { pointer, target })
 }
 
 fn resolved_label_display_definition(
@@ -2191,6 +2199,22 @@ fn copy_native_parameter_record(
     })
 }
 
+fn collect_native_items<I, T>(
+    ctx: &DecodeContext<'_>,
+    entries: I,
+    operation: &'static str,
+    mut build: impl FnMut(I::Item) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError>
+where
+    I: Iterator + Clone,
+{
+    let mut values = reserve_vec(ctx, entries.clone().count(), operation)?;
+    for entry in entries {
+        values.push(build(entry)?);
+    }
+    Ok(values)
+}
+
 struct NativeInputIndexes<'a> {
     quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
     quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
@@ -2636,36 +2660,68 @@ pub(crate) fn store(
                 },
             })
         })?;
-    let directions = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 123 && entry.form == 0)
-        .map(|entry| {
+    let directions = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 123 && entry.form == 0),
+        "iges native direction slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            NativeDirection {
-                id: format!("iges:native:direction#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                components: (1..=3)
-                    .map(|index| parameters.and_then(|record| record.number(index)))
-                    .collect(),
+            Ok(NativeDirection {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:native:direction#D{}", entry.sequence),
+                    "iges native direction id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native direction source",
+                )?,
+                components: collect_result_vec(
+                    ctx,
+                    3,
+                    "iges native direction components",
+                    |index| Ok(parameters.and_then(|record| record.number(index + 1))),
+                )?,
                 physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
-            }
-        })
-        .collect::<Vec<_>>();
-    let flashes = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 125 && matches!(entry.form, 0..=4))
-        .map(|entry| -> Result<NativeFlash, CodecError> {
+            })
+        },
+    )?;
+    let flashes = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 125 && matches!(entry.form, 0..=4)),
+        "iges native flash slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let reference_entity = parameters
                 .and_then(|record| record.integer_or(6, 0))
                 .map(|sequence| parameter_resolver.resolve_any(entry.sequence, 6, sequence))
                 .transpose()?
                 .flatten()
-                .map(|sequence| format!("iges:entity:directory#{sequence}"));
+                .map(|sequence| {
+                    format_retained(
+                        ctx,
+                        format_args!("iges:entity:directory#{sequence}"),
+                        "iges native flash reference",
+                    )
+                })
+                .transpose()?;
             Ok(NativeFlash {
-                id: format!("iges:native:flash#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:native:flash#D{}", entry.sequence),
+                    "iges native flash id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native flash source",
+                )?,
                 form: entry.form,
                 reference_point: [
                     parameters.and_then(|record| record.number(1)),
@@ -2676,29 +2732,51 @@ pub(crate) fn store(
                 rotation: parameters.and_then(|record| record.number_or(5, 0.0)),
                 reference_entity,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let transforms = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
-        .map(|entry| {
+        },
+    )?;
+    let transforms = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12)),
+        "iges native transformation slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            NativeTransformation {
-                id: format!("iges:native:transformation#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            Ok(NativeTransformation {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:native:transformation#D{}", entry.sequence),
+                    "iges native transformation id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native transformation source",
+                )?,
                 form: entry.form,
-                coefficients: (1..=12)
-                    .map(|index| parameters.and_then(|record| record.number(index)))
-                    .collect(),
+                coefficients: collect_result_vec(
+                    ctx,
+                    12,
+                    "iges native transformation coefficients",
+                    |index| Ok(parameters.and_then(|record| record.number(index + 1))),
+                )?,
                 parent: (entry.transform > 0)
-                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-            }
-        })
-        .collect::<Vec<_>>();
-    let copious_data = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 106)
-        .map(|entry| {
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native transformation parent",
+                        )
+                    })
+                    .transpose()?,
+            })
+        },
+    )?;
+    let copious_data = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 106),
+        "iges native copious data slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let interpretation = parameters.and_then(|record| record.integer(1));
             let declared_tuple_count = parameters.and_then(|record| record.integer(2));
@@ -2706,319 +2784,420 @@ pub(crate) fn store(
             let common_z = (layout == Some((4, 2)))
                 .then(|| parameters.and_then(|record| record.number(3)))
                 .flatten();
-            let tuples = layout
-                .and_then(|(start, width)| {
-                    parameters.map(|record| {
-                        let end = clamped_primary_end(entry.sequence, record);
-                        let count = overdeclared_counts.counted_tail_at(
-                            entry.sequence,
-                            Some(record),
-                            end,
-                            2,
-                            start,
+            let tuples = match (layout, parameters) {
+                (Some((start, width)), Some(record)) => {
+                    let end = clamped_primary_end(entry.sequence, record);
+                    let count = overdeclared_counts.counted_tail_at(
+                        entry.sequence,
+                        Some(record),
+                        end,
+                        2,
+                        start,
+                        width,
+                    );
+                    collect_result_vec(ctx, count, "iges native copious tuple slots", |tuple| {
+                        collect_result_vec(
+                            ctx,
                             width,
-                        );
-                        (0..count)
-                            .map(|tuple| {
-                                (0..width)
-                                    .map(|component| {
-                                        tuple
-                                            .checked_mul(width)
-                                            .and_then(|offset| offset.checked_add(start))
-                                            .and_then(|offset| offset.checked_add(component))
-                                            .and_then(|index| record.number(index))
-                                    })
-                                    .collect()
-                            })
-                            .collect()
-                    })
-                })
-                .unwrap_or_default();
-            NativeCopiousData {
-                id: format!("iges:native:copious-data#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                            "iges native copious component slots",
+                            |component| {
+                                Ok(tuple
+                                    .checked_mul(width)
+                                    .and_then(|offset| offset.checked_add(start))
+                                    .and_then(|offset| offset.checked_add(component))
+                                    .and_then(|index| record.number(index)))
+                            },
+                        )
+                    })?
+                }
+                _ => Vec::new(),
+            };
+            Ok(NativeCopiousData {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:native:copious-data#D{}", entry.sequence),
+                    "iges native copious data id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native copious data source",
+                )?,
                 form: entry.form,
                 interpretation,
                 declared_tuple_count,
                 common_z,
                 tuples,
-            }
-        })
-        .collect::<Vec<_>>();
-    let colors = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 314 && entry.form == 0)
-        .map(|entry| {
+            })
+        },
+    )?;
+    let colors = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 314 && entry.form == 0),
+        "iges native color slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
-            NativeColorDefinition {
-                id: format!("iges:presentation:color#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            Ok(NativeColorDefinition {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:presentation:color#D{}", entry.sequence),
+                    "iges native color id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native color source",
+                )?,
                 red_percent: parameters.and_then(|record| record.number(1)),
                 green_percent: parameters.and_then(|record| record.number(2)),
                 blue_percent: parameters.and_then(|record| record.number(3)),
                 name: parameters
                     .and_then(|record| record.string(4))
-                    .map(<[u8]>::to_vec),
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native color name"))
+                    .transpose()?,
                 fallback_color_number: entry.color,
-            }
-        })
-        .collect::<Vec<_>>();
-    let display_attributes = directory
-        .iter()
-        .map(|entry| NativeDisplayAttributes {
-            id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
-            source_entity: format!("iges:entity:directory#{}", entry.sequence),
-            visible: entry.status.is_visible(),
-            line_font: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.line_font,
-                ReferenceKind::LineFont,
-                "line-font",
-            ),
-            level: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.level,
-                ReferenceKind::Level,
-                "definition-levels",
-            ),
-            view: entry.view,
-            line_weight_number: entry.line_weight,
-            line_weight_mm: global
-                .length_context()
-                .and_then(|context| context.line_weight_mm(entry.line_weight)),
-            color: resolve_display_ref(
-                references,
-                entry.sequence,
-                entry.color,
-                ReferenceKind::Color,
-                "color",
-            ),
-        })
-        .collect::<Vec<_>>();
-    let line_fonts = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let parameters = by_directory.get(&entry.sequence).copied();
-                if entry.form == 1 {
-                    NativeLineFontDefinition::Template {
-                        id: format!("iges:presentation:line-font#D{}", entry.sequence),
-                        source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                        fallback_line_font_number: entry.line_font,
-                        tangent_oriented: binary_integer(
-                            parameters.and_then(|record| record.integer(1)),
-                        ),
-                        template: parameters
-                            .and_then(|record| record.integer(2))
-                            .map(|sequence| {
-                                parameter_resolver.resolve_type(
-                                    entry.sequence,
-                                    2,
-                                    sequence,
-                                    308,
-                                    &[0],
-                                )
-                            })
-                            .transpose()?
-                            .flatten()
-                            .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                        spacing: parameters.and_then(|record| record.number(3)),
-                        scale: parameters.and_then(|record| record.number(4)),
-                    }
-                } else {
-                    // A Form 2 line font states the visible/blank lengths before the
-                    // final hexadecimal pattern token, so the length run ends one
-                    // token earlier. A record with no primary token states no
-                    // length run, so the run is empty. No source-stated value is
-                    // floored here.
-                    let pattern_end = parameters
-                        .map(|record| clamped_primary_end(entry.sequence, record))
-                        .filter(|end| *end > 0)
-                        .map_or(0, |end| end - 1);
-                    let count = overdeclared_counts.counted_tail(
-                        entry.sequence,
-                        parameters,
-                        pattern_end,
-                        1,
-                        1,
-                    );
-                    let declared = parameters.and_then(|record| record.integer(1));
-                    let held =
-                        declared.and_then(|value| usize::try_from(value).ok()) == Some(count);
-                    NativeLineFontDefinition::VisibleBlankPattern {
-                        id: format!("iges:presentation:line-font#D{}", entry.sequence),
-                        source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                        fallback_line_font_number: entry.line_font,
-                        segment_count: declared,
-                        lengths: (0..count)
-                            .map(|index| parameters.and_then(|record| record.number(2 + index)))
-                            .collect(),
-                        hexadecimal_pattern: held
-                            .then(|| parameters.and_then(|record| record.string(2 + count)))
-                            .flatten()
-                            .map(<[u8]>::to_vec),
-                    }
-                }
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let text_templates = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let font_code = record.and_then(|record| record.integer(3));
-                NativeTextDisplayTemplate {
-                    id: format!("iges:presentation:text-template#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    form: entry.form,
-                    character_box: [
-                        record.and_then(|record| record.number(1)),
-                        record.and_then(|record| record.number(2)),
-                    ],
-                    font_code,
-                    font_definition: font_code
-                        .filter(|value| *value < 0)
-                        .map(|value| {
-                            parameter_resolver.resolve_negative_type(
-                                entry.sequence,
-                                3,
-                                value,
-                                310,
-                                &[0],
-                            )
+        },
+    )?;
+    let display_attributes = collect_native_items(
+        ctx,
+        directory.iter(),
+        "iges native display attribute slots",
+        |entry| {
+            Ok(NativeDisplayAttributes {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:presentation:display-attributes#D{}", entry.sequence),
+                    "iges native display id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native display source",
+                )?,
+                visible: entry.status.is_visible(),
+                line_font: resolve_display_ref(
+                    ctx,
+                    references,
+                    entry.sequence,
+                    entry.line_font,
+                    ReferenceKind::LineFont,
+                    "line-font",
+                )?,
+                level: resolve_display_ref(
+                    ctx,
+                    references,
+                    entry.sequence,
+                    entry.level,
+                    ReferenceKind::Level,
+                    "definition-levels",
+                )?,
+                view: entry.view,
+                line_weight_number: entry.line_weight,
+                line_weight_mm: global
+                    .length_context()
+                    .and_then(|context| context.line_weight_mm(entry.line_weight)),
+                color: resolve_display_ref(
+                    ctx,
+                    references,
+                    entry.sequence,
+                    entry.color,
+                    ReferenceKind::Color,
+                    "color",
+                )?,
+            })
+        },
+    )?;
+    let line_fonts = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2)),
+        "iges native line font slots",
+        |entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            Ok(if entry.form == 1 {
+                NativeLineFontDefinition::Template {
+                    id: format_retained(
+                        ctx,
+                        format_args!("iges:presentation:line-font#D{}", entry.sequence),
+                        "iges native line font id",
+                    )?,
+                    source_entity: format_retained(
+                        ctx,
+                        format_args!("iges:entity:directory#{}", entry.sequence),
+                        "iges native line font source",
+                    )?,
+                    fallback_line_font_number: entry.line_font,
+                    tangent_oriented: binary_integer(
+                        parameters.and_then(|record| record.integer(1)),
+                    ),
+                    template: parameters
+                        .and_then(|record| record.integer(2))
+                        .map(|sequence| {
+                            parameter_resolver.resolve_type(entry.sequence, 2, sequence, 308, &[0])
                         })
                         .transpose()?
                         .flatten()
-                        .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
-                    slant_angle: record.and_then(|record| record.number(4)),
-                    rotation_angle: record.and_then(|record| record.number(5)),
-                    mirror: record.and_then(|record| record.integer(6)),
-                    vertical: record.and_then(|record| record.integer(7)),
-                    origin_or_increment: [
-                        record.and_then(|record| record.number(8)),
-                        record.and_then(|record| record.number(9)),
-                        record.and_then(|record| record.number(10)),
-                    ],
+                        .map(|sequence| {
+                            format_retained(
+                                ctx,
+                                format_args!("iges:entity:directory#{sequence}"),
+                                "iges native line font template",
+                            )
+                        })
+                        .transpose()?,
+                    spacing: parameters.and_then(|record| record.number(3)),
+                    scale: parameters.and_then(|record| record.number(4)),
+                }
+            } else {
+                // A Form 2 line font states the visible/blank lengths before the
+                // final hexadecimal pattern token, so the length run ends one
+                // token earlier. A record with no primary token states no
+                // length run, so the run is empty. No source-stated value is
+                // floored here.
+                let pattern_end = parameters
+                    .map(|record| clamped_primary_end(entry.sequence, record))
+                    .filter(|end| *end > 0)
+                    .map_or(0, |end| end - 1);
+                let count =
+                    overdeclared_counts.counted_tail(entry.sequence, parameters, pattern_end, 1, 1);
+                let declared = parameters.and_then(|record| record.integer(1));
+                let held = declared.and_then(|value| usize::try_from(value).ok()) == Some(count);
+                NativeLineFontDefinition::VisibleBlankPattern {
+                    id: format_retained(
+                        ctx,
+                        format_args!("iges:presentation:line-font#D{}", entry.sequence),
+                        "iges native line font id",
+                    )?,
+                    source_entity: format_retained(
+                        ctx,
+                        format_args!("iges:entity:directory#{}", entry.sequence),
+                        "iges native line font source",
+                    )?,
+                    fallback_line_font_number: entry.line_font,
+                    segment_count: declared,
+                    lengths: collect_result_vec(
+                        ctx,
+                        count,
+                        "iges native line font lengths",
+                        |index| Ok(parameters.and_then(|record| record.number(2 + index))),
+                    )?,
+                    hexadecimal_pattern: held
+                        .then(|| parameters.and_then(|record| record.string(2 + count)))
+                        .flatten()
+                        .map(|bytes| ctx.copy_retained(bytes, "iges native line font pattern"))
+                        .transpose()?,
                 }
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let text_fonts = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let count = record
-                    .and_then(|record| {
-                        record.count_with_stride_before(
-                            5,
-                            1,
-                            clamped_primary_end(entry.sequence, record),
+        },
+    )?;
+    let text_templates = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1)),
+        "iges native text template slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let font_code = record.and_then(|record| record.integer(3));
+            Ok(NativeTextDisplayTemplate {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:presentation:text-template#D{}", entry.sequence),
+                    "iges native text template id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native text template source",
+                )?,
+                form: entry.form,
+                character_box: [
+                    record.and_then(|record| record.number(1)),
+                    record.and_then(|record| record.number(2)),
+                ],
+                font_code,
+                font_definition: font_code
+                    .filter(|value| *value < 0)
+                    .map(|value| {
+                        parameter_resolver.resolve_negative_type(
+                            entry.sequence,
+                            3,
+                            value,
+                            310,
+                            &[0],
                         )
                     })
-                    .unwrap_or_default();
-                let supersedes_code = record.and_then(|record| record.integer(3));
-                let mut cursor = 6_usize;
-                let mut characters = Vec::with_capacity(count);
-                let mut malformed = false;
-                for _ in 0..count {
-                    let Some(record) = record else {
-                        malformed = true;
-                        break;
-                    };
-                    let Some(count_index) = cursor.checked_add(3) else {
-                        malformed = true;
-                        break;
-                    };
-                    let declared_motion_count = record.integer(count_index);
-                    let motion_count = record.count_with_stride_before(
-                        count_index,
-                        3,
-                        clamped_primary_end(entry.sequence, record),
-                    );
-                    let Some(motion_count) = motion_count else {
-                        malformed = true;
-                        break;
-                    };
-                    let Some(next) = motion_count
-                        .checked_mul(3)
-                        .and_then(|width| cursor.checked_add(4 + width))
-                    else {
-                        malformed = true;
-                        break;
-                    };
-                    let motions = (0..motion_count)
-                        .map(|offset| {
-                            let start = cursor + 4 + offset * 3;
-                            NativeGlyphMotion {
-                                pen_up: record.integer(start).map(|value| value == 1),
-                                point: [record.integer(start + 1), record.integer(start + 2)],
-                            }
-                        })
-                        .collect();
-                    characters.push(NativeGlyph {
-                        character_code: record.integer(cursor),
-                        next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
-                        declared_motion_count,
-                        motions,
-                    });
-                    cursor = next;
-                }
-                if malformed {
-                    characters.clear();
-                }
-                NativeTextFontDefinition {
-                    id: format!("iges:presentation:text-font#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    font_code: record.and_then(|record| record.integer(1)),
-                    name: record
-                        .and_then(|record| record.string(2))
-                        .map(<[u8]>::to_vec),
-                    supersedes_code,
-                    supersedes_definition: supersedes_code
-                        .filter(|value| *value < 0)
-                        .map(|value| {
-                            parameter_resolver.resolve_negative_type(
-                                entry.sequence,
-                                3,
-                                value,
-                                310,
-                                &[0],
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
-                    grid_units_per_text_height: record.and_then(|record| record.integer(4)),
-                    declared_character_count: record.and_then(|record| record.integer(5)),
-                    characters,
-                }
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:presentation:text-font#D{sequence}"),
+                            "iges native text template font",
+                        )
+                    })
+                    .transpose()?,
+                slant_angle: record.and_then(|record| record.number(4)),
+                rotation_angle: record.and_then(|record| record.number(5)),
+                mirror: record.and_then(|record| record.integer(6)),
+                vertical: record.and_then(|record| record.integer(7)),
+                origin_or_increment: [
+                    record.and_then(|record| record.number(8)),
+                    record.and_then(|record| record.number(9)),
+                    record.and_then(|record| record.number(10)),
+                ],
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let definition_levels = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 406 && entry.form == 1)
-        .map(|entry| {
+        },
+    )?;
+    let text_fonts = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 310 && entry.form == 0),
+        "iges native text font slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| {
+                    record.count_with_stride_before(
+                        5,
+                        1,
+                        clamped_primary_end(entry.sequence, record),
+                    )
+                })
+                .unwrap_or_default();
+            let supersedes_code = record.and_then(|record| record.integer(3));
+            let mut cursor = 6_usize;
+            let mut characters = reserve_vec(ctx, count, "iges native text font glyph slots")?;
+            let mut malformed = false;
+            for _ in 0..count {
+                let Some(record) = record else {
+                    malformed = true;
+                    break;
+                };
+                let Some(count_index) = cursor.checked_add(3) else {
+                    malformed = true;
+                    break;
+                };
+                let declared_motion_count = record.integer(count_index);
+                let motion_count = record.count_with_stride_before(
+                    count_index,
+                    3,
+                    clamped_primary_end(entry.sequence, record),
+                );
+                let Some(motion_count) = motion_count else {
+                    malformed = true;
+                    break;
+                };
+                let Some(next) = motion_count
+                    .checked_mul(3)
+                    .and_then(|width| cursor.checked_add(4 + width))
+                else {
+                    malformed = true;
+                    break;
+                };
+                let motions = collect_result_vec(
+                    ctx,
+                    motion_count,
+                    "iges native text font motion slots",
+                    |offset| {
+                        let start = cursor + 4 + offset * 3;
+                        Ok(NativeGlyphMotion {
+                            pen_up: record.integer(start).map(|value| value == 1),
+                            point: [record.integer(start + 1), record.integer(start + 2)],
+                        })
+                    },
+                )?;
+                characters.push(NativeGlyph {
+                    character_code: record.integer(cursor),
+                    next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
+                    declared_motion_count,
+                    motions,
+                });
+                cursor = next;
+            }
+            if malformed {
+                characters.clear();
+            }
+            Ok(NativeTextFontDefinition {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:presentation:text-font#D{}", entry.sequence),
+                    "iges native text font id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native text font source",
+                )?,
+                font_code: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native text font name"))
+                    .transpose()?,
+                supersedes_code,
+                supersedes_definition: supersedes_code
+                    .filter(|value| *value < 0)
+                    .map(|value| {
+                        parameter_resolver.resolve_negative_type(
+                            entry.sequence,
+                            3,
+                            value,
+                            310,
+                            &[0],
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:presentation:text-font#D{sequence}"),
+                            "iges native text font superseded",
+                        )
+                    })
+                    .transpose()?,
+                grid_units_per_text_height: record.and_then(|record| record.integer(4)),
+                declared_character_count: record.and_then(|record| record.integer(5)),
+                characters,
+            })
+        },
+    )?;
+    let definition_levels = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 406 && entry.form == 1),
+        "iges native definition level slots",
+        |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let end = parameters.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, parameters, end, 1, 1);
-            NativeDefinitionLevels {
-                id: format!("iges:presentation:definition-levels#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            Ok(NativeDefinitionLevels {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:presentation:definition-levels#D{}", entry.sequence),
+                    "iges native definition levels id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native definition levels source",
+                )?,
                 declared_count: parameters.and_then(|record| record.integer(1)),
-                levels: (0..count)
-                    .map(|index| parameters.and_then(|record| record.integer(2 + index)))
-                    .collect(),
-            }
-        })
-        .collect::<Vec<_>>();
+                levels: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native definition level values",
+                    |index| Ok(parameters.and_then(|record| record.integer(2 + index))),
+                )?,
+            })
+        },
+    )?;
     let primitive_solids = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168))
