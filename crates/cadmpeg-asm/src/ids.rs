@@ -59,9 +59,12 @@ impl IdFormat {
             .and_then(|length| length.checked_add(kind.as_str().len()))
             .and_then(|length| length.checked_add("#".len()))
             .and_then(|length| length.checked_add(index.len()))
-            .ok_or_else(|| ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX))?;
-        let requested = u64::try_from(length)
-            .map_err(|_| ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX)
+            })?;
+        let requested = u64::try_from(length).map_err(|_| {
+            ctx.refuse_codec_limit("ASM unknown record identity", u64::MAX, u64::MAX)
+        })?;
         ctx.charge_retained(requested, "ASM unknown record identity")?;
         let mut text = String::new();
         text.try_reserve(length)

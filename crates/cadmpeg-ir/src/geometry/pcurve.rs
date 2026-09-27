@@ -118,7 +118,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -1858,8 +1860,10 @@ impl PcurveNurbs {
             let count = u64::try_from(values.len())
                 .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             let bytes = count
-                .checked_mul(u64::try_from(std::mem::size_of::<T>())
-                    .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?)
+                .checked_mul(
+                    u64::try_from(std::mem::size_of::<T>())
+                        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                )
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_collection_items(count, operation)?;
             ctx.charge_retained(bytes, operation)?;
@@ -1879,8 +1883,12 @@ impl PcurveNurbs {
                 points: copy_lane(ctx, points, operation)?,
             },
         };
-        Ok(Self { degree: self.degree, knots: KnotVector::new(knots)
-            .map_err(cadmpeg_core::CodecError::malformed)?, poles, periodic: self.periodic })
+        Ok(Self {
+            degree: self.degree,
+            knots: KnotVector::new(knots).map_err(cadmpeg_core::CodecError::malformed)?,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Build a parameter-space NURBS with consistent cardinalities.

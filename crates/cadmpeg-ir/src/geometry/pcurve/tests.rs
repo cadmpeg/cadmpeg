@@ -29,7 +29,8 @@ fn pcurve_copy_refuses_knot_and_pole_limits() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let error = source.try_clone_for_decode(&ctx, "copy pcurve")
+        let error = source
+            .try_clone_for_decode(&ctx, "copy pcurve")
             .expect_err("copy exceeds resource limit");
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");

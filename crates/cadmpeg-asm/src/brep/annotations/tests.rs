@@ -66,7 +66,12 @@ fn annotation_stream_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = emit_annotation_records(
-        &ctx, &mut out, &records, &by_index, &Carriers::default(), "source",
+        &ctx,
+        &mut out,
+        &records,
+        &by_index,
+        &Carriers::default(),
+        "source",
         crate::asm_format!("f3d"),
     )
     .expect_err("one stream label exceeds zero retained bytes");
@@ -98,8 +103,11 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     emit_annotation_records(
         &ctx,
         &mut out,

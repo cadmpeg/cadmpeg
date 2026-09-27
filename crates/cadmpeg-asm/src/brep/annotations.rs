@@ -144,34 +144,58 @@ pub(super) fn emit_annotation_records(
                     }
                 }
             }
-            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
+            crate::decode_alloc::reserve_vec_slot(
+                ctx,
+                &mut out.annotation_records,
+                "ASM annotation records",
+            )?;
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
                 stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
+                    ctx,
+                    &record.name,
+                    "ASM annotation record name",
+                )?),
                 derived_fields,
             });
         }
         let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
         if attribute_ids.contains(attribute_id.as_str()) {
-            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
+            crate::decode_alloc::reserve_vec_slot(
+                ctx,
+                &mut out.annotation_records,
+                "ASM annotation records",
+            )?;
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
                 stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
+                    ctx,
+                    &record.name,
+                    "ASM annotation record name",
+                )?),
                 derived_fields: Vec::new(),
             });
         }
         let unknown_id = unknown_record_id(ctx, record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
-            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
+            crate::decode_alloc::reserve_vec_slot(
+                ctx,
+                &mut out.annotation_records,
+                "ASM annotation records",
+            )?;
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
                 stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(
+                    ctx,
+                    &record.name,
+                    "ASM annotation record name",
+                )?),
                 derived_fields: Vec::new(),
             });
         }
@@ -192,7 +216,11 @@ pub(super) fn emit_annotation_records(
             ),
         ] {
             if procedural_ids.contains(synthetic_id.as_str()) {
-                crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
+                crate::decode_alloc::reserve_vec_slot(
+                    ctx,
+                    &mut out.annotation_records,
+                    "ASM annotation records",
+                )?;
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
                     stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
@@ -219,7 +247,11 @@ pub(super) fn emit_annotation_records(
                 "synthetic entity {entity_id} source record {index} is missing"
             ))
         })?;
-        crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
+        crate::decode_alloc::reserve_vec_slot(
+            ctx,
+            &mut out.annotation_records,
+            "ASM annotation records",
+        )?;
         out.annotation_records.push(AnnotationRecord {
             id: crate::decode_alloc::copy_string(ctx, entity_id, "ASM synthetic annotation id")?,
             stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,

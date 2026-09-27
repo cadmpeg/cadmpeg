@@ -4,14 +4,17 @@
 //! procedural carrier classification.
 use cadmpeg_test_support::edit;
 
-use super::emit::{emit_attributes, emit_edges};
+use super::emit::{emit_attributes, emit_edges, CurveSenseRefs};
 use super::geometry::{
     analytic_procedural_surface as decode_analytic_procedural_surface,
     edge_pcurve_parameter_ranges, is_asm_stream_delimiter, is_known_record_head,
-    pcurve_ranges_on_domain, point_vector, rational_four_arc_circle as decode_rational_four_arc_circle,
+    pcurve_ranges_on_domain, point_vector,
+    rational_four_arc_circle as decode_rational_four_arc_circle,
 };
 use super::records::{self, BodyNativeKey};
-use super::topology::{classify_edge_curve_senses, shell_faces, shell_wire_roots, subshell_ancestor_shells};
+use super::topology::{
+    classify_edge_curve_senses, shell_faces, shell_wire_roots, subshell_ancestor_shells,
+};
 use super::{
     decode_with_purpose, id, inherited_attribute_target, AsmBrep, DecodePurpose, Reachable,
 };
@@ -156,8 +159,11 @@ fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let definition =
         |direction| nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
             directrix: exact_circle_directrix(),
@@ -181,7 +187,10 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
     assert!((radius - 5.0).abs() < 1.0e-12);
-    assert!(analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
+    assert!(
+        analytic_procedural_surface(&resource_ctx, &definition(Vector3::new(1.0, 0.0, 8.0)))
+            .is_none()
+    );
     let mut approximate = exact_circle_directrix();
     approximate
         .edit_control_points({
@@ -259,8 +268,11 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut scaled = exact_circle_directrix();
     let scaled_weights = scaled.weights().map(|weights| {
         weights
@@ -289,7 +301,9 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let mut elevated = degree_elevated_circle();
     assert!(rational_four_arc_circle(&resource_ctx, &elevated).is_some());
     assert!(matches!(
-        analytic_procedural_surface(&resource_ctx, &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
+        analytic_procedural_surface(
+            &resource_ctx,
+            &nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix: elevated.clone(),
                 parameter_interval: [0.0, 4.0],
                 direction: Vector3::new(0.0, 0.0, 3.0),
@@ -347,8 +361,11 @@ fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve 
 fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
         supports: Box::new([
             Some(plane(
@@ -408,8 +425,11 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut circle = exact_circle_directrix();
     circle
         .edit_control_points(|point| {
@@ -672,14 +692,18 @@ fn nested_attributes_inherit_their_topology_owner() {
 
 #[test]
 fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
     use super::attributes::{
         attribute_chain_color_carrier, collect_attributes, DirectColorCarrier,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let record = |index, name: &str, next, payload: Vec<Token>| {
         let mut tokens = vec![
@@ -751,8 +775,10 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         .map(|attribute| (attribute.index as i64, attribute))
         .collect::<HashMap<_, _>>();
 
-    let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, by_index.len(), |index| by_index.get(&index).copied()).unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .unwrap();
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -770,7 +796,8 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
 
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
-    collect_attributes(&resource_ctx,
+    collect_attributes(
+        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -797,14 +824,18 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
 
 #[test]
 fn legacy_attribute_chain_uses_second_field_forward_link() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
     use super::attributes::{
         attribute_chain_color_carrier, attribute_chain_name, collect_attributes,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let entity = Record {
         index: 0,
@@ -849,21 +880,26 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     };
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
-    let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, by_index.len(), |index| by_index.get(&index).copied()).unwrap();
+    let (carrier, decoded) = attribute_chain_color_carrier(&entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .unwrap();
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,
         super::attributes::DirectColorCarrier::NormalizedRgb { fields: [4, 5, 6] }
     );
     assert_eq!(
-        attribute_chain_name(&resource_ctx, &entity, &by_index).unwrap().as_deref(),
+        attribute_chain_name(&resource_ctx, &entity, &by_index)
+            .unwrap()
+            .as_deref(),
         Some("legacy face")
     );
 
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
-    collect_attributes(&resource_ctx,
+    collect_attributes(
+        &resource_ctx,
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -886,11 +922,15 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
 
 #[test]
 fn shell_and_loop_attribute_chains_retain_their_native_owners() {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
-    use cadmpeg_ir::attributes::AttributeTarget;
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
@@ -941,8 +981,15 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&resource_ctx, &mut brep, &records, &by_index, &reach, FORMAT)
-            .expect("finite attribute values"),
+        emit_attributes(
+            &resource_ctx,
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            FORMAT
+        )
+        .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
@@ -957,13 +1004,17 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
 
 #[test]
 fn lump_named_attributes_bind_to_their_owning_body() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let record = |index, name: &str, tokens: Vec<Token>| Record {
         index,
@@ -1027,7 +1078,8 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         ..AsmBrep::default()
     };
 
-    let emitted = emit_attributes(&resource_ctx,
+    let emitted = emit_attributes(
+        &resource_ctx,
         &mut brep,
         &records,
         &by_index,
@@ -1098,7 +1150,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     assert_eq!(
         shell_faces(&ctx, &records[1], &by_index, &kept, FORMAT).unwrap(),
@@ -1108,7 +1161,9 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
         ]
     );
     assert_eq!(
-        subshell_ancestor_shells(&ctx, &records, &by_index).unwrap().get(&3),
+        subshell_ancestor_shells(&ctx, &records, &by_index)
+            .unwrap()
+            .get(&3),
         Some(&1)
     );
 }
@@ -1124,7 +1179,10 @@ fn subshell_ancestor_shells_refuses_collection_limit() {
     record(&mut bytes, "subshell", &[-1, -1, -1, 1]);
     let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell bytes must frame");
-    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1145,9 +1203,19 @@ fn classify_edge_curve_senses_refuses_collection_limit() {
     let records = [Record {
         index: 1,
         name: "edge".into(),
-        tokens: vec![Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
-            Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
-            Token::Ref(2), Token::Enum(0)].into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(2),
+            Token::Enum(0),
+        ]
+        .into(),
         offset: 0,
         len: 0,
     }];
@@ -1185,8 +1253,12 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .collect::<HashMap<_, _>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(shell_wire_roots(&ctx, &records[1], &by_index).unwrap(), [4, 5, 6]);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        shell_wire_roots(&ctx, &records[1], &by_index).unwrap(),
+        [4, 5, 6]
+    );
 }
 
 #[test]
@@ -1268,7 +1340,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     emit_edges(
         &ctx,
@@ -1276,8 +1349,10 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         &records,
         &by_index,
         &reach,
-        &HashSet::new(),
-        &HashSet::new(),
+        CurveSenseRefs {
+            reversed_curve_refs: &HashSet::new(),
+            forward_curve_refs: &HashSet::new(),
+        },
         FORMAT,
     )
     .expect("valid edge tolerance");
@@ -1335,15 +1410,18 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         let mut brep = AsmBrep::default();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         emit_edges(
             &ctx,
             &mut brep,
             &records,
             &by_index,
             &reach,
-            &HashSet::new(),
-            &HashSet::new(),
+            CurveSenseRefs {
+                reversed_curve_refs: &HashSet::new(),
+                forward_curve_refs: &HashSet::new(),
+            },
             FORMAT,
         )
         .expect("edge emission");
@@ -1441,8 +1519,11 @@ fn the_join_projections_read_the_key_records() {
 fn circle_recognition_is_invariant_under_common_weight_scale() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for curve in [exact_circle_directrix(), degree_elevated_circle()] {
         for scale in [1e-200, 1.0, 1e200] {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1479,12 +1560,16 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
 
 #[test]
 fn a_non_finite_attribute_double_is_refused() {
-    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
     use super::attributes::source_attribute;
     use cadmpeg_ir::attributes::AttributeTarget;
+
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let record = Record {
         index: 1,
@@ -1564,7 +1649,13 @@ fn attribute_chain_tracking_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = collect_attributes(
-        &ctx, &entity, &AttributeTarget::Document, &by_index, &mut emitted, &mut out, FORMAT,
+        &ctx,
+        &entity,
+        &AttributeTarget::Document,
+        &by_index,
+        &mut emitted,
+        &mut out,
+        FORMAT,
     )
     .expect_err("one attribute chain member exceeds zero items");
     let CodecError::ResourceLimit(limit) = error else {
@@ -1590,7 +1681,12 @@ fn attribute_chain_name_refuses_retained_limit() {
     let attribute = Record {
         index: 1,
         name: "string_attrib-name_attrib-gen-attrib".into(),
-        tokens: vec![Token::Ref(-1), Token::Str("name".into()), Token::Str("x".into())].into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Str("name".into()),
+            Token::Str("x".into()),
+        ]
+        .into(),
         offset: 0,
         len: 0,
     };
@@ -1669,7 +1765,9 @@ fn brep_append_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = whole.append(&ctx, part).expect_err("one region exceeds zero items");
+    let error = whole
+        .append(&ctx, part)
+        .expect_err("one region exceeds zero items");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected collection refusal: {error:?}");
     };
@@ -1689,7 +1787,9 @@ fn stats_merge_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = whole.merge(&ctx, part).expect_err("one kind exceeds zero items");
+    let error = whole
+        .merge(&ctx, part)
+        .expect_err("one kind exceeds zero items");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected collection refusal: {error:?}");
     };
@@ -1703,9 +1803,10 @@ fn collect_owned_ids_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
     use serde_value::Value;
 
-    let value = Value::Map(std::collections::BTreeMap::from([
-        (Value::String("id".into()), Value::String("f3d:brep:entity#1".into())),
-    ]));
+    let value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("id".into()),
+        Value::String("f3d:brep:entity#1".into()),
+    )]));
     let mut owned = HashSet::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1748,11 +1849,15 @@ fn collect_entity_adjacency_refuses_collection_limit() {
 
     let entity = Value::Map(std::collections::BTreeMap::from([
         (Value::String("id".into()), Value::String("owner".into())),
-        (Value::String("peer".into()), Value::String("referenced".into())),
+        (
+            Value::String("peer".into()),
+            Value::String("referenced".into()),
+        ),
     ]));
-    let value = Value::Map(std::collections::BTreeMap::from([
-        (Value::String("bodies".into()), Value::Seq(vec![entity])),
-    ]));
+    let value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("bodies".into()),
+        Value::Seq(vec![entity]),
+    )]));
     let owned = HashSet::from(["referenced".into()]);
     let mut adjacency = HashMap::new();
     let arena = DecodeArena::new();
@@ -1774,9 +1879,10 @@ fn remap_owned_ids_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
     use serde_value::Value;
 
-    let mut value = Value::Map(std::collections::BTreeMap::from([
-        (Value::String("field".into()), Value::I64(1)),
-    ]));
+    let mut value = Value::Map(std::collections::BTreeMap::from([(
+        Value::String("field".into()),
+        Value::I64(1),
+    )]));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;

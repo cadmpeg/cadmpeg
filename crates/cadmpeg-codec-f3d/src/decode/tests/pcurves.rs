@@ -707,7 +707,9 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 fn ref_pcurve_resolves_intcurve_uv_slot() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .expect("test decode context");
     let mut intcurve = generated_curve_block();
@@ -757,7 +759,9 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
 fn ref_pcurve_rejects_orphan_typed_slot() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .expect("test decode context");
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
@@ -811,7 +815,8 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
             .count(),
         1
     );
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

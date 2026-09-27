@@ -164,14 +164,11 @@ impl<'a> Cur<'a> {
             self.pos = mark;
             return None;
         };
-        let mut values = match crate::decode_alloc::counted_vec(
-            ctx,
-            count,
-            "ASM counted float array",
-        ) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut values =
+            match crate::decode_alloc::counted_vec(ctx, count, "ASM counted float array") {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
         for _ in 0..count {
             let Some(value) = self.take_f64() else {
                 self.pos = mark;
@@ -243,14 +240,12 @@ pub(super) fn take_knot_table(
         mults.push(cur.take_long()?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
-    let mut expanded = match crate::decode_alloc::counted_vec(
-        ctx,
-        expansion.expanded_len(),
-        "ASM expanded knots",
-    ) {
-        Ok(expanded) => expanded,
-        Err(error) => return Some(Err(error)),
-    };
+    let mut expanded =
+        match crate::decode_alloc::counted_vec(ctx, expansion.expanded_len(), "ASM expanded knots")
+        {
+            Ok(expanded) => expanded,
+            Err(error) => return Some(Err(error)),
+        };
     for (index, (value, multiplicity)) in values.iter().zip(&mults).enumerate() {
         let run_length = usize::try_from(*multiplicity).ok()?
             + usize::from(index == 0 || index + 1 == mults.len());
@@ -341,7 +336,10 @@ pub(super) fn owned_subtype_defs<'a>(
                 if depth == 0 {
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
                         if let Err(error) = crate::decode_alloc::push_vec(
-                            ctx, &mut owned, (pos, name.as_str()), "ASM owned subtype definitions",
+                            ctx,
+                            &mut owned,
+                            (pos, name.as_str()),
+                            "ASM owned subtype definitions",
                         ) {
                             return Some(Err(error));
                         }
@@ -456,10 +454,7 @@ pub(super) fn cache_scope<'a>(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    for (start, _) in owned
-        .into_iter()
-        .filter(|(_, name)| *name != "ref")
-    {
+    for (start, _) in owned.into_iter().filter(|(_, name)| *name != "ref") {
         constructions += 1;
         let Some(scope) = subtype_span(toks, start) else {
             continue;
@@ -470,7 +465,10 @@ pub(super) fn cache_scope<'a>(
         };
         if !markers.is_empty() {
             if let Err(error) = crate::decode_alloc::push_vec(
-                ctx, &mut cache_bearing, scope.tokens(), "ASM cache bearing scopes",
+                ctx,
+                &mut cache_bearing,
+                scope.tokens(),
+                "ASM cache bearing scopes",
             ) {
                 return Some(Err(error));
             }
@@ -861,7 +859,8 @@ mod tests {
     fn with_ctx<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         f(&ctx)
     }
 
@@ -874,7 +873,11 @@ mod tests {
     }
 
     fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
-        with_ctx(|ctx| owned_construction_subtype_ctx(ctx, toks).transpose().unwrap())
+        with_ctx(|ctx| {
+            owned_construction_subtype_ctx(ctx, toks)
+                .transpose()
+                .unwrap()
+        })
     }
 
     #[test]
@@ -914,9 +917,17 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Ident("nubs".into()), Token::SubtypeClose];
-        let error = owned_marker_positions_ctx(&ctx, &tokens).unwrap().unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("nubs".into()),
+            Token::SubtypeClose,
+        ];
+        let error = owned_marker_positions_ctx(&ctx, &tokens)
+            .unwrap()
+            .unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned spline markers");
     }
@@ -929,9 +940,15 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Ident("exactcur".into()), Token::SubtypeClose];
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("exactcur".into()),
+            Token::SubtypeClose,
+        ];
         let error = owned_subtype_defs_ctx(&ctx, &tokens).unwrap().unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned subtype definitions");
     }
@@ -944,9 +961,16 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let tokens = [Token::SubtypeOpen, Token::Ident("exactcur".into()), Token::Ident("nubs".into()), Token::SubtypeClose];
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("exactcur".into()),
+            Token::Ident("nubs".into()),
+            Token::SubtypeClose,
+        ];
         let error = cache_scope_ctx(&ctx, &tokens).unwrap().unwrap_err();
-        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM cache bearing scopes");
     }
@@ -962,12 +986,21 @@ mod tests {
         let record = crate::sab::Record {
             index: 0,
             name: "spline".into(),
-            tokens: vec![Token::SubtypeOpen, Token::Ident("exactcur".into()), Token::SubtypeClose].into(),
+            tokens: vec![
+                Token::SubtypeOpen,
+                Token::Ident("exactcur".into()),
+                Token::SubtypeClose,
+            ]
+            .into(),
             offset: 0,
             len: 0,
         };
-        let error = super::SubtypeTable::from_records(&ctx, &[record]).err().expect("resource refusal");
-        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        let error = super::SubtypeTable::from_records(&ctx, &[record])
+            .err()
+            .expect("resource refusal");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "index ASM subtype definitions");
     }
@@ -1100,11 +1133,19 @@ mod tests {
     fn float_array_restores_position_on_a_truncated_body() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-        ).expect("test decode context");
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
         let toks = [Token::Long(2), Token::Double(1.0), Token::True];
         let mut cur = Cur::at(&toks, 0);
-        assert_eq!(cur.take_float_array(&ctx).transpose().expect("resource allocation"), None);
+        assert_eq!(
+            cur.take_float_array(&ctx)
+                .transpose()
+                .expect("resource allocation"),
+            None
+        );
         assert_eq!(cur.pos(), 0);
     }
 
@@ -1119,7 +1160,9 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let toks = [Token::Long(2), Token::Double(1.0), Token::Double(2.0)];
         let mut cur = Cur::at(&toks, 0);
-        let error = cur.take_float_array(&ctx).expect("counted float array")
+        let error = cur
+            .take_float_array(&ctx)
+            .expect("counted float array")
             .expect_err("two floats exceed one item");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
@@ -1245,7 +1288,10 @@ mod tests {
             Token::SubtypeClose,
         ];
         let scope = subtype_span(&toks, 0).expect("balanced scope");
-        assert_eq!(with_ctx(|ctx| scope.owned_marker_positions(ctx).unwrap()), vec![6]);
+        assert_eq!(
+            with_ctx(|ctx| scope.owned_marker_positions(ctx).unwrap()),
+            vec![6]
+        );
         assert_eq!(scope.interior(), &toks[1..7]);
 
         // The slice after the scope's name token opens with the nested scope,

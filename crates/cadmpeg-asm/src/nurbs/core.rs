@@ -91,15 +91,22 @@ pub(super) fn surface_block(
         return None;
     }
 
-    let (u_knots, n_poles_u) = propagate_resource!(knots(ctx, &mut cur, n_uniq_u as usize, degree_u)?);
-    let (v_knots, n_poles_v) = propagate_resource!(knots(ctx, &mut cur, n_uniq_v as usize, degree_v)?);
+    let (u_knots, n_poles_u) =
+        propagate_resource!(knots(ctx, &mut cur, n_uniq_u as usize, degree_u)?);
+    let (v_knots, n_poles_v) =
+        propagate_resource!(knots(ctx, &mut cur, n_uniq_v as usize, degree_v)?);
     if n_poles_u.checked_mul(n_poles_v).is_none_or(|n| n > 200_000) {
         return None;
     }
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles_u * n_poles_v, marker)?);
+    let poles = propagate_resource!(control_points(
+        ctx,
+        &mut cur,
+        n_poles_u * n_poles_v,
+        marker
+    )?);
     let grid = propagate_resource!(poles.into_counted_transposed_grid(ctx, n_poles_u, n_poles_v)?);
     let surface = NurbsSurface::new(
         NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
@@ -131,7 +138,8 @@ pub(super) fn curve_block(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knot_vector, n_poles) = propagate_resource!(knots(ctx, &mut cur, n_uniq as usize, degree)?);
+    let (knot_vector, n_poles) =
+        propagate_resource!(knots(ctx, &mut cur, n_uniq as usize, degree)?);
     let poles = propagate_resource!(control_points(ctx, &mut cur, n_poles, marker)?);
 
     let curve = NurbsCurve::new(
@@ -175,10 +183,11 @@ pub(super) fn owned_surface_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    propagate_resource!(scope
-        .owned_marker_positions(ctx))
+    propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
-        .find_map(|pos| surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface)))
+        .find_map(|pos| {
+            surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface))
+        })
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
@@ -201,8 +210,7 @@ pub(super) fn owned_curve_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    propagate_resource!(scope
-        .owned_marker_positions(ctx))
+    propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
         .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
 }
@@ -220,7 +228,10 @@ fn cache_from_subtype_refs<T, D>(
     decode_scope: D,
 ) -> Option<Result<T, cadmpeg_core::CodecError>>
 where
-    D: Fn(&cadmpeg_core::decode::DecodeContext<'_>, toks::SubtypeScope<'_>) -> Option<Result<T, cadmpeg_core::CodecError>>,
+    D: Fn(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        toks::SubtypeScope<'_>,
+    ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
     let mut seen = std::collections::HashSet::new();
     let mut pending = propagate_resource!(crate::decode_alloc::counted_vec(
@@ -273,7 +284,9 @@ pub fn surface_cache_resolving_refs(
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     surface_cache(ctx, toks).or_else(|| {
-        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| surface_cache(ctx, scope.tokens()))
+        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
+            surface_cache(ctx, scope.tokens())
+        })
     })
 }
 
@@ -283,9 +296,8 @@ pub(super) fn owned_surface_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    owned_surface_cache(ctx, scope).or_else(|| {
-        cache_from_subtype_refs(ctx, scope.tokens(), table, owned_surface_cache)
-    })
+    owned_surface_cache(ctx, scope)
+        .or_else(|| cache_from_subtype_refs(ctx, scope.tokens(), table, owned_surface_cache))
 }
 
 /// Decode a curve cache, following subtype-table references.
@@ -295,7 +307,9 @@ pub fn curve_cache_resolving_refs(
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     curve_cache(ctx, toks).or_else(|| {
-        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| curve_cache(ctx, scope.tokens()))
+        cache_from_subtype_refs(ctx, toks, table, |ctx, scope| {
+            curve_cache(ctx, scope.tokens())
+        })
     })
 }
 
@@ -305,9 +319,8 @@ pub(super) fn owned_curve_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    owned_curve_cache(ctx, scope).or_else(|| {
-        cache_from_subtype_refs(ctx, scope.tokens(), table, owned_curve_cache)
-    })
+    owned_curve_cache(ctx, scope)
+        .or_else(|| cache_from_subtype_refs(ctx, scope.tokens(), table, owned_curve_cache))
 }
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes

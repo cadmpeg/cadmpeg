@@ -776,18 +776,27 @@ impl LoopRing {
             .map_err(|_| ctx.refuse_codec_limit("loop ring members", u64::MAX, u64::MAX))?;
         ctx.charge_collection_items(count, "loop ring members")?;
         let mut members = HashSet::new();
-        members.try_reserve(coedges.len())
+        members
+            .try_reserve(coedges.len())
             .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
-            return Ok(Err(LoopRingError("loop ring coedges must be distinct".into())));
+            return Ok(Err(LoopRingError(
+                "loop ring coedges must be distinct".into(),
+            )));
         }
-        if vertex_uses.iter().any(|vertex_use| !members.contains(&vertex_use.after)) {
+        if vertex_uses
+            .iter()
+            .any(|vertex_use| !members.contains(&vertex_use.after))
+        {
             return Ok(Err(LoopRingError(
                 "loop ring vertex-use after must name a coedge in the ring".into(),
             )));
         }
-        Ok(Ok(Self { coedges, vertex_uses }))
+        Ok(Ok(Self {
+            coedges,
+            vertex_uses,
+        }))
     }
 
     /// Coedges in source traversal order.

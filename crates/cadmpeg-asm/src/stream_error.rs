@@ -60,12 +60,10 @@ impl StreamFailure {
         match self {
             Self::Parse(error) => parse(error),
             Self::Malformed(error) => cadmpeg_core::CodecError::malformed(error),
-            Self::NotImplemented(error) => {
-                match unsupported_message(ctx, &error) {
-                    Ok(message) => cadmpeg_core::CodecError::NotImplemented(message),
-                    Err(refusal) => refusal,
-                }
-            }
+            Self::NotImplemented(error) => match unsupported_message(ctx, &error) {
+                Ok(message) => cadmpeg_core::CodecError::NotImplemented(message),
+                Err(refusal) => refusal,
+            },
             Self::Resource(error) => error,
         }
     }
@@ -146,8 +144,8 @@ mod tests {
         policy.limits.max_retained_bytes = expected.len() as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let error = StreamFailure::NotImplemented(error)
-            .into_codec_error(&ctx, CodecError::malformed);
+        let error =
+            StreamFailure::NotImplemented(error).into_codec_error(&ctx, CodecError::malformed);
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");
         };

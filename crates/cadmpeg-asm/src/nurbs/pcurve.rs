@@ -220,12 +220,14 @@ pub(super) fn pcurve_block_with_end(
     let mut points = Vec::new();
     let mut weighted = Vec::new();
     if rational {
-        weighted = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM rational pcurve poles") {
+        weighted = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM rational pcurve poles")
+        {
             Ok(weighted) => weighted,
             Err(error) => return Some(Err(error)),
         };
     } else {
-        points = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM polynomial pcurve poles") {
+        points = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM polynomial pcurve poles")
+        {
             Ok(points) => points,
             Err(error) => return Some(Err(error)),
         };
@@ -274,7 +276,9 @@ pub fn explicit_pcurve_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
-    let position = propagate_resource!(scope.owned_marker_positions(ctx)).into_iter().next()?;
+    let position = propagate_resource!(scope.owned_marker_positions(ctx))
+        .into_iter()
+        .next()?;
     pcurve_block(ctx, scope.tokens(), position)
 }
 
@@ -303,8 +307,7 @@ pub fn pcurve_fit_tolerance(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<f64, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    let (_, end) = match propagate_resource!(scope
-        .owned_marker_positions(ctx))
+    let (_, end) = match propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
         .rev()
         .find_map(|pos| pcurve_block_with_end(ctx, tokens, pos))?

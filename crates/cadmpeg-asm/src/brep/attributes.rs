@@ -160,11 +160,11 @@ pub fn source_attribute(
     for token in record.chunks() {
         crate::decode_alloc::reserve_vec_slot(ctx, &mut values, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "attribute record {} ({}) holds a non-finite number",
-                    record.index, record.name
-                ))
-            })?;
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "attribute record {} ({}) holds a non-finite number",
+                record.index, record.name
+            ))
+        })?;
         values.push(value);
     }
     Ok(SourceAttribute {
@@ -196,7 +196,11 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(ctx, value, "ASM attribute string")?),
+        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(
+            ctx,
+            value,
+            "ASM attribute string",
+        )?),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -212,7 +216,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?),
+        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(
+            crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?,
+        ),
     }))
 }
 
@@ -222,13 +228,10 @@ pub fn decode_transform(
     record: &Record,
     header_scale: f64,
 ) -> Option<cadmpeg_ir::transform::Transform> {
-    let mut vectors = record
-        .tokens
-        .iter()
-        .filter_map(|token| match token {
-            Token::Position(value) | Token::Vector3(value) => Some(*value),
-            _ => None,
-        });
+    let mut vectors = record.tokens.iter().filter_map(|token| match token {
+        Token::Position(value) | Token::Vector3(value) => Some(*value),
+        _ => None,
+    });
     let scale = record
         .tokens
         .iter()
@@ -238,7 +241,11 @@ pub fn decode_transform(
         })
         .next_back()?;
     let (Some(x), Some(y), Some(z), Some(translation), None) = (
-        vectors.next(), vectors.next(), vectors.next(), vectors.next(), vectors.next(),
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
+        vectors.next(),
     ) else {
         return None;
     };
@@ -301,15 +308,19 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
     let payload = attribute_base(record)?.payload();
     match record.name.as_str() {
         "rgb_color-st-attrib" => {
-            let mut channels = record
-                .chunks()
-                .enumerate()
-                .skip(payload)
-                .filter_map(|(field, token)| match token {
+            let mut channels = record.chunks().enumerate().skip(payload).filter_map(
+                |(field, token)| match token {
                     Token::Double(value) => Some((field, *value)),
                     _ => None,
-                });
-            let channels = [channels.next(), channels.next(), channels.next(), channels.next(), channels.next()];
+                },
+            );
+            let channels = [
+                channels.next(),
+                channels.next(),
+                channels.next(),
+                channels.next(),
+                channels.next(),
+            ];
             let [(r_field, r), (g_field, g), (b_field, b)] = match channels {
                 [Some(red), Some(green), Some(blue), None, None] => [red, green, blue],
                 [Some(red), Some(green), Some(blue), Some((_, 1.0)), None] => [red, green, blue],
@@ -395,8 +406,10 @@ pub fn attribute_chain_color_carrier<'a>(
 /// The first well-formed exact direct color on `entity`'s attribute chain.
 #[allow(clippy::implicit_hasher)]
 pub fn attribute_chain_color(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<Color> {
-    attribute_chain_color_carrier(entity, by_index.len(), |index| by_index.get(&index).copied())
-        .map(|(_, decoded)| decoded.color)
+    attribute_chain_color_carrier(entity, by_index.len(), |index| {
+        by_index.get(&index).copied()
+    })
+    .map(|(_, decoded)| decoded.color)
 }
 
 /// The first non-empty name attribute on `entity`'s attribute chain.
@@ -406,17 +419,18 @@ pub fn attribute_chain_name(
     entity: &Record,
     by_index: &HashMap<i64, &Record>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(mut current) = entity.ref_at(0) else { return Ok(None) };
+    let Some(mut current) = entity.ref_at(0) else {
+        return Ok(None);
+    };
     for _ in 0..by_index.len() {
-        let Some(record) = by_index.get(&current) else { return Ok(None) };
+        let Some(record) = by_index.get(&current) else {
+            return Ok(None);
+        };
         if record.name == "string_attrib-name_attrib-gen-attrib" {
-            let mut values = record
-                .tokens
-                .iter()
-                .filter_map(|token| match token {
-                    Token::Str(value) => Some(value.as_str()),
-                    _ => None,
-                });
+            let mut values = record.tokens.iter().filter_map(|token| match token {
+                Token::Str(value) => Some(value.as_str()),
+                _ => None,
+            });
             let mut previous = None;
             let mut last = None;
             for value in &mut values {
@@ -430,7 +444,9 @@ pub fn attribute_chain_name(
                 }
             }
         }
-        let Some(next) = attribute_next(record) else { return Ok(None) };
+        let Some(next) = attribute_next(record) else {
+            return Ok(None);
+        };
         current = next;
     }
     Ok(None)
@@ -450,7 +466,9 @@ pub fn unknown_record_id(
             "invalid ASM source identity component: {error}"
         ))
     })?;
-    Ok(UnknownId::from(format.try_brep_identity(ctx, &kind, rec.index)?))
+    Ok(UnknownId::from(
+        format.try_brep_identity(ctx, &kind, rec.index)?,
+    ))
 }
 
 #[cfg(test)]
