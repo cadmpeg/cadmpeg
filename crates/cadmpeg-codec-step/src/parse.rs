@@ -1045,6 +1045,10 @@ impl Parser<'_, '_, '_> {
         if !anchors.is_empty() {
             for anchor in &anchors {
                 self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
+                self.charge_retained(
+                    value_storage_bytes(&anchor.value),
+                    "step_anchor_binding_value_copy",
+                )?;
                 if let Some(ctx) = self.budget {
                     ctx.charge_collection_items(1, "step_anchor_binding_items")?;
                 }
