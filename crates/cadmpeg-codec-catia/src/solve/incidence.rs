@@ -2151,17 +2151,28 @@ fn advance_compact_boundary_domains<'a>(
         candidate_count,
         "catia compact boundary candidate pairs",
     )?;
-    let candidates = assignment
-        .iter()
-        .enumerate()
-        .map(|(edge, pair)| {
-            selected
-                .filter(|(selected_edge, _)| *selected_edge == edge)
-                .map(|(_, pair)| vec![pair])
-                .or_else(|| pair.map(|pair| vec![pair]))
-                .unwrap_or_else(|| choices[edge].clone())
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (edge, pair) in assignment.iter().enumerate() {
+        let row = if let Some(pair) = selected
+            .filter(|(selected_edge, _)| *selected_edge == edge)
+            .map(|(_, pair)| pair)
+            .or(*pair)
+        {
+            crate::resource::copy_slice(ctx, &[pair], "catia_compact_boundary_candidate_pair")?
+        } else {
+            crate::resource::copy_slice(
+                ctx,
+                &choices[edge],
+                "catia_compact_boundary_candidate_pair",
+            )?
+        };
+        crate::resource::push(
+            ctx,
+            &mut candidates,
+            row,
+            "catia_compact_boundary_candidate_rows",
+        )?;
+    }
     for alternatives in ordered {
         let mut next = Vec::new();
         let mut signatures = HashSet::new();
@@ -2175,8 +2186,23 @@ fn advance_compact_boundary_domains<'a>(
                     MAX_QUOTIENT_STATES.saturating_sub(next.len()),
                     Some(budget),
                 )? {
-                    let mut next_oriented = oriented_edges.clone();
-                    next_oriented.extend(face.boundaries.iter().flatten().map(|use_| use_.edge));
+                    let mut next_oriented = HashSet::new();
+                    for &edge in &oriented_edges {
+                        crate::resource::insert_set(
+                            ctx,
+                            &mut next_oriented,
+                            edge,
+                            "catia_compact_boundary_oriented_copy",
+                        )?;
+                    }
+                    for use_ in face.boundaries.iter().flatten() {
+                        crate::resource::insert_set(
+                            ctx,
+                            &mut next_oriented,
+                            use_.edge,
+                            "catia_compact_boundary_oriented_edges",
+                        )?;
+                    }
                     if !budget.charge_by(
                         candidate
                             .signature_work()
@@ -2184,10 +2210,28 @@ fn advance_compact_boundary_domains<'a>(
                     ) {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                     }
-                    let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
+                    let mut oriented_signature = Vec::new();
+                    for &edge in &next_oriented {
+                        crate::resource::push(
+                            ctx,
+                            &mut oriented_signature,
+                            edge,
+                            "catia_compact_boundary_oriented_signature",
+                        )?;
+                    }
                     oriented_signature.sort_unstable();
-                    if signatures.insert((candidate.signature(), oriented_signature)) {
-                        next.push((candidate, next_oriented));
+                    if crate::resource::insert_set(
+                        ctx,
+                        &mut signatures,
+                        (candidate.signature_charged(ctx)?, oriented_signature),
+                        "catia_compact_boundary_signatures",
+                    )? {
+                        crate::resource::push(
+                            ctx,
+                            &mut next,
+                            (candidate, next_oriented),
+                            "catia_compact_boundary_next_states",
+                        )?;
                     }
                     if next.len() == MAX_QUOTIENT_STATES {
                         break;

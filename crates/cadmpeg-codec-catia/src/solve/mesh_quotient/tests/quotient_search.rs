@@ -160,6 +160,55 @@ fn possible_face_equations_charge_each_face_and_equation() {
 }
 
 #[test]
+fn selection_state_signature_charges_nested_face_directions() {
+    let assignments = [Vec::new()];
+    let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0]))]);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: vec![Some(true)],
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![true]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        search.selection_state_signature(&quotient, false)
+    };
+    let signature =
+        crate::test_support::with_service_context(run).expect("service resource budget");
+    assert_eq!(signature.1, vec![Some((0, vec![vec![true]]))]);
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            _ => panic!("unexpected selection signature result"),
+        }
+    }
+    for operation in [
+        "catia_selection_signature_faces",
+        "catia_selection_signature_edge_orientations",
+        "catia_direction_copy_rows",
+        "catia_direction_copy_values",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
     const EDGE_COUNT: usize = 10;
     catia_test_context!(ctx);

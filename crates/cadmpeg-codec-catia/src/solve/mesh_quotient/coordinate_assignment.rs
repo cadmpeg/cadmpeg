@@ -1800,7 +1800,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             root,
             "catia_coordinate_closure_assigned_point_roots",
         )? {
-            let Some(merged) = quotient.merge(previous, root) else {
+            let Some(merged) = quotient.merge_charged(ctx, previous, root)? else {
                 return Ok(None);
             };
             root_by_point.insert(point, merged);
