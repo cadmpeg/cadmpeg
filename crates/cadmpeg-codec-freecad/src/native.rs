@@ -2674,6 +2674,29 @@ pub(crate) struct LinkTarget {
 }
 
 impl LinkTarget {
+    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let document = match &self.document {
+            Some(ExternalDocument::File(value)) => Some(ExternalDocument::File(
+                NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link document copy")?)
+                    .ok_or_else(|| CodecError::Malformed("link document is empty".into()))?,
+            )),
+            Some(ExternalDocument::Name(value)) => Some(ExternalDocument::Name(
+                NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link document copy")?)
+                    .ok_or_else(|| CodecError::Malformed("link document is empty".into()))?,
+            )),
+            None => None,
+        };
+        let object = self.object.as_ref().map(|value| {
+            NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link object copy")?)
+                .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
+        }).transpose()?;
+        let mut subelements = crate::resource::collection_vec(ctx, self.subelements.len(), "FreeCAD link subelement copies")?;
+        for subelement in &self.subelements {
+            subelements.push(crate::resource::retained_string(ctx, subelement, "FreeCAD link subelement text")?);
+        }
+        Ok(Self { document, object, subelements })
+    }
+
     /// Admits a target from a parsed link element, or absence when the element
     /// selects no document, object, or subelement.
     pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {

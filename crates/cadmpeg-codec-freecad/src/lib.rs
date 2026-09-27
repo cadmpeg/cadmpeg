@@ -201,8 +201,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .map(|object| (object.id.as_str(), object))
         .collect::<HashMap<_, _>>();
     let applications_match =
-        match application::matches_native(namespace, &objects, &properties, &entries) {
+        match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
             Ok(matches) => matches,
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => {
+                return Err(CodecError::ResourceLimit(limit));
+            }
             Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
         };
     if !applications_match {
@@ -230,12 +233,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    match attachment::transfer(&objects, &properties) {
+    match attachment::transfer(ctx, &objects, &properties) {
         Ok(expected) if attachments != expected => findings.push(finding(
             Check::NativeLinks,
             "FCStd attachment graph does not match the application property graph",
             None,
         )),
+        Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => findings.push(finding(
             Check::NativeLinks,
             format!("FCStd attachment properties are malformed: {error}"),
@@ -970,7 +974,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
             )?;
-            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
+            let attachments = attachment::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "attachments", &attachments)?;
             let mut curve_transfer =
                 brep::transfer_text_curves(&shape_payloads, &graph.properties)?;
