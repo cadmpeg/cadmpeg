@@ -25,6 +25,48 @@ fn lex_under_policy(
 }
 
 #[test]
+fn normalized_name_refuses_retained_byte_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let error = lex_under_policy(b"ABC", policy, false)
+        .expect_err("three name bytes exceed two retained bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_lex_normalized_retained"
+    ));
+}
+
+#[test]
+fn normalized_number_refuses_temporary_byte_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 2;
+    let error = lex_under_policy(b"123", policy, false)
+        .expect_err("three number bytes exceed two temporary bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "step_lex_normalized_temp"
+    ));
+}
+
+#[test]
+fn quoted_string_refuses_collection_item_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let error = lex_under_policy(b"'abc'", policy, false)
+        .expect_err("three string bytes exceed two collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_string_lexeme_items"
+    ));
+}
+
+#[test]
 fn binary_lexeme_reserves_temporary_digits_before_allocation() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();
