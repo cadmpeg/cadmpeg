@@ -4,7 +4,62 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{admit_new_feature_id, merge_feature_source_properties, ordered_row_feature_ids};
+use super::{
+    admit_new_feature_id, merge_feature_source_properties, ordered_row_feature_ids,
+    refresh_feature_outputs,
+};
+
+fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureId, FeatureOperation,
+    };
+
+    Feature {
+        id: FeatureId::mint("creo:model:feature#40").expect("identity grammar"),
+        ordinal: 3,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        )),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn feature_output_refresh_refuses_before_update_rows() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(feature_for_output_refresh());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = refresh_feature_outputs(&ctx, &scan, &mut ir)
+        .expect_err("one refresh needs one update row");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo feature output update rows"));
+    assert_eq!(ir.model.features[0].ordinal, 3);
+}
+
+#[test]
+fn feature_output_refresh_preserves_feature_order() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(feature_for_output_refresh());
+    crate::decode::with_test_decode_ctx(|ctx| refresh_feature_outputs(ctx, &scan, &mut ir))
+        .expect("service profile admits the output update");
+    assert_eq!(ir.model.features[0].ordinal, 3);
+    assert!(ir.model.features[0].evaluation.outputs().is_empty());
+}
 
 fn property_key(value: &str) -> cadmpeg_core::text::NonBlankString {
     cadmpeg_core::text::NonBlankString::new(value).expect("fixture property key is nonblank")
