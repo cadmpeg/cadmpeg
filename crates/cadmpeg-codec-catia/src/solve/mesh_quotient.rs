@@ -239,6 +239,19 @@ pub(crate) enum MeshFaceAssignmentCandidates<'a> {
 type MeshEndpointResolve =
     MeshSolve<(StandardTopology, Vec<usize>), MeshCandidateFailure<(), (), ()>>;
 
+fn copy_mesh_endpoint_resolution(
+    ctx: &DecodeContext<'_>,
+    resolution: &MeshEndpointResolve,
+) -> Result<MeshEndpointResolve, CodecError> {
+    Ok(match resolution {
+        MeshSolve::Solved((topology, points)) => MeshSolve::Solved((
+            topology.clone_charged(ctx)?,
+            crate::resource::copy_retained_slice(ctx, points, "catia_endpoint_memo_points")?,
+        )),
+        MeshSolve::Failed(failure) => MeshSolve::Failed(*failure),
+    })
+}
+
 impl<T> From<SearchOutcome<T>> for MeshSolve<T, MeshCandidateFailure<(), (), ()>> {
     fn from(outcome: SearchOutcome<T>) -> Self {
         match outcome {
@@ -11328,11 +11341,11 @@ fn resolve_standard_mesh_endpoint_candidates(
         return Ok(resolved);
     }
     let coordinate_domains = if let Some(preparation_limit) = quotient
-        .clone()
+        .clone_charged(ctx)?
         .coordinate_domain_preparation_limit(vertex_points.len(), &edge_candidates)
     {
         let preparation_budget = budget.session_child_slice(preparation_limit);
-        let mut coordinate_quotient = quotient.clone();
+        let mut coordinate_quotient = quotient.clone_charged(ctx)?;
         coordinate_quotient.prepare_coordinate_root_domains(
             ctx,
             vertex_points.len(),
@@ -11342,18 +11355,16 @@ fn resolve_standard_mesh_endpoint_candidates(
     } else {
         None
     };
-    let face_work = assignments
-        .iter()
-        .map(|assignments| Some(assignments.len()))
-        .collect::<Vec<_>>();
-    let Some(total_work) = face_work
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()
-        .and_then(|work| work.into_iter().try_fold(0usize, usize::checked_add))
-    else {
-        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
-    };
+    let mut face_work = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut face_work, assignments.len(), "catia_selection_face_work")?;
+    let mut total_work = 0usize;
+    for face in &assignments {
+        let Some(next) = total_work.checked_add(face.len()) else {
+            return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
+        };
+        total_work = next;
+        face_work.push(Some(face.len()));
+    }
     if total_work > MAX_SELECTION_WORK {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     }
@@ -11615,7 +11626,7 @@ where
             MeshCandidateRejection::QuotientPreparation,
         )));
     };
-    let mut propagated_quotient = mesh_quotient.clone();
+    let mut propagated_quotient = mesh_quotient.clone_charged(ctx)?;
     match propagate_common_ordered_face_quotients(
         ctx,
         &mesh_domains,
@@ -11644,7 +11655,7 @@ where
             MeshCandidateRejection::QuotientPreparation,
         )));
     }
-    let completed_edge_candidates = edge_candidates.to_vec();
+    let completed_edge_candidates = crate::resource::copy_retained_rows(ctx, edge_candidates, "catia_completed_edge_candidate_rows", "catia_completed_edge_candidate_pairs")?;
     if !mesh_quotient.edge_domains_viable(ctx, &completed_edge_candidates)? {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::QuotientPreparation,
@@ -11657,13 +11668,10 @@ where
             MeshCandidateRejection::EdgeClassConstraint,
         )));
     };
-    let constraint_edges = partial_constraint_edges
-        .iter()
-        .zip(preferred_assignment_edges)
-        .zip(&class_constraint.active)
-        .map(|((partial, preferred), class)| *partial || *preferred || *class)
-        .collect::<Vec<_>>();
-    let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
+    let mut constraint_edges = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut constraint_edges, partial_constraint_edges.len(), "catia_mesh_constraint_edges")?;
+    constraint_edges.extend(partial_constraint_edges.iter().zip(preferred_assignment_edges).zip(&class_constraint.active).map(|((partial, preferred), class)| *partial || *preferred || *class));
+    let mut assignment_predecessors = ctx.alloc_filled(completed_edge_candidates.len(), None, "catia_mesh_assignment_predecessors")?;
     for &(left, right) in &class_constraint.ordered {
         assignment_predecessors[right] = Some(
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
@@ -11707,27 +11715,25 @@ where
         }),
         Some(&endpoint_budget),
         &|pairs| {
-            Ok(constrained_complete_solution_valid(
-                &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
-            ))
+            let mut completed = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut completed, pairs.len(), "catia_mesh_completed_predicate_pairs")?;
+            completed.extend(pairs.iter().copied().map(Some));
+            Ok(constrained_complete_solution_valid(&completed))
         },
         &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
-            let endpoint_key = pairs.to_vec();
-            let endpoint_resolution = if let Some(cached) =
-                endpoint_resolution_memo.get(&endpoint_key).cloned()
-            {
-                cached
+            let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs) {
+                copy_mesh_endpoint_resolution(ctx, cached)?
             } else {
                 let Some(oriented_pairs) =
                     restore_unique_endpoint_pair_orientations(ctx, pairs, &completed_edge_candidates)?
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
-                let singleton = oriented_pairs
-                    .iter()
-                    .copied()
-                    .map(|pair| vec![pair])
-                    .collect::<Vec<_>>();
+                let mut singleton = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut singleton, oriented_pairs.len(), "catia_mesh_singleton_pair_rows")?;
+                for &pair in &oriented_pairs {
+                    singleton.push(ctx.alloc_filled(1, pair, "catia_mesh_singleton_pair")?);
+                }
                 let Some(mut mesh_assignments) =
                     materialize_boundary_domains(ctx, &mesh_domains, &oriented_pairs)?
                 else {
@@ -11758,7 +11764,9 @@ where
                 // The parent budget only decreases, so retrying the same key
                 // cannot turn an exhausted materialization into a solution.
                 if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
-                    endpoint_resolution_memo.insert(endpoint_key, resolution.clone());
+                    let endpoint_key = crate::resource::copy_retained_slice(ctx, pairs, "catia_endpoint_memo_key")?;
+                    let retained = copy_mesh_endpoint_resolution(ctx, &resolution)?;
+                    crate::resource::insert_map(ctx, &mut endpoint_resolution_memo, endpoint_key, retained, "catia_endpoint_memo_entries")?;
                 }
                 resolution
             };
@@ -11840,17 +11848,15 @@ where
         return Ok(MeshSolve::Solved((topology, assignment)));
     }
     let fallback = (|| -> Result<Option<MeshEndpointResolve>, CodecError> {
-        let assignments = mesh_domains
-            .into_iter()
-            .map(|domain| match domain {
-                MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
+        let mut assignments = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut assignments, mesh_domains.len(), "catia_mesh_fallback_assignment_rows")?;
+        for domain in mesh_domains {
+            match domain {
+                MeshFaceBoundaryDomain::Ordered(face) => assignments.push(face),
                 MeshFaceBoundaryDomain::UnorderedFullCycle(_)
-                | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(assignments) = assignments else {
-            return Ok(None);
-        };
+                | MeshFaceBoundaryDomain::DeferredValidation(_) => return Ok(None),
+            }
+        }
         let resolution = resolve_standard_mesh_endpoint_candidates(
             ctx,
             &edge_rows,
@@ -11904,6 +11910,7 @@ where
 /// A second solved assignment is semantic ambiguity: no topology gauge may
 /// erase a different edge-to-face incidence graph.
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
+    ctx: &DecodeContext<'_>,
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget<'_>,
     mut solve: F,
@@ -11935,7 +11942,7 @@ where
                     }
                     return Ok(true);
                 }
-                solution = Some((assignment.to_vec(), topology, point_assignment));
+                solution = Some((crate::resource::copy_retained_slice(ctx, assignment, "catia_face_domain_solution_assignment")?, topology, point_assignment));
                 Ok(true)
             }
             MeshSolve::Failed(MeshCandidateFailure::Rejected(reason)) => {
@@ -12237,11 +12244,13 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
 
 #[test]
 fn face_domain_solver_returns_the_unique_concrete_assignment() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 0]];
     let allowed_faces = [vec![2, 1]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let mut visited = Vec::new();
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
+        &ctx,
         MeshFaceAssignmentCandidates::Domains {
             edge_faces: &edge_faces,
             allowed_faces: &allowed_faces,
@@ -12277,11 +12286,52 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
 }
 
 #[test]
+fn face_domain_solution_copy_refuses_before_retaining_assignment() {
+    let assignments = [vec![[0, 0]]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
+        parse_standard_mesh_candidate_outcome_with_face_assignments(
+            ctx,
+            MeshFaceAssignmentCandidates::Concrete {
+                assignments: &assignments,
+                face_count: 1,
+            },
+            &budget,
+            |_, _| {
+                Ok(MeshSolve::Solved((
+                    StandardTopology {
+                        faces: Vec::new(),
+                        edge_rows: Vec::new(),
+                        vertex_points: Vec::new(),
+                        logical_vertex_count: 0,
+                    },
+                    Vec::new(),
+                )))
+            },
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(matches!(run(&service_ctx), Ok(MeshSolve::Solved(_))));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture input");
+    assert!(matches!(
+        run(&limited_ctx),
+        Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_face_domain_solution_assignment"
+    ));
+}
+
+#[test]
 fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
+    catia_test_context!(ctx);
     let assignments = [vec![[0, 0]], vec![[0, 2]]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let mut visited = Vec::new();
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
+        &ctx,
         MeshFaceAssignmentCandidates::Concrete {
             assignments: &assignments,
             face_count: 3,
@@ -12317,10 +12367,12 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
 
 #[test]
 fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 0]];
     let allowed_faces = [vec![1, 2]];
     let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
     let result = parse_standard_mesh_candidate_outcome_with_face_assignments(
+        &ctx,
         MeshFaceAssignmentCandidates::Domains {
             edge_faces: &edge_faces,
             allowed_faces: &allowed_faces,
