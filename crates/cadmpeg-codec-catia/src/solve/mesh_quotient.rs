@@ -9938,6 +9938,83 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
 }
 
 #[test]
+fn general_mesh_search_charges_unselected_and_face_state_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let edge_rows = (0..2)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let candidates = [vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_standard_mesh_endpoint_candidates(
+            ctx,
+            &edge_rows,
+            &vertex_points,
+            &candidates,
+            assignments.clone(),
+            &[[0, 0], [1, 1]],
+            None,
+            None,
+            &budget,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    run(&service_ctx).expect("service resource budget");
+
+    let mut refused = HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(_) => {
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected general search refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "adaptive caps must admit the general search fixture"
+    );
+    for operation in [
+        "catia_endpoint_unselected_edges",
+        "catia_mesh_fixed_face_directions",
+        "catia_mesh_selected_faces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
