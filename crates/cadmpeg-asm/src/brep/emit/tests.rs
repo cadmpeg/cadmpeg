@@ -17,6 +17,49 @@ use cadmpeg_ir::topology::Sense;
 use std::collections::HashSet;
 
 #[test]
+fn emitted_vertex_blend_boundaries_refuse_collection_limit() {
+    use crate::nurbs::proc_surface::{
+        EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let construction = EmbeddedVertexBlend {
+        revision: None,
+        boundaries: vec![EmbeddedVertexBlendBoundary {
+            boundary_type: false,
+            magic: Vector3::new(0.0, 0.0, 0.0),
+            u_smoothing: false,
+            v_smoothing: false,
+            fullness: 0.0,
+            geometry: EmbeddedVertexBlendBoundaryGeometry::Degenerate {
+                location: Point3::new(0.0, 0.0, 0.0),
+                normals: [Vector3::new(0.0, 0.0, 1.0); 2],
+            },
+        }],
+        grid_size: 1,
+        fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(0.0).unwrap(),
+    };
+    let error = super::emit_vertex_blend_surface(
+        &ctx,
+        &mut AsmBrep::default(),
+        1,
+        construction,
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("boundary allocation must refuse");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
 fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -212,7 +255,12 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).unwrap();
         emit_coedges(
+            &ctx,
             &mut out,
             &records,
             &table,
@@ -259,7 +307,12 @@ fn tolerant_coedge_source_refuses_nonfinite_interval() {
         ..Reachable::default()
     };
     let mut out = AsmBrep::default();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
     let error = emit_coedges(
+        &ctx,
         &mut out,
         &records,
         &table,

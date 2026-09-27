@@ -6984,7 +6984,12 @@ mod revision_surface_tail_tests {
         )
         .expect("valid single-record byte fixture");
         let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
-        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
+        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&ctx, &mut cur)
+            .transpose().expect("resource allocation")
             .expect("decoded parameterized tail");
         assert_eq!(cur.pos(), toks.len());
         let cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(actual) =

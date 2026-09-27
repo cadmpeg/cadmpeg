@@ -126,11 +126,10 @@ pub(super) fn keep_faces_and_carriers(
         {
             procedural_surface_defs.insert(surf_ref, procedural?);
         }
-        if let Some(geometry) = procedural_surface_defs
-            .get(&surf_ref)
-            .and_then(|procedural| analytic_procedural_surface(procedural.definition()))
-        {
-            surface_geo.insert(surf_ref, geometry);
+        if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
+            if let Some(geometry) = analytic_procedural_surface(ctx, procedural.definition()) {
+                surface_geo.insert(surf_ref, geometry?);
+            }
         }
         let exact_cacheless_construction =
             procedural_surface_defs
@@ -145,9 +144,9 @@ pub(super) fn keep_faces_and_carriers(
         if !exact_cacheless_construction {
             if let std::collections::hash_map::Entry::Vacant(e) = surface_geo.entry(surf_ref) {
                 if let Some(ns) =
-                    nurbs::core::surface_cache_resolving_refs(&surf_rec.tokens, token_table)
+                    nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
                 {
-                    e.insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns)));
+                    e.insert(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)));
                     if surf_rec.head() == "spline"
                         && !procedural_surface_defs.contains_key(&surf_ref)
                     {
@@ -304,8 +303,8 @@ pub(super) fn walk_reachable_topology(
                                             5,
                                             "exp_par_cur",
                                         ) {
-                                            nurbs::pcurve::explicit_pcurve_cache(span)
-                                                .map(|pcurve| Ok((pcurve, true)))
+                                            nurbs::pcurve::explicit_pcurve_cache(ctx, span)
+                                                .map(|pcurve| pcurve.map(|pcurve| (pcurve, true)))
                                         } else if let Some(span) =
                                             nurbs::toks::payload_subtype_toks(prec, 5, "ref")
                                         {
@@ -314,11 +313,11 @@ pub(super) fn walk_reachable_topology(
                                             // index is the field after it.
                                             match span.interior() {
                                                 [_name, Token::Long(index), ..] =>
-                                                    nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(
+                                                    nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(ctx,
                                                         *index,
                                                         token_table,
                                                     )
-                                                    .map(|pcurve| Ok((pcurve, true))),
+                                                    .map(|pcurve| pcurve.map(|pcurve| (pcurve, true))),
                                                 _ => None,
                                             }
                                         } else {

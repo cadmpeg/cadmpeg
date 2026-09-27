@@ -705,10 +705,16 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 
 #[test]
 fn ref_pcurve_resolves_intcurve_uv_slot() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
     let (pcurve, _) = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+        &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &intcurve,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -721,11 +727,14 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
         )
         .expect("valid single-record byte fixture"),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .expect("intcurve slot 2 carries the UV cache");
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+            &ctx,
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &intcurve,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
@@ -738,12 +747,19 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
             )
             .expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .is_none()
     );
 }
 
 #[test]
 fn ref_pcurve_rejects_orphan_typed_slot() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -756,6 +772,7 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
 
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+            &ctx,
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &source,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
@@ -768,6 +785,8 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
             )
             .expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .is_none(),
         "a pcurve without its typed support surface is not a carrier"
     );

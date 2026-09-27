@@ -1841,7 +1841,12 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
+        &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &source,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -1850,6 +1855,7 @@ fn subtype_reference_resolves_surface_cache() {
         &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight)
             .expect("valid single-record byte fixture"),
     )
+    .transpose().expect("resource allocation")
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
 }
@@ -1915,6 +1921,11 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     use cadmpeg_asm::nurbs::proc_surface::{
         procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -1929,6 +1940,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
+        &ctx,
         &record.tokens,
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     ).transpose().expect("resource allocation did not fail")
@@ -1957,6 +1969,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     )
     .unwrap();
     assert!(procedural_surface_resolving_refs(
+        &ctx,
         &nested_records[0].tokens,
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     ).transpose().expect("resource allocation did not fail")
