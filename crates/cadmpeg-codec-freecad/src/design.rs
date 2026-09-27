@@ -45,7 +45,7 @@ use cadmpeg_ir::{
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_vec, reserved_vec};
+use crate::resource::{collection_allocation_failed, collection_vec, reserved_vec, retained_string};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -112,6 +112,7 @@ pub(crate) fn transfer(
         .map(|candidate| Ok((feature_id(candidate)?, candidate.order)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
+        ctx,
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -646,37 +647,41 @@ fn body_tip(
 }
 
 fn feature_ordinals<'a>(
+    ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     source_order: &HashMap<FeatureId, usize>,
 ) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
-    let design_objects = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .collect::<Vec<_>>();
-    let object_by_id = design_objects
-        .iter()
-        .map(|object| (object.id.as_str(), *object))
-        .collect::<HashMap<_, _>>();
-    let object_by_name = design_objects
-        .iter()
-        .map(|object| (object.name.as_str(), *object))
-        .collect::<HashMap<_, _>>();
-    let object_by_feature = design_objects
-        .iter()
-        .map(|object| Ok((feature_id(object)?, object.id.as_str())))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let mut source_ordinals = design_objects
-        .iter()
-        .map(|object| object.order as u64)
-        .collect::<Vec<_>>();
+    let count = objects.iter().filter(|object| is_design_object(&object.type_name)).count();
+    let mut design_objects = collection_vec(ctx, count, "fcstd design ordered objects")?;
+    design_objects.extend(objects.iter().filter(|object| is_design_object(&object.type_name)));
+    let mut object_by_id = HashMap::new();
+    let mut object_by_name = HashMap::new();
+    let mut object_by_feature = HashMap::new();
+    for (map, operation) in [
+        (&mut object_by_id, "fcstd design id index"),
+        (&mut object_by_name, "fcstd design name index"),
+    ] {
+        ctx.charge_collection_items(count as u64, operation)?;
+        map.try_reserve(count).map_err(|_| collection_allocation_failed(ctx, count as u64, operation))?;
+    }
+    ctx.charge_collection_items(count as u64, "fcstd design feature index")?;
+    object_by_feature.try_reserve(count).map_err(|_| collection_allocation_failed(ctx, count as u64, "fcstd design feature index"))?;
+    let mut source_ordinals = collection_vec(ctx, count, "fcstd design source ordinals")?;
+    for object in &design_objects {
+        object_by_id.insert(object.id.as_str(), *object);
+        object_by_name.insert(object.name.as_str(), *object);
+        object_by_feature.insert(feature_id(object)?, object.id.as_str());
+        source_ordinals.push(object.order as u64);
+    }
     source_ordinals.sort_unstable();
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
 
     while emitted.len() < design_objects.len() {
+        ctx.charge_work(design_objects.len() as u64, "fcstd design dependency ordering")?;
         let next = design_objects
             .iter()
             .copied()
@@ -753,14 +758,12 @@ fn feature_ordinals<'a>(
         let next = if let Some(next) = next {
             next
         } else {
-            let remaining = design_objects
-                .iter()
-                .copied()
+            for object in design_objects.iter().copied().filter(|object| !emitted.contains(object.id.as_str())) {
+                ctx.charge_collection_items(1, "fcstd design cycle affected objects")?;
+                cycle_affected.insert(retained_string(ctx, &object.id, "fcstd design cycle object")?);
+            }
+            design_objects.iter().copied()
                 .filter(|object| !emitted.contains(object.id.as_str()))
-                .collect::<Vec<_>>();
-            cycle_affected.extend(remaining.iter().map(|object| object.id.clone()));
-            remaining
-                .into_iter()
                 .min_by_key(|object| object.order)
                 .ok_or_else(|| {
                     CodecError::malformed(
@@ -769,7 +772,10 @@ fn feature_ordinals<'a>(
                 })?
         };
         let ordinal = source_ordinals[ordinals.len()];
+        ctx.charge_collection_items(1, "fcstd design emitted objects")?;
         emitted.insert(next.id.as_str());
+        ctx.charge_collection_items(1, "fcstd design ordinals")?;
+        ordinals.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd design ordinals"))?;
         ordinals.insert(next.id.as_str(), ordinal);
     }
 

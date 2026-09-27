@@ -11,6 +11,31 @@ mod taper;
 
 use cadmpeg_ir::features::FeatureDefinition;
 
+#[test]
+fn design_ordered_objects_refuse_at_caller_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Body".into(),
+        name: "Body".into(),
+        type_name: "PartDesign::Body".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::feature_ordinals(
+        &ctx, &[object], &Default::default(), &Default::default(), &Default::default(),
+    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "fcstd design ordered objects"));
+}
+
 /// Feature definition selected by exact feature name.
 fn definition<'a>(
     result: &'a cadmpeg_ir::codec::DecodeResult,
