@@ -66,7 +66,7 @@ fn native_base64_stream_refuses_retained_limit_and_preserves_json_bytes() {
     };
     let expected = format!(
         "{{\"id\":\"test:native:base64#1\",\"payload\":\"{}\"}}",
-        STANDARD.encode(&bytes)
+        STANDARD.encode(bytes)
     );
     assert_eq!(serde_json::to_string(&record).unwrap(), expected);
 
