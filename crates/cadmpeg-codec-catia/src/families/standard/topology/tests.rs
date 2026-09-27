@@ -459,6 +459,77 @@ fn face_component_collections_refuse_before_group_result() {
 }
 
 #[test]
+fn mesh_selection_reconstruction_refuses_nested_collection_limits() {
+    use super::{reconstruct_mesh_selection, EdgeBoundaryLayout, EdgeRow};
+    use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let rows = vec![EdgeRow {
+        kind: 0,
+        handles: vec![0],
+        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let assignment_for = |edge| MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let directions = [vec![vec![false]]];
+    let points = [[0.0, 0.0, 0.0]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(
+        reconstruct_mesh_selection(&ctx, &rows, &points, &[assignment_for(1)], &directions)
+            .expect("service resource budget")
+            .is_none()
+    );
+    assert!(
+        reconstruct_mesh_selection(&ctx, &rows, &points, &[assignment_for(0)], &directions)
+            .expect("service resource budget")
+            .is_some()
+    );
+
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match reconstruct_mesh_selection(&ctx, &rows, &points, &[assignment_for(0)], &directions) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("single edge selection must reconstruct"),
+            Err(error) => panic!("unexpected reconstruction refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_mesh_selection_union",
+        "catia_mesh_selection_corner_nodes",
+        "catia_mesh_selection_corners",
+        "catia_mesh_selection_coedges",
+        "catia_mesh_selection_boundaries",
+        "catia_mesh_selection_faces",
+        "catia_mesh_selection_roots",
+        "catia_mesh_selection_edge_copy",
+        "catia_mesh_selection_handle_copy",
+        "catia_mesh_selection_point_copy",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn incidence_cycles_rejects_duplicate_and_out_of_range_edges() {
     assert!(incidence_cycles(&[0, 0], &[[0, 0]]).is_none());
     assert!(incidence_cycles(&[1], &[[0, 0]]).is_none());

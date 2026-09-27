@@ -6508,11 +6508,12 @@ fn resolve_fixed_mesh_endpoint_pairs(
     }
     if direct_possible {
         let outcome = reconstruct_mesh_selection(
-            edge_rows.to_vec(),
-            vertex_points.to_vec(),
+            ctx,
+            edge_rows,
+            vertex_points,
             selected,
             &direct_directions,
-        )
+        )?
         .map(|topology| {
             resolve_mesh_selection_from_quotient(
                 ctx,
@@ -7914,11 +7915,13 @@ impl MeshSelectionSearch<'_, '_> {
             };
             let candidate = 'candidate: {
                 let Some(mut topology) = reconstruct_mesh_selection(
-                    self.edge_rows.to_vec(),
-                    self.vertex_points.to_vec(),
+                    self.ctx,
+                    self.edge_rows,
+                    self.vertex_points,
                     &selected_assignments,
                     &directions,
-                ) else {
+                )?
+                else {
                     break 'candidate None;
                 };
                 let mut use_counts = self.ctx.alloc_filled(
@@ -8574,12 +8577,9 @@ fn resolve_singleton_mesh_selection(
     {
         return Ok(None);
     }
-    let Some(topology) = reconstruct_mesh_selection(
-        edge_rows.to_vec(),
-        vertex_points.to_vec(),
-        selected,
-        directions,
-    ) else {
+    let Some(topology) =
+        reconstruct_mesh_selection(ctx, edge_rows, vertex_points, selected, directions)?
+    else {
         return Ok(None);
     };
     let Some(edge_vertices) = topology.edge_vertices(ctx)? else {

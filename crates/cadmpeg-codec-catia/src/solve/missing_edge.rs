@@ -2918,20 +2918,14 @@ fn parse_standard_mesh_selection(
     if selected_assignments.len() != face_count || edge_directions.len() != face_count {
         return Ok(None);
     }
-    let selected = assignments
-        .iter()
-        .zip(selected_assignments)
-        .map(|(face, &assignment)| face.get(assignment).cloned())
-        .collect::<Option<Vec<_>>>();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    Ok(reconstruct_mesh_selection(
-        edge_rows,
-        vertex_points,
-        &selected,
-        edge_directions,
-    ))
+    let mut selected = Vec::new();
+    for (face, &assignment) in assignments.iter().zip(selected_assignments) {
+        let Some(choice) = face.get(assignment) else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut selected, choice, "catia_mesh_selection_choices")?;
+    }
+    reconstruct_mesh_selection(ctx, &edge_rows, &vertex_points, &selected, edge_directions)
 }
 
 #[derive(Debug)]

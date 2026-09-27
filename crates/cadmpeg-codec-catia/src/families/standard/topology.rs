@@ -1214,28 +1214,40 @@ pub(super) fn reconstruct(
 }
 
 pub(crate) fn reconstruct_mesh_selection(
-    edge_rows: Vec<EdgeRow>,
-    vertex_points: Vec<[f64; 3]>,
-    selected: &[MeshFaceBoundaryAssignment],
+    ctx: &DecodeContext<'_>,
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    selected: &[impl std::borrow::Borrow<MeshFaceBoundaryAssignment>],
     unmatched_reversed: &[Vec<Vec<bool>>],
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     if selected.len() != unmatched_reversed.len() {
-        return None;
+        return Ok(None);
     }
-    let mut union = UnionFind::new(edge_rows.len() * 2);
-    let mut faces = Vec::with_capacity(selected.len());
+    let node_count = edge_rows
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_selection_union", u64::MAX, u64::MAX))?;
+    let mut union = UnionFind::charged(ctx, node_count, "catia_mesh_selection_union")?;
+    let mut faces = Vec::new();
     for (face, directions) in selected.iter().zip(unmatched_reversed) {
+        let face = std::borrow::Borrow::borrow(face);
         if face.boundaries.len() != directions.len() {
-            return None;
+            return Ok(None);
         }
-        let mut boundaries = Vec::with_capacity(face.boundaries.len());
+        let mut boundaries = Vec::new();
         for (uses, directions) in face.boundaries.iter().zip(directions) {
             if uses.len() != directions.len() {
-                return None;
+                return Ok(None);
             }
             let mut paired_uses = uses.iter().zip(directions).enumerate();
-            let (first_index, (first_use, &first_reversed)) = paired_uses.next()?;
-            let corners = (0..uses.len()).map(|_| union.push()).collect::<Vec<_>>();
+            let Some((first_index, (first_use, &first_reversed))) = paired_uses.next() else {
+                return Ok(None);
+            };
+            let mut corners = Vec::new();
+            for _ in 0..uses.len() {
+                let corner = union.push_charged(ctx, "catia_mesh_selection_corner_nodes")?;
+                crate::resource::push(ctx, &mut corners, corner, "catia_mesh_selection_corners")?;
+            }
             let mut admit_coedge = |use_index: usize,
                                     use_: &MeshBoundaryEdgeCandidate,
                                     unmatched_reversed: bool|
@@ -1248,7 +1260,7 @@ pub(crate) fn reconstruct_mesh_selection(
                 let end_vertex = corners[(use_index + 1) % corners.len()];
                 let edge_start = use_.edge.checked_mul(2)?;
                 let edge_end = edge_start.checked_add(1)?;
-                if edge_end >= edge_rows.len() * 2 {
+                if edge_end >= node_count {
                     return None;
                 }
                 if reversed {
@@ -1265,20 +1277,41 @@ pub(crate) fn reconstruct_mesh_selection(
                     end_vertex,
                 })
             };
-            let mut coedges =
-                NonEmptyCoedges::one(admit_coedge(first_index, first_use, first_reversed)?);
+            let Some(first) = admit_coedge(first_index, first_use, first_reversed) else {
+                return Ok(None);
+            };
+            let mut coedges = Vec::new();
+            crate::resource::push(ctx, &mut coedges, first, "catia_mesh_selection_coedges")?;
             for (use_index, (use_, &unmatched_reversed)) in paired_uses {
-                coedges.push(admit_coedge(use_index, use_, unmatched_reversed)?);
+                let Some(coedge) = admit_coedge(use_index, use_, unmatched_reversed) else {
+                    return Ok(None);
+                };
+                crate::resource::push(ctx, &mut coedges, coedge, "catia_mesh_selection_coedges")?;
             }
-            boundaries.push(Boundary { coedges });
+            let Ok(coedges) = NonEmptyCoedges::try_from(coedges) else {
+                return Ok(None);
+            };
+            crate::resource::push(
+                ctx,
+                &mut boundaries,
+                Boundary { coedges },
+                "catia_mesh_selection_boundaries",
+            )?;
         }
-        faces.push(FaceTopology { boundaries });
+        crate::resource::push(
+            ctx,
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_mesh_selection_faces",
+        )?;
     }
     let mut roots = HashMap::new();
     for node in 0..union.len() {
         let root = union.find(node);
         let next = roots.len();
-        roots.entry(root).or_insert(next);
+        if !roots.contains_key(&root) {
+            crate::resource::insert_map(ctx, &mut roots, root, next, "catia_mesh_selection_roots")?;
+        }
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {
@@ -1288,12 +1321,34 @@ pub(crate) fn reconstruct_mesh_selection(
             }
         }
     }
-    Some(StandardTopology {
+    let mut owned_rows = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut owned_rows,
+        edge_rows.len(),
+        "catia_mesh_selection_edge_copy",
+    )?;
+    for row in edge_rows {
+        owned_rows.push(EdgeRow {
+            kind: row.kind,
+            handles: crate::resource::copy_slice(
+                ctx,
+                &row.handles,
+                "catia_mesh_selection_handle_copy",
+            )?,
+            boundary_layout: row.boundary_layout,
+        });
+    }
+    Ok(Some(StandardTopology {
         faces,
-        edge_rows,
+        edge_rows: owned_rows,
         logical_vertex_count: roots.len(),
-        vertex_points,
-    })
+        vertex_points: crate::resource::copy_slice(
+            ctx,
+            vertex_points,
+            "catia_mesh_selection_point_copy",
+        )?,
+    }))
 }
 
 #[cfg(test)]
