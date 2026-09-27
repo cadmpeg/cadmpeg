@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Collection refusals in the STEP geometry reader.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -137,4 +137,89 @@ fn uncertainty_note_text_refuses_retained_limit() {
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_uncertainty_note_text"
     ));
+}
+
+macro_rules! deferred_ids_refusal_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            assert!(matches!(
+                super::super::push_geometry_vec(&mut Vec::new(), 1u64, &ctx, $operation),
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+deferred_ids_refusal_test!(deferred_curve_ids_refuse_collection_limit, "step_deferred_curve_ids");
+deferred_ids_refusal_test!(deferred_surface_ids_refuse_collection_limit, "step_deferred_surface_ids");
+
+fn deferred_dependency_refusal(limit: u64, group: &'static str, member: &'static str) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    super::super::defer_geometry_dependency(&mut HashMap::new(), 1, 2, &ctx, group, member)
+        .expect_err("dependency exceeds the limit")
+}
+
+#[test]
+fn deferred_curve_groups_refuse_collection_limit() {
+    assert!(matches!(deferred_dependency_refusal(0, "step_deferred_curve_groups", "step_deferred_curve_members"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_curve_groups"));
+}
+
+#[test]
+fn deferred_curve_members_refuse_collection_limit() {
+    assert!(matches!(deferred_dependency_refusal(1, "step_deferred_curve_groups", "step_deferred_curve_members"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_curve_members"));
+}
+
+#[test]
+fn deferred_surface_groups_refuse_collection_limit() {
+    assert!(matches!(deferred_dependency_refusal(0, "step_deferred_surface_groups", "step_deferred_surface_members"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_surface_groups"));
+}
+
+#[test]
+fn deferred_surface_members_refuse_collection_limit() {
+    assert!(matches!(deferred_dependency_refusal(1, "step_deferred_surface_groups", "step_deferred_surface_members"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_surface_members"));
+}
+
+fn deferred_wake_refusal(operation: &'static str) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let mut waiting = HashMap::from([(1, vec![2])]);
+    super::super::wake_deferred_dependents(1, &mut waiting, &mut VecDeque::new(), &ctx, operation)
+        .expect_err("wake queue exceeds the limit")
+}
+
+#[test]
+fn deferred_curve_queue_refuses_collection_limit() {
+    assert!(matches!(deferred_wake_refusal("step_deferred_curve_queue"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_curve_queue"));
+}
+
+#[test]
+fn deferred_surface_queue_refuses_collection_limit() {
+    assert!(matches!(deferred_wake_refusal("step_deferred_surface_queue"),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_deferred_surface_queue"));
 }
