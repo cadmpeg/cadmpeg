@@ -77,13 +77,18 @@ pub(in super::super) fn parallel_support_radius(planes: &[PlaneEquation]) -> Opt
 }
 
 pub(in super::super) fn slot_fillet_cylinder(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cap_planes: [PlaneEquation; 2],
     support_planes: &[PlaneEquation],
-) -> Option<CylinderEquation> {
-    let axis = normalize(cap_planes[0].normal)?;
-    let second_cap_normal = normalize(cap_planes[1].normal)?;
+) -> Result<Option<CylinderEquation>, cadmpeg_core::CodecError> {
+    let Some(axis) = normalize(cap_planes[0].normal) else {
+        return Ok(None);
+    };
+    let Some(second_cap_normal) = normalize(cap_planes[1].normal) else {
+        return Ok(None);
+    };
     if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
-        return None;
+        return Ok(None);
     }
     let cap_gap = dot(
         axis,
@@ -91,16 +96,20 @@ pub(in super::super) fn slot_fillet_cylinder(
     )
     .abs();
     if cap_gap <= EPS_GEOMETRY_AGREEMENT {
-        return None;
+        return Ok(None);
     }
     let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
     for first in 0..support_planes.len() {
-        let first_normal = normalize(support_planes[first].normal)?;
+        let Some(first_normal) = normalize(support_planes[first].normal) else {
+            return Ok(None);
+        };
         if dot(first_normal, axis).abs() > EPS_GEOMETRY_AGREEMENT {
-            return None;
+            return Ok(None);
         }
         for second in first + 1..support_planes.len() {
-            let second_normal = normalize(support_planes[second].normal)?;
+            let Some(second_normal) = normalize(support_planes[second].normal) else {
+                return Ok(None);
+            };
             if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
                 continue;
             }
@@ -114,6 +123,7 @@ pub(in super::super) fn slot_fillet_cylinder(
             if gap <= EPS_GEOMETRY_AGREEMENT {
                 continue;
             }
+            ctx.try_reserve_items(&mut midplanes, 1, "creo slot fillet midplanes")?;
             midplanes.push((
                 PlaneEquation {
                     origin: std::array::from_fn(|index| {
@@ -176,7 +186,7 @@ pub(in super::super) fn slot_fillet_cylinder(
                         .sqrt()
                             <= EPS_CYLINDER_FIT * scale)
                     {
-                        return None;
+                        return Ok(None);
                     }
                 } else {
                     first_candidate = Some(candidate);
@@ -184,14 +194,16 @@ pub(in super::super) fn slot_fillet_cylinder(
             }
         }
     }
-    let first = first_candidate?;
+    let Some(first) = first_candidate else {
+        return Ok(None);
+    };
     let self_delta: [f64; 3] =
         std::array::from_fn(|index| first.origin[index] - first.origin[index]);
-    ((first.radius - first.radius).abs() <= EPS_GEOMETRY_AGREEMENT * first.radius
+    Ok(((first.radius - first.radius).abs() <= EPS_GEOMETRY_AGREEMENT * first.radius
         && (dot(first.axis, first.axis).abs() - 1.0).abs() <= EPS_NORMAL_ALIGNMENT
         && dot(cross(self_delta, first.axis), cross(self_delta, first.axis)).sqrt()
             <= EPS_CYLINDER_FIT * first.radius)
-    .then_some(first)
+    .then_some(first))
 }
 
 pub(in super::super) fn outline_has_unique_radius_delta(

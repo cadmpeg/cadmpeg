@@ -309,6 +309,27 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
 }
 
 #[test]
+fn constrained_slot_fillet_propagates_midplane_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = slot_fillet_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::transfer_constrained_slot_fillet_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("slot midplane exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo slot fillet midplanes"), "{error:?}");
+}
+
+#[test]
 fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
     let mut scan = slot_fillet_scan();
     scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
