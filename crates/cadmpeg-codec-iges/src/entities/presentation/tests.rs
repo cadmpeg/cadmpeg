@@ -122,6 +122,19 @@ fn presentation_appearance_slots_and_copies_refuse_limits() {
 }
 
 #[test]
+fn presentation_loss_records_refuse_slot_and_message_limits() {
+    let invalid_color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00010200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&invalid_color, "iges entity loss slots");
+    assert_presentation_retained_refusal(&invalid_color, "iges entity loss message");
+}
+
+#[test]
 fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
     let fonts = text_font_definition_file();
     for operation in [
