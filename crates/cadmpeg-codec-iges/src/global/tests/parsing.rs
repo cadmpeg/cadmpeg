@@ -73,7 +73,41 @@ fn global_layout_card_refuses_retained_limit_before_allocation() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(crate::global::layout_global_cards(bytes, Some(&ctx)).unwrap().len(), 1);
+    assert_eq!(
+        crate::global::layout_global_cards(bytes, Some(&ctx))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn global_d_exponent_refuses_temporary_limit_before_normalization() {
+    let text = "1D+0";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).unwrap();
+    let result = crate::global::parse_real_text(text, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == 0
+                && limit.additional == 4
+                && limit.operation == "iges global numeric text"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(text.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::global::parse_real_text(text, &ctx)
+            .unwrap()
+            .unwrap()
+            .get(),
+        1.0
+    );
 }
 
 #[test]
