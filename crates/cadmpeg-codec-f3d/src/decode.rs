@@ -2850,6 +2850,7 @@ impl<'a> F3dDecodeSession<'a> {
         };
 
         let (components, occurrences) = crate::design::components::project_local_components(
+            self.ctx,
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
         )?;
