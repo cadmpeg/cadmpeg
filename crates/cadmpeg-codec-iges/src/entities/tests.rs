@@ -68,6 +68,26 @@ fn entity_projection_losses_refuse_slots_and_messages() {
 }
 
 #[test]
+fn entity_projector_indexes_refuse_collection_limits() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 110,
+        form: 0,
+        label: "LINE".into(),
+        status: "00000000",
+        parameters: "110,0;".into(),
+    }]);
+    for name in [
+        "csg", "brep", "structure", "offsets", "surfaces", "trimming", "splines",
+        "composite", "annotation",
+    ] {
+        for index in ["parameter index", "directory index"] {
+            let operation = format!("iges {name} {index}");
+            assert_entity_loss_limit(&bytes, &operation, false);
+        }
+    }
+}
+
+#[test]
 fn affine_parameter_map_retains_finite_ratio_of_overflowing_span() {
     let (scale, offset) = crate::entities::affine_parameter_map([-f64::MAX, f64::MAX], [0.0, 1.0])
         .expect("finite affine map");

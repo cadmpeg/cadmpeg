@@ -319,14 +319,20 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges brep parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges brep directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
@@ -1267,7 +1273,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell candidate failed neutral validation"))?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges brep decoded sequences")?;
         decoded.extend(consumed);
         decoded.extend(edge_ids.keys().map(|key| key.0));
         decoded.extend(vertex_ids.keys().map(|key| key.0));

@@ -2193,14 +2193,20 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges structure parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges structure directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut placement_rejections = BTreeMap::new();
@@ -2432,7 +2438,7 @@ pub(super) fn project(
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "property value layout, attachment, or owner kind is invalid"))?;
         }
@@ -2503,7 +2509,7 @@ pub(super) fn project(
             }
         }
         if name_valid && list_type_valid && attributes_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
             if entry.form == 0 {
                 attribute_shapes.insert(entry.sequence, shape);
             }
@@ -2554,7 +2560,7 @@ pub(super) fn project(
             }
         }
         if values_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "attribute-table instance definition, row count, or typed value is invalid"))?;
         }
@@ -2588,7 +2594,7 @@ pub(super) fn project(
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
         }
@@ -2623,7 +2629,7 @@ pub(super) fn project(
             && entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
         }
@@ -2661,7 +2667,7 @@ pub(super) fn project(
                 })
         });
         if members.is_some() && back_pointers_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "group member list or required association back pointer is invalid"))?;
         }
@@ -2695,7 +2701,7 @@ pub(super) fn project(
                 )
             };
         if valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
             if entry.form == 9 {
                 match legacy_single_parent_face(
                     ir,
@@ -2833,7 +2839,7 @@ pub(super) fn project(
                 .filter(|target| flows.contains_key(target))
         })?;
         if flow_targets_valid && !cyclic {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
         }
@@ -2854,7 +2860,7 @@ pub(super) fn project(
             _ => false,
         };
         if fields_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "external-reference file, symbolic, or library identifier is empty or invalid"))?;
         }
@@ -2922,7 +2928,7 @@ pub(super) fn project(
                 && locations.is_some_and(|total| array_mask_valid(record, 9, 10, 11, total))
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "array base, dimensions, selection mask, transform, or acyclicity is invalid"))?;
         }
@@ -2991,7 +2997,7 @@ pub(super) fn project(
             && transform_valid
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "connect-point fields, references, placement, or use flag are invalid"))?;
         }
@@ -3034,7 +3040,7 @@ pub(super) fn project(
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
         if target_valid && transform_valid && !cyclic {
-            decoded.insert(*sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-instance form, target, transform, or acyclicity is invalid"))?;
         }
@@ -3140,7 +3146,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"))?;
             continue;
         }
-        decoded.insert(*sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
     }
 
     let mut definitions = BTreeMap::new();
@@ -3402,7 +3408,7 @@ pub(super) fn project(
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {
-            decoded.insert(*sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure definition fields or nesting depth is invalid"))?;
         }
@@ -3413,7 +3419,7 @@ pub(super) fn project(
             && definition_fields_valid.contains(definition_sequence)
             && decoded.contains(definition_sequence)
         {
-            decoded.insert(*sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections
                 .entry(*sequence)
@@ -3446,7 +3452,7 @@ pub(super) fn project(
             }
         });
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            decoded.insert(*sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition fields or nesting depth is invalid"))?;
         }
@@ -3467,7 +3473,7 @@ pub(super) fn project(
             && definition_valid
             && decoded.contains(&instance.definition)
         {
-            decoded.insert(*sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections.entry(*sequence).or_insert(
                 if decoded.contains(&instance.definition) {

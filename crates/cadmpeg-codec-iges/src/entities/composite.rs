@@ -2085,14 +2085,20 @@ fn project_with_type_130_policy(
     sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut records, record.directory_sequence, record,
+            "iges composite parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut entries, entry.sequence, entry,
+            "iges composite directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -2272,7 +2278,7 @@ fn project_with_type_130_policy(
             )?;
             if let Some(edge) = edge {
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
             }
             continue;
         }
@@ -2303,7 +2309,7 @@ fn project_with_type_130_policy(
                 )?;
                 if let Some(edge) = edge {
                     wire_edges.push(edge);
-                    decoded.insert(entry.sequence);
+                    crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 }
                 continue;
             }
@@ -2320,7 +2326,7 @@ fn project_with_type_130_policy(
             )?;
             if let Some(edge) = edge {
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
             }
             continue;
@@ -2339,7 +2345,7 @@ fn project_with_type_130_policy(
             )?;
             if let Some(edge) = edge {
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
             }
             continue;
@@ -2357,7 +2363,7 @@ fn project_with_type_130_policy(
             )?;
             if let Some(edge) = edge {
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
                 continue;
             }
             continue;
@@ -2436,7 +2442,7 @@ fn project_with_type_130_policy(
             ),
         );
         wire_edges.push(edge);
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges composite decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {

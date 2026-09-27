@@ -124,14 +124,20 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut records, record.directory_sequence, record,
+            "iges csg parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut entries, entry.sequence, entry,
+            "iges csg directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -263,7 +269,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive axes are not orthonormal"))?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -333,7 +339,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep placement is invalid"))?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -425,7 +431,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean result placement is invalid"))?;
             continue;
         }
-        decoded.insert(*sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, *sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory
@@ -466,7 +472,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component placement is invalid"))?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

@@ -264,14 +264,20 @@ pub(super) fn project(
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut records, record.directory_sequence, record,
+            "iges offsets parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut entries, entry.sequence, entry,
+            "iges offsets directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -909,7 +915,7 @@ pub(super) fn project(
         });
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
         wire_edges.push(edge_id);
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges offsets decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {
