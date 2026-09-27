@@ -935,7 +935,7 @@ fn curve_expression_named_properties_refuse_before_second_tree() {
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo curve-expression named properties"
+            if limit.operation == "named entry map nodes"
     ));
 }
 

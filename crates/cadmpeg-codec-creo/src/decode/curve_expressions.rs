@@ -607,11 +607,7 @@ fn curve_expression_properties(
         let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
         insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
     }
-    ctx.charge_collection_items(
-        properties.len() as u64,
-        "creo curve-expression named properties",
-    )?;
-    Ok(cadmpeg_core::text::named_entries(
+    Ok(cadmpeg_core::text::named_entries_checked(ctx,
         parameter_id.as_str(),
         properties,
     )?)
