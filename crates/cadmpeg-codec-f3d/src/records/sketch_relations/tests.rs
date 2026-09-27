@@ -5,6 +5,41 @@ mod constraint_state;
 use crate::records::sketch_relations::SketchRelation;
 
 #[test]
+fn sketch_relation_offset_padding_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    wire.member_offsets.clear();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = SketchRelation::from_wire_charged(&ctx, wire).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "pad sketch relation offsets"
+    ));
+}
+
+#[test]
+fn sketch_relation_resolution_padding_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = SketchRelation::from_wire_charged(&ctx, wire).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "pad sketch relation resolutions"
+    ));
+}
+
+#[test]
 fn native_rectangular_pattern_refuses_nonunit_direction() {
     let value = serde_json::json!({
         "evaluated_count": 2,

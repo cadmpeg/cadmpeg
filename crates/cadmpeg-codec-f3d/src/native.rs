@@ -52,7 +52,7 @@ use crate::records::{
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
     sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     sketch_placement::DesignSketchPlacement,
-    sketch_relations::SketchRelation,
+    sketch_relations::{SketchRelation, SketchRelationSerde},
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
         construction::DesignConstructionOperandIdentity, edge_identity::DesignEdgeIdentityOperand,
@@ -1402,6 +1402,31 @@ impl F3dNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        let sketch_relations = namespace.arena_as("sketch_relations")?;
+        Self::load_with_relations(namespace, sketch_relations)
+    }
+
+    pub(crate) fn load_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let wires: Vec<SketchRelationSerde> =
+            namespace.arena_as_charged(ctx, "sketch_relations")?;
+        ctx.charge_collection_items(wires.len() as u64, "load sketch relations")?;
+        let mut sketch_relations = Vec::new();
+        sketch_relations.try_reserve(wires.len()).map_err(|_| {
+            ctx.refuse_codec_limit("load sketch relations", 0, wires.len() as u64)
+        })?;
+        for wire in wires {
+            sketch_relations.push(SketchRelation::from_wire_charged(ctx, wire)?);
+        }
+        Ok(Self::load_with_relations(namespace, sketch_relations)?)
+    }
+
+    fn load_with_relations(
+        namespace: &cadmpeg_ir::NativeNamespace,
+        sketch_relations: Vec<SketchRelation>,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
@@ -1481,7 +1506,7 @@ impl F3dNative {
             persistent_references: namespace.arena_as("persistent_references")?,
             persistent_subentity_tags: namespace.arena_as("persistent_subentity_tags")?,
             sketch_curve_links: namespace.arena_as("sketch_curve_links")?,
-            sketch_relations: namespace.arena_as("sketch_relations")?,
+            sketch_relations,
             sketch_points: namespace.arena_as("sketch_points")?,
             sketch_curve_identities: namespace.arena_as("sketch_curve_identities")?,
             sketch_surfaces: namespace.arena_as("sketch_surfaces")?,

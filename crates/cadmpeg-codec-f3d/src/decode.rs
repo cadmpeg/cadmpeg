@@ -4904,7 +4904,7 @@ fn build_geometry_ir(
         creation_timestamps,
     } = brep;
     let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
-    let mut native = F3dNative::load(namespace)?;
+    let mut native = F3dNative::load_charged(ctx, namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;
     native.persistent_subentity_tags = persistent_subentity_tags;
