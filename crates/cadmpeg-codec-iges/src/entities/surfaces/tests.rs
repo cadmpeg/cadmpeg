@@ -301,6 +301,28 @@ fn same_basis_ruled_surface_refuses_nested_poles_and_knots() {
 }
 
 #[test]
+fn ruled_shared_weight_admission_refuses_before_copy() {
+    let bytes = ruled_surface_file();
+    assert_surface_collection_refusal(&bytes, "iges ruled shared weights");
+    let service = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(service.ir().model.surfaces.len(), 1);
+}
+
+#[test]
+fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
+    let bytes = rational_ruled_surface_file();
+    for operation in [
+        "iges_surface_closure_weights",
+        "iges_surface_closure_points",
+        "iges_surface_closure_controls",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(service.ir().model.surfaces.len(), 1);
+}
+
+#[test]
 fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     let rail = NurbsCurve::from_lanes(
         1,

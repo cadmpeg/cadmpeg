@@ -11,7 +11,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -155,12 +155,12 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             curve.degree() == 1
-                && curve.weights().is_none()
-                && curve.control_points().len() == 2
-                && curve.control_points()[0]
-                    .distance(curve.control_points()[1].get())
-                    .is_finite()
-                && curve.control_points()[0].distance(curve.control_points()[1].get()) > 0.0
+                && curve.pole_rows().weight_at(0).is_none()
+                && curve.pole_count() == 2
+                && curve.pole_rows().point_at(0).zip(curve.pole_rows().point_at(1)).is_some_and(|(first, second)| {
+                    let distance = first.distance(second.get());
+                    distance.is_finite() && distance > 0.0
+                })
                 && curve.knots()[0] == curve.knots()[1]
                 && curve.knots()[2] == curve.knots()[3]
                 && curve.knots()[1] < curve.knots()[2]
@@ -185,9 +185,9 @@ fn interval_certified_linear_bezier(
         return Ok(false);
     };
     if degree < 2
-        || geometry.weights().is_some()
+        || geometry.pole_rows().weight_at(0).is_some()
         || geometry.periodic()
-        || geometry.control_points().len() != control_count
+        || geometry.pole_count() != control_count
     {
         return Ok(false);
     }
@@ -205,9 +205,9 @@ fn interval_certified_linear_bezier(
             .iter()
             .any(|knot| *knot != upper)
         || geometry
-            .control_points()
-            .first()
-            .zip(geometry.control_points().last())
+            .pole_rows()
+            .point_at(0)
+            .zip(geometry.pole_rows().point_at(control_count - 1))
             .is_none_or(|(first, last)| {
                 let distance = first.distance(last.get());
                 !distance.is_finite() || distance <= 0.0
@@ -391,19 +391,33 @@ fn homogeneous_bezier_spans(
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
-    let weights: Option<Vec<f64>> = match curve.weights() {
-        Some(weights) => {
-            if weights.iter().any(|weight| weight.get() <= 0.0) {
-                return Ok(None);
-            }
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(weights.len() as u64, "iges_surface_closure_weights")?;
-            }
-            Some(weights.into_iter().map(NonZeroReal::get).collect())
+    let count = curve.pole_count();
+    let weights = if curve.pole_rows().weight_at(0).is_some() {
+        if (0..count).any(|index| {
+            curve
+                .pole_rows()
+                .weight_at(index)
+                .is_none_or(|weight| weight <= 0.0)
+        }) {
+            return Ok(None);
         }
-        None => None,
+        let mut weights = reserve_optional_vec(ctx, count, "iges_surface_closure_weights")?;
+        for index in 0..count {
+            let weight = curve.pole_rows().weight_at(index).ok_or_else(|| CodecError::malformed("surface closure weight is missing"))?;
+            weights.push(weight);
+        }
+        Some(weights)
+    } else {
+        None
     };
-    let Some(controls) = positive_controls(&curve.control_points(), weights.as_deref())? else {
+    let mut points = reserve_optional_vec(ctx, count, "iges_surface_closure_points")?;
+    for index in 0..count {
+        points.push(curve.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?);
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
+    }
+    let Some(controls) = positive_controls(&points, weights.as_deref())? else {
         return Ok(None);
     };
     Ok(homogeneous_spans(degree, curve.knots(), controls)?)
@@ -602,39 +616,36 @@ fn aligned_homogeneous_spans(
         .then(|| first_spans.into_iter().zip(second_spans).collect()))
 }
 
-/// Positive weights in pole order, unit weights for a polynomial curve.
-fn curve_weights(curve: &NurbsCurve) -> Option<Vec<NonZeroReal>> {
-    match curve.weights() {
-        Some(weights) => weights
-            .iter()
-            .all(|weight| weight.get() > 0.0)
-            .then_some(weights),
-        None => Some(
-            std::iter::repeat_n(NonZeroReal::from(PositiveReal::ONE), curve.pole_count()).collect(),
-        ),
-    }
-}
-
 fn projectively_shared_weights(
     first: &NurbsCurve,
     second: &NurbsCurve,
-) -> Option<Vec<NonZeroReal>> {
-    let first_weights = curve_weights(first)?;
-    let second_weights = curve_weights(second)?;
-    if first_weights.len() != second_weights.len() {
-        return None;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
+    let count = first.pole_count();
+    if count == 0 || count != second.pole_count() {
+        return Ok(None);
     }
-    let scale = second_weights.first()?.get() / first_weights.first()?.get();
+    let weight_at = |curve: &NurbsCurve, index| curve.pole_rows().weight_at(index).unwrap_or(1.0);
+    let scale = weight_at(second, 0) / weight_at(first, 0);
     if !scale.is_finite()
         || scale <= 0.0
-        || first_weights
-            .iter()
-            .zip(&second_weights)
-            .any(|(first, second)| first.get() * scale != second.get())
+        || (0..count).any(|index| {
+            let first_weight = weight_at(first, index);
+            let second_weight = weight_at(second, index);
+            first_weight <= 0.0
+                || second_weight <= 0.0
+                || first_weight * scale != second_weight
+        })
     {
-        return None;
+        return Ok(None);
     }
-    Some(first_weights)
+    let mut weights = reserve_optional_vec(ctx, count, "iges ruled shared weights")?;
+    for index in 0..count {
+        let weight = NonZeroReal::new(weight_at(first, index))
+            .ok_or_else(|| CodecError::malformed("ruled rail weight is zero"))?;
+        weights.push(weight);
+    }
+    Ok(Some(weights))
 }
 
 fn same_basis_ruled_surface(
@@ -709,10 +720,10 @@ fn ruled_surface_carrier(
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
-        && first.control_points().len() == second.control_points().len()
+        && first.pole_count() == second.pole_count()
     {
-        if let Some(weights) = projectively_shared_weights(first, second) {
-            let Some(pole_count) = first.control_points().len().checked_mul(2) else {
+        if let Some(weights) = projectively_shared_weights(first, second, ctx)? {
+            let Some(pole_count) = first.pole_count().checked_mul(2) else {
                 return Ok(None);
             };
             admit_surface_pole_count(ctx, pole_count)?;
