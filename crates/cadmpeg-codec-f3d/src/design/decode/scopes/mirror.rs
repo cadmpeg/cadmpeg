@@ -222,6 +222,21 @@ fn exact_legacy_mirror_scope_tolerance(
     ))
 }
 
+/// Count matching records without retaining the input-sized run.
+enum UniqueMatch<T> {
+    Zero,
+    One(T),
+    Many,
+}
+
+fn unique_match<I: Iterator>(mut items: I) -> UniqueMatch<I::Item> {
+    match (items.next(), items.next()) {
+        (None, _) => UniqueMatch::Zero,
+        (Some(item), None) => UniqueMatch::One(item),
+        (Some(_), Some(_)) => UniqueMatch::Many,
+    }
+}
+
 /// Join a Mirror scope's two operand groups and fixed parameters with either a
 /// referenced `WorkPlane` or a persistent plane-face selection.
 pub(crate) fn bind_mirror_constructions(
@@ -233,10 +248,20 @@ pub(crate) fn bind_mirror_constructions(
     owners: &[DesignParameterOwner],
     recipes: &[ConstructionRecipe],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let mut headers_by_record = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else {
+            continue;
+        };
+        let key = (stream, header.record_index);
+        if !headers_by_record.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d Mirror record headers")?;
+            headers_by_record.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Mirror record headers allocation", 0, 1)
+            })?;
+        }
+        headers_by_record.insert(key, header);
+    }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
     for index in 0..scopes.len() {
         if design_feature_family(&scopes[index].kind()) != Some(DesignFeatureFamily::Mirror) {
@@ -252,29 +277,21 @@ pub(crate) fn bind_mirror_constructions(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope_record_index = scopes[index].record_index;
-        let scope_groups = groups
-            .iter()
-            .filter(|group| {
+        let seed_groups = unique_match(groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream.as_str())
                     && group.scope_record_index == scope_record_index
-            })
-            .collect::<Vec<_>>();
-        let seed_groups = scope_groups
-            .iter()
-            .copied()
-            .filter(|group| {
+            }).filter(|group| {
                 matches!(
                     group.role(),
                     DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
                 )
-            })
-            .collect::<Vec<_>>();
-        let plane_groups = scope_groups
-            .iter()
-            .copied()
-            .filter(|group| group.role() == DesignOperandRole::ROLE_0X5)
-            .collect::<Vec<_>>();
-        let ([seed_group], [plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice())
+            }));
+        let plane_groups = unique_match(groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream.as_str())
+                && group.scope_record_index == scope_record_index
+                && group.role() == DesignOperandRole::ROLE_0X5
+        }));
+        let (UniqueMatch::One(seed_group), UniqueMatch::One(plane_group)) = (seed_groups, plane_groups)
         else {
             continue;
         };
@@ -285,7 +302,7 @@ pub(crate) fn bind_mirror_constructions(
         else {
             continue;
         };
-        let Some(plane_header) = headers.get(&(stream.as_str(), *plane_member)) else {
+        let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
         let work_plane = compact_feature_reference(bytes, plane_header).and_then(
@@ -341,7 +358,7 @@ pub(crate) fn bind_mirror_constructions(
             };
         let seed_feature = match seed_group.members() {
             _ if seed_group.role() != DesignOperandRole::BODIES_B => None,
-            [crate::records::identity::Located { value: member, .. }] => headers
+            [crate::records::identity::Located { value: member, .. }] => headers_by_record
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))
                 .filter(|(record_index, _)| {
@@ -352,44 +369,46 @@ pub(crate) fn bind_mirror_constructions(
                 }),
             _ => None,
         };
-        let scope_owners = owners
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(owners.len())
+                .checked_mul(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("f3d Mirror owner search work", 0, 1))?,
+            "f3d Mirror owner search",
+        )?;
+        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
+        let count = unique_match(owners.iter().filter(|owner| {
+            native_stream(owner.id()) == Some(stream.as_str())
+                && owner.scope_record_index() == scope_record_index
+                && owner.local_ordinal() == 0
+                && owner.evaluated_value().get() == 2.0
+        }));
+        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
+        let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
+        let tolerance = unique_match(owners
             .iter()
             .filter(|owner| {
                 native_stream(owner.id()) == Some(stream.as_str())
                     && owner.scope_record_index() == scope_record_index
             })
-            .collect::<Vec<_>>();
-        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
-        let count = scope_owners
-            .iter()
-            .copied()
-            .filter(|owner| owner.local_ordinal() == 0 && owner.evaluated_value().get() == 2.0)
-            .collect::<Vec<_>>();
-        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
-        let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
-        let tolerance = scope_owners
-            .iter()
-            .copied()
             .filter(|owner| owner.local_ordinal() == 1)
             .filter_map(|owner| {
                 Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
-            })
-            .collect::<Vec<_>>();
+            }));
         let (count, tolerance_source) = (
-            match (count.as_slice(), inline_count) {
-                ([count], None) => Some((count.record_index(), count.evaluated_value_offset())),
-                ([], Some(count)) => Some(count),
+            match (count, inline_count) {
+                (UniqueMatch::One(count), None) => Some((count.record_index(), count.evaluated_value_offset())),
+                (UniqueMatch::Zero, Some(count)) => Some(count),
                 _ => None,
             },
-            match (tolerance.as_slice(), inline_tolerance) {
-                ([(tolerance, value)], None) => Some((
-                    *value,
+            match (tolerance, inline_tolerance) {
+                (UniqueMatch::One((tolerance, value)), None) => Some((
+                    value,
                     tolerance.evaluated_value_offset(),
                     mirror::DesignMirrorToleranceSource::Owner {
                         record_index: tolerance.record_index(),
                     },
                 )),
-                ([], Some((value, value_offset, scope_tail))) => Some((
+                (UniqueMatch::Zero, Some((value, value_offset, scope_tail))) => Some((
                     value,
                     value_offset,
                     mirror::DesignMirrorToleranceSource::Scope(scope_tail),
