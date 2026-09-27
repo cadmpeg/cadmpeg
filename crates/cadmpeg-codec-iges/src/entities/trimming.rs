@@ -8,7 +8,7 @@ use super::geometry::{
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
-use crate::decode_resource::{format_retained, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{format_retained, reserve_optional_vec, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -20,8 +20,8 @@ use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    nurbs::{NurbsCurve, NurbsError, NurbsPoles3},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -32,6 +32,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -414,33 +415,42 @@ pub(super) fn pcurve_geometry(
     let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
         return Ok(None);
     };
-    let parameter_curve = PcurveNurbs::from_checked_lanes(
-        nurbs.degree(),
-        nurbs.knots().clone(),
-        nurbs
-            .control_points()
-            .iter()
-            .map(|point| {
-                source_parameter_map.map_or_else(
-                    || {
-                        Point2::new(
-                            point.x.mul_add(u_factor, u_offset),
-                            point.y.mul_add(v_factor, v_offset),
-                        )
-                    },
-                    |(u_factor, u_offset, v_factor, v_offset)| {
-                        source_parameter_point_to_neutral(
-                            Point2::new(point.x, point.y),
-                            (u_factor, u_offset, v_factor, v_offset),
-                            support.factor,
-                        )
-                    },
+    let map_point = |point: FinitePoint3| -> Result<FinitePoint2, NurbsError> {
+        let point = point.get();
+        let mapped = source_parameter_map.map_or_else(
+            || Point2::new(point.x.mul_add(u_factor, u_offset), point.y.mul_add(v_factor, v_offset)),
+            |(u_factor, u_offset, v_factor, v_offset)| {
+                source_parameter_point_to_neutral(
+                    Point2::new(point.x, point.y),
+                    (u_factor, u_offset, v_factor, v_offset),
+                    support.factor,
                 )
-            })
-            .collect::<Vec<Point2>>(),
-        nurbs.weights(),
-        nurbs.periodic(),
-    )?;
+            },
+        );
+        FinitePoint2::new(mapped)
+            .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
+    };
+    let (degree, knots, poles, periodic) = nurbs.into_parts();
+    let poles = match poles {
+        NurbsPoles3::Polynomial { points } => {
+            let mut mapped = reserve_optional_vec(ctx, points.len(), "iges pcurve mapped polynomial poles")?;
+            for point in points {
+                mapped.push(map_point(point)?);
+            }
+            PcurveNurbsPoles::Polynomial { points: mapped }
+        }
+        NurbsPoles3::Rational { points } => {
+            let mut mapped = reserve_optional_vec(ctx, points.len(), "iges pcurve mapped rational poles")?;
+            for pole in points {
+                mapped.push(WeightedPole2 {
+                    point: map_point(pole.point)?,
+                    weight: pole.weight,
+                });
+            }
+            PcurveNurbsPoles::Rational { points: mapped }
+        }
+    };
+    let parameter_curve = PcurveNurbs::from_admitted_parts(degree, knots, poles, periodic)?;
     Ok(Some((
         PcurveGeometry::Nurbs {
             nurbs: parameter_curve,

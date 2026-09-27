@@ -9,6 +9,30 @@ use crate::{
 };
 
 #[test]
+fn admitted_pcurve_parts_keep_rational_pole_storage() {
+    use crate::geometry::pcurve::PcurveNurbsPoles;
+
+    let original = pcurve();
+    let poles = original.pole_rows().clone();
+    let PcurveNurbsPoles::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let storage = points.as_ptr();
+    let rebuilt = PcurveNurbs::from_admitted_parts(
+        original.degree(),
+        original.knots().clone(),
+        poles,
+        original.periodic(),
+    )
+    .unwrap();
+    let PcurveNurbsPoles::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt pcurve must be rational");
+    };
+    assert_eq!(points.as_ptr(), storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
 fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
     use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
     use crate::scalar::PositiveReal;
