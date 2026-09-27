@@ -33,6 +33,37 @@ fn push_attributed_loss(
     Ok(())
 }
 
+fn push_optional_entity_loss(
+    ctx: Option<&DecodeContext<'_>>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    match ctx {
+        Some(ctx) => push_attributed_loss(
+            ctx,
+            losses,
+            entry,
+            IgesLossCode::EntityNotProjected,
+            format_args!(
+                "IGES entity type {} form {} was not projected: {reason}",
+                entry.entity_type, entry.form
+            ),
+        ),
+        None => {
+            losses.push(
+                IgesLossCode::EntityNotProjected
+                    .note(format!(
+                        "IGES entity type {} form {} was not projected: {reason}",
+                        entry.entity_type, entry.form
+                    ))
+                    .with_provenance(entry.loss_provenance()),
+            );
+            Ok(())
+        }
+    }
+}
+
 fn non_resource_error(error: CodecError) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),

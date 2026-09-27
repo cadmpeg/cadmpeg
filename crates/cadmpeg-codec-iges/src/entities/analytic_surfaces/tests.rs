@@ -3,14 +3,69 @@
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 use std::io::Cursor;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::test_support::test_surface_fixtures::{
     pointer_defined_surface_file, pointer_defined_surface_with_reference,
 };
 use crate::IgesCodec;
+
+fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn analytic_surface_indexes_and_losses_refuse_limits() {
+    let valid = pointer_defined_surface_file(190, 0);
+    for operation in [
+        "iges analytic-surface parameter index",
+        "iges analytic-surface directory index",
+        "iges analytic-surface slots",
+        "iges analytic-surface decoded sequences",
+    ] {
+        assert_analytic_refusal(&valid, operation, false);
+    }
+
+    let invalid = owned_test_file(&[OwnedTestEntity {
+        entity_type: 190,
+        form: 0,
+        label: "PLANE".into(),
+        status: "00010000",
+        parameters: "190,999,0;".into(),
+    }]);
+    assert_analytic_refusal(&invalid, "iges entity loss slots", false);
+    assert_analytic_refusal(&invalid, "iges entity loss message", true);
+}
 
 #[test]
 fn decode_projects_all_pointer_defined_analytic_surface_forms() {
