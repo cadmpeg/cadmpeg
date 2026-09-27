@@ -1712,11 +1712,8 @@ pub(crate) fn project_geometry(
             continue;
         };
         if !point_display_symbol_valid(record, &entries, global.global_table()) {
-            losses.push(
-                IgesLossCode::DisplayDataNotProjected
-                            .note("Type 116 display symbol pointer is invalid for the effective specification family")
-                    .with_provenance(entry.loss_provenance()),
-            );
+            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::DisplayDataNotProjected,
+                format_args!("Type 116 display symbol pointer is invalid for the effective specification family"))?;
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -1741,6 +1738,7 @@ pub(crate) fn project_geometry(
         };
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges point neutral point slots")?;
         ir.model
             .points
             .push(Point::new(point.clone(), position, None));
@@ -1748,14 +1746,16 @@ pub(crate) fn project_geometry(
             || !analytic_surface_locations.contains(&entry.sequence)
         {
             let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+            reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges point neutral vertex slots")?;
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
                 tolerance: None,
             });
+            reserve_vec_growth(ctx, &mut free_vertices, 1, "iges point free vertex slots")?;
             free_vertices.push(vertex);
         }
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges point decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -1790,18 +1790,12 @@ pub(crate) fn project_geometry(
             _ => false,
         };
         if !shape_parameters_valid {
-            losses.push(
-                IgesLossCode::DisplayDataNotProjected
-                    .note("Type 125 flash shape parameters are incomplete or non-finite")
-                    .with_provenance(entry.loss_provenance()),
-            );
+            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::DisplayDataNotProjected,
+                format_args!("Type 125 flash shape parameters are incomplete or non-finite"))?;
         }
         if entry.form == 0 && record.integer_or(6, 0).is_none_or(|pointer| pointer == 0) {
-            losses.push(
-                IgesLossCode::DisplayDataNotProjected
-                    .note("Type 125 Form 0 has no defining entity pointer")
-                    .with_provenance(entry.loss_provenance()),
-            );
+            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::DisplayDataNotProjected,
+                format_args!("Type 125 Form 0 has no defining entity pointer"))?;
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -1827,6 +1821,7 @@ pub(crate) fn project_geometry(
         };
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges flash neutral point slots")?;
         ir.model
             .points
             .push(Point::new(point.clone(), position, None));
@@ -1834,14 +1829,16 @@ pub(crate) fn project_geometry(
             || !analytic_surface_locations.contains(&entry.sequence)
         {
             let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+            reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges flash neutral vertex slots")?;
             ir.model.vertices.push(Vertex {
                 id: vertex.clone(),
                 point,
                 tolerance: None,
             });
+            reserve_vec_growth(ctx, &mut free_vertices, 1, "iges flash free vertex slots")?;
             free_vertices.push(vertex);
         }
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges flash decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -1905,6 +1902,7 @@ pub(crate) fn project_geometry(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let curve = crate::ids::curve(&stem);
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges line neutral curve slots")?;
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1913,7 +1911,7 @@ pub(crate) fn project_geometry(
             source_object: Some(source_object(entry, Some(ctx))?),
         });
         if entry.form != 0 {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges line decoded sequences")?;
             continue;
         }
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
@@ -1923,10 +1921,12 @@ pub(crate) fn project_geometry(
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let edge = crate::ids::edge(&stem);
+        reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges line neutral point slots")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
         ]);
+        reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges line neutral vertex slots")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -1939,6 +1939,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
+        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges line neutral edge slots")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
@@ -1947,8 +1948,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
+        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges line wire edge slots")?;
         wire_edges.push(edge);
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges line decoded sequences")?;
     }
     for entry in directory
         .iter()

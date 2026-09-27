@@ -80,6 +80,51 @@ fn circular_arc_projection_refuses_neutral_slots_and_decoded_node() {
 }
 
 #[test]
+fn point_flash_and_line_projection_refuse_neutral_slots() {
+    let point = crate::test_support::test_curves_and_surfaces::point_file();
+    for operation in [
+        "iges point neutral point slots",
+        "iges point neutral vertex slots",
+        "iges point free vertex slots",
+        "iges point decoded sequences",
+    ] {
+        assert_geometry_collection_refusal(&point, operation);
+    }
+    let flash = crate::test_support::test_owned::owned_test_file(&[
+        crate::test_support::test_owned::OwnedTestEntity {
+            entity_type: 125,
+            form: 0,
+            label: "FLASH".into(),
+            status: "00000000",
+            parameters: "125,1,2,0,0,0;".into(),
+        },
+    ]);
+    for operation in [
+        "iges entity loss slots",
+        "iges flash neutral point slots",
+        "iges flash neutral vertex slots",
+        "iges flash free vertex slots",
+        "iges flash decoded sequences",
+    ] {
+        assert_geometry_collection_refusal(&flash, operation);
+    }
+    let line = crate::test_support::test_curves_and_surfaces::line_file(0);
+    for operation in [
+        "iges line neutral curve slots",
+        "iges line neutral point slots",
+        "iges line neutral vertex slots",
+        "iges line neutral edge slots",
+        "iges line wire edge slots",
+        "iges line decoded sequences",
+    ] {
+        assert_geometry_collection_refusal(&line, operation);
+    }
+    for bytes in [&point, &flash, &line] {
+        crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    }
+}
+
+#[test]
 fn projector_merges_refuse_decoded_loss_and_wire_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::loss::IgesLossCode;
