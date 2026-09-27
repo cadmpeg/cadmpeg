@@ -18,11 +18,37 @@ use crate::test_support::test_dump::{
 };
 use crate::wire::Uuid;
 
+fn parse_attributes(
+    bytes: &[u8],
+    body_range: std::ops::Range<usize>,
+    source_range: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    warnings: &mut Diagnostics,
+) -> Result<crate::objects::ObjectAttributes, crate::chunks::FramingError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test attributes fit the service profile");
+    crate::objects::parse_attributes(
+        &ctx,
+        bytes,
+        body_range,
+        source_range,
+        archive,
+        writer_version,
+        warnings,
+    )
+}
+
 #[test]
 fn parses_fixed_attributes_through_every_minor_gate() {
     for minor in 0..=8 {
         let bytes = fixed_attributes(minor, 0, Some(true));
-        let parsed = crate::objects::parse_attributes(
+        let parsed = parse_attributes(
             &bytes,
             0..bytes.len(),
             100..100 + bytes.len(),
@@ -45,7 +71,7 @@ fn parses_fixed_attributes_through_every_minor_gate() {
 #[test]
 fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
     let hidden = fixed_attributes(1, 0x11, None);
-    let hidden = crate::objects::parse_attributes(
+    let hidden = parse_attributes(
         &hidden,
         0..hidden.len(),
         0..hidden.len(),
@@ -57,7 +83,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
     assert!(!hidden.visible);
 
     let locked = fixed_attributes(1, 0x12, None);
-    let locked = crate::objects::parse_attributes(
+    let locked = parse_attributes(
         &locked,
         0..locked.len(),
         0..locked.len(),
@@ -69,7 +95,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
     assert!(locked.visible);
 
     let definition = fixed_attributes(1, 0xf3, None);
-    let definition = crate::objects::parse_attributes(
+    let definition = parse_attributes(
         &definition,
         0..definition.len(),
         0..definition.len(),
@@ -84,7 +110,7 @@ fn fixed_visibility_and_definition_membership_use_mode_low_nibble() {
 #[test]
 fn fixed_explicit_visibility_overrides_hidden_mode_default() {
     let bytes = fixed_attributes(2, 0x02, Some(true));
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -99,7 +125,7 @@ fn fixed_explicit_visibility_overrides_hidden_mode_default() {
 #[test]
 fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
     let bytes = fixed_attributes(1, 0, Some(true));
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -111,7 +137,7 @@ fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
     assert_eq!(parsed.version, (1, 1));
     assert_eq!(parsed.name, "name");
 
-    let error = crate::objects::parse_attributes(
+    let error = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -129,7 +155,7 @@ fn legacy_v5_fixed_attributes_follow_writer_cutoff() {
 #[test]
 fn object_attribute_booleans_use_writer_version_strictness() {
     let bytes = tagged_attributes(&[(11, vec![2])], 0);
-    let legacy = crate::objects::parse_attributes(
+    let legacy = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -141,7 +167,7 @@ fn object_attribute_booleans_use_writer_version_strictness() {
     assert!(legacy.visible);
 
     for writer_version in [201_708_240_i64, 2_348_836_140_i64] {
-        let error = crate::objects::parse_attributes(
+        let error = parse_attributes(
             &bytes,
             0..bytes.len(),
             0..bytes.len(),
@@ -244,7 +270,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             _ => unreachable!("items are limited to 1 through 42"),
         };
         let minimum = tagged_attributes(&[(*item, payload.clone())], gate);
-        let mut decoded_at_gate = crate::objects::parse_attributes(
+        let mut decoded_at_gate = parse_attributes(
             &minimum,
             0..minimum.len(),
             0..minimum.len(),
@@ -254,7 +280,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         )
         .unwrap_or_else(|error| panic!("item {item} failed at minor {gate}: {error}"));
         let latest = tagged_attributes(&[(*item, payload.clone())], 13);
-        let decoded_at_latest = crate::objects::parse_attributes(
+        let decoded_at_latest = parse_attributes(
             &latest,
             0..latest.len(),
             0..latest.len(),
@@ -270,7 +296,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         );
         if gate > 0 {
             let preceding = tagged_attributes(&[(*item, payload.clone())], gate - 1);
-            let decoded = crate::objects::parse_attributes(
+            let decoded = parse_attributes(
                 &preceding,
                 0..preceding.len(),
                 0..preceding.len(),
@@ -280,7 +306,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
             )
             .unwrap_or_else(|error| panic!("item {item} failed before minor {gate}: {error}"));
             let empty = tagged_attributes(&[], gate - 1);
-            let expected = crate::objects::parse_attributes(
+            let expected = parse_attributes(
                 &empty,
                 0..empty.len(),
                 0..preceding.len(),
@@ -296,7 +322,7 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
         }
     }
     let bytes = tagged_attributes(&items, 13);
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         10..10 + bytes.len(),
@@ -326,7 +352,7 @@ fn object_rendering_attributes_require_minor_one() {
         &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     );
     let bytes = tagged_attributes(&[(5, rendering)], 0);
-    assert!(crate::objects::parse_attributes(
+    assert!(parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -361,7 +387,7 @@ fn object_rendering_attributes_consume_mapping_reference_and_channel() {
     let rendering = crc_chunk(ArchiveVersion::V8, 0x4000_8000, &rendering);
     let bytes = tagged_attributes(&[(5, rendering)], 0);
 
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -377,7 +403,7 @@ fn object_rendering_attributes_consume_mapping_reference_and_channel() {
 fn tagged_attributes_follow_source_cascade_boundaries() {
     for (minor, item) in [(0, 22), (1, 23), (2, 27), (12, 41), (12, 42)] {
         let bytes = tagged_attributes(&[(item, vec![0xaa, 0xbb])], minor);
-        let parsed = crate::objects::parse_attributes(
+        let parsed = parse_attributes(
             &bytes,
             0..bytes.len(),
             0..bytes.len(),
@@ -391,7 +417,7 @@ fn tagged_attributes_follow_source_cascade_boundaries() {
 
     let mut out_of_order = tagged_attributes(&[(2, utf16_bytes("U")), (1, utf16_bytes("N"))], 0);
     out_of_order.extend([0xde, 0xad]);
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &out_of_order,
         0..out_of_order.len(),
         0..out_of_order.len(),
@@ -408,7 +434,7 @@ fn tagged_attributes_follow_source_cascade_boundaries() {
 fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
     let bytes = tagged_attributes(&[(36, vec![0])], 8);
     assert!(
-        crate::objects::parse_attributes(
+        parse_attributes(
             &bytes,
             0..bytes.len(),
             0..bytes.len(),
@@ -420,7 +446,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
         "an admitted object-frame item still requires its value grammar"
     );
     let bytes = tagged_attributes(&[(42, vec![])], 13);
-    assert!(crate::objects::parse_attributes(
+    assert!(parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -432,7 +458,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
 
     let mut bytes = tagged_attributes(&[(1, utf16_bytes("N"))], 0);
     bytes.pop();
-    assert!(crate::objects::parse_attributes(
+    assert!(parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -447,7 +473,7 @@ fn tagged_attributes_reject_malformed_values_and_missing_terminator() {
 fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
     let mut bytes = tagged_attributes(&[(43, vec![0xaa, 0xbb])], 14);
     bytes.extend([0xde, 0xad]);
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -466,7 +492,7 @@ fn future_tagged_attributes_stop_at_unknown_item_and_preserve_suffix() {
 fn future_tagged_attributes_accept_known_prefix_and_suffix() {
     let mut bytes = tagged_attributes(&[(1, utf16_bytes("future"))], 14);
     bytes.extend([0xde, 0xad]);
-    let parsed = crate::objects::parse_attributes(
+    let parsed = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -489,7 +515,7 @@ fn tagged_attributes_refuse_a_nonfinite_plot_weight_at_its_first_byte() {
         &bytes[value_offset..value_offset + 8],
         f64::NAN.to_le_bytes()
     );
-    let error = crate::objects::parse_attributes(
+    let error = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -511,7 +537,7 @@ fn fixed_attributes_refuse_a_nonfinite_obsolete_thickness_at_its_first_byte() {
     let mut bytes = fixed_attributes(4, 0, Some(true));
     let value_offset = 33;
     bytes[value_offset..value_offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
-    let error = crate::objects::parse_attributes(
+    let error = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -529,7 +555,7 @@ fn fixed_attributes_refuse_a_nonfinite_obsolete_thickness_at_its_first_byte() {
 #[test]
 fn tagged_attributes_reject_nonfinite_numeric_items() {
     let bytes = tagged_attributes(&[(8, f64::NAN.to_le_bytes().to_vec())], 0);
-    assert!(crate::objects::parse_attributes(
+    assert!(parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),
@@ -570,7 +596,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     duplicate_layer.color = [90, 80, 70, 255];
     let mut metadata = settings::DocumentMetadata::default();
     metadata.layers.extend([layer, duplicate_layer]);
-    let mut attributes = crate::objects::parse_attributes(
+    let mut attributes = parse_attributes(
         &fixed_attributes(1, 0, None),
         0..fixed_attributes(1, 0, None).len(),
         0..fixed_attributes(1, 0, None).len(),
@@ -629,7 +655,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
 #[test]
 fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     let bytes = fixed_attributes(1, 0, None);
-    let attributes = crate::objects::parse_attributes(
+    let attributes = parse_attributes(
         &bytes,
         0..bytes.len(),
         0..bytes.len(),

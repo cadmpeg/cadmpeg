@@ -592,10 +592,16 @@ fn light_record_attributes_use_the_object_attribute_projection() {
     ));
     let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
     let mut losses = Vec::new();
-    let value =
-        parse_light_record_attributes(&body, &record, archive, Some(2_024_071_000), &mut losses)
-            .expect("light record attributes")
-            .expect("light attributes child");
+    let value = parse_light_record_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &body,
+        &record,
+        archive,
+        Some(2_024_071_000),
+        &mut losses,
+    )
+    .expect("light record attributes")
+    .expect("light attributes child");
     assert!(losses.is_empty());
     assert_eq!(value.attributes.layer_index, 7);
     assert_eq!(value.attributes.name, "table light");
