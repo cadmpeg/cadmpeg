@@ -2501,53 +2501,58 @@ impl<'a> DecodeContext<'a> {
             .map(|(_, outcome)| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
-        losses.push(
-            RhinoLossCode::ObjectRecordCensus
-                .note(format!("decoded {decoded}/{total} Rhino object records")),
-        );
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+        losses.push(crate::wire::admitted_loss(
+            ctx,
+            RhinoLossCode::ObjectRecordCensus,
+            format_args!("decoded {decoded}/{total} Rhino object records"),
+            "Rhino final decode loss message",
+        )?);
         let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &outcomes {
             if outcome.retained > 0 {
+                crate::wire::reserve_collection(ctx, &mut omissions, 1, "Rhino class omission losses")?;
                 omissions.push(
-                    RhinoLossCode::ObjectFamilyNotTransferred
-                        .note(format!(
+                    crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectFamilyNotTransferred, format_args!(
                             "retained {} object record(s) for class {class}; geometry is not decoded",
                             outcome.retained
-                        ))
-                        .with_provenance(loss_provenance(class, outcome)),
+                        ), "Rhino final decode loss message")?
+                        .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
             if let Some((code, count)) = outcome.native {
+                crate::wire::reserve_collection(ctx, &mut omissions, 1, "Rhino class omission losses")?;
                 omissions.push(
-                    code.note(format!(
+                    crate::wire::admitted_loss(ctx, code, format_args!(
                         "framed and read {} object record(s) for class {class}; construction \
                          state is retained as native passthrough",
                         count.get()
-                    ))
-                    .with_provenance(loss_provenance(class, outcome)),
+                    ), "Rhino final decode loss message")?
+                    .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
             if outcome.attribute_degraded > 0 {
+                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
-                    RhinoLossCode::ObjectAttributesDegraded
-                        .note(format!(
+                    crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectAttributesDegraded, format_args!(
                             "{} object record(s) for class {class} have degraded attributes",
                             outcome.attribute_degraded
-                        ))
-                        .with_provenance(loss_provenance(class, outcome)),
+                        ), "Rhino final decode loss message")?
+                        .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
             if outcome.failed_framed > 0 {
+                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
                 losses.push(
-                    RhinoLossCode::ObjectFramingUndecodable
-                        .note(format!(
+                    crate::wire::admitted_loss(ctx, RhinoLossCode::ObjectFramingUndecodable, format_args!(
                             "{} framed object record(s) for class {class} could not be decoded",
                             outcome.failed_framed
-                        ))
-                        .with_provenance(loss_provenance(class, outcome)),
+                        ), "Rhino final decode loss message")?
+                        .with_provenance(loss_provenance(ctx, class, outcome)?),
                 );
             }
         }
+        crate::wire::reserve_collection(ctx, &mut self.report.typed_losses, omissions.len(), "Rhino typed decode losses")?;
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
             crate::wire::reserve_collection(
@@ -2558,18 +2563,29 @@ impl<'a> DecodeContext<'a> {
             )?;
             losses.push(diagnostic.to_loss(self.expand.ctx())?);
         }
+        crate::wire::reserve_collection(ctx, &mut losses, self.report.typed_losses.len(), "Rhino final decode losses")?;
         losses.append(&mut self.report.typed_losses);
-        losses.extend(self.scan.warnings.iter().map(|diagnostic| {
-            diagnostic
-                .code
-                .unwrap_or(RhinoLossCode::ContainerScanDiagnostic)
-                .note(diagnostic.message.clone())
-        }));
+        for diagnostic in self.scan.warnings.iter() {
+            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            losses.push(crate::wire::admitted_loss(
+                ctx,
+                diagnostic.code.unwrap_or(RhinoLossCode::ContainerScanDiagnostic),
+                format_args!("{}", diagnostic.message),
+                "Rhino final decode loss message",
+            )?);
+        }
+        crate::wire::reserve_collection(ctx, &mut losses, self.report.phase_losses.len(), "Rhino final decode losses")?;
         losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
         for diagnostic in &self.report.phase_warnings {
             if let Some(code) = diagnostic.code {
-                losses.push(code.note(diagnostic.message.clone()));
+                crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+                losses.push(crate::wire::admitted_loss(
+                    ctx,
+                    code,
+                    format_args!("{}", diagnostic.message),
+                    "Rhino final decode loss message",
+                )?);
                 continue;
             }
             let warning = &diagnostic.message;
@@ -2578,18 +2594,34 @@ impl<'a> DecodeContext<'a> {
                 .map_or(("rhino", warning.as_str()), |(family, detail)| {
                     (family, detail.trim())
                 });
-            let entry = phase_families
-                .entry(family.to_string())
-                .or_insert_with(|| (0, detail.to_string()));
+            if !phase_families.contains_key(family) {
+                ctx.charge_collection_items(1, "Rhino warning family groups")?;
+                let family_key = crate::wire::copy_retained_string(ctx, family, "Rhino warning family key")?;
+                let first_detail = crate::wire::copy_retained_string(ctx, detail, "Rhino warning family detail")?;
+                phase_families.insert(family_key, (0, first_detail));
+            }
+            let entry = phase_families.get_mut(family).ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino warning family group missing"))?;
             entry.0 += 1;
         }
-        losses.extend(phase_families.into_iter().map(|(family, (count, first))| {
-            RhinoLossCode::ObjectDecodeDiagnostic.note(if count == 1 {
-                format!("{family}: {first}")
+        for (family, (count, first)) in phase_families {
+            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino final decode losses")?;
+            let loss = if count == 1 {
+                crate::wire::admitted_loss(
+                    ctx,
+                    RhinoLossCode::ObjectDecodeDiagnostic,
+                    format_args!("{family}: {first}"),
+                    "Rhino final decode loss message",
+                )?
             } else {
-                format!("{family}: {count} decode warnings; first: {first}")
-            })
-        }));
+                crate::wire::admitted_loss(
+                    ctx,
+                    RhinoLossCode::ObjectDecodeDiagnostic,
+                    format_args!("{family}: {count} decode warnings; first: {first}"),
+                    "Rhino final decode loss message",
+                )?
+            };
+            losses.push(loss);
+        }
         let byte_records = self
             .unknowns
             .iter()
@@ -2601,15 +2633,15 @@ impl<'a> DecodeContext<'a> {
                 .filter(|record| record.data().is_some())
                 .count();
         let note = if self.opaque_records.is_empty() {
-            format!(
+            crate::wire::admitted_format(ctx, format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  records and complete bytes for {byte_records}; document cap {} bytes, per-record cap {} bytes",
                 self.unknowns.len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
-            )
+            ), "Rhino final decode note")?
         } else {
-            format!(
+            crate::wire::admitted_format(ctx, format_args!(
                 "decoded {decoded}/{total} Rhino object records; retained metadata/digests for {} \
                  object records and {} opaque records, with complete bytes for {byte_records}; \
                  document cap {} bytes, per-record cap {} bytes",
@@ -2617,9 +2649,11 @@ impl<'a> DecodeContext<'a> {
                 self.opaque_records.len(),
                 RETAINED_DOCUMENT_CAP,
                 RETAINED_RECORD_CAP
-            )
+            ), "Rhino final decode note")?
         };
-        let notes = vec![note];
+        let mut notes = Vec::new();
+        crate::wire::reserve_collection(ctx, &mut notes, 1, "Rhino final decode notes")?;
+        notes.push(note);
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(self.annotations);
         source_fidelity.attach_native_unknown_records(&mut self.ir, "rhino", self.unknowns)?;
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
@@ -6375,14 +6409,23 @@ fn body(
     }
 }
 
-fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance {
-    SourceProvenance::root("rhino", outcome.first_object.range().start as u64).with_tag(format!(
-        "OBJECT_RECORD/class={class}/type=0x{:08x}",
-        outcome
-            .first_object
-            .framed()
-            .map_or(0, |object| object.object_type)
-    ))
+fn loss_provenance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    class: &str,
+    outcome: &ClassOutcome<'_>,
+) -> Result<SourceProvenance, cadmpeg_core::CodecError> {
+    let tag = crate::wire::admitted_format(
+        ctx,
+        format_args!(
+            "OBJECT_RECORD/class={class}/type=0x{:08x}",
+            outcome
+                .first_object
+                .framed()
+                .map_or(0, |object| object.object_type)
+        ),
+        "Rhino class loss tag",
+    )?;
+    Ok(SourceProvenance::root("rhino", outcome.first_object.range().start as u64).with_tag(tag))
 }
 
 /// Builds the metadata-only Rhino decode transaction.
