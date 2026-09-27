@@ -3941,14 +3941,17 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     Ok(Some(domains))
 }
 
-fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
-    match port_points.entry(port) {
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            entry.insert(point);
-            true
-        }
-        std::collections::hash_map::Entry::Occupied(entry) => *entry.get() == point,
+fn bind_port_point(
+    ctx: &DecodeContext<'_>,
+    port_points: &mut HashMap<u32, usize>,
+    port: u32,
+    point: usize,
+) -> Result<bool, CodecError> {
+    if let Some(&stored) = port_points.get(&port) {
+        return Ok(stored == point);
     }
+    crate::resource::insert_map(ctx, port_points, port, point, "catia_port_bound_points")?;
+    Ok(true)
 }
 
 /// Propagate byte-level endpoint ports through independently resolved physical
@@ -3985,12 +3988,25 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
         {
             return None;
         }
-        let mut resolved = endpoint_pairs.to_vec();
+        let mut resolved = match crate::resource::copy_slice(ctx, endpoint_pairs, "catia_port_resolved_pairs") {
+            Ok(resolved) => resolved,
+            Err(error) => return Some(Err(error)),
+        };
         let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
         for (edge, ports) in edge_ports.iter().enumerate() {
-            edges_by_port.entry(ports[0]).or_default().push(edge);
+            if let Err(error) = crate::resource::admit_map_entry(ctx, &mut edges_by_port, &ports[0], "catia_port_edge_entries") {
+                return Some(Err(error));
+            }
+            if let Err(error) = crate::resource::push(ctx, edges_by_port.entry(ports[0]).or_default(), edge, "catia_port_incident_edges") {
+                return Some(Err(error));
+            }
             if ports[1] != ports[0] {
-                edges_by_port.entry(ports[1]).or_default().push(edge);
+                if let Err(error) = crate::resource::admit_map_entry(ctx, &mut edges_by_port, &ports[1], "catia_port_edge_entries") {
+                    return Some(Err(error));
+                }
+                if let Err(error) = crate::resource::push(ctx, edges_by_port.entry(ports[1]).or_default(), edge, "catia_port_incident_edges") {
+                    return Some(Err(error));
+                }
             }
         }
         let mut port_points = HashMap::<u32, usize>::new();
@@ -4005,9 +4021,18 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
                 if ports[0] == ports[1] && ordered[0] != ordered[1] {
                     return None;
                 }
-                if !bind_port_point(&mut port_points, ports[0], ordered[0])
-                    || !bind_port_point(&mut port_points, ports[1], ordered[1])
-                {
+                let first = match bind_port_point(ctx, &mut port_points, ports[0], ordered[0]) {
+                    Ok(first) => first,
+                    Err(error) => return Some(Err(error)),
+                };
+                if !first {
+                    return None;
+                }
+                let second = match bind_port_point(ctx, &mut port_points, ports[1], ordered[1]) {
+                    Ok(second) => second,
+                    Err(error) => return Some(Err(error)),
+                };
+                if !second {
                     return None;
                 }
                 resolved[edge] = Some(*ordered);
@@ -4018,22 +4043,42 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
             let mut intersection: Option<HashSet<usize>> = None;
             for &edge in edges {
                 let Some(pair) = resolved[edge] else { continue };
-                let points = HashSet::from(pair);
-                intersection = Some(match intersection {
-                    Some(current) => current.intersection(&points).copied().collect(),
-                    None => points,
-                });
+                let mut points = HashSet::new();
+                for point in pair {
+                    if let Err(error) = crate::resource::insert_set(ctx, &mut points, point, "catia_port_pair_points") {
+                        return Some(Err(error));
+                    }
+                }
+                if let Some(current) = intersection.take() {
+                    let mut common = HashSet::new();
+                    for &point in current.intersection(&points) {
+                        if let Err(error) = crate::resource::insert_set(ctx, &mut common, point, "catia_port_intersection_points") {
+                            return Some(Err(error));
+                        }
+                    }
+                    intersection = Some(common);
+                } else {
+                    intersection = Some(points);
+                }
             }
             if let Some(points) = intersection {
-                if points.len() == 1
-                    && !bind_port_point(&mut port_points, port, *points.iter().next()?)
-                {
-                    return None;
+                if points.len() == 1 {
+                    let point = *points.iter().next()?;
+                    match bind_port_point(ctx, &mut port_points, port, point) {
+                        Ok(true) => {}
+                        Ok(false) => return None,
+                        Err(error) => return Some(Err(error)),
+                    }
                 }
             }
         }
 
-        let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
+        let mut queue = std::collections::VecDeque::new();
+        for edge in 0..edge_ports.len() {
+            if let Err(error) = crate::resource::push_back(ctx, &mut queue, edge, "catia_edge_port_initial_queue") {
+                return Some(Err(error));
+            }
+        }
         let mut queued = match ctx.alloc_filled(edge_ports.len(), true, "catia_edge_port_queue") {
             Ok(queued) => queued,
             Err(error) => return Some(Err(error)),
@@ -4041,35 +4086,29 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
         while let Some(edge) = queue.pop_front() {
             queued[edge] = false;
             let ports = edge_ports[edge];
-            let mut inserted = Vec::new();
-            if let Some([left, right]) = resolved[edge] {
+            let inserted = if let Some([left, right]) = resolved[edge] {
                 match (
                     port_points.get(&ports[0]).copied(),
                     port_points.get(&ports[1]).copied(),
                 ) {
-                    (Some(point), None) if point == left => {
-                        port_points.insert(ports[1], right);
-                        inserted.push(ports[1]);
-                    }
-                    (Some(point), None) if point == right => {
-                        port_points.insert(ports[1], left);
-                        inserted.push(ports[1]);
-                    }
-                    (None, Some(point)) if point == left => {
-                        port_points.insert(ports[0], right);
-                        inserted.push(ports[0]);
-                    }
-                    (None, Some(point)) if point == right => {
-                        port_points.insert(ports[0], left);
-                        inserted.push(ports[0]);
-                    }
+                    (Some(point), None) if point == left => Some((ports[1], right)),
+                    (Some(point), None) if point == right => Some((ports[1], left)),
+                    (None, Some(point)) if point == left => Some((ports[0], right)),
+                    (None, Some(point)) if point == right => Some((ports[0], left)),
                     (Some(_), None) | (None, Some(_)) => return None,
                     (Some(left_point), Some(right_point))
                         if !same_unordered_pair([left_point, right_point], [left, right]) =>
                     {
                         return None;
                     }
-                    _ => {}
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some((port, point)) = inserted {
+                if let Err(error) = crate::resource::insert_map(ctx, &mut port_points, port, point, "catia_port_propagated_points") {
+                    return Some(Err(error));
                 }
             }
             if let (Some(&left), Some(&right)) =
@@ -4083,21 +4122,33 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
                     resolved[edge] = Some([left, right]);
                 }
             }
-            for port in inserted {
+            if let Some((port, _)) = inserted {
                 for &neighbor in edges_by_port.get(&port)? {
                     if !queued[neighbor] {
                         queued[neighbor] = true;
-                        queue.push_back(neighbor);
+                        if let Err(error) = crate::resource::push_back(ctx, &mut queue, neighbor, "catia_edge_port_neighbor_queue") {
+                            return Some(Err(error));
+                        }
                     }
                 }
             }
         }
-        let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
-            .iter()
-            .copied()
-            .zip(resolved.iter().copied())
-            .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
-            .unzip();
+        let mut resolved_ports = Vec::new();
+        let mut resolved_candidates = Vec::new();
+        for (ports, pair) in edge_ports.iter().copied().zip(resolved.iter().copied()) {
+            if let Some(pair) = pair {
+                if let Err(error) = crate::resource::push(ctx, &mut resolved_ports, ports, "catia_port_resolved_port_rows") {
+                    return Some(Err(error));
+                }
+                let candidate = match ctx.alloc_filled(1, pair, "catia_port_resolved_candidate_pair") {
+                    Ok(candidate) => candidate,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Err(error) = crate::resource::push(ctx, &mut resolved_candidates, candidate, "catia_port_resolved_candidate_rows") {
+                    return Some(Err(error));
+                }
+            }
+        }
         match edge_port_candidate_assignment(
             ctx,
             &resolved_ports,
