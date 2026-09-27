@@ -1544,11 +1544,8 @@ fn stable_object_record_graph_identity(
 }
 
 /// Counted active-object membership table from `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "membership_wire::TableWire",
-    into = "membership_wire::TableWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "membership_wire::TableWire")]
 pub(super) struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
     id: String,
@@ -1563,11 +1560,8 @@ pub(super) struct RmFastLoadObjectIdTable {
 }
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "membership_wire::MemberWire",
-    into = "membership_wire::MemberWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "membership_wire::MemberWire")]
 pub(super) struct RmFastLoadObjectId {
     /// Globally unique member identity.
     id: String,
@@ -2082,11 +2076,8 @@ impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
 }
 
 /// Complete named NX part palette for color indices 1 through 216.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "color_wire::PartColorTableWire",
-    into = "color_wire::PartColorTableWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "color_wire::PartColorTableWire")]
 pub(super) struct PartColorTable {
     /// Globally unique table identity.
     id: String,
@@ -2103,11 +2094,8 @@ pub(super) struct PartColorTable {
 }
 
 /// One named RGB entry from an NX part palette.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "color_wire::PartColorDefinitionWire",
-    into = "color_wire::PartColorDefinitionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "color_wire::PartColorDefinitionWire")]
 pub(super) struct PartColorDefinition {
     /// Globally unique color-definition identity.
     pub(super) id: String,
