@@ -7,7 +7,7 @@ use serde::{ser::SerializeMap, Deserialize, Serialize};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
-use self::admission::{admit_retained_clones, admit_temporary_clones, admit_validation_candidates};
+use self::admission::{admit_retained_clones, admit_temporary_clones, admit_validation_candidates, NativeAdmission};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -319,31 +319,31 @@ impl SldprtNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        Self::load_inner(None, namespace)
+        Self::load_inner(NativeAdmission::Cadir, namespace)
     }
 
     pub(crate) fn load_charged(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        Self::load_inner(Some(ctx), namespace)
+        Self::load_inner(NativeAdmission::Decode(ctx), namespace)
     }
 
     fn load_inner(
-        ctx: Option<&DecodeContext<'_>>,
+        admission: NativeAdmission<'_, '_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
-                match ctx {
-                    Some(ctx) => namespace.arena_as_charged(ctx, $name)?,
-                    None => namespace.arena_as($name)?,
+                match admission {
+                    NativeAdmission::Decode(ctx) => namespace.arena_as_charged(ctx, $name)?,
+                    NativeAdmission::Cadir => namespace.arena_as($name)?,
                 }
             };
         }
         macro_rules! admit_index {
             ($count:expr, $operation:literal) => {
-                if let Some(ctx) = ctx {
+                if let NativeAdmission::Decode(ctx) = admission {
                     ctx.charge_collection_items(
                         u64::try_from($count).map_err(|_| {
                             ctx.refuse_codec_limit($operation, u64::MAX - 1, u64::MAX)
@@ -709,7 +709,7 @@ impl SldprtNative {
         }
         for history in &mut native.feature_histories {
             admit_retained_clones(
-                ctx,
+                admission,
                 configurations
                     .iter()
                     .filter(|record| record.parent == history.id),
@@ -732,7 +732,7 @@ impl SldprtNative {
                 )));
             }
             admit_retained_clones(
-                ctx,
+                admission,
                 features.iter().filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
             )?;
@@ -755,7 +755,7 @@ impl SldprtNative {
         }
         for lane in &mut native.feature_input_lanes {
             admit_retained_clones(
-                ctx,
+                admission,
                 classes.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
             )?;
@@ -766,7 +766,7 @@ impl SldprtNative {
                 .collect();
             lane.classes.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 names.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
             )?;
@@ -777,7 +777,7 @@ impl SldprtNative {
                 .collect();
             lane.names.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 scalars.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
             )?;
@@ -788,7 +788,7 @@ impl SldprtNative {
                 .collect();
             lane.scalars.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 references.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
             )?;
@@ -799,7 +799,7 @@ impl SldprtNative {
                 .collect();
             lane.references.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 relation_bindings
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -812,7 +812,7 @@ impl SldprtNative {
                 .collect();
             lane.relation_bindings.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 relation_instances
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -825,7 +825,7 @@ impl SldprtNative {
                 .collect();
             lane.relation_instances.sort_by_key(|record| record.ordinal);
             admit_retained_clones(
-                ctx,
+                admission,
                 body_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -838,7 +838,7 @@ impl SldprtNative {
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.body_selections {
-                if body_selection_disagrees_with_payload(ctx, lane, record)? {
+                if body_selection_disagrees_with_payload(admission, lane, record)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input body selection {} disagrees with its payload",
                         record.id
@@ -846,7 +846,7 @@ impl SldprtNative {
                 }
             }
             admit_retained_clones(
-                ctx,
+                admission,
                 edge_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -859,7 +859,7 @@ impl SldprtNative {
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
             let _edge_features_reservation = admit_temporary_clones(
-                ctx,
+                admission,
                 features.iter(),
                 "validate SLDPRT edge feature context",
             )?;
@@ -869,14 +869,14 @@ impl SldprtNative {
                 std::slice::from_ref(lane),
             );
             for record in &lane.edge_selections {
-                if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
+                if edge_selection_disagrees_with_payload(admission, lane, record, &edge_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} disagrees with its payload",
                         record.id
                     )));
                 }
                 let _reference_reservation = admit_validation_candidates(
-                    ctx,
+                    admission,
                     selection_payload_span(lane, record.offset),
                     "validate SLDPRT edge reference candidates",
                 )?;
@@ -904,7 +904,7 @@ impl SldprtNative {
                 }
             }
             let _surface_features_reservation = admit_temporary_clones(
-                ctx,
+                admission,
                 features.iter(),
                 "validate SLDPRT surface feature context",
             )?;
@@ -914,7 +914,7 @@ impl SldprtNative {
                 std::slice::from_ref(lane),
             );
             admit_retained_clones(
-                ctx,
+                admission,
                 surface_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -927,7 +927,7 @@ impl SldprtNative {
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.surface_selections {
-                if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
+                if surface_selection_disagrees_with_payload(admission, lane, record, &surface_features)? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input surface selection {} disagrees with its payload",
                         record.id
@@ -935,7 +935,7 @@ impl SldprtNative {
                 }
             }
             admit_retained_clones(
-                ctx,
+                admission,
                 generated_surface_identities
                     .iter()
                     .filter(|record| record.parent == lane.id),
@@ -948,14 +948,14 @@ impl SldprtNative {
                 .collect::<Vec<_>>();
             records.sort_by_key(|record| record.ordinal);
             lane.generated_surface_identities = records;
-            if generated_surface_identities_disagree_with_payload(ctx, lane)? {
+            if generated_surface_identities_disagree_with_payload(admission, lane)? {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input lane {} generated surface identities disagree with its payload",
                     lane.id
                 )));
             }
             admit_retained_clones(
-                ctx,
+                admission,
                 entities.iter().filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
             )?;
@@ -967,7 +967,7 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(crate::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, ctx)?;
+        lanes::admit(&native, admission)?;
         Ok(native)
     }
 
@@ -1011,7 +1011,7 @@ impl SldprtNative {
             }
         }
         let _features_reservation = admit_temporary_clones(
-            Some(ctx),
+            NativeAdmission::Decode(ctx),
             self.feature_histories
                 .iter()
                 .flat_map(|history| &history.features),
@@ -1082,8 +1082,8 @@ impl SldprtNative {
                         record.id
                     )));
                 }
-                let invalid = body_state_ids_disagree_with_payload(Some(ctx), lane, record)?
-                    || body_selection_disagrees_with_payload(Some(ctx), lane, record)?;
+                let invalid = body_state_ids_disagree_with_payload(NativeAdmission::Decode(ctx), lane, record)?
+                    || body_selection_disagrees_with_payload(NativeAdmission::Decode(ctx), lane, record)?;
                 if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input body selection {} has inconsistent ownership",
@@ -1092,7 +1092,7 @@ impl SldprtNative {
                 }
             }
             let _edge_features_reservation = admit_temporary_clones(
-                Some(ctx),
+                NativeAdmission::Decode(ctx),
                 features.iter(),
                 "validate SLDPRT store edge features",
             )?;
@@ -1108,7 +1108,7 @@ impl SldprtNative {
                     || record.local_edge_ids.is_empty();
                 if invalid
                     || edge_selection_disagrees_with_payload(
-                        Some(ctx),
+                        NativeAdmission::Decode(ctx),
                         lane,
                         record,
                         &edge_features,
@@ -1121,7 +1121,7 @@ impl SldprtNative {
                 }
             }
             let _surface_features_reservation = admit_temporary_clones(
-                Some(ctx),
+                NativeAdmission::Decode(ctx),
                 features.iter(),
                 "validate SLDPRT store surface features",
             )?;
@@ -1137,7 +1137,7 @@ impl SldprtNative {
                     || record.components.is_empty();
                 if invalid
                     || surface_selection_disagrees_with_payload(
-                        Some(ctx),
+                        NativeAdmission::Decode(ctx),
                         lane,
                         record,
                         &surface_features,
@@ -1315,13 +1315,13 @@ impl SldprtNative {
             }
         }
         let _expected_histories_reservation = admit_temporary_clones(
-            Some(ctx),
+            NativeAdmission::Decode(ctx),
             self.feature_histories.iter(),
             "validate SLDPRT expected histories",
         )?;
         let mut expected_histories = self.feature_histories.clone();
         let _history_lanes_reservation = admit_temporary_clones(
-            Some(ctx),
+            NativeAdmission::Decode(ctx),
             self.feature_input_lanes.iter().filter(|lane| {
                 !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
             }),
@@ -1368,7 +1368,7 @@ fn bind_history_classes_charged(
         )
     })?;
     let _reservation = admit_validation_candidates(
-        Some(ctx),
+        NativeAdmission::Decode(ctx),
         source_items,
         "validate SLDPRT history class candidates",
     )?;
@@ -1393,7 +1393,7 @@ fn resolved_scalar_operand_markers<'a>(
             )
         })?;
     let _reservation = admit_validation_candidates(
-        Some(ctx),
+        NativeAdmission::Decode(ctx),
         source_items,
         "validate SLDPRT scalar operand candidates",
     )?;
@@ -1408,7 +1408,7 @@ fn resolved_scalar_operand_markers<'a>(
 }
 
 fn generated_surface_identities_disagree_with_payload(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     lane: &FeatureInputLane,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = if lane
@@ -1417,7 +1417,7 @@ fn generated_surface_identities_disagree_with_payload(
         .any(|class| class.name.ends_with("SurfIdRep_c"))
     {
         admit_validation_candidates(
-            ctx,
+            admission,
             lane.native_payload.len(),
             "validate SLDPRT generated surface identities",
         )?
@@ -1436,7 +1436,7 @@ fn selection_payload_span(lane: &FeatureInputLane, offset: u64) -> usize {
 }
 
 fn body_state_ids_disagree_with_payload(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
@@ -1448,7 +1448,7 @@ fn body_state_ids_disagree_with_payload(
         .and_then(|span| usize::try_from(span).ok())
         .unwrap_or(0);
     let _reservation =
-        admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
+        admit_validation_candidates(admission, source_units, "validate SLDPRT body state candidates")?;
     Ok(
         crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
             != record.body_state_ids,
@@ -1457,12 +1457,12 @@ fn body_state_ids_disagree_with_payload(
 
 /// `true` when a body selection disagrees with the compact selection in its lane payload.
 fn body_selection_disagrees_with_payload(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        ctx,
+        admission,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT body selection candidates",
     )?;
@@ -1485,13 +1485,13 @@ fn body_selection_disagrees_with_payload(
 ///
 /// `edge_features` are the history features enriched with this lane's object sources.
 fn edge_selection_disagrees_with_payload(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     lane: &FeatureInputLane,
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        ctx,
+        admission,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT edge selection candidates",
     )?;
@@ -1543,13 +1543,13 @@ fn edge_selection_disagrees_with_payload(
 ///
 /// `surface_features` are the history features enriched with this lane's object sources.
 fn surface_selection_disagrees_with_payload(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
-        ctx,
+        admission,
         selection_payload_span(lane, record.offset),
         "validate SLDPRT surface selection candidates",
     )?;

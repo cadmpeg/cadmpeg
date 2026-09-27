@@ -5,6 +5,21 @@ use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
 
+#[derive(Clone, Copy)]
+pub(super) enum NativeAdmission<'ctx, 'arena> {
+    Cadir,
+    Decode(&'ctx DecodeContext<'arena>),
+}
+
+impl<'ctx, 'arena> NativeAdmission<'ctx, 'arena> {
+    pub(super) fn context(self) -> Option<&'ctx DecodeContext<'arena>> {
+        match self {
+            Self::Cadir => None,
+            Self::Decode(ctx) => Some(ctx),
+        }
+    }
+}
+
 struct SerializedByteCount {
     bytes: u64,
     overflowed: bool,
@@ -60,11 +75,11 @@ fn count_copy<'a, T: Serialize + 'a>(
 }
 
 pub(super) fn admit_retained_clones<'a, T: Serialize + 'a>(
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<(), NativeConvertError> {
-    if let Some(ctx) = ctx {
+    if let Some(ctx) = admission.context() {
         let bytes = count_copy(ctx, records, operation)?;
         ctx.charge_retained(bytes, operation)?;
     }
@@ -72,11 +87,11 @@ pub(super) fn admit_retained_clones<'a, T: Serialize + 'a>(
 }
 
 pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
-    ctx: Option<&'ctx DecodeContext<'_>>,
+    admission: NativeAdmission<'ctx, '_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<Option<ScopedReservation<'ctx>>, NativeConvertError> {
-    match ctx {
+    match admission.context() {
         Some(ctx) => {
             let bytes = count_copy(ctx, records, operation)?;
             Ok(Some(ctx.reserve_scoped(bytes, operation)?))
@@ -87,11 +102,11 @@ pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
 
 /// Admit scratch storage before validation constructs candidate collections.
 pub(super) fn admit_validation_candidates<'ctx>(
-    ctx: Option<&'ctx DecodeContext<'_>>,
+    admission: NativeAdmission<'ctx, '_>,
     source_units: usize,
     operation: &'static str,
 ) -> Result<Option<ScopedReservation<'ctx>>, NativeConvertError> {
-    let Some(ctx) = ctx else {
+    let Some(ctx) = admission.context() else {
         return Ok(None);
     };
     let count = u64::try_from(source_units)
