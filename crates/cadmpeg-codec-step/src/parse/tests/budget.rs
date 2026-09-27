@@ -584,6 +584,26 @@ fn anchor_reference_stack_refuses_collection_limit() {
 }
 
 #[test]
+fn cyclic_anchor_error_text_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Resource("a".into()))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let refused = (0..=1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            AnchorResolver::new(&anchors, Some(&ctx)).resolve_root(&value),
+            Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_cyclic_anchor_error_text"
+        )
+    });
+    assert!(refused, "cyclic anchor error text must reach the resolver caller");
+}
+
+#[test]
 fn anchor_reference_stack_refuses_retained_limit() {
     let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
     let value = Value::Resource("a".into());

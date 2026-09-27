@@ -2562,7 +2562,13 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     return Ok((value.clone(), *nodes, *nodes));
                 }
                 if stack.contains(&name) {
-                    return Err(format!("cyclic anchor binding <{name}>").into());
+                    let message = format_parser_text(
+                        self.budget,
+                        "step_cyclic_anchor_error_text",
+                        format_args!("cyclic anchor binding <{name}>"),
+                    )
+                    .map_err(ResolveError::Resource)?;
+                    return Err(message.into());
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
                 if let Some(context) = self.budget {
