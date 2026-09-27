@@ -75,14 +75,14 @@ pub(crate) fn transfer(
     }
     let mut feature_ids = HashMap::new();
     for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
-        insert_hash_map(ctx, &mut feature_ids, object.id.as_str(), feature_id(object)?, "fcstd design feature ids")?;
+        insert_hash_map(ctx, &mut feature_ids, object.id.as_str(), feature_id(ctx, object)?, "fcstd design feature ids")?;
     }
     let mut parent_by_member = HashMap::new();
     for body in objects.iter().filter(|object| is_body(&object.type_name)) {
         let Some(property) = properties_by_owner.get(body.id.as_str())
             .and_then(|properties| body_membership_property(properties)) else { continue; };
         for member in property.links().iter().flatten().filter_map(crate::native::LinkTarget::object) {
-            insert_hash_map(ctx, &mut parent_by_member, member, feature_id(body)?, "fcstd design body membership")?;
+            insert_hash_map(ctx, &mut parent_by_member, member, feature_id(ctx, body)?, "fcstd design body membership")?;
         }
     }
     let mut sketch_ids = HashMap::new();
@@ -106,7 +106,7 @@ pub(crate) fn transfer(
     )?;
     let mut ordinal_by_feature = HashMap::new();
     for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
-        insert_hash_map(ctx, &mut ordinal_by_feature, feature_id(object)?, feature_ordinals[object.id.as_str()], "fcstd design feature ordinals")?;
+        insert_hash_map(ctx, &mut ordinal_by_feature, feature_id(ctx, object)?, feature_ordinals[object.id.as_str()], "fcstd design feature ordinals")?;
     }
 
     for object in objects {
@@ -116,7 +116,7 @@ pub(crate) fn transfer(
         let source = properties_by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
         let mut owned = collection_vec(ctx, source.len(), "fcstd design selected properties")?;
         owned.extend_from_slice(source);
-        let id = feature_id(object)?;
+        let id = feature_id(ctx, object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
             reserve_vec_items(ctx, &mut ir.model.spreadsheets, 1, "fcstd design spreadsheets")?;
             ir.model.spreadsheets.push(append_spreadsheet(
@@ -381,21 +381,23 @@ pub(crate) fn transfer(
             native_ref: Some(retained_string(ctx, &object.id, "fcstd feature native reference")?),
         });
     }
-    let initial_cycle_affected_features = objects
-        .iter()
-        .filter(|object| cycle_affected.contains(object.id.as_str()))
-        .map(feature_id)
-        .collect::<Result<BTreeSet<_>, _>>()?;
+    let mut initial_cycle_affected_features = BTreeSet::new();
+    for object in objects.iter().filter(|object| cycle_affected.contains(object.id.as_str())) {
+        ctx.charge_collection_items(1, "fcstd design cycle feature identities")?;
+        initial_cycle_affected_features.insert(feature_id(ctx, object)?);
+    }
     let parameter_cycle_features = bind_parameter_dependencies(
+        ctx,
         &mut ir.model.parameters,
         objects,
         &initial_cycle_affected_features,
     )?;
     for object in objects {
-        if !parameter_cycle_features.contains(&feature_id(object)?) {
+        if !parameter_cycle_features.contains(&feature_id(ctx, object)?) {
             continue;
         }
-        cycle_affected.insert(object.id.clone());
+        ctx.charge_collection_items(1, "fcstd design parameter cycle objects")?;
+        cycle_affected.insert(retained_string(ctx, &object.id, "fcstd design parameter cycle identity")?);
         if let Some(feature) = ir
             .model
             .features
@@ -524,7 +526,7 @@ fn feature_ordinals<'a>(
     for object in &design_objects {
         object_by_id.insert(object.id.as_str(), *object);
         object_by_name.insert(object.name.as_str(), *object);
-        object_by_feature.insert(feature_id(object)?, object.id.as_str());
+        object_by_feature.insert(feature_id(ctx, object)?, object.id.as_str());
         source_ordinals.push(object.order as u64);
     }
     source_ordinals.sort_unstable();
@@ -824,7 +826,7 @@ fn append_spreadsheet(
         reserve_vec_items(ctx, parameters, 1, "fcstd spreadsheet parameters")?;
         parameters.push(DesignParameter {
             id,
-            owner: Some(feature_id(object)?),
+            owner: Some(feature_id(ctx, object)?),
             ordinal: index as u32,
             name: retained_string(ctx, name, "fcstd spreadsheet cell name")?,
             expression: retained_string(ctx, content, "fcstd spreadsheet cell expression")?,
@@ -849,7 +851,7 @@ fn append_spreadsheet(
             &cadmpeg_ir::identity_namespace!("fcstd", "design", "spreadsheet"),
             object_key(object)?,
         ),
-        feature_id(object)?,
+        feature_id(ctx, object)?,
         cell_ids,
         spreadsheet_dimensions(
             ctx,
@@ -1051,7 +1053,7 @@ fn append_operation_parameters(
         "ThreadDepth",
         "CustomThreadClearance",
     ];
-    let owner = feature_id(object)?;
+    let owner = feature_id(ctx, object)?;
     for property in properties
         .iter()
         .copied()
@@ -2053,7 +2055,7 @@ fn parse_constraints(
                     parameters.push(DesignParameter {
                         id: ParameterId::mint(retained_string(ctx, id.as_str(), "fcstd constraint parameter identity")?)
                             .map_err(CodecError::malformed)?,
-                        owner: Some(feature_id(object)?),
+                        owner: Some(feature_id(ctx, object)?),
                         ordinal: index as u32,
                         name: format!("Constraint{}", index + 1),
                         expression,
@@ -2279,14 +2281,18 @@ fn expression_binding(
 }
 
 fn bind_parameter_dependencies(
+    ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     objects: &[ObjectRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
 ) -> Result<BTreeSet<FeatureId>, CodecError> {
-    let object_names = objects
-        .iter()
-        .map(|object| Ok((feature_id(object)?, object.name.as_str())))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut object_names = HashMap::new();
+    for object in objects {
+        insert_hash_map(
+            ctx, &mut object_names, feature_id(ctx, object)?, object.name.as_str(),
+            "fcstd parameter dependency object names",
+        )?;
+    }
     let candidates = parameters
         .iter()
         .map(|parameter| {
@@ -6496,11 +6502,12 @@ fn operation_boolean(kind: &str) -> BooleanOp {
     }
 }
 
-fn feature_id(object: &ObjectRecord) -> Result<FeatureId, CodecError> {
-    Ok(FeatureId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "design", "feature"),
-        object_key(object)?,
-    ))
+fn feature_id(ctx: &DecodeContext<'_>, object: &ObjectRecord) -> Result<FeatureId, CodecError> {
+    FeatureId::mint(retained_format(
+        ctx,
+        format_args!("fcstd:design:feature#{}", crate::native::id_key(&object.id)),
+        "fcstd design feature identity",
+    )?).map_err(CodecError::malformed)
 }
 
 fn object_key(object: &ObjectRecord) -> Result<IdentityKey, CodecError> {
