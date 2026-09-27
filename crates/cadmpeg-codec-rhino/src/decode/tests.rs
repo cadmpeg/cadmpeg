@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
-    hatch_plane_transform, region_shell_groups, region_shell_groups_without_records,
-    scaled_tolerance, seal_for_test, set_exactness, stage_brep, stage_curve_tree,
-    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
+    coedge_sense, commit_curve_tree, copy_retained_link, edge_param_range, edge_vertices,
+    face_components, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
+    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
@@ -28,7 +28,7 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
-use cadmpeg_ir::unknown::NativeUnknownRecord;
+use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -1536,12 +1536,43 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             crate::settings::UnitBinding::Unavailable
         );
         assert_eq!(context.archive(), archive);
-        assert!(context.append_link(0, "rhino:curve#2".to_string()));
-        assert!(context.append_link(0, "rhino:curve#1".to_string()));
-        assert!(context.append_link(0, "rhino:curve#2".to_string()));
+        assert!(context
+            .append_link(0, "rhino:curve#2")
+            .expect("admitted link"));
+        assert!(context
+            .append_link(0, "rhino:curve#1")
+            .expect("admitted link"));
+        assert!(context
+            .append_link(0, "rhino:curve#2")
+            .expect("admitted link"));
         assert_eq!(
             context.unknown(0).expect("required invariant").links(),
             vec!["rhino:curve#1".to_string(), "rhino:curve#2".to_string()]
+        );
+        let own_id = context
+            .unknown(0)
+            .expect("required invariant")
+            .id()
+            .to_string();
+        assert!(context
+            .append_links(
+                0,
+                &[
+                    "rhino:curve#3".to_string(),
+                    "rhino:curve#1".to_string(),
+                    own_id,
+                    "rhino:curve#0".to_string(),
+                ],
+            )
+            .expect("admitted links"));
+        assert_eq!(
+            context.unknown(0).expect("required invariant").links(),
+            [
+                "rhino:curve#0",
+                "rhino:curve#1",
+                "rhino:curve#2",
+                "rhino:curve#3"
+            ]
         );
         assert!(context.mark_decoded(0));
         assert!(!context.mark_decoded(0));
@@ -1570,6 +1601,42 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
         assert_eq!(validation.error_count(), 0);
     });
+}
+
+#[test]
+fn unknown_record_link_insertion_refuses_collection_limit() {
+    let refusal = with_collection_limit(0, |ctx| {
+        let mut record = UnknownRecord::unavailable(
+            UnknownId::mint("rhino:object:unknown#0").expect("valid identity"),
+            0,
+            0,
+            "",
+            Vec::new(),
+        );
+        append_link_to_record(ctx, &mut record, "rhino:curve#1".to_string())
+            .expect_err("one link exceeds the collection limit")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino unknown record links"
+    ));
+}
+
+#[test]
+fn unknown_record_link_copy_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let refusal =
+        copy_retained_link(&ctx, "curve").expect_err("five retained bytes exceed the limit");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino unknown record link copy"
+    ));
 }
 
 #[test]
