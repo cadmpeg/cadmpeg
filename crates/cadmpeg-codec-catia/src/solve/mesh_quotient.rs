@@ -9033,10 +9033,12 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
 }
 
 pub(super) fn prune_mesh_endpoint_pair_support(
+    ctx: &DecodeContext<'_>,
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
-) -> bool {
+) -> Result<bool, CodecError> {
     prune_mesh_endpoint_pair_support_with_limit(
+        ctx,
         assignments,
         edge_candidates,
         MAX_MESH_CONSTRAINT_OPERATIONS,
@@ -9044,10 +9046,11 @@ pub(super) fn prune_mesh_endpoint_pair_support(
 }
 
 pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
+    ctx: &DecodeContext<'_>,
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
     limit: usize,
-) -> bool {
+) -> Result<bool, CodecError> {
     let budget = WorkBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
@@ -9066,10 +9069,10 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                 // Pair-support pruning is optional. Every removal made before
                 // exhaustion was proved locally; the independently bounded
                 // quotient search can continue from that sound partial result.
-                return true;
+                return Ok(true);
             }
             if face.is_empty() {
-                return false;
+                return Ok(false);
             }
             changed |= face.len() != before;
         }
@@ -9077,24 +9080,16 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             if edge_candidates[edge].is_empty() {
                 continue;
             }
-            let incident_faces = assignments
-                .iter()
-                .enumerate()
-                .filter_map(|(face, choices)| {
-                    choices
-                        .iter()
-                        .any(|assignment| {
-                            assignment
-                                .boundaries
-                                .iter()
-                                .flatten()
-                                .any(|use_| use_.edge == edge)
-                        })
-                        .then_some(face)
-                })
-                .collect::<Vec<_>>();
+            let mut incident_faces = Vec::new();
+            for (face, choices) in assignments.iter().enumerate() {
+                if choices.iter().any(|assignment| {
+                    assignment.boundaries.iter().flatten().any(|use_| use_.edge == edge)
+                }) {
+                    crate::resource::push(ctx, &mut incident_faces, face, "catia_prune_incident_faces")?;
+                }
+            }
             let before = edge_candidates[edge].len();
-            let snapshot = edge_candidates.to_vec();
+            let snapshot = crate::resource::copy_retained_rows(ctx, edge_candidates, "catia_prune_snapshot_rows", "catia_prune_snapshot_pairs")?;
             edge_candidates[edge].retain(|pair| {
                 incident_faces.iter().all(|face| {
                     assignments[*face].iter().any(|assignment| {
@@ -9115,17 +9110,17 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             });
             if budget.exhausted() {
                 // Do not turn incomplete propagation into a contradiction.
-                return true;
+                return Ok(true);
             }
             if edge_candidates[edge].is_empty() {
-                return false;
+                return Ok(false);
             }
             if edge_candidates[edge].len() != before {
                 continue 'fixpoint;
             }
         }
         if !changed {
-            return true;
+            return Ok(true);
         }
     }
 }
@@ -11282,12 +11277,12 @@ fn resolve_standard_mesh_endpoint_candidates(
 ) -> Result<MeshEndpointResolve, CodecError> {
     const MAX_SELECTION_WORK: usize = 100_000;
     let face_count = assignments.len();
-    let mut edge_candidates = edge_candidates.to_vec();
-    if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
+    let mut edge_candidates = crate::resource::copy_retained_rows(ctx, edge_candidates, "catia_standard_endpoint_choice_rows", "catia_standard_endpoint_choice_pairs")?;
+    if !prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut edge_candidates)? {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
     let quotient = if let Some(prepared) = prepared_quotient {
-        Some(prepared.clone())
+        Some(prepared.clone_charged(ctx)?)
     } else {
         initial_mesh_quotient(ctx, &edge_candidates, vertex_points.len(), port_identities)?
     };
