@@ -160,6 +160,7 @@ pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> String {
     let child = child.as_ref();
     let child_key = if child.is_empty() {

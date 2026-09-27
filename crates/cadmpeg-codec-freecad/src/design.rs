@@ -449,7 +449,9 @@ pub(crate) fn transfer(
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
         let mut outputs = Vec::new();
         for payload in payloads.iter().filter(|payload| owned.iter().any(|property| property.id == payload.property)) {
-            let prefix = crate::native::model_id("body", &payload.id, "");
+            let prefix = crate::native::model_id_charged_at(
+                ctx, "body", &payload.id, "", "fcstd design body output prefix",
+            )?;
             for body in body_ids.iter().filter(|body| body.as_str().starts_with(&prefix)) {
                 reserve_vec_items(ctx, &mut outputs, 1, "fcstd design feature outputs")?;
                 outputs.push(cadmpeg_ir::ids::BodyId::mint(retained_string(ctx, body.as_str(), "fcstd design output body")?)
