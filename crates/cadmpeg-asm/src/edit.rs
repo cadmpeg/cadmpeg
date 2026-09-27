@@ -835,6 +835,7 @@ impl AsmEditSet {
         let record_bytes = record_slice(bytes, record, "rolling-ball")?;
         let layout =
             crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, self.ref_width)
+                .transpose()?
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "spline record {} lacks a writable rolling-ball radius pair",

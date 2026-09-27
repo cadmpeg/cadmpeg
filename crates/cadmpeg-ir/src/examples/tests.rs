@@ -8,7 +8,7 @@ use crate::validate::validate_neutral;
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
     let ir = directed_subd_sum().unwrap();
-    let report = crate::validate::validate_neutral(&ir, Vec::new());
+    let report = crate::validate::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "{:?}", report.findings);
     let json = ir.to_canonical_json().expect("serialize fixture");
     assert_eq!(CadIr::from_json(&json).expect("parse fixture"), ir);
@@ -96,7 +96,7 @@ fn unit_cube_has_expected_census() {
 #[test]
 fn unit_cube_validates_clean() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(
         report.is_ok(),
         "cube should have no error findings, got: {:?}",

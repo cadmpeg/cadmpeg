@@ -787,10 +787,10 @@ impl NativeModel {
         let audit_trail_rows = audit_trail_rows(container);
         let operation_state_journal_groups = operation_state_journal_groups(container);
         let operation_state_counters = operation_state_counters(container);
-        let operation_state_groups = operation_state_groups(container)?;
-        let operation_state_messages = operation_state_messages(container);
-        let operation_state_statuses = operation_state_statuses(container);
-        let operation_state_slot_lanes = operation_state_slot_lanes(container);
+        let operation_state_groups = operation_state_groups(Some(ctx), container)?;
+        let operation_state_messages = operation_state_messages(Some(ctx), container)?;
+        let operation_state_statuses = operation_state_statuses(Some(ctx), container)?;
+        let operation_state_slot_lanes = operation_state_slot_lanes(Some(ctx), container)?;
         let feature_operation_records = feature_operation_records(container);
         let feature_unlabeled_operation_records = feature_unlabeled_operation_records(container);
         let feature_unlabeled_operation_body_writes =
@@ -924,9 +924,10 @@ impl NativeModel {
             &display_jt_vertex_texture_coordinates,
         );
         let display_jt_polygon_meshes = display_jt_polygon_meshes(
+            ctx,
             &display_jt_topology_packet_sequences,
             &display_jt_coordinate_array_headers,
-        );
+        )?;
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
             display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
@@ -1207,7 +1208,8 @@ impl NativeModel {
             };
         let data_block_control_forms = data_block_control_forms(container);
         let data_block_control_values = data_block_control_values(container);
-        let data_block_control_class_references = data_block_control_class_references(container);
+        let data_block_control_class_references =
+            data_block_control_class_references(ctx, container)?;
         let data_block_control_index_values = data_block_control_index_values(container);
         let data_block_control_references = data_block_control_references(container);
         let data_block_control_handle_pairs =

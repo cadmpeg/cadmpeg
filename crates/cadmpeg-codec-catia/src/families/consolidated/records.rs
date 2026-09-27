@@ -1224,9 +1224,10 @@ fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeG
 /// A carrier binds only when record identity or chart geometry determines one
 /// solution. Ambiguous candidates, including matches from different analytic
 /// families, remain unresolved.
-#[must_use]
 #[cfg(test)]
-fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
+fn resolve_consolidated_edge_blocks(
+    data: &[u8],
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::decode::ResourceLimit> {
     let records = consolidated_records(data);
     resolve_consolidated_edge_blocks_from_records(
         data,
@@ -1239,7 +1240,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<ResolvedConsolidatedEdgeBlock> {
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::decode::ResourceLimit> {
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records);
     let standalone = b2_cylinders_from_records(data, records);
@@ -1261,7 +1262,12 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|block| {
-            let mut supports = std::array::from_fn(|side| {
+            let mut supports = [None, None];
+            for (side, support) in supports.iter_mut().enumerate() {
+                *support = (|| -> Result<
+                    Option<ConsolidatedSupportBinding>,
+                    cadmpeg_core::decode::ResourceLimit,
+                > {
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
                 let mut ambiguous_family = false;
@@ -1277,77 +1283,62 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 if identity_count == 0 {
                     for cylinder in &standalone {
                         if pcurve_endpoints_match(pcurve, &points, |uv| {
-                            b2_cylinder_point(cylinder, uv)
-                        }) {
-                            winners
-                                .push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
+                            Ok(b2_cylinder_point(cylinder, uv))
+                        })? {
+                            winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
                         }
                     }
-                    winners.extend(
-                        embedded
-                            .iter()
-                            .filter(|value| {
-                                pcurve_endpoints_match(pcurve, &points, |uv| {
-                                    b2_cylinder_point(&value.cylinder, uv)
-                                })
-                            })
-                            .map(|value| ConsolidatedSupportBinding::EmbeddedCylinder {
+                    for value in &embedded {
+                        if pcurve_endpoints_match(pcurve, &points, |uv| {
+                            Ok(b2_cylinder_point(&value.cylinder, uv))
+                        })? {
+                            winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
                                 pos: value.pos,
                                 wrapper_pos: value.wrapper_pos,
-                            }),
-                    );
+                            });
+                        }
+                    }
                     winners.extend(
                         circles
                             .iter()
                             .filter(|circle| pcurve_matches_circle(pcurve, circle))
                             .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos }),
                     );
-                    winners.extend(
-                        cones
-                            .iter()
-                            .filter(|cone| {
-                                pcurve_endpoints_match(pcurve, &points, |uv| {
-                                    b2_cone_point(cone, uv)
-                                })
-                            })
-                            .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
-                    );
-                    winners.extend(
-                        spheres
-                            .iter()
-                            .filter(|sphere| {
-                                let geometry = b2_sphere_geometry(sphere);
-                                pcurve_endpoints_match(pcurve, &points, |[u, v]| {
-                                    cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                                        .ok()
-                                        .map(cadmpeg_ir::features::FinitePoint3::get)
-                                })
-                            })
-                            .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
-                    );
-                    winners.extend(
-                        tori.iter()
-                            .filter(|torus| {
-                                pcurve_endpoints_match(pcurve, &points, |uv| {
-                                    b2_torus_point(torus, uv)
-                                })
-                            })
-                            .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
-                    );
-                    winners.extend(
-                        planes
-                            .iter()
-                            .filter(|plane| {
-                                b2_plane_geometry(plane).is_some_and(|geometry| {
-                                    pcurve_endpoints_match(pcurve, &points, |[u, v]| {
-                                        cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                                            .ok()
-                                            .map(cadmpeg_ir::features::FinitePoint3::get)
-                                    })
-                                })
-                            })
-                            .map(|plane| ConsolidatedSupportBinding::Plane { pos: plane.pos }),
-                    );
+                    for cone in &cones {
+                        if pcurve_endpoints_match(pcurve, &points, |uv| {
+                            Ok(b2_cone_point(cone, uv))
+                        })? {
+                            winners.push(ConsolidatedSupportBinding::Cone { pos: cone.pos });
+                        }
+                    }
+                    for sphere in &spheres {
+                        let geometry = b2_sphere_geometry(sphere);
+                        if pcurve_endpoints_match(pcurve, &points, |[u, v]| {
+                            match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
+                                Ok(point) => Ok(Some(point.get())),
+                                Err(failure) => failure.non_finite(),
+                            }
+                        })? {
+                            winners.push(ConsolidatedSupportBinding::Sphere { pos: sphere.pos });
+                        }
+                    }
+                    for torus in &tori {
+                        if pcurve_endpoints_match(pcurve, &points, |uv| b2_torus_point(torus, uv))? {
+                            winners.push(ConsolidatedSupportBinding::Torus { pos: torus.pos });
+                        }
+                    }
+                    for plane in &planes {
+                        if let Some(geometry) = b2_plane_geometry(plane) {
+                            if pcurve_endpoints_match(pcurve, &points, |[u, v]| {
+                                match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
+                                    Ok(point) => Ok(Some(point.get())),
+                                    Err(failure) => failure.non_finite(),
+                                }
+                            })? {
+                                winners.push(ConsolidatedSupportBinding::Plane { pos: plane.pos });
+                            }
+                        }
+                    }
                 } else if identity_count > 1 {
                     ambiguous_family = true;
                 } else if let [circle] = identity_circles.as_slice() {
@@ -1358,8 +1349,8 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     }
                 } else if let [value] = identity_embedded.as_slice() {
                     if pcurve_endpoints_match(pcurve, &points, |uv| {
-                        b2_cylinder_point(&value.cylinder, uv)
-                    }) {
+                        Ok(b2_cylinder_point(&value.cylinder, uv))
+                    })? {
                         winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
                             pos: value.pos,
                             wrapper_pos: value.wrapper_pos,
@@ -1371,19 +1362,21 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     ambiguous_family = true;
                 }
                 if !ambiguous_family && winners.len() == 1 {
-                    winners.pop()
+                    Ok(winners.pop())
                 } else {
-                    None
+                    Ok(None)
                 }
-            });
+                })()?;
+            }
             for anchor_side in [0, 1] {
                 let partner = 1 - anchor_side;
                 if supports[partner].is_some() {
                     continue;
                 }
-                let Some(anchor_points) = supports[anchor_side].as_ref().and_then(|binding| {
-                    support_points(binding, &block.pcurves[anchor_side], &carriers)
-                }) else {
+                let Some(binding) = supports[anchor_side].as_ref() else {
+                    continue;
+                };
+                let Some(anchor_points) = support_points(binding, &block.pcurves[anchor_side], &carriers)? else {
                     continue;
                 };
                 let partner_points = block.pcurves[partner]
@@ -1391,42 +1384,38 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     .into_iter()
                     .map(FiniteVector::get)
                     .collect::<Vec<_>>();
-                let winners: Vec<_> = surfaces
-                    .iter()
-                    .filter_map(|surface| {
-                        nurbs_carrier_offset(
-                            &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                surface.geometry.clone(),
-                            )),
-                            &partner_points,
-                            &anchor_points,
-                        )
-                        .map(|offset| {
-                            ConsolidatedSupportBinding::NurbsCarrier {
-                                pos: surface.pos,
-                                offset,
-                            }
-                        })
-                    })
-                    .collect();
+                let mut winners = Vec::new();
+                for surface in &surfaces {
+                    if let Some(offset) = nurbs_carrier_offset(
+                        &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                            surface.geometry.clone(),
+                        )),
+                        &partner_points,
+                        &anchor_points,
+                    )? {
+                        winners.push(ConsolidatedSupportBinding::NurbsCarrier {
+                            pos: surface.pos,
+                            offset,
+                        });
+                    }
+                }
                 if let [winner] = winners.as_slice() {
                     supports[partner] = Some(winner.clone());
                 }
             }
             if supports.iter().all(Option::is_none) {
-                let candidates = block.pcurves.each_ref().map(|pcurve| {
-                    surfaces
-                        .iter()
-                        .filter_map(|surface| {
-                            let binding = ConsolidatedSupportBinding::NurbsCarrier {
-                                pos: surface.pos,
-                                offset: FiniteReal::ZERO,
-                            };
-                            let points = support_points(&binding, pcurve, &carriers)?;
-                            Some((binding, points))
-                        })
-                        .collect::<Vec<_>>()
-                });
+                let mut candidates = [Vec::new(), Vec::new()];
+                for (side, pcurve) in block.pcurves.iter().enumerate() {
+                    for surface in &surfaces {
+                        let binding = ConsolidatedSupportBinding::NurbsCarrier {
+                            pos: surface.pos,
+                            offset: FiniteReal::ZERO,
+                        };
+                        if let Some(points) = support_points(&binding, pcurve, &carriers)? {
+                            candidates[side].push((binding, points));
+                        }
+                    }
+                }
                 let mut winner = None;
                 'pairs: for (first_binding, first_points) in &candidates[0] {
                     for (second_binding, second_points) in &candidates[1] {
@@ -1444,16 +1433,16 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     supports = winner.map(Some);
                 }
             }
-            let shared_loci = resolved_support_loci(&block, &supports, &carriers);
+            let shared_loci = resolved_support_loci(&block, &supports, &carriers)?;
             let endpoint_loci = shared_loci
                 .as_ref()
                 .and_then(|points| Some([*points.first()?, *points.last()?]));
-            ResolvedConsolidatedEdgeBlock {
+            Ok(ResolvedConsolidatedEdgeBlock {
                 block,
                 supports,
                 shared_loci,
                 endpoint_loci,
-            }
+            })
         })
         .collect()
 }
@@ -1471,73 +1460,87 @@ fn resolved_support_loci(
     block: &ConsolidatedEdgeBlock,
     supports: &[Option<ConsolidatedSupportBinding>; 2],
     carriers: &ConsolidatedCarriers<'_>,
-) -> Option<Vec<Point3>> {
-    let candidates = supports
-        .iter()
-        .zip(&block.pcurves)
-        .filter_map(|(binding, pcurve)| {
-            let points = support_points(binding.as_ref()?, pcurve, carriers)?;
-            (!points.is_empty()).then_some(points)
-        })
-        .collect::<Vec<_>>();
-    let first = candidates.first()?;
-    candidates
+) -> Result<Option<Vec<Point3>>, cadmpeg_core::decode::ResourceLimit> {
+    let mut candidates = Vec::new();
+    for (binding, pcurve) in supports.iter().zip(&block.pcurves) {
+        let Some(binding) = binding.as_ref() else {
+            continue;
+        };
+        if let Some(points) = support_points(binding, pcurve, carriers)? {
+            if !points.is_empty() {
+                candidates.push(points);
+            }
+        }
+    }
+    let Some(first) = candidates.first() else {
+        return Ok(None);
+    };
+    Ok(candidates
         .iter()
         .all(|candidate| point_sequences_agree(first, candidate))
-        .then(|| first.clone())
+        .then(|| first.clone()))
 }
 
 fn support_points(
     binding: &ConsolidatedSupportBinding,
     pcurve: &ConsolidatedPcurve,
     carriers: &ConsolidatedCarriers<'_>,
-) -> Option<Vec<Point3>> {
+) -> Result<Option<Vec<Point3>>, cadmpeg_core::decode::ResourceLimit> {
     match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
-            let carrier = carriers.cylinders.iter().find(|value| value.pos == *pos)?;
+            let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point.get()))
+                .map(|site| Ok(b2_cylinder_point(carrier, site.point.get())))
                 .collect()
         }
         ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
-            let carrier = &carriers
+            let Some(carrier) = carriers
                 .embedded_cylinders
                 .iter()
-                .find(|value| value.pos == *pos)?
-                .cylinder;
+                .find(|value| value.pos == *pos)
+            else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point.get()))
+                .map(|site| Ok(b2_cylinder_point(&carrier.cylinder, site.point.get())))
                 .collect()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
-            let carrier = carriers.cones.iter().find(|value| value.pos == *pos)?;
+            let Some(carrier) = carriers.cones.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cone_point(carrier, site.point.get()))
+                .map(|site| Ok(b2_cone_point(carrier, site.point.get())))
                 .collect()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
-            let carrier = carriers.spheres.iter().find(|value| value.pos == *pos)?;
+            let Some(carrier) = carriers.spheres.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    // A non-finite site is compared as a finite one is.
                     match cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v) {
-                        Ok(point) => Some(point.get()),
+                        Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
                 })
                 .collect()
         }
         ConsolidatedSupportBinding::Torus { pos } => {
-            let carrier = carriers.tori.iter().find(|value| value.pos == *pos)?;
+            let Some(carrier) = carriers.tori.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
@@ -1545,56 +1548,69 @@ fn support_points(
                 .collect()
         }
         ConsolidatedSupportBinding::Plane { pos } => {
-            let carrier = carriers.planes.iter().find(|value| value.pos == *pos)?;
-            let geometry = b2_plane_geometry(carrier)?;
+            let Some(carrier) = carriers.planes.iter().find(|value| value.pos == *pos) else {
+                return Ok(None);
+            };
+            let Some(geometry) = b2_plane_geometry(carrier) else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    // A non-finite site is compared as a finite one is.
                     match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
-                        Ok(point) => Some(point.get()),
+                        Ok(point) => Ok(Some(point.get())),
                         Err(failure) => failure.non_finite(),
                     }
                 })
                 .collect()
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let surface = &carriers
+            let Some(surface) = carriers
                 .nurbs_surfaces
                 .iter()
-                .find(|surface| surface.pos == *pos)?
-                .geometry;
+                .find(|surface| surface.pos == *pos)
+            else {
+                return Ok(None);
+            };
             pcurve
                 .sites
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    let partials = nurbs_surface_partials(surface, u, v).ok()?;
-                    let normal = partials.du.cross(partials.dv.get()).unit()?;
-                    Some(Point3::new(
+                    let partials = match nurbs_surface_partials(&surface.geometry, u, v) {
+                        Ok(partials) => partials,
+                        Err(failure) => return failure.non_finite(),
+                    };
+                    let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+                        return Ok(None);
+                    };
+                    Ok(Some(Point3::new(
                         partials.point.x + offset.get() * normal.x,
                         partials.point.y + offset.get() * normal.y,
                         partials.point.z + offset.get() * normal.z,
-                    ))
+                    )))
                 })
                 .collect()
         }
-        ConsolidatedSupportBinding::Circle { .. } => None,
+        ConsolidatedSupportBinding::Circle { .. } => Ok(None),
     }
 }
 
 /// The torus point at stored site `[u, v]`. A non-finite point is returned
 /// as the evaluation reached it; the loci comparisons read it as a
 /// disagreement.
-fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
+fn b2_torus_point(
+    torus: &B2Torus,
+    [u, v]: [f64; 2],
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     match cadmpeg_ir::eval::surface_point(
         &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
     ) {
-        Ok(point) => Some(point.get()),
+        Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
 }
@@ -1603,16 +1619,20 @@ fn nurbs_carrier_offset(
     geometry: &SurfaceGeometry,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, cadmpeg_core::decode::ResourceLimit> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
-        return None;
+        return Ok(None);
     };
     if parameters.len() != anchors.len() || parameters.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut offsets = Vec::with_capacity(parameters.len());
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        let partials = nurbs_surface_partials(surface, u, v).ok()?;
+        let partials = match nurbs_surface_partials(surface, u, v) {
+            Ok(partials) => partials,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
         if residual == Vector3::new(0.0, 0.0, 0.0) {
@@ -1620,7 +1640,9 @@ fn nurbs_carrier_offset(
             continue;
         }
         let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
-        let normal = partials.du.cross(partials.dv.get()).unit()?;
+        let Some(normal) = partials.du.cross(partials.dv.get()).unit() else {
+            return Ok(None);
+        };
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
         let transverse = Vector3::new(
             residual.x - normal.x * distance,
@@ -1628,12 +1650,14 @@ fn nurbs_carrier_offset(
             residual.z - normal.z * distance,
         );
         let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
-        let distance = FiniteReal::new(distance)?;
+        let Some(distance) = FiniteReal::new(distance) else {
+            return Ok(None);
+        };
         if !residual_length.is_finite()
             || !transverse_length.is_finite()
             || transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length
         {
-            return None;
+            return Ok(None);
         }
         offsets.push(distance);
     }
@@ -1642,9 +1666,9 @@ fn nurbs_carrier_offset(
         (value.get() - first.get()).abs()
             > EPS_SAMPLE_AGREEMENT * value.get().abs().max(first.get().abs())
     }) {
-        return None;
+        return Ok(None);
     }
-    Some(first)
+    Ok(Some(first))
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
@@ -1664,21 +1688,25 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
 fn pcurve_endpoints_match(
     pcurve: &ConsolidatedPcurve,
     vertices: &[FinitePoint3],
-    evaluate: impl Fn([f64; 2]) -> Option<Point3>,
-) -> bool {
+    evaluate: impl Fn([f64; 2]) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit>,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let (Some(first), Some(last)) = (
         pcurve.sites.first().map(|site| site.point.get()),
         pcurve.sites.last().map(|site| site.point.get()),
     ) else {
-        return false;
+        return Ok(false);
     };
-    [first, last].into_iter().all(|uv| {
-        evaluate(uv).is_some_and(|point| {
+    for uv in [first, last] {
+        let matches = evaluate(uv)?.is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| distance(point, vertex.get()) < 2e-3)
-        })
-    })
+        });
+        if !matches {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Read `05 08 01` coordinate rows outside every length-closed consolidated
@@ -1777,6 +1805,7 @@ mod tests {
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
         )
+        .expect("evaluator allocation succeeds")
         .expect("constant normal offset");
         assert_eq!(offset.get(), tiny);
 
@@ -1788,11 +1817,13 @@ mod tests {
                     Point3::new(0.25, 0.25, tiny),
                     Point3::new(0.75, 0.75, 2.0 * tiny),
                 ],
-            ),
+            )
+            .expect("evaluator allocation succeeds"),
             None
         );
         assert_eq!(
-            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
+            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],)
+                .expect("evaluator allocation succeeds"),
             None
         );
         for invalid in [f64::NAN, f64::INFINITY] {
@@ -1804,7 +1835,8 @@ mod tests {
                         Point3::new(0.25, 0.25, tiny),
                         Point3::new(0.75, 0.75, invalid),
                     ],
-                ),
+                )
+                .expect("evaluator allocation succeeds"),
                 None
             );
         }
@@ -1925,11 +1957,13 @@ mod tests {
         };
         let binding = || Some(super::ConsolidatedSupportBinding::Plane { pos: 7 });
         assert_eq!(
-            super::resolved_support_loci(&block, &[None, binding()], &carriers),
+            super::resolved_support_loci(&block, &[None, binding()], &carriers)
+                .expect("evaluator allocation succeeds"),
             Some(vec![Point3::new(0.0, 0.0, 0.0); 2])
         );
         assert_eq!(
-            super::resolved_support_loci(&block, &[binding(), binding()], &carriers),
+            super::resolved_support_loci(&block, &[binding(), binding()], &carriers)
+                .expect("evaluator allocation succeeds"),
             None
         );
     }

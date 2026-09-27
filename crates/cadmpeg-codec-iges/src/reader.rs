@@ -609,7 +609,7 @@ fn decode_with_occurrence_limits(
 /// outcomes match full validation on every IGES golden fixture, so the route
 /// stays on the full validator.
 fn reject_invalid_semantic_ir(ir: &CadIr) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new())?;
     let Some(finding) = validation
         .findings
         .iter()

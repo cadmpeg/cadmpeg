@@ -91,7 +91,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
             ..
         } if magnitude.get().value.get() == 0.05 && magnitude.get().quantity == PmiQuantity::Length
     ));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
@@ -910,7 +910,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
         .pmi
         .iter()
         .any(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. })));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -970,7 +970,7 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
     assert_eq!(transform.rows()[0][3], 10.0);
     assert_eq!(transform.rows()[1][3], 20.0);
     assert_eq!(transform.rows()[2][3], 30.0);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -1276,7 +1276,7 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         })
     }
     .expect("valid common datum compartment");
-    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();

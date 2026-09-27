@@ -708,6 +708,59 @@ fn surface_curve_surface_cycle_exhausts_the_shared_budget_depth() {
 }
 
 #[test]
+fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
+    let mut ir = CadIr::empty();
+    let mut source = CurveId::mint("test:model:curve#base").expect("valid identity");
+    ir.model.curves.push(Curve {
+        id: source.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line fixture"),
+        )),
+        source_object: None,
+    });
+    for ordinal in 0..70 {
+        let replica =
+            CurveId::mint(format!("test:model:curve#replica-{ordinal}")).expect("valid identity");
+        ir.model.curves.push(Curve {
+            id: replica.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model
+            .add_procedural_curve(
+                replica.clone(),
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
+                        .expect("valid identity"),
+                    ProceduralCurveDefinition::Replica {
+                        source,
+                        transform: Transform::identity(),
+                    },
+                ),
+            )
+            .expect("replica fixture");
+        source = replica;
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    let expected = Ok(Point3::new(0.25, 0.0, 0.0));
+    assert_eq!(
+        model_curve_point_by_id(&index, &source, 0.25).map(crate::features::FinitePoint3::get),
+        expected
+    );
+    let budget = WorkBudget::new(usize::MAX);
+    assert_eq!(
+        model_curve_point_by_id_with_budget(&index, &source, 0.25, &budget)
+            .map(crate::features::FinitePoint3::get),
+        expected
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
 fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget() {
     let curve = CurveId::mint("test:model:curve#replica").expect("valid identity");
     let surface = SurfaceId::mint("test:model:surface#ruled").expect("valid identity");

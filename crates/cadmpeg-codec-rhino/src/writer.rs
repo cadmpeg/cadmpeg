@@ -1390,7 +1390,7 @@ fn validate_nurbs_trim(
             // A non-finite pcurve point is refused by the domain test.
             let uv = match pcurve_uv(&pcurve.geometry, parameter) {
                 Ok(uv) => uv.get(),
-                Err(failure) => failure.non_finite().ok_or_else(|| {
+                Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve {} cannot be evaluated over its edge domain",
                         pcurve.id.as_str()
@@ -1406,7 +1406,7 @@ fn validate_nurbs_trim(
             // A non-finite surface point is measured as a finite one is.
             let mapped = match nurbs_surface_point(surface, uv.u, uv.v) {
                 Ok(point) => point.get(),
-                Err(failure) => failure.non_finite().ok_or_else(|| {
+                Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve {} cannot be evaluated through its NURBS surface",
                         pcurve.id.as_str()
@@ -1422,7 +1422,7 @@ fn validate_nurbs_trim(
             // A non-finite edge curve point is measured as a finite one is.
             let edge_point = match edge.curve.point(curve_parameter) {
                 Ok(point) => point.get(),
-                Err(failure) => failure.non_finite().ok_or_else(|| {
+                Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "edge curve {} cannot be evaluated over its edge domain",
                         edge.curve_id

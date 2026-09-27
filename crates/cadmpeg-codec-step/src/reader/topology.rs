@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
@@ -2786,6 +2786,9 @@ fn build_one(
                                     });
                                     vec![(selected.id, selected.parameter_range)]
                                 }
+                                Err(PcurveSelectionFailure::ResourceLimit(limit)) => {
+                                    return Err(CodecError::ResourceLimit(limit).into());
+                                }
                                 Err(failure) => {
                                     let note = match failure {
                                         PcurveSelectionFailure::NotUnique { count } =>
@@ -2804,6 +2807,9 @@ fn build_one(
                                             StepLossCode::PcurveLocusDiscontinuous.note(format!(
                                                 "curve #{curve} has one endpoint-continuous pcurve on surface #{surface} whose bounded model-space locus or direction witness fails; the pcurve is omitted"
                                             )),
+                                        PcurveSelectionFailure::ResourceLimit(limit) => {
+                                            return Err(CodecError::ResourceLimit(limit).into());
+                                        }
                                     };
                                     losses.push(note);
                                     Vec::new()
@@ -3657,6 +3663,13 @@ enum PcurveSelectionFailure {
     Carrier,
     Endpoint,
     Locus,
+    ResourceLimit(ResourceLimit),
+}
+
+impl From<ResourceLimit> for PcurveSelectionFailure {
+    fn from(limit: ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
 }
 
 const PCURVE_ENDPOINT_GRID_DIVISIONS: usize = 64;
@@ -3727,7 +3740,7 @@ fn select_associated_pcurve(
         &surface,
         curve_start,
         curve_end,
-    )
+    )?
     .ok_or(PcurveSelectionFailure::Endpoint)?;
     if !endpoint.max_residual.is_finite() || !bound.is_finite() || endpoint.max_residual > bound {
         return Err(PcurveSelectionFailure::Endpoint);
@@ -3742,10 +3755,10 @@ fn select_associated_pcurve(
         curve_start,
         curve_end,
         bound,
-    ) {
+    )? {
         return Err(PcurveSelectionFailure::Locus);
     }
-    let parameter_range = pcurve_declared_parameter_range(geometry).and_then(|range| {
+    let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry) {
         let declared = pcurve_declared_endpoint_fit_directed(
             &index,
             &surface_id,
@@ -3754,9 +3767,12 @@ fn select_associated_pcurve(
             curve_start,
             curve_end,
         )?;
-        (declared.is_finite() && declared > COINCIDENCE_TOLERANCE)
-            .then_some([endpoint.start_parameter, endpoint.end_parameter])
-    });
+        declared
+            .filter(|declared| declared.is_finite() && *declared > COINCIDENCE_TOLERANCE)
+            .map(|_| [endpoint.start_parameter, endpoint.end_parameter])
+    } else {
+        None
+    };
     drop(index);
     Ok(SelectedPcurve {
         id: candidate,
@@ -3779,12 +3795,12 @@ fn pcurve_locus_witness(
     curve_start: Point3,
     curve_end: Point3,
     bound: f64,
-) -> bool {
+) -> Result<bool, ResourceLimit> {
     let Some(curve_step) = edge
         .curve()
         .and_then(|curve| curve_carrier_record(curve, exchange))
     else {
-        return false;
+        return Ok(false);
     };
     let curve_id = CurveId::from(ids::data(kind!("curve"), curve_step));
     let curve_seeds = curve_selection_parameter_domain(index, &curve_id).map_or(
@@ -3808,14 +3824,14 @@ fn pcurve_locus_witness(
         },
     );
     let Some(curve_start_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_start, &curve_seeds, bound)
+        curve_parameter_near_point(index, &curve_id, curve_start, &curve_seeds, bound)?
     else {
-        return false;
+        return Ok(false);
     };
     let Some(curve_end_parameter) =
-        curve_parameter_near_point(index, &curve_id, curve_end, &curve_seeds, bound)
+        curve_parameter_near_point(index, &curve_id, curve_end, &curve_seeds, bound)?
     else {
-        return false;
+        return Ok(false);
     };
     let mut fractions = (0..PCURVE_LOCUS_SAMPLE_COUNT)
         .map(|step| step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64)
@@ -3833,32 +3849,34 @@ fn pcurve_locus_witness(
         let pcurve_parameter = endpoint
             .start_parameter
             .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
-        let Some(uv) = pcurve_selection_uv(geometry, pcurve_parameter) else {
-            return false;
+        let Some(uv) = pcurve_selection_uv(geometry, pcurve_parameter)? else {
+            return Ok(false);
         };
-        let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v) else {
-            return false;
+        let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v)? else {
+            return Ok(false);
         };
         let curve_seed =
             curve_start_parameter.mul_add(1.0 - fraction, curve_end_parameter * fraction);
         let mut seeds = curve_seeds.to_vec();
         seeds.push(curve_seed);
         let Some(curve_parameter) =
-            curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)
+            curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)?
         else {
-            return false;
+            return Ok(false);
         };
-        let Ok(curve_point) = model_curve_point_by_id(index, &curve_id, curve_parameter) else {
-            return false;
+        let curve_point = match model_curve_point_by_id(index, &curve_id, curve_parameter) {
+            Ok(point) => point,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(false),
         };
         if !curve_point.distance(mapped).is_finite()
             || curve_point.distance(mapped) > bound
             || !fraction.is_finite()
         {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 fn curve_parameter_near_point(
@@ -3867,19 +3885,18 @@ fn curve_parameter_near_point(
     point: Point3,
     seeds: &[f64],
     tolerance: f64,
-) -> Option<f64> {
-    seeds
-        .iter()
-        .copied()
-        .filter(|seed| seed.is_finite())
-        .filter_map(|seed| {
-            model_curve_parameter_near_point_in_index_with_tolerance(
-                index, curve_id, point, seed, tolerance,
-            )
-            .map(|parameter| ((parameter.get() - seed).abs(), parameter.get()))
-        })
-        .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, parameter)| parameter)
+) -> Result<Option<f64>, ResourceLimit> {
+    let mut best: Option<(f64, f64)> = None;
+    for &seed in seeds.iter().filter(|seed| seed.is_finite()) {
+        let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
+            index, curve_id, point, seed, tolerance,
+        )? else { continue; };
+        let candidate = ((parameter.get() - seed).abs(), parameter.get());
+        if best.is_none_or(|current| candidate.0.total_cmp(&current.0).is_lt()) {
+            best = Some(candidate);
+        }
+    }
+    Ok(best.map(|(_, parameter)| parameter))
 }
 
 fn pcurve_endpoint_fit(
@@ -3889,43 +3906,43 @@ fn pcurve_endpoint_fit(
     surface: &SurfaceGeometry,
     start: Point3,
     end: Point3,
-) -> Option<PcurveEndpointFit> {
+) -> Result<Option<PcurveEndpointFit>, ResourceLimit> {
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
-        let declared_score = pcurve_declared_endpoint_fit_directed(
+        let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
             index,
             surface_id,
             geometry,
             parameter_range,
             start,
             end,
-        )?;
+        )? else { return Ok(None); };
         if declared_score <= COINCIDENCE_TOLERANCE {
-            return Some(PcurveEndpointFit {
+            return Ok(Some(PcurveEndpointFit {
                 start_parameter: parameter_range[0],
                 end_parameter: parameter_range[1],
                 max_residual: declared_score,
-            });
+            }));
         }
         // A few producers retain a stale trim around an edge-local pcurve.
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
         let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
-        let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
-        let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
-        return Some(PcurveEndpointFit {
+        let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)? else { return Ok(None); };
+        let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else { return Ok(None); };
+        return Ok(Some(PcurveEndpointFit {
             start_parameter: start.1,
             end_parameter: end.1,
             max_residual: start.0.max(end.0),
-        });
+        }));
     }
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
-    let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
-    let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
-    Some(PcurveEndpointFit {
+    let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)? else { return Ok(None); };
+    let Some(end) = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)? else { return Ok(None); };
+    Ok(Some(PcurveEndpointFit {
         start_parameter: start.1,
         end_parameter: end.1,
         max_residual: start.0.max(end.0),
-    })
+    }))
 }
 
 fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
@@ -3989,12 +4006,12 @@ fn surface_selection_point(
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, ResourceLimit> {
     let [u, v] = surface_selection_parameters(index, surface_id, u, v);
     // A non-finite point is returned as the evaluation reached it; the
     // selection measures read it as a miss.
     match model_surface_point_by_id(index, surface_id, u, v) {
-        Ok(point) => Some(point.get()),
+        Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
 }
@@ -4007,14 +4024,14 @@ fn pcurve_declared_endpoint_fit(
     range: [f64; 2],
     start: Point3,
     end: Point3,
-) -> Option<f64> {
-    let first_uv = pcurve_selection_uv(geometry, range[0])?;
-    let last_uv = pcurve_selection_uv(geometry, range[1])?;
-    let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
-    let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
+) -> Result<Option<f64>, ResourceLimit> {
+    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else { return Ok(None); };
+    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else { return Ok(None); };
+    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else { return Ok(None); };
+    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else { return Ok(None); };
     let forward = first.distance(start).max(last.distance(end));
     let reversed = first.distance(end).max(last.distance(start));
-    Some(forward.min(reversed))
+    Ok(Some(forward.min(reversed)))
 }
 
 fn pcurve_declared_endpoint_fit_directed(
@@ -4024,20 +4041,20 @@ fn pcurve_declared_endpoint_fit_directed(
     range: [f64; 2],
     start: Point3,
     end: Point3,
-) -> Option<f64> {
-    let first_uv = pcurve_selection_uv(geometry, range[0])?;
-    let last_uv = pcurve_selection_uv(geometry, range[1])?;
-    let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
-    let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
-    Some(first.distance(start).max(last.distance(end)))
+) -> Result<Option<f64>, ResourceLimit> {
+    let Some(first_uv) = pcurve_selection_uv(geometry, range[0])? else { return Ok(None); };
+    let Some(last_uv) = pcurve_selection_uv(geometry, range[1])? else { return Ok(None); };
+    let Some(first) = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)? else { return Ok(None); };
+    let Some(last) = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)? else { return Ok(None); };
+    Ok(Some(first.distance(start).max(last.distance(end))))
 }
 
 /// The pcurve point at `parameter`. A non-finite offset-pcurve point is
 /// returned as the evaluation reached it; the selection measures read it as a
 /// miss.
-fn pcurve_selection_uv(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2> {
+fn pcurve_selection_uv(geometry: &PcurveGeometry, parameter: f64) -> Result<Option<Point2>, ResourceLimit> {
     match pcurve_uv(geometry, parameter) {
-        Ok(uv) => Some(uv.get()),
+        Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     }
 }
@@ -4048,15 +4065,18 @@ fn pcurve_surface_closest(
     geometry: &PcurveGeometry,
     target: Point3,
     seeds: &[f64],
-) -> Option<(f64, f64)> {
+) -> Result<Option<(f64, f64)>, ResourceLimit> {
     // The minimum is only over the finite seed set. The caller treats the
     // directly evaluated result as a witness and omits the optional relation
     // when no witness meets the tolerance.
-    seeds
-        .iter()
-        .copied()
-        .filter_map(|seed| mapped_pcurve_closest(index, surface_id, geometry, target, seed))
-        .min_by(|left, right| left.0.total_cmp(&right.0))
+    let mut best: Option<(f64, f64)> = None;
+    for &seed in seeds {
+        let Some(candidate) = mapped_pcurve_closest(index, surface_id, geometry, target, seed)? else { continue; };
+        if best.is_none_or(|current| candidate.0.total_cmp(&current.0).is_lt()) {
+            best = Some(candidate);
+        }
+    }
+    Ok(best)
 }
 
 /// Search for a low-residual parameter on one pcurve branch. A pcurve and its
@@ -4070,43 +4090,51 @@ fn mapped_pcurve_closest(
     geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
-) -> Option<(f64, f64)> {
+) -> Result<Option<(f64, f64)>, ResourceLimit> {
     if !seed.is_finite() {
-        return None;
+        return Ok(None);
     }
     let domain = pcurve_selection_parameter_domain(geometry);
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
-    let evaluate_point = |parameter: f64| {
-        let uv = pcurve_selection_uv(geometry, parameter)?;
+    let evaluate_point = |parameter: f64| -> Result<Option<Point3>, ResourceLimit> {
+        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else { return Ok(None); };
         surface_selection_point(index, surface_id, uv.u, uv.v)
     };
-    let evaluate_tangent = |parameter: f64| {
-        let uv = pcurve_selection_uv(geometry, parameter)?;
-        let tangent_uv = pcurve_tangent(geometry, parameter).ok()?;
+    let evaluate_tangent = |parameter: f64| -> Result<Option<Vector3>, ResourceLimit> {
+        let Some(uv) = pcurve_selection_uv(geometry, parameter)? else { return Ok(None); };
+        let tangent_uv = match pcurve_tangent(geometry, parameter) {
+            Ok(value) => value,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
         let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
-        let partials = model_surface_partials_by_id(index, surface_id, u, v).ok()?;
-        Some(Vector3::new(
+        let partials = match model_surface_partials_by_id(index, surface_id, u, v) {
+            Ok(value) => value,
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(_) => return Ok(None),
+        };
+        Ok(Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
             partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
-        ))
+        )))
     };
 
     let mut parameter = clamp_to_domain(seed);
     let mut best = f64::INFINITY;
     let mut best_parameter = parameter;
     for _ in 0..32 {
-        let point = evaluate_point(parameter)?;
+        let Some(point) = evaluate_point(parameter)? else { return Ok(None); };
         let error = point.distance(target);
         if !error.is_finite() {
-            return None;
+            return Ok(None);
         }
         if error < best {
             best = error;
             best_parameter = parameter;
         }
-        let Some(tangent) = evaluate_tangent(parameter) else {
+        let Some(tangent) = evaluate_tangent(parameter)? else {
             break;
         };
         let Some(step) =
@@ -4116,7 +4144,7 @@ fn mapped_pcurve_closest(
             break;
         };
         let mut candidate = clamp_to_domain(parameter - step);
-        let Some(candidate_point) = evaluate_point(candidate) else {
+        let Some(candidate_point) = evaluate_point(candidate)? else {
             break;
         };
         let mut candidate_error = candidate_point.distance(target);
@@ -4124,9 +4152,9 @@ fn mapped_pcurve_closest(
             if candidate_error < error {
                 break;
             }
-            candidate =
-                clamp_to_domain(cadmpeg_ir::math::interpolate(candidate, parameter, 0.5)?.get());
-            let Some(candidate_point) = evaluate_point(candidate) else {
+            let Some(midpoint) = cadmpeg_ir::math::interpolate(candidate, parameter, 0.5) else { return Ok(None); };
+            candidate = clamp_to_domain(midpoint.get());
+            let Some(candidate_point) = evaluate_point(candidate)? else {
                 break;
             };
             candidate_error = candidate_point.distance(target);
@@ -4136,7 +4164,7 @@ fn mapped_pcurve_closest(
         }
         parameter = candidate;
     }
-    best.is_finite().then_some((best, best_parameter))
+    Ok(best.is_finite().then_some((best, best_parameter)))
 }
 
 fn pcurve_parameter_break_fractions(

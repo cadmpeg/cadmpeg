@@ -97,7 +97,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     );
     assert!(round_trip.ir().model.appearance_bindings.is_empty());
     assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",

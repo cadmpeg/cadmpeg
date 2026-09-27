@@ -298,18 +298,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         reference_context(1, vec![18]),
     ];
     assert_eq!(
-        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
-            &edge_operand,
-            &second_changed_operand,
-        ]),
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(
+            &[&edge_operand, &second_changed_operand,],
+            None
+        )
+        .unwrap(),
         Some(vec![17, 18])
     );
     second_changed_operand.recipe_reference_contexts[0].changed_reference_edge_slots = vec![17];
     assert_eq!(
-        crate::design::edge_resolve::changed_reference_edge_group_candidates(&[
-            &edge_operand,
-            &second_changed_operand,
-        ]),
+        crate::design::edge_resolve::changed_reference_edge_group_candidates(
+            &[&edge_operand, &second_changed_operand,],
+            None
+        )
+        .unwrap(),
         None
     );
     edge_operand.recipe_reference_contexts.clear();
@@ -462,7 +464,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(8),
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         recovered,
         cadmpeg_ir::features::EdgeSelection::Unresolved
@@ -512,7 +516,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         None,
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(
         matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
         "{terminal:?}"
@@ -562,7 +568,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(8),
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         merged,
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -575,7 +583,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(8),
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         complete,
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -592,7 +602,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(8),
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         face_rules,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
@@ -628,7 +640,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
         None,
-    );
+    )
+    .unwrap();
     assert!(matches!(
         chain,
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -976,7 +989,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(8),
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
             .expect("identity grammar"),
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         surface_selection,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
@@ -992,7 +1007,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             Some(8),
             &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
                 .expect("identity grammar"),
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     let face = crate::design::decode::operands::face_recipe_structure(&[

@@ -177,14 +177,14 @@ pub(in super::super) fn transfer_sketches(
                 coverage.record_family_rows(family, count);
             }
         }
-        let variable_points = resolved_section_coordinates(definition);
+        let variable_points = resolved_section_coordinates(ctx, definition)?;
         let points = variable_points
             .iter()
             .filter_map(|(point, [u, v])| {
                 Some((*point, [u.as_ref().copied()?, v.as_ref().copied()?]))
             })
             .collect::<BTreeMap<_, _>>();
-        let radii = resolved_section_radii(definition);
+        let radii = resolved_section_radii(ctx, definition)?;
         let missing_line_geometry = saved_section_missing_line_geometry(definition);
         let solved = definition
             .trim_entities
@@ -192,7 +192,7 @@ pub(in super::super) fn transfer_sketches(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
+        let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points, &radii);
         let resolved_segment_geometries = segments
             .iter()
             .map(|segment| {
@@ -216,6 +216,7 @@ pub(in super::super) fn transfer_sketches(
                     trimmed_section_segment_geometry_with_missing_line(
                         definition,
                         &points,
+                        &radii,
                         &trim_vertex_coordinates,
                         segment,
                         missing_line_geometry.as_ref(),
@@ -325,7 +326,7 @@ pub(in super::super) fn transfer_sketches(
             .collect::<BTreeSet<_>>();
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let materialized_saved_section_external_ids =
-            materialized_saved_section_external_ids(definition, &mut refusal);
+            materialized_saved_section_external_ids(ctx, definition, &mut refusal)?;
         for record in refusal.take_records() {
             losses.push(
                 crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
@@ -477,7 +478,7 @@ pub(in super::super) fn transfer_sketches(
             .flatten()
             .map(|entity_use| entity_use.entity.clone())
             .collect::<BTreeSet<_>>();
-        for profile in saved_profile_chains(&sketch_id, &generated_profile_geometries) {
+        for profile in saved_profile_chains(ctx, &sketch_id, &generated_profile_geometries)? {
             if profile
                 .iter()
                 .all(|entity_use| !profile_entities.contains(&entity_use.entity))
@@ -714,7 +715,7 @@ pub(in super::super) fn transfer_sketches(
             })
             .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
         for (relation_index, (mut constraint, offset)) in
-            section_dimension_constraints(definition, &sketch_id)
+            section_dimension_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .enumerate()
         {
@@ -770,7 +771,7 @@ pub(in super::super) fn transfer_sketches(
             constraints.push(constraint);
         }
         let equation_constraints =
-            section_equation_axis_distance_constraints(definition, &sketch_id)
+            section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
                     definition, &sketch_id,
@@ -783,13 +784,13 @@ pub(in super::super) fn transfer_sketches(
                 ))
                 .chain(
                     section_equation_function_thirty_one_point_coordinate_constraints(
-                        definition, &sketch_id,
-                    ),
+                        ctx, definition, &sketch_id,
+                    )?,
                 )
                 .chain(
                     section_equation_function_forty_two_midpoint_coordinate_constraints(
-                        definition, &sketch_id,
-                    ),
+                        ctx, definition, &sketch_id,
+                    )?,
                 )
                 .chain(section_equation_function_five_scalar_equality_constraints(
                     definition, &sketch_id,
@@ -803,11 +804,11 @@ pub(in super::super) fn transfer_sketches(
                     definition, &sketch_id,
                 ))
                 .chain(section_equation_polar_distance_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(section_equation_function_six_distance_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(section_equation_equal_distance_constraints(
                     definition, &sketch_id,
                 ))
@@ -871,10 +872,11 @@ pub(in super::super) fn transfer_sketches(
             constraints.push(constraint);
         }
         for (mut constraint, offset) in section_skamp_constraints_for_geometry(
+            ctx,
             definition,
             &sketch_id,
             Some(&emitted_entity_geometry),
-        ) {
+        )? {
             if !constraint
                 .definition
                 .edit(|kind| reconcile_constraint_entity_references(kind, &emitted_entity_ids))

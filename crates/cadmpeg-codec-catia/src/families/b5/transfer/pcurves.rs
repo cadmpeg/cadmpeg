@@ -371,12 +371,13 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
 pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-) -> Option<CurveGeometry> {
+) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<CurveGeometry, cadmpeg_core::decode::ResourceLimit>> {
     let knots = pcurve_nurbs_knots(pcurve)?
         .into_iter()
         .map(FiniteReal::get)
         .collect::<Vec<_>>();
-    match surface {
+    let geometry = match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
         | B5Surface::RollingBall { .. }
@@ -542,14 +543,17 @@ pub(super) fn lifted_curve_geometry(
                 ),
             )))
         }
-        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface)
-            .map(SolvedCurveGeometry::Nurbs)
-            .map(CurveGeometry::Solved),
+        B5Surface::Nurbs(surface) => match nurbs_isocurve(pcurve, surface) {
+            Ok(curve) => curve.map(SolvedCurveGeometry::Nurbs).map(CurveGeometry::Solved),
+            Err(limit) => return Some(Err(limit)),
+        },
         B5Surface::Revolution { .. } => None,
-    }
+    };
+    geometry.map(Ok)
+    })().transpose()
 }
 
-pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
+pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
         cadmpeg_ir::eval::nurbs_surface_isocurve(
             surface,
@@ -563,7 +567,7 @@ pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Optio
             v,
         )
     } else {
-        None
+        Ok(None)
     }
 }
 

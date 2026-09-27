@@ -236,6 +236,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     // while the sketch records carry ten-times-centimetre values; the
     // projected sketch origin scales by ten to stay commensurate.
     let (sketches, entities) = project_sketch_design(
+        None,
         &[placement(
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeGenesisExplicit,
         )],
@@ -268,6 +269,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
 
     // The settled explicit frame keeps its stored origin unscaled.
     let (sketches, _) = project_sketch_design(
+        None,
         &[placement(
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit,
         )],

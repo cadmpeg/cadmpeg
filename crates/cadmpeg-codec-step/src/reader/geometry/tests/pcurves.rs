@@ -37,7 +37,7 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
             && loss.message.contains("one optional pcurve")
             && loss.message.contains("not continuous")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -86,7 +86,7 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#36"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -117,7 +117,7 @@ fn surface_curve_retains_direct_surface_support() {
             .map(|source| source.object_id.as_str()),
         Some("#57")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -204,7 +204,7 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
             *start == 0.0 && *end == 1.0
         })
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -234,7 +234,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
             .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -475,7 +475,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
             (direction.u - 10.0).abs() < EPS_PCURVE_PARAMETERS
         })
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -608,7 +608,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#56"));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -646,7 +646,7 @@ fn equivalent_same_surface_pcurve_candidates_remain_detached() {
             && loss.message.contains("2 pcurves")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -802,7 +802,7 @@ fn endpoint_continuity_does_not_break_a_multiple_candidate_tie() {
             && loss.message.contains("2 pcurves")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -844,7 +844,7 @@ fn ambiguous_pcurves_do_not_reject_the_body() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -914,7 +914,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
                     && !nurbs.periodic()
         )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -967,7 +967,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             loss.message
                 .contains("has invalid, cyclic, or unresolved segments")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1021,7 +1021,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         boundary_pcurves,
         &[cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#44").expect("identity grammar")]
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1054,7 +1054,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#84")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#83")

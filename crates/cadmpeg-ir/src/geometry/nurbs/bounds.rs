@@ -14,22 +14,44 @@ pub fn speed_bound<const N: usize>(
     weights: Option<&[f64]>,
     origin: [f64; N],
 ) -> Option<FiniteReal> {
+    if weights.is_some_and(|weights| weights.len() != points.len()) {
+        return None;
+    }
+    speed_bound_by(
+        degree,
+        knots,
+        points.len(),
+        |index| points.get(index).copied(),
+        |index| weights.map_or(1.0, |weights| weights[index]),
+        origin,
+    )
+}
+
+/// Evaluate a speed bound from admitted pole accessors without copying poles or weights.
+pub fn speed_bound_by<const N: usize>(
+    degree: u32,
+    knots: &[f64],
+    point_count: usize,
+    point_at: impl Fn(usize) -> Option<[f64; N]>,
+    weight_at: impl Fn(usize) -> f64,
+    origin: [f64; N],
+) -> Option<FiniteReal> {
     let order = usize::try_from(degree).ok()?;
-    if points.len() <= order
-        || weights.is_some_and(|weights| weights.len() != points.len())
-        || knots.len() != points.len().checked_add(order)?.checked_add(1)?
+    if point_count <= order
+        || knots.len() != point_count.checked_add(order)?.checked_add(1)?
         || knots.iter().chain(origin.iter()).any(|v| !v.is_finite())
         || knots.windows(2).any(|p| p[0] > p[1])
-        || weights.is_some_and(|weights| weights.iter().any(|w| !w.is_finite() || *w <= 0.0))
-        || points.iter().flatten().any(|v| !v.is_finite())
+        || (0..point_count).any(|index| {
+            let weight = weight_at(index);
+            !weight.is_finite()
+                || weight <= 0.0
+                || point_at(index).is_none_or(|point| point.iter().any(|value| !value.is_finite()))
+        })
     {
         return None;
     }
-    let weight_at = |index: usize| weights.map_or(1.0, |weights| weights[index]);
-    let scale = weights.map_or(1.0, |weights| {
-        weights.iter().copied().fold(0.0_f64, f64::max)
-    });
-    let minimum = (0..points.len())
+    let scale = (0..point_count).map(&weight_at).fold(0.0_f64, f64::max);
+    let minimum = (0..point_count)
         .map(|index| weight_at(index) / scale)
         .fold(f64::INFINITY, f64::min);
     if minimum <= 0.0 {
@@ -39,7 +61,8 @@ pub fn speed_bound<const N: usize>(
     let mut numerator_speed = 0.0_f64;
     let mut weight_speed = 0.0_f64;
     let mut previous: Option<[f64; N]> = None;
-    for (index, point) in points.iter().enumerate() {
+    for index in 0..point_count {
+        let point = point_at(index)?;
         let weight = weight_at(index) / scale;
         let relative: [f64; N] = std::array::from_fn(|axis| point[axis] - origin[axis]);
         let weighted: [f64; N] = std::array::from_fn(|axis| weight * relative[axis]);

@@ -15,5 +15,9 @@ fn evaluate_expression_program(
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
-    evaluate_expression_program_details(lines, model_name, external_symbols).assignments
+    crate::decode::with_test_decode_ctx(|ctx| {
+        evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
+    })
+    .expect("test curve expression evaluation")
+    .assignments
 }

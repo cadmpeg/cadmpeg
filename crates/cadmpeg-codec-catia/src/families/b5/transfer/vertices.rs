@@ -24,7 +24,7 @@ pub(super) fn transfer_vertex_tolerances(
     supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> BTreeMap<usize, PositiveReal> {
+) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::decode::ResourceLimit> {
     let mut tolerances = graph.vertex_tolerances.clone();
     for (&edge, supports) in supports {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {
@@ -34,7 +34,7 @@ pub(super) fn transfer_vertex_tolerances(
             continue;
         };
         for support in supports {
-            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves) else {
+            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves)? else {
                 continue;
             };
             let forward = [
@@ -69,7 +69,7 @@ pub(super) fn transfer_vertex_tolerances(
             }
         }
     }
-    tolerances
+    Ok(tolerances)
 }
 
 /// Emit the points and vertices for every endpoint used by a transferred edge.

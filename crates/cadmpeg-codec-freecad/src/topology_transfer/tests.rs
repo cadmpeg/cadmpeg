@@ -12,6 +12,7 @@ use crate::brep::{
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
@@ -829,13 +830,32 @@ fn face_connectivity_partitions_transitively_without_reordering() {
         HashSet::new(),
     ];
 
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
     assert_eq!(
-        connected_components(&sets).expect("connected-component allocation"),
+        connected_components(&ctx, &sets).expect("connected-component allocation"),
         vec![vec![0, 2, 3], vec![1], vec![4]]
     );
-    assert!(connected_components(&[])
+    assert!(connected_components(&ctx, &[])
         .expect("connected-component allocation")
         .is_empty());
+}
+
+#[test]
+fn face_connectivity_reports_collection_limit() {
+    let sets = [HashSet::from(["edge-a".to_owned()])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = connected_components(&ctx, &sets)
+        .expect_err("one assignment slot exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "freecad connected-component assignment"));
 }
 
 #[test]
@@ -1091,7 +1111,8 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         report
             .findings
@@ -1157,7 +1178,8 @@ So 1001000 +2 0 *
         Some([0.0, 1.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.findings.iter().all(|finding| {
             finding.severity < cadmpeg_ir::report::Severity::Error
@@ -1209,6 +1231,7 @@ Co 1001000 +2 0 *
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
     let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
         .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
@@ -1483,7 +1506,8 @@ Co 1001000 +2 1 +2 3 *
             cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         report.findings.iter().all(|finding| finding.severity
             < cadmpeg_ir::report::Severity::Error

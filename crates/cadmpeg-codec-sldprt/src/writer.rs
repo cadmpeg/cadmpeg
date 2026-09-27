@@ -60,7 +60,7 @@ pub(crate) fn write_semantic_with_records(
     // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -95,7 +95,7 @@ pub(crate) fn write_semantic_with_records(
         &mut native,
         annotations,
     )?;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings

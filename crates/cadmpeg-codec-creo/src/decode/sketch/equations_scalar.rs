@@ -1408,9 +1408,10 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
 }
 
 pub(in crate::decode) fn resolved_section_scalar_values(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<SectionScalarVariable, f64> {
-    let coordinates = resolved_section_coordinates(definition);
+) -> Result<BTreeMap<SectionScalarVariable, f64>, cadmpeg_core::CodecError> {
+    let coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -1477,10 +1478,10 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         }
     }
     propagate_section_equation_scalar_equality_values(definition, &mut values);
-    values
+    Ok(values
         .into_iter()
         .filter_map(|(variable, value)| Some((variable, value?)))
-        .collect()
+        .collect())
 }
 
 #[derive(Clone, Copy)]

@@ -1174,10 +1174,10 @@ mod tests {
         .expect("complete topology without native ownership root");
         assert_eq!(no_root_counts.faces, 2);
         assert_eq!(no_root_ir.model.bodies[0].kind, BodyKind::Solid);
-        assert!(crate::assemble::neutral_model_is_admissible(
-            &mut no_root_ir,
-            &[]
-        ));
+        assert!(
+            crate::assemble::neutral_model_is_admissible(&mut no_root_ir, &[])
+                .expect("resource allocation did not fail")
+        );
         let mut annotations = AnnotationBuilder::new();
         let root = ZeroEntityOwnershipRoot {
             face_roster_pos: 1,
@@ -1219,7 +1219,8 @@ mod tests {
                 .iter()
                 .any(|candidate| candidate.id == coedge.radial_next)
         }));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+            .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -1327,6 +1328,7 @@ mod tests {
                 .geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+            .expect("resource allocation did not fail"));
     }
 }

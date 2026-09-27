@@ -980,7 +980,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
             solid, op: cadmpeg_ir::features::BooleanOp::Cut }) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
     assert!(result.report().losses.is_empty());
-    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").findings;
     assert!(
         findings
             .iter()

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -258,14 +258,17 @@ pub(crate) fn transfer(
             })
         } else if is_pattern(&object.type_name) {
             pattern_definition(
+                ctx,
                 &object.type_name,
                 &object.id,
                 &owned,
                 &feature_ids,
-                objects,
-                &properties_by_owner,
-                entries,
-            )
+                PatternSources {
+                    objects,
+                    properties_by_owner: &properties_by_owner,
+                    entries,
+                },
+            )?
             .unwrap_or_else(|| {
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
@@ -5790,101 +5793,137 @@ fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<Strin
         .cloned()
 }
 
+#[derive(Clone, Copy)]
+struct PatternSources<'a, 'b> {
+    objects: &'a [ObjectRecord],
+    properties_by_owner: &'a HashMap<&'b str, Vec<&'b PropertyRecord>>,
+    entries: &'a [EntryRecord],
+}
+
 fn pattern_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
-) -> Option<FeatureDefinition> {
-    let originals = property(properties, "Originals")
-        .filter(|property| !property.links().is_empty())
-        .or_else(|| {
-            property(properties, "BaseFeature").filter(|property| {
-                property
-                    .links()
-                    .iter()
-                    .flatten()
-                    .any(|link| link.object().is_some_and(|object| !object.is_empty()))
-            })
-        });
-    let seeds = if let Some(originals) = originals {
-        let seeds = originals
-            .links()
-            .iter()
-            .filter_map(|link| link.as_ref()?.object())
-            .map(|target| {
-                features.get(target).cloned().map(Some).or_else(|| {
-                    objects
+    sources: PatternSources<'_, '_>,
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        ..
+    } = sources;
+    let seeds = (|| -> Option<Vec<FeatureId>> {
+        let originals = property(properties, "Originals")
+            .filter(|property| !property.links().is_empty())
+            .or_else(|| {
+                property(properties, "BaseFeature").filter(|property| {
+                    property
+                        .links()
                         .iter()
-                        .find(|object| object.id == target)
-                        .filter(|object| {
-                            matches!(
-                                object.type_name.as_str(),
-                                "App::Line" | "App::Plane" | "App::Point" | "App::CoordinateSystem"
-                            )
-                        })
-                        .map(|_| None)
+                        .flatten()
+                        .any(|link| link.object().is_some_and(|object| !object.is_empty()))
                 })
-            })
-            .collect::<Option<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        if seeds.is_empty() {
-            return None;
+            });
+        if let Some(originals) = originals {
+            let seeds = originals
+                .links()
+                .iter()
+                .filter_map(|link| link.as_ref()?.object())
+                .map(|target| {
+                    features.get(target).cloned().map(Some).or_else(|| {
+                        objects
+                            .iter()
+                            .find(|object| object.id == target)
+                            .filter(|object| {
+                                matches!(
+                                    object.type_name.as_str(),
+                                    "App::Line"
+                                        | "App::Plane"
+                                        | "App::Point"
+                                        | "App::CoordinateSystem"
+                                )
+                            })
+                            .map(|_| None)
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            if seeds.is_empty() {
+                return None;
+            }
+            Some(seeds)
+        } else if let Some(seeds) =
+            multi_transform_stage_seeds(owner, features, objects, properties_by_owner)
+        {
+            Some(seeds)
+        } else {
+            Some(vec![implicit_body_predecessor(
+                owner,
+                features,
+                objects,
+                properties_by_owner,
+            )?])
         }
-        seeds
-    } else if let Some(seeds) =
-        multi_transform_stage_seeds(owner, features, objects, properties_by_owner)
-    {
-        seeds
-    } else {
-        vec![implicit_body_predecessor(
-            owner,
-            features,
-            objects,
-            properties_by_owner,
-        )?]
-    };
+    })();
+    let Some(seeds) = seeds else { return Ok(None) };
 
-    let pattern = if kind.ends_with("MultiTransform") {
-        let transformations = property(properties, "Transformations")?;
-        if transformations.links().is_empty() {
-            return None;
-        }
-        let stages = transformations
-            .links()
-            .iter()
-            .map(|link| {
-                let target = link.as_ref()?.object()?;
-                let object = objects.iter().find(|object| object.id == target)?;
-                let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                let pattern = pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-                    &object.type_name,
-                    owned,
-                    objects,
-                    properties_by_owner,
-                    entries,
-                )?;
-                Some(PatternStage {
+    let pattern =
+        if kind.ends_with("MultiTransform") {
+            let Some(transformations) = property(properties, "Transformations") else {
+                return Ok(None);
+            };
+            if transformations.links().is_empty() {
+                return Ok(None);
+            }
+            ctx.charge_collection_items(
+                transformations.links().len() as u64,
+                "freecad pattern stages",
+            )?;
+            let mut stages = Vec::with_capacity(transformations.links().len());
+            for link in transformations.links() {
+                let Some((object, owned)) = (|| {
+                    let target = link.as_ref()?.object()?;
+                    let object = objects.iter().find(|object| object.id == target)?;
+                    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
+                    Some((object, owned))
+                })() else {
+                    return Ok(None);
+                };
+                let Some(pattern) = pattern_kind::<
+                    cadmpeg_ir::features::patterns::NoNestedComposite,
+                >(ctx, &object.type_name, owned, sources)?
+                else {
+                    return Ok(None);
+                };
+                stages.push(PatternStage {
                     pattern: Box::new(pattern),
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
-        PatternKind::new(PatternTransform::Composite {
-            stages: cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()?,
-        })
-        .ok()?
-    } else {
-        pattern_kind(kind, properties, objects, properties_by_owner, entries)?
-    };
-    Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
-        pattern,
-    }))
+                });
+            }
+            let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
+            else {
+                return Ok(None);
+            };
+            let Some(pattern) =
+                PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
+            else {
+                return Ok(None);
+            };
+            pattern
+        } else {
+            let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
+                return Ok(None);
+            };
+            pattern
+        };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::Pattern {
+            seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
+            pattern,
+        },
+    )))
 }
 
 fn multi_transform_stage_seeds(
@@ -5935,211 +5974,283 @@ fn implicit_body_predecessor(
 }
 
 fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
-) -> Option<PatternKind<C>> {
+    sources: PatternSources<'_, '_>,
+) -> Result<Option<PatternKind<C>>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        entries,
+    } = sources;
     if kind.ends_with("Mirrored") {
-        return Some(
-            if let Some((plane_origin, plane_normal)) =
-                plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
-            {
-                PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(plane_origin)?,
-                    plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
-                })
-                .ok()?
-            } else {
-                PatternKind::new(PatternTransform::MirrorReference {
-                    plane: cadmpeg_ir::features::FaceSelection::Native(
-                        property(properties, "MirrorPlane")?.id.clone(),
-                    ),
-                })
-                .ok()?
-            },
-        );
+        return Ok((|| {
+            Some(
+                if let Some((plane_origin, plane_normal)) =
+                    plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
+                {
+                    PatternKind::new(PatternTransform::Mirror {
+                        plane_origin: cadmpeg_ir::features::FinitePoint3::new(plane_origin)?,
+                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
+                    })
+                    .ok()?
+                } else {
+                    PatternKind::new(PatternTransform::MirrorReference {
+                        plane: cadmpeg_ir::features::FaceSelection::Native(
+                            property(properties, "MirrorPlane")?.id.clone(),
+                        ),
+                    })
+                    .ok()?
+                },
+            )
+        })());
     }
 
-    let count = if kind.ends_with("Scaled") {
-        integer_selector(properties, "Occurrences", 2)?
+    let Some(count) = (if kind.ends_with("Scaled") {
+        integer_selector(properties, "Occurrences", 2)
     } else {
         let absent_default = if kind.ends_with("PolarPattern") { 3 } else { 2 };
-        integer_constraint_selector(properties, "Occurrences", absent_default, true)?
+        integer_constraint_selector(properties, "Occurrences", absent_default, true)
+    }) else {
+        return Ok(None);
     };
     if count == 0 || count > MAX_SKETCH_RECORDS as u64 {
-        return None;
+        return Ok(None);
     }
     let count = count as u32;
-    let mode = enumeration_selector(properties, "Mode", 0)?;
+    let Some(mode) = enumeration_selector(properties, "Mode", 0) else {
+        return Ok(None);
+    };
 
     if kind.ends_with("Scaled") {
-        let final_factor =
-            cadmpeg_ir::scalar::PositiveReal::from_finite(scalar_named(properties, "Factor")?)?;
-        return (count >= 2).then_some(
-            PatternKind::new(PatternTransform::Scale {
-                center: PatternScaleCenter::FirstSeedCentroid,
-                final_factor,
-                count,
-            })
-            .ok()?,
-        );
+        return Ok((|| {
+            let final_factor =
+                cadmpeg_ir::scalar::PositiveReal::from_finite(scalar_named(properties, "Factor")?)?;
+            (count >= 2).then_some(
+                PatternKind::new(PatternTransform::Scale {
+                    center: PatternScaleCenter::FirstSeedCentroid,
+                    final_factor,
+                    count,
+                })
+                .ok()?,
+            )
+        })());
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
-        let first = linear_pattern_axis(
-            properties,
-            "",
-            count,
-            mode,
-            objects,
-            properties_by_owner,
-            entries,
-        )?;
-        let count2 = integer_constraint_selector(properties, "Occurrences2", 1, false)?;
+        let Some(first) = linear_pattern_axis(ctx, properties, "", count, mode, sources)? else {
+            return Ok(None);
+        };
+        let Some(count2) = integer_constraint_selector(properties, "Occurrences2", 1, false) else {
+            return Ok(None);
+        };
         if count2 == 0 || count2 > MAX_SKETCH_RECORDS as u64 {
-            return None;
+            return Ok(None);
         }
         if count2 > 1 {
-            let mode2 = enumeration_selector(properties, "Mode2", 0)?;
-            let second = linear_pattern_axis(
-                properties,
-                "2",
-                count2 as u32,
-                mode2,
-                objects,
-                properties_by_owner,
-                entries,
-            )?;
-            PatternKind::new(PatternTransform::Composite {
-                stages: C::rebuild(vec![
-                    PatternStage {
-                        pattern: Box::new(first),
-                    },
-                    PatternStage {
-                        pattern: Box::new(second),
-                    },
-                ])
-                .ok()?,
-            })
-            .ok()?
+            let Some(mode2) = enumeration_selector(properties, "Mode2", 0) else {
+                return Ok(None);
+            };
+            let Some(second) =
+                linear_pattern_axis(ctx, properties, "2", count2 as u32, mode2, sources)?
+            else {
+                return Ok(None);
+            };
+            let Some(pattern) = (|| {
+                PatternKind::new(PatternTransform::Composite {
+                    stages: C::rebuild(vec![
+                        PatternStage {
+                            pattern: Box::new(first),
+                        },
+                        PatternStage {
+                            pattern: Box::new(second),
+                        },
+                    ])
+                    .ok()?,
+                })
+                .ok()
+            })() else {
+                return Ok(None);
+            };
+            pattern
         } else {
             first.widen()
         }
     } else if kind.ends_with("PolarPattern") {
-        let (axis_origin, mut axis_dir) =
-            axis_reference(properties, "Axis", objects, properties_by_owner)?;
-        if bool_selector(properties, "Reversed", false)? {
+        let Some((axis_origin, mut axis_dir)) =
+            axis_reference(properties, "Axis", objects, properties_by_owner)
+        else {
+            return Ok(None);
+        };
+        let Some(reversed) = bool_selector(properties, "Reversed", false) else {
+            return Ok(None);
+        };
+        if reversed {
             axis_dir = axis_dir.reversed();
         }
-        let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
-        if let Some(step) = uniform_step(&angles) {
-            PatternKind::new(PatternTransform::Circular {
-                axis_origin,
-                axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(
-                    (step.get() * f64::from(count - 1)).to_radians(),
-                )?,
-                count,
+        let Some(axis_origin) = cadmpeg_ir::features::FinitePoint3::new(axis_origin) else {
+            return Ok(None);
+        };
+        let Some(angles) = pattern_locations(
+            ctx,
+            properties,
+            "",
+            count,
+            mode,
+            ("Angle", "Offset"),
+            entries,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(pattern) = (|| {
+            Some(if let Some(step) = uniform_step(&angles) {
+                PatternKind::new(PatternTransform::Circular {
+                    axis_origin,
+                    axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(
+                        (step.get() * f64::from(count - 1)).to_radians(),
+                    )?,
+                    count,
+                })
+                .ok()?
+            } else {
+                PatternKind::new(PatternTransform::CircularAngles {
+                    axis_origin,
+                    axis_dir,
+                    angles: angles
+                        .into_iter()
+                        .map(|angle| cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()))
+                        .collect::<Option<Vec<_>>>()?,
+                })
+                .ok()?
             })
-            .ok()?
-        } else {
-            PatternKind::new(PatternTransform::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles: angles
-                    .into_iter()
-                    .map(|angle| cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()))
-                    .collect::<Option<Vec<_>>>()?,
-            })
-            .ok()?
-        }
+        })() else {
+            return Ok(None);
+        };
+        pattern
     } else {
-        return None;
+        return Ok(None);
     };
-    Some(pattern)
+    Ok(Some(pattern))
 }
 
 fn linear_pattern_axis(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     suffix: &str,
     count: u32,
     mode: u64,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
-) -> Option<cadmpeg_ir::features::patterns::StagePatternKind> {
+    sources: PatternSources<'_, '_>,
+) -> Result<Option<cadmpeg_ir::features::patterns::StagePatternKind>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        entries,
+    } = sources;
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
             .map(|(_, direction)| direction);
-    if bool_selector(properties, &name("Reversed"), false)? {
+    let Some(reversed) = bool_selector(properties, &name("Reversed"), false) else {
+        return Ok(None);
+    };
+    if reversed {
         direction = direction.map(cadmpeg_ir::units::UnitVector3::reversed);
     }
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
-    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
-    if let Some(spacing) = uniform_step(&offsets) {
-        Some(
-            PatternKind::new(PatternTransform::Linear {
-                direction,
-                spacing: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing)?,
-                count,
-                second: None,
-            })
-            .ok()?,
-        )
-    } else {
-        Some(
-            PatternKind::new(PatternTransform::LinearOffsets {
-                direction,
-                offsets: offsets
-                    .into_iter()
-                    .map(Length::from_assigned_real)
-                    .collect(),
-            })
-            .ok()?,
-        )
-    }
+    let Some(offsets) = pattern_locations(
+        ctx,
+        properties,
+        suffix,
+        count,
+        mode,
+        ("Length", "Offset"),
+        entries,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok((|| {
+        if let Some(spacing) = uniform_step(&offsets) {
+            Some(
+                PatternKind::new(PatternTransform::Linear {
+                    direction,
+                    spacing: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing)?,
+                    count,
+                    second: None,
+                })
+                .ok()?,
+            )
+        } else {
+            Some(
+                PatternKind::new(PatternTransform::LinearOffsets {
+                    direction,
+                    offsets: offsets
+                        .into_iter()
+                        .map(Length::from_assigned_real)
+                        .collect(),
+                })
+                .ok()?,
+            )
+        }
+    })())
 }
 
 fn pattern_locations(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     suffix: &str,
     count: u32,
     mode: u64,
-    extent_base: &str,
-    offset_base: &str,
+    value_fields: (&str, &str),
     entries: &[EntryRecord],
-) -> Option<Vec<FiniteReal>> {
+) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    let (extent_base, offset_base) = value_fields;
     if count == 0 {
-        return None;
+        return Ok(None);
     }
     if count == 1 {
-        return Some(vec![FiniteReal::ZERO]);
+        return Ok(Some(ctx.alloc_filled(
+            1,
+            FiniteReal::ZERO,
+            "freecad pattern locations",
+        )?));
     }
     let name = |base: &str| format!("{base}{suffix}");
     let intervals = match mode {
         0 => {
-            let interval = FiniteReal::new(
-                scalar_named(properties, &name(extent_base))?.get() / f64::from(count - 1),
-            )?;
-            alloc_filled(count as usize - 1, interval, "freecad pattern intervals").ok()?
+            let Some(extent) = scalar_named(properties, &name(extent_base)) else {
+                return Ok(None);
+            };
+            let Some(interval) = FiniteReal::new(extent.get() / f64::from(count - 1)) else {
+                return Ok(None);
+            };
+            ctx.alloc_filled(count as usize - 1, interval, "freecad pattern intervals")?
         }
         1 => {
-            let fallback = scalar_named(properties, &name(offset_base))?;
+            let Some(fallback) = scalar_named(properties, &name(offset_base)) else {
+                return Ok(None);
+            };
             let spacings = property(properties, &name("Spacings")).map_or_else(
                 || Some(Vec::new()),
                 |property| numeric_list(property, entries),
-            )?;
+            );
+            let Some(spacings) = spacings else {
+                return Ok(None);
+            };
             let pattern = property(properties, &name("SpacingPattern")).map_or_else(
                 || Some(Vec::new()),
                 |property| numeric_list(property, entries),
-            )?;
+            );
+            let Some(pattern) = pattern else {
+                return Ok(None);
+            };
             if !spacings.is_empty() && spacings.len() != count as usize - 1 {
-                return None;
+                return Ok(None);
             }
+            ctx.charge_collection_items(u64::from(count - 1), "freecad pattern intervals")?;
             (0..count as usize - 1)
                 .map(|index| {
                     let explicit = spacings
@@ -6156,17 +6267,23 @@ fn pattern_locations(
                 })
                 .collect()
         }
-        _ => return None,
+        _ => return Ok(None),
     };
+    ctx.charge_collection_items(u64::from(count), "freecad pattern locations")?;
     let mut locations = Vec::with_capacity(count as usize);
     locations.push(FiniteReal::ZERO);
     let mut location = FiniteReal::ZERO;
     for interval in intervals {
-        let interval = cadmpeg_ir::scalar::PositiveReal::from_finite(interval)?;
-        location = FiniteReal::new(location.get() + interval.get())?;
+        let Some(interval) = cadmpeg_ir::scalar::PositiveReal::from_finite(interval) else {
+            return Ok(None);
+        };
+        let Some(next) = FiniteReal::new(location.get() + interval.get()) else {
+            return Ok(None);
+        };
+        location = next;
         locations.push(location);
     }
-    Some(locations)
+    Ok(Some(locations))
 }
 
 fn uniform_step(locations: &[FiniteReal]) -> Option<FiniteReal> {

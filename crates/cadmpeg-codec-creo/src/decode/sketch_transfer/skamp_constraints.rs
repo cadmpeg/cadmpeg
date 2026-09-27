@@ -2,6 +2,7 @@
 //! SKAMP solver constraint emission and locus compatibility.
 
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
+use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::decode::sketch_transfer::identity::section_entity_external_ids;
 use crate::decode::sketch_transfer::loci::{
     section_skamp_active, section_skamp_center_entity, section_skamp_circular_entity,
@@ -21,13 +22,22 @@ use cadmpeg_ir::sketches::{
 use std::collections::BTreeMap;
 
 pub(in super::super) fn section_skamp_constraints_for_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(relations) = &definition.relations else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
+    let resolved_points =
+        if relations.skamps().iter().any(|skamp| {
+            section_skamp_active(skamp.status) && matches!(skamp.kind, 15 | 17 | 30 | 31)
+        }) {
+            Some(resolved_section_points(ctx, definition)?)
+        } else {
+            None
+        };
     let complete_skamps = relations
         .skamps
         .as_ref()
@@ -56,7 +66,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 .collect()
         },
     );
-    relations
+    let constraints = relations
         .skamps()
         .iter()
         .filter_map(|skamp| {
@@ -454,9 +464,13 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (15 | 17 | 30 | 31, [_, _]) => {
-                        if let Some((first, second, axis)) =
-                            section_skamp_same_coordinate(definition, sketch, skamp, active)
-                        {
+                        if let Some((first, second, axis)) = section_skamp_same_coordinate(
+                            definition,
+                            sketch,
+                            skamp,
+                            active,
+                            resolved_points.as_ref(),
+                        ) {
                             SketchConstraintDefinitionInput::SameCoordinate {
                                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                     first, second, axis,
@@ -542,7 +556,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 skamp.offset,
             ))
         })
-        .collect()
+        .collect();
+    Ok(constraints)
 }
 
 #[cfg(test)]
@@ -957,7 +972,8 @@ mod tests {
         };
         assert_eq!(native_kind, "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1023,7 +1039,8 @@ mod tests {
             entities,
             &vec![reference_line.id().clone(), point.id().clone()]
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1155,7 +1172,8 @@ mod tests {
 
     /// The native kind of entity 42, after the document validates.
     fn native_kind_42(result: &cadmpeg_ir::codec::DecodeResult) -> &str {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
         let entity = result
             .ir()
@@ -1209,7 +1227,8 @@ mod tests {
         };
         assert!(point.as_str().ends_with(":43"), "{point:?}");
         assert_eq!(entity, entity_42(&result));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 }

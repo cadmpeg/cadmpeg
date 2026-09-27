@@ -13,6 +13,7 @@ use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
@@ -1546,7 +1547,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> (ProjectionOutcome, Vec<BoundaryVertexDerivation>) {
+) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -2029,6 +2030,7 @@ pub(super) fn project(
                     }
                 }
                 if let Some(error) = pcurve_refusal {
+                    let error = error.non_resource()?;
                     losses.push(entity_loss(
                         entry,
                         format!("boundary parameter curve states no NURBS carrier: {error}"),
@@ -2458,10 +2460,10 @@ pub(super) fn project(
         boundary_vertex_derivations.extend(derivations);
     }
 
-    (
+    Ok((
         ProjectionOutcome { decoded, losses },
         boundary_vertex_derivations,
-    )
+    ))
 }
 
 #[cfg(test)]
