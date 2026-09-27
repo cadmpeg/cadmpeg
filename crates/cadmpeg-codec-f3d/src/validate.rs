@@ -835,12 +835,12 @@ fn validate_loaded(
         &native.asm_histories,
         &scope_histories,
     );
-    let decoded_profile_face_groups = native
+    let decoded_profile_face_groups = collect_index_set(decode, native
         .design_face_operands
         .iter()
         .filter_map(|operand| Some((design_stream(&operand.id), operand.group_record_index()?)))
-        .collect::<HashSet<_>>();
-    let face_group_members = native
+        , "index F3D decoded profile face groups")?;
+    let face_group_members = collect_index_set(decode, native
         .design_construction_operand_groups
         .iter()
         .filter(|group| {
@@ -862,7 +862,7 @@ fn validate_loaded(
                 .map(|member| &member.value)
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
-        .collect::<HashSet<_>>();
+        , "index F3D face group members")?;
     validate_act(&ctx, &mut findings);
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
