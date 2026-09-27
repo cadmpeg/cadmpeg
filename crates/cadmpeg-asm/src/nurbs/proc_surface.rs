@@ -1730,12 +1730,13 @@ fn revision_loft_carries_asm_extension(table: &SubtypeTable) -> bool {
 /// Revision-gated loft profile data: the type-selected member payload, an
 /// optional ASM integer, and constraint subdata with trailing row pairs.
 fn revision_loft_profile_data(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
     type_code: i64,
     asm_extension_present: bool,
     endpoints: [Option<f64>; 2],
-) -> Option<LoftProfileData> {
+) -> Option<Result<LoftProfileData, cadmpeg_core::CodecError>> {
     let tail = |cur: &mut Cur<'_>| {
         let asm_extension = if asm_extension_present {
             Some(cur.take_long()?)
@@ -1753,11 +1754,14 @@ fn revision_loft_profile_data(
     };
     match std::num::NonZeroI64::new(type_code) {
         Some(type_code) => {
-            let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+            let (surface, support_bounds) = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+                Ok(surface) => surface,
+                Err(error) => return Some(Err(error)),
+            };
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let first_flag = cur.take_bool()?;
             let (asm_extension, subdata, direction) = tail(cur)?;
-            Some(LoftProfileData::RevisionSupport {
+            Some(Ok(LoftProfileData::RevisionSupport {
                 endpoints,
                 type_code,
                 surface,
@@ -1767,29 +1771,30 @@ fn revision_loft_profile_data(
                 asm_extension,
                 subdata,
                 direction,
-            })
+            }))
         }
         None => {
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
             let (asm_extension, subdata, direction) = tail(cur)?;
-            Some(LoftProfileData::RevisionPcurvePair {
+            Some(Ok(LoftProfileData::RevisionPcurvePair {
                 endpoints,
                 pcurve,
                 secondary_pcurve,
                 asm_extension,
                 subdata,
                 direction,
-            })
+            }))
         }
     }
 }
 
 fn revision_loft_section(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
     asm_extension_present: bool,
-) -> Option<Vec<EmbeddedLoftSectionEntry>> {
+) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(count as u64, 1, cur.rest().len())?;
@@ -1807,13 +1812,17 @@ fn revision_loft_section(
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            let data = revision_loft_profile_data(
+            let data = match revision_loft_profile_data(
+                ctx,
                 cur,
                 table,
                 type_code,
                 asm_extension_present,
                 endpoints,
-            )?;
+            )? {
+                Ok(data) => data,
+                Err(error) => return Some(Err(error)),
+            };
             profile.push(EmbeddedLoftProfileMember { curve, data });
         }
         let saved = cur.pos();
@@ -1851,7 +1860,7 @@ fn revision_loft_section(
             },
         });
     }
-    Some(entries)
+    Some(Ok(entries))
 }
 
 fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
@@ -1995,17 +2004,24 @@ fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
 }
 
 fn revision_loft(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     span: &[Token],
     position: usize,
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let table = resolver?;
     let mut cur = Cur::at(span, position);
     let revision = PositiveI64::new(cur.take_long()?)?;
     let asm_extension_present = revision_loft_carries_asm_extension(table);
     let sections = [
-        revision_loft_section(&mut cur, table, asm_extension_present)?,
-        revision_loft_section(&mut cur, table, asm_extension_present)?,
+        match revision_loft_section(ctx, &mut cur, table, asm_extension_present)? {
+            Ok(section) => section,
+            Err(error) => return Some(Err(error)),
+        },
+        match revision_loft_section(ctx, &mut cur, table, asm_extension_present)? {
+            Ok(section) => section,
+            Err(error) => return Some(Err(error)),
+        },
     ];
     let wrap_ranges = [
         [
@@ -2028,7 +2044,7 @@ fn revision_loft(
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface::revision(
+    Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Revision(
@@ -2043,13 +2059,14 @@ fn revision_loft(
                 wrap_ranges,
             ),
         }),
-    ))
+    )))
 }
 
 fn loft_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
@@ -2057,7 +2074,7 @@ fn loft_spl_sur(
     let mut cur = Cur::at(span, 2);
     // The modern name uses the revision-gated layout.
     if matches!(cur.peek(), Some(Token::Long(_))) && name == "loft_spl_sur" {
-        if let Some(decoded) = revision_loft(span, cur.pos(), resolver) {
+        if let Some(decoded) = revision_loft(ctx, span, cur.pos(), resolver) {
             return Some(decoded);
         }
     }
@@ -2085,7 +2102,7 @@ fn loft_spl_sur(
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Legacy {
@@ -2097,17 +2114,18 @@ fn loft_spl_sur(
             },
         }),
         cache_fit_tolerance,
-    ))
+    )))
 }
 
 /// One revision-gated compound-loft scale block: counted profile members,
 /// nullable path curve with optional endpoints, counted auxiliary BS3
 /// curves, and one tail integer.
 fn revision_cl_scale(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
     asm_extension_present: bool,
-) -> Option<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath)> {
+) -> Option<Result<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath), cadmpeg_core::CodecError>> {
     let member_count = usize::try_from(cur.take_long()?).ok()?;
     // Each member consumes at least its type-code token.
     let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
@@ -2119,8 +2137,12 @@ fn revision_cl_scale(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let data =
-            revision_loft_profile_data(cur, table, type_code, asm_extension_present, endpoints)?;
+        let data = match revision_loft_profile_data(
+            ctx, cur, table, type_code, asm_extension_present, endpoints,
+        )? {
+            Ok(data) => data,
+            Err(error) => return Some(Err(error)),
+        };
         profile.push(EmbeddedLoftProfileMember { curve, data });
     }
     let saved = cur.pos();
@@ -2148,20 +2170,21 @@ fn revision_cl_scale(
         auxiliaries.push(auxiliary);
     }
     let flag = cur.take_long()?;
-    Some((
+    Some(Ok((
         profile,
         EmbeddedLoftPath {
             layout: EmbeddedLoftPathLayout::Revision(path_curve),
             auxiliaries,
             flag,
         },
-    ))
+    )))
 }
 
 fn revision_compound_loft(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     span: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let table = resolver?;
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
@@ -2171,13 +2194,19 @@ fn revision_compound_loft(
         tail_flag,
     } = revision_surface_tail(&mut cur)?;
     let asm_extension_present = revision_loft_carries_asm_extension(table);
-    let (base_profile, base_path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
+    let (base_profile, base_path) = match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)? {
+        Ok(scale) => scale,
+        Err(error) => return Some(Err(error)),
+    };
     let entry_count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least its member-count token.
     let entry_count = bounded_len(entry_count as u64, 1, cur.rest().len())?;
     let mut entries = Vec::with_capacity(entry_count);
     for _ in 0..entry_count {
-        let (profile, path) = revision_cl_scale(&mut cur, table, asm_extension_present)?;
+        let (profile, path) = match revision_cl_scale(ctx, &mut cur, table, asm_extension_present)? {
+            Ok(scale) => scale,
+            Err(error) => return Some(Err(error)),
+        };
         let parameter = cur.take_f64()?;
         entries.push(EmbeddedLoftSectionEntry {
             parameter,
@@ -2224,7 +2253,7 @@ fn revision_compound_loft(
         }
     };
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface::revision(
+    Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
@@ -2240,18 +2269,19 @@ fn revision_compound_loft(
                 tail,
             },
         )),
-    ))
+    )))
 }
 
 fn compound_loft_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let (start, _) = toks::find_owned_subtype_marker(toks, &["cl_loft_spl_sur"])?;
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        return revision_compound_loft(span, resolver);
+        return revision_compound_loft(ctx, span, resolver);
     }
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
@@ -2327,7 +2357,7 @@ fn compound_loft_spl_sur(
         }
         _ => return None,
     };
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::CompoundLoft(Box::new(EmbeddedCompoundLoft {
             scales,
             fifth_scale,
@@ -2335,7 +2365,7 @@ fn compound_loft_spl_sur(
             tail,
         })),
         cache_fit_tolerance,
-    ))
+    )))
 }
 
 fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3250,9 +3280,10 @@ fn revision_sweep_sur(
 }
 
 fn taper_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::TaperSurfaceKind;
     let names: &[(&str, u8)] = &[
         ("taper_spl_sur", 0),
@@ -3278,7 +3309,10 @@ fn taper_spl_sur(
         (name == "ortho_spl_sur").then_some(())?;
         let table = resolver?;
         let revision = PositiveI64::new(cur.take_long()?)?;
-        let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
+        let (support, support_bounds) = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+            Ok(support) => support,
+            Err(error) => return Some(Err(error)),
+        };
         let support = support?;
         let reference = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let reference_endpoints = [
@@ -3297,7 +3331,7 @@ fn taper_spl_sur(
         // boolean. `tail_flag` above is the shared-tail illegal-region flag.
         let sense = cur.take_bool()?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface::revision(
+        return Some(Ok(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Taper {
                 support,
                 reference,
@@ -3316,7 +3350,7 @@ fn taper_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-        ));
+        )));
     }
     let support = embedded_surface(&mut cur)?;
     let (reference, reference_end) = curve_block(span, cur.pos())?;
@@ -3369,7 +3403,7 @@ fn taper_spl_sur(
         _ => return None,
     };
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Taper {
             support,
             reference,
@@ -3379,7 +3413,7 @@ fn taper_spl_sur(
             revision_form: None,
         },
         cache_fit_tolerance,
-    ))
+    )))
 }
 
 fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -3501,9 +3535,10 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
 }
 
 fn off_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["off_spl_sur", "offsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let modern = name == "off_spl_sur";
@@ -3514,7 +3549,10 @@ fn off_spl_sur(
         modern.then_some(())?;
         let table = resolver?;
         let revision = PositiveI64::new(cur.take_long()?)?;
-        let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
+        let (support, support_bounds) = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+            Ok(support) => support,
+            Err(error) => return Some(Err(error)),
+        };
         let support = support?;
         let distance = cur.take_f64()? * LEN_TO_MM;
         // Four booleans carry the record orientation pair and the ASM extension
@@ -3532,7 +3570,7 @@ fn off_spl_sur(
             tail_flag,
         } = revision_surface_tail(&mut cur)?;
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface::revision(
+        return Some(Ok(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
@@ -3550,7 +3588,7 @@ fn off_spl_sur(
                     },
                 )),
             },
-        ));
+        )));
     }
     let support = embedded_surface(&mut cur)?;
     let distance = cur.take_f64()? * LEN_TO_MM;
@@ -3574,7 +3612,7 @@ fn off_spl_sur(
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?.value();
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Offset {
             support,
             distance,
@@ -3585,7 +3623,7 @@ fn off_spl_sur(
             },
         },
         cache_fit_tolerance,
-    ))
+    )))
 }
 
 fn rot_spl_sur(
@@ -4404,41 +4442,43 @@ fn resolve_t_spline_subtransform(
 
 /// Decode a native procedural definition, following nested subtype-table references.
 pub fn procedural_surface_resolving_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
-    procedural_resolving_refs(toks, table, &mut Vec::new())
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+    procedural_resolving_refs(ctx, toks, table, &mut Vec::new())
 }
 
 fn procedural_resolving_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     if let Some(decoded) = defm_spl_sur(toks)
         .or_else(|| helix_spl_sur(toks))
         .or_else(|| t_spl_sur(toks, table))
         .or_else(|| exact_spl_sur(toks))
         .or_else(|| comp_spl_sur(toks))
-        .or_else(|| taper_spl_sur(toks, Some(table)))
-        .or_else(|| loft_spl_sur(toks, Some(table)))
-        .or_else(|| compound_loft_spl_sur(toks, Some(table)))
-        .or_else(|| scaled_compound_loft_spl_sur(toks))
-        .or_else(|| sub_spl_sur(toks))
-        .or_else(|| law_spl_sur(toks))
-        .or_else(|| skin_spl_sur(toks))
-        .or_else(|| net_spl_sur(toks))
-        .or_else(|| sweep_spl_sur(toks, Some(table)))
         .map(Ok)
-        .or_else(|| g2_blend_spl_sur(toks, Some(table)))
+        .or_else(|| taper_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| loft_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| compound_loft_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| scaled_compound_loft_spl_sur(toks).map(Ok))
+        .or_else(|| sub_spl_sur(toks).map(Ok))
+        .or_else(|| law_spl_sur(toks).map(Ok))
+        .or_else(|| skin_spl_sur(toks).map(Ok))
+        .or_else(|| net_spl_sur(toks).map(Ok))
+        .or_else(|| sweep_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| g2_blend_spl_sur(toks, Some(table)).map(|result| result.map_err(Into::into)))
         .or_else(|| ruled_spl_sur(toks).map(Ok))
         .or_else(|| sum_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| rot_spl_sur(toks, Some(table)).map(Ok))
-        .or_else(|| off_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| off_spl_sur(ctx, toks, Some(table)))
         .or_else(|| cyl_spl_sur(toks, Some(table)).map(Ok))
-        .or_else(|| var_blend_spl_sur(toks, Some(table)))
-        .or_else(|| vertex_blend_spl_sur(toks, Some(table)).map(Ok))
-        .or_else(|| full_rb_blend_spl_sur(toks, table))
+        .or_else(|| var_blend_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| vertex_blend_spl_sur(ctx, toks, Some(table)))
+        .or_else(|| full_rb_blend_spl_sur(toks, table).map(|result| result.map_err(Into::into)))
         .or_else(|| compact_rb_blend_spl_sur(toks).map(Ok))
     {
         return Some(decoded);
@@ -4468,7 +4508,7 @@ fn procedural_resolving_refs(
         // behind it.
         let target = table.span(index)?.tokens();
         seen.push(index);
-        if let Some(decoded) = procedural_resolving_refs(target, table, seen) {
+        if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen) {
             return Some(decoded);
         }
     }

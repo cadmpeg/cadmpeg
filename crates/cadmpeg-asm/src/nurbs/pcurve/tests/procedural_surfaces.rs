@@ -33,6 +33,10 @@ use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn offset_surface_uses_direct_support_fields_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["off_spl_sur", "offsur"] {
             let mut bytes = vec![0x0f];
@@ -54,7 +58,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
             let tokens =
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -102,6 +106,10 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
 
 #[test]
 fn offset_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "offsur");
@@ -123,7 +131,7 @@ fn offset_surface_rejects_nested_cache_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -134,6 +142,10 @@ fn offset_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "defm_spl_sur");
@@ -185,7 +197,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -243,6 +255,10 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
 
 #[test]
 fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     let variants = [
         ("taper_spl_sur", 0u8),
         ("ortho_spl_sur", 1),
@@ -286,7 +302,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
 
             let tokens =
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -327,6 +343,10 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
 
 #[test]
 fn taper_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "taper_spl_sur");
@@ -348,7 +368,7 @@ fn taper_surface_rejects_nested_cache_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -359,6 +379,10 @@ fn taper_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn compound_surface_uses_leading_cache_then_parameterized_components() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "comp_spl_sur");
@@ -377,7 +401,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -415,6 +439,10 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
 
 #[test]
 fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
@@ -438,7 +466,7 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
-                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                     &tokens,
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 ).transpose().expect("resource allocation did not fail")
@@ -450,6 +478,10 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn loft_surface_walks_bridge_to_direct_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["loft_spl_sur", "loftsur"] {
             let mut bytes = vec![0x0f];
@@ -474,7 +506,7 @@ fn loft_surface_walks_bridge_to_direct_cache() {
 
             let tokens =
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -517,6 +549,10 @@ fn loft_surface_walks_bridge_to_direct_cache() {
 
 #[test]
 fn loft_surface_rejects_nested_cache_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "loftsur");
@@ -539,7 +575,7 @@ fn loft_surface_rejects_nested_cache_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -550,6 +586,10 @@ fn loft_surface_rejects_nested_cache_substitution() {
 
 #[test]
 fn exact_surface_uses_leading_cache_ranges_then_extension() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["exact_spl_sur", "exactsur"] {
             let mut bytes = vec![0x0f];
@@ -564,7 +604,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
 
             let tokens =
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -593,6 +633,10 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
 
 #[test]
 fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for malformed in [0u8, 1] {
             let mut bytes = vec![0x0f];
@@ -619,7 +663,7 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
                 lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
-                crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                     &tokens,
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 ).transpose().expect("resource allocation did not fail")
@@ -631,6 +675,10 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
 
 #[test]
 fn ruled_surface_uses_two_direct_profiles_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
@@ -641,7 +689,7 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -660,6 +708,10 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
 
 #[test]
 fn ruled_surface_rejects_nested_profile_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rule_sur");
@@ -676,7 +728,7 @@ fn ruled_surface_rejects_nested_profile_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -687,6 +739,10 @@ fn ruled_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn sum_surface_uses_two_direct_curves_origin_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
@@ -698,7 +754,7 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -732,6 +788,10 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
 
 #[test]
 fn sum_surface_rejects_nested_curve_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "sum_spl_sur");
@@ -749,7 +809,7 @@ fn sum_surface_rejects_nested_curve_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -760,6 +820,10 @@ fn sum_surface_rejects_nested_curve_substitution() {
 
 #[test]
 fn revolution_surface_uses_direct_profile_axis_then_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -771,7 +835,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -810,6 +874,10 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
 
 #[test]
 fn revolution_surface_rejects_nested_profile_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -827,7 +895,7 @@ fn revolution_surface_rejects_nested_profile_substitution() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             ).transpose().expect("resource allocation did not fail")
@@ -838,6 +906,10 @@ fn revolution_surface_rejects_nested_profile_substitution() {
 
 #[test]
 fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "rot_spl_sur");
@@ -856,7 +928,7 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         ).transpose().expect("resource allocation did not fail")
@@ -1075,6 +1147,10 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
 
 #[test]
 fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "intersection_support");
@@ -1113,10 +1189,10 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
 
         let mut active = support;
         active.extend_from_slice(&record);
-        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx,
             &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
             decoded.construction
@@ -1145,6 +1221,10 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
 
 #[test]
 fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_forms() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "helix_spl_line");
@@ -1196,7 +1276,7 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
             active.extend_from_slice(&record);
             let toks = lex_test_span(&record, int_width).expect("valid single-record byte fixture");
             let table = test_table(&active, int_width).expect("valid single-record byte fixture");
-            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
+            let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx, &toks, &table).transpose().expect("resource allocation did not fail")
                 .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
             let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
                 &decoded.construction
@@ -1212,11 +1292,11 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
             ));
             assert!(context.pcurves[0].is_some());
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 1, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 1, &table).transpose().expect("resource allocation did not fail")
                     .is_some()
             );
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 2, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 2, &table).transpose().expect("resource allocation did not fail")
                     .is_none()
             );
         }
@@ -1225,6 +1305,10 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
 #[test]
 fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "blend_support");
@@ -1257,10 +1341,10 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
 
         let mut active = support;
         active.extend_from_slice(&record);
-        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx,
             &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
             EmbeddedSurfaceCurve::Blend(
@@ -1294,6 +1378,10 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
 
 #[test]
 fn cache_first_par_curve_selects_mirrored_support_slot() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     // `flag1 = F` mirrors the support onto the second serialized slot:
     // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
     // parametric support surface and its bs2 pcurve. `par_int_cur`
@@ -1333,10 +1421,10 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
 
         let mut active = support;
         active.extend_from_slice(&record);
-        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
+        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx,
             &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
             &test_table(&active, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
             EmbeddedSurfaceCurve::Parametric(

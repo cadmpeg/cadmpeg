@@ -72,6 +72,10 @@ fn generic_curve_and_pcurve_caches_withhold_multiple_candidates() {
 
 #[test]
 fn wrapper_directrix_fields_reject_nested_curve_substitution() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut subset = vec![0x0f];
         push_ident(&mut subset, "subset_int_cur");
@@ -86,10 +90,10 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         subset.push(0x10);
         let subset_tokens =
             lex_test_span(&subset, int_width).expect("valid single-record byte fixture");
-        let subset_decoded = procedural_curve_resolving_refs(
+        let subset_decoded = procedural_curve_resolving_refs(&asm_decode_ctx,
             &subset_tokens,
             &test_table(&subset, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("nested subset source at width {int_width}"));
         assert!(!matches!(
             subset_decoded.construction,
@@ -115,10 +119,10 @@ fn wrapper_directrix_fields_reject_nested_curve_substitution() {
         offset.push(0x10);
         let offset_tokens =
             lex_test_span(&offset, int_width).expect("valid single-record byte fixture");
-        let offset_decoded = procedural_curve_resolving_refs(
+        let offset_decoded = procedural_curve_resolving_refs(&asm_decode_ctx,
             &offset_tokens,
             &test_table(&offset, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("nested vector-offset source at width {int_width}"));
         assert!(!matches!(
             offset_decoded.construction,
@@ -263,6 +267,10 @@ fn token_curve_cache_ignores_nested_support_scope() {
 
 #[test]
 fn procedural_curve_cache_ignores_nested_support_scope() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
@@ -274,10 +282,10 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let decoded = procedural_curve_resolving_refs(
+        let decoded = procedural_curve_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
 
         assert!((decoded.curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
@@ -286,6 +294,10 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
 
 #[test]
 fn procedural_curve_with_only_nested_cache_is_withheld() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "spring_int_cur");
@@ -297,10 +309,10 @@ fn procedural_curve_with_only_nested_cache_is_withheld() {
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
-        assert!(procedural_curve_resolving_refs(
+        assert!(procedural_curve_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture")
-        )
+        ).transpose().expect("resource allocation did not fail")
         .is_none());
     }
 }
@@ -332,6 +344,10 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
 /// stream is not a second answer.
 #[test]
 fn two_cache_bearing_owned_scopes_state_no_record_cache() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "exact_int_cur");
@@ -345,10 +361,10 @@ fn two_cache_bearing_owned_scopes_state_no_record_cache() {
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         assert!(crate::nurbs::toks::cache_scope(&tokens).is_none());
         assert!(curve_cache(&tokens).is_none());
-        assert!(procedural_curve_resolving_refs(
+        assert!(procedural_curve_resolving_refs(&asm_decode_ctx,
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture")
-        )
+        ).transpose().expect("resource allocation did not fail")
         .is_none());
 
         let mut surfaces = vec![0x0f];

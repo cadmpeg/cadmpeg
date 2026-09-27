@@ -584,6 +584,7 @@ pub fn decode_with_header(
     let mut reach = Reachable::default();
 
     keep_faces_and_carriers(
+        ctx,
         &mut out,
         records,
         &by_index,
@@ -594,6 +595,7 @@ pub fn decode_with_header(
         format,
     )?;
     walk_reachable_topology(
+        ctx,
         &mut out,
         &by_index,
         &token_table,
@@ -601,8 +603,9 @@ pub fn decode_with_header(
         &mut reach,
         purpose,
         format,
-    );
+    )?;
     let wire = collect_wire_topology(
+        ctx,
         &mut out,
         records,
         &by_index,
@@ -612,7 +615,7 @@ pub fn decode_with_header(
         &mut reach,
         purpose,
         format,
-    );
+    )?;
 
     let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
 

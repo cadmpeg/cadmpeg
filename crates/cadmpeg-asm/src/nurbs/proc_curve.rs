@@ -613,10 +613,11 @@ pub struct DecodedProceduralCurve {
 
 /// Decode a procedural 3D curve cache while following subtype-table references.
 pub fn procedural_curve_resolving_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<DecodedProceduralCurve> {
-    procedural_curve_recursive(toks, table, &mut Vec::new())
+) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
+    procedural_curve_recursive(ctx, toks, table, &mut Vec::new())
 }
 
 /// Resolve the signed pcurve slot carried by an `intcurve` reference.
@@ -629,24 +630,26 @@ pub fn procedural_curve_resolving_refs(
 /// Returns whether the pcurve remains in the standalone face surface's
 /// native parameter chart.
 pub fn pcurve_for_selector_with_chart(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
-) -> Option<(PcurveNurbs, bool)> {
+) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,
         _ => return None,
     };
-    pcurve_for_selector_recursive(toks, slot, table, &mut Vec::new())
+    pcurve_for_selector_recursive(ctx, toks, slot, table, &mut Vec::new())
 }
 
 fn pcurve_for_selector_recursive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     slot: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<(PcurveNurbs, bool)> {
+) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
     // A record-level intcurve wrapper can carry only a compact `{ref N}`
     // scope. Follow that one construction reference before decoding the
     // wrapper. Typed constructions may contain support references, but their
@@ -662,7 +665,7 @@ fn pcurve_for_selector_recursive(
             // same route as a target that states no pcurve.
             if let Some(target) = table.span(index) {
                 if let Some(result) =
-                    pcurve_for_selector_recursive(target.tokens(), slot, table, seen)
+                    pcurve_for_selector_recursive(ctx, target.tokens(), slot, table, seen)
                 {
                     return Some(result);
                 }
@@ -670,9 +673,13 @@ fn pcurve_for_selector_recursive(
         }
     }
     let has_typed_construction = crate::nurbs::toks::owned_construction_subtype(toks).is_some();
-    if let Some(decoded) = procedural_curve_resolving_refs(toks, table) {
+    if let Some(decoded) = procedural_curve_resolving_refs(ctx, toks, table) {
+        let decoded = match decoded {
+            Ok(decoded) => decoded,
+            Err(error) => return Some(Err(error)),
+        };
         if let Some(pcurve) = selected_pcurve(&decoded, slot) {
-            return Some((pcurve, false));
+            return Some(Ok((pcurve, false)));
         }
         if !matches!(&decoded.construction, ProceduralCurveConstruction::Unknown(kind) if kind == "intcurve")
         {
@@ -686,11 +693,15 @@ fn pcurve_for_selector_recursive(
                 crate::nurbs::toks::find_owned_intcurve_subtype(toks, "exact_int_cur")
             {
                 let mut cur = Cur::at(toks, marker + 2);
-                if let Some(context) = cache_first_curve_context(&mut cur, table) {
+                if let Some(context) = cache_first_curve_context(ctx, &mut cur, table) {
+                    let context = match context {
+                        Ok(context) => context,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if let Some(pcurve) =
                         selected_support_pcurve(&context.surfaces, &context.pcurves, slot)
                     {
-                        return Some((pcurve, false));
+                        return Some(Ok((pcurve, false)));
                     }
                 }
             }
@@ -702,7 +713,7 @@ fn pcurve_for_selector_recursive(
     }
     (slot == 1)
         .then(|| direct_pcurve_after_curve(toks))?
-        .map(|pcurve| (pcurve, true))
+        .map(|pcurve| Ok((pcurve, true)))
 }
 
 /// Return the sole record-level subtype-table reference of an untyped wrapper.
@@ -876,10 +887,11 @@ fn cacheless_procedural_curve_recursive(
 }
 
 fn procedural_curve_recursive(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<DecodedProceduralCurve> {
+) -> Option<Result<DecodedProceduralCurve, cadmpeg_core::CodecError>> {
     let vector_offset = vector_offset_definition(toks);
     let subset = subset_definition(toks);
     let compound = compound_definition(toks);
@@ -906,34 +918,39 @@ fn procedural_curve_recursive(
             _ => None,
         };
         let construction = vector_offset
-            .map(ProceduralCurveConstruction::VectorOffset)
-            .or_else(|| subset.map(ProceduralCurveConstruction::Subset))
+            .map(ProceduralCurveConstruction::VectorOffset).map(Ok)
+            .or_else(|| subset.map(ProceduralCurveConstruction::Subset).map(Ok))
             .or_else(|| {
-                embedded_two_sided_offset(toks).map(ProceduralCurveConstruction::TwoSidedOffset)
+                embedded_two_sided_offset(toks).map(ProceduralCurveConstruction::TwoSidedOffset).map(Ok)
             })
             .or_else(|| {
-                embedded_intersection(toks, &curve, table)
-                    .map(|(context, flag)| ProceduralCurveConstruction::Intersection(context, flag))
+                embedded_intersection(ctx, toks, &curve, table)
+                    .map(|result| result.map(|(context, flag)| ProceduralCurveConstruction::Intersection(context, flag)))
             })
             .or_else(|| {
                 embedded_three_surface_intersection(toks)
                     .map(ProceduralCurveConstruction::ThreeSurface)
+                    .map(Ok)
             })
             .or_else(|| {
-                embedded_surface_curve(toks, table).map(ProceduralCurveConstruction::SurfaceCurve)
+                embedded_surface_curve(ctx, toks, table)
+                    .map(|result| result.map(ProceduralCurveConstruction::SurfaceCurve))
             })
-            .or_else(|| embedded_silhouette(toks).map(ProceduralCurveConstruction::Silhouette))
+            .or_else(|| embedded_silhouette(toks).map(ProceduralCurveConstruction::Silhouette).map(Ok))
             .or_else(|| {
-                embedded_surface_offset(toks, table).map(ProceduralCurveConstruction::SurfaceOffset)
+                embedded_surface_offset(ctx, toks, table)
+                    .map(|result| result.map(ProceduralCurveConstruction::SurfaceOffset))
             })
-            .or_else(|| embedded_spring(toks, table).map(ProceduralCurveConstruction::Spring))
+            .or_else(|| embedded_spring(ctx, toks, table)
+                .map(|result| result.map(ProceduralCurveConstruction::Spring)))
             .or_else(|| {
-                embedded_deformable(toks, table).map(ProceduralCurveConstruction::Deformable)
+                embedded_deformable(ctx, toks, table)
+                    .map(|result| result.map(ProceduralCurveConstruction::Deformable))
             })
-            .or_else(|| embedded_projection(toks).map(ProceduralCurveConstruction::Projection))
-            .or_else(|| embedded_law_curve(toks).map(ProceduralCurveConstruction::Law))
-            .or_else(|| compound.map(ProceduralCurveConstruction::Compound))
-            .unwrap_or_else(|| {
+            .or_else(|| embedded_projection(toks).map(ProceduralCurveConstruction::Projection).map(Ok))
+            .or_else(|| embedded_law_curve(toks).map(ProceduralCurveConstruction::Law).map(Ok))
+            .or_else(|| compound.map(ProceduralCurveConstruction::Compound).map(Ok))
+            .unwrap_or_else(|| Ok({
                 let native_kind = crate::nurbs::toks::owned_construction_subtype(toks)
                     .unwrap_or_else(|| "intcurve".to_string());
                 if native_kind == "exact_int_cur" {
@@ -943,12 +960,16 @@ fn procedural_curve_recursive(
                         .map(ProceduralCurveConstruction::Helix)
                         .unwrap_or(ProceduralCurveConstruction::Unknown(native_kind))
                 }
-            });
-        return Some(DecodedProceduralCurve {
+            }));
+        let construction = match construction {
+            Ok(construction) => construction,
+            Err(error) => return Some(Err(error)),
+        };
+        return Some(Ok(DecodedProceduralCurve {
             curve,
             construction,
             cache_fit_tolerance,
-        });
+        }));
     }
     for index in crate::nurbs::toks::subtype_refs(toks) {
         if seen.contains(&index) {
@@ -966,18 +987,25 @@ fn procedural_curve_recursive(
         // behind it.
         seen.push(index);
         let target = table.span(index)?;
-        if let Some(decoded) = procedural_curve_recursive(target.tokens(), table, seen) {
+        if let Some(decoded) = procedural_curve_recursive(ctx, target.tokens(), table, seen) {
             return Some(decoded);
         }
     }
     None
 }
 
-fn embedded_deformable(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedDeformable> {
+fn embedded_deformable(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    table: &SubtypeTable,
+) -> Option<Result<EmbeddedDeformable, cadmpeg_core::CodecError>> {
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["defm_int_cur"])
         .map(|(marker, _)| marker)?;
     let mut cur = Cur::at(toks, marker + 2);
-    let context = cache_first_curve_context(&mut cur, table)?;
+    let context = match cache_first_curve_context(ctx, &mut cur, table)? {
+        Ok(context) => context,
+        Err(error) => return Some(Err(error)),
+    };
     let source_start = cur.pos();
     let source = if let Some(curve) = embedded_base_curve_resolving_refs(&mut cur, table) {
         EmbeddedDeformableSource::Curve(curve)
@@ -1069,12 +1097,12 @@ fn embedded_deformable(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedD
         }
         _ => return None,
     };
-    matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(EmbeddedDeformable {
+    matches!(toks.get(cur.pos()), Some(Token::SubtypeClose)).then_some(Ok(EmbeddedDeformable {
         context: Box::new(context),
         source,
         source_parameter_range,
         data,
-    })
+    }))
 }
 
 /// Decode one law support surface, mapping the `null_surface` sentinel to an
@@ -1182,16 +1210,23 @@ fn embedded_law_curve(toks: &[Token]) -> Option<EmbeddedLawCurve> {
     })
 }
 
-fn embedded_spring(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedSpring> {
+fn embedded_spring(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    table: &SubtypeTable,
+) -> Option<Result<EmbeddedSpring, cadmpeg_core::CodecError>> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "spring_int_cur")?;
     let mut cur = Cur::at(toks, marker + 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        let context = cache_first_curve_context(&mut cur, table)?;
+        let context = match cache_first_curve_context(ctx, &mut cur, table)? {
+            Ok(context) => context,
+            Err(error) => return Some(Err(error)),
+        };
         let direction = cur.take_enum()?;
-        return Some(EmbeddedSpring {
+        return Some(Ok(EmbeddedSpring {
             layout: EmbeddedSpringLayout::CacheFirst { context },
             direction,
-        });
+        }));
     }
     let mut take_support = || {
         let saved = cur.pos();
@@ -1247,7 +1282,7 @@ fn embedded_spring(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedSprin
     ];
     let discontinuity_flag = cur.take_bool()?;
     let direction = cur.take_enum()?;
-    Some(EmbeddedSpring {
+    Some(Ok(EmbeddedSpring {
         layout: EmbeddedSpringLayout::ContextFirst {
             supports: [first_support, second_support],
             first_pcurve,
@@ -1257,7 +1292,7 @@ fn embedded_spring(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedSprin
             discontinuity_flag,
         },
         direction,
-    })
+    }))
 }
 
 /// Writable fields in the shared context tail of a `spring_int_cur` subtype.
@@ -1647,11 +1682,18 @@ pub(super) fn embedded_base_curve_resolving_refs(
     }
 }
 
-fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedSurfaceOffset> {
+fn embedded_surface_offset(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    table: &SubtypeTable,
+) -> Option<Result<EmbeddedSurfaceOffset, cadmpeg_core::CodecError>> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "off_surf_int_cur")?;
     let mut cur = Cur::at(toks, marker + 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        let context = cache_first_curve_context(&mut cur, table)?;
+        let context = match cache_first_curve_context(ctx, &mut cur, table)? {
+            Ok(context) => context,
+            Err(error) => return Some(Err(error)),
+        };
         let base_u_range = [
             cur.take_optional_range_value()?.value()?,
             cur.take_optional_range_value()?.value()?,
@@ -1669,7 +1711,7 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
             cur.take_optional_range_value()?.value()?,
             cur.take_optional_range_value()?.value()?,
         ];
-        return Some(EmbeddedSurfaceOffset {
+        return Some(Ok(EmbeddedSurfaceOffset {
             layout: EmbeddedSurfaceOffsetLayout::CacheFirst {
                 context: Box::new(context),
                 base_endpoints,
@@ -1681,7 +1723,7 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
             distance: cur.take_f64()? * LEN_TO_MM,
             shift: cur.take_f64()?,
             scale: cur.take_f64()?,
-        });
+        }));
     }
     let (surfaces, pcurves) = required_support_pair(&mut cur)?;
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -1696,7 +1738,7 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
     let (base, base_end) = curve_block(toks, cur.pos())?;
     cur.set_pos(base_end);
     let base_range = [cur.take_range_value()?, cur.take_range_value()?];
-    Some(EmbeddedSurfaceOffset {
+    Some(Ok(EmbeddedSurfaceOffset {
         layout: EmbeddedSurfaceOffsetLayout::ContextFirst {
             context: Box::new(EmbeddedIntersection {
                 surfaces: surfaces.map(SupportSlot::Surface),
@@ -1713,7 +1755,7 @@ fn embedded_surface_offset(toks: &[Token], table: &SubtypeTable) -> Option<Embed
         distance: cur.take_f64()? * LEN_TO_MM,
         shift: cur.take_f64()?,
         scale: cur.take_f64()?,
-    })
+    }))
 }
 
 /// Writable scalar fields in an `off_surf_int_cur` subtype.
@@ -1884,7 +1926,11 @@ pub fn silhouette_patch_layout(
     })
 }
 
-fn embedded_surface_curve(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedSurfaceCurve> {
+fn embedded_surface_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    table: &SubtypeTable,
+) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names = [
         ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
@@ -1903,7 +1949,8 @@ fn embedded_surface_curve(toks: &[Token], table: &SubtypeTable) -> Option<Embedd
         .find_map(|(candidate, family)| (*candidate == name).then_some(*family))?;
     let position = marker + 2;
     context_first_surface_curve(toks, position, family)
-        .or_else(|| cache_first_surface_curve(toks, position, family, table))
+        .map(Ok)
+        .or_else(|| cache_first_surface_curve(ctx, toks, position, family, table))
 }
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes.
@@ -2091,9 +2138,10 @@ impl CacheFirstCurveContext {
 }
 
 fn cache_first_curve_context(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Option<CacheFirstCurveContext> {
+) -> Option<Result<CacheFirstCurveContext, cadmpeg_core::CodecError>> {
     let revision = PositiveI64::new(cur.take_long()?)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
@@ -2124,11 +2172,23 @@ fn cache_first_curve_context(
         _ => return None,
     };
     let first_surface_start = cur.pos();
-    let first_support_present = support_slot_present(cur, table);
-    let (first_surface, first_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+    let first_support_present = match support_slot_present(ctx, cur, table) {
+        Ok(present) => present,
+        Err(error) => return Some(Err(error)),
+    };
+    let (first_surface, first_bounds) = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let second_surface_start = cur.pos();
-    let second_support_present = support_slot_present(cur, table);
-    let (second_surface, second_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+    let second_support_present = match support_slot_present(ctx, cur, table) {
+        Ok(present) => present,
+        Err(error) => return Some(Err(error)),
+    };
+    let (second_surface, second_bounds) = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+        Ok(surface) => surface,
+        Err(error) => return Some(Err(error)),
+    };
     let mut pcurves = [
         nullable_embedded_pcurve(cur)?.value(),
         nullable_embedded_pcurve(cur)?.value(),
@@ -2155,7 +2215,7 @@ fn cache_first_curve_context(
         cur.take_float_array()?,
     ];
     let extension = cur.take_long()?;
-    Some(CacheFirstCurveContext {
+    Some(Ok(CacheFirstCurveContext {
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
             cache,
@@ -2169,7 +2229,7 @@ fn cache_first_curve_context(
         ],
         pcurves,
         discontinuities,
-    })
+    }))
 }
 
 fn context_first_surface_curve(
@@ -2197,13 +2257,17 @@ fn context_first_surface_curve(
 }
 
 fn cache_first_surface_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     position: usize,
     family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
     table: &SubtypeTable,
-) -> Option<EmbeddedSurfaceCurve> {
+) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
     let mut cur = Cur::at(toks, position);
-    let context = cache_first_curve_context(&mut cur, table)?;
+    let context = match cache_first_curve_context(ctx, &mut cur, table)? {
+        Ok(context) => context,
+        Err(error) => return Some(Err(error)),
+    };
     let flag = cur.take_bool()?;
     let second_flag = matches!(cur.peek(), Some(Token::True | Token::False))
         .then(|| cur.take_bool())
@@ -2214,7 +2278,7 @@ fn cache_first_surface_curve(
             context,
             flags: (flag, second_flag),
         },
-    )
+    ).map(Ok)
 }
 
 fn embedded_surface_curve_from_parts(
@@ -2489,15 +2553,17 @@ pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Proj
 }
 
 fn embedded_intersection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(EmbeddedIntersection, bool)> {
+) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
     let names = ["int_int_cur", "surf_surf_int_cur", "surfintcur"];
     let (marker, _) = crate::nurbs::toks::find_owned_subtype_marker(toks, &names)?;
     let position = marker + 2;
     context_first_intersection(toks, position)
-        .or_else(|| cache_first_intersection(toks, position, solved, table))
+        .map(Ok)
+        .or_else(|| cache_first_intersection(ctx, toks, position, solved, table))
 }
 
 fn context_first_intersection(
@@ -2525,11 +2591,12 @@ fn context_first_intersection(
 }
 
 fn cache_first_intersection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     position: usize,
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(EmbeddedIntersection, bool)> {
+) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
     let mut cur = Cur::at(toks, position);
     (cur.take_long()? > 0).then_some(())?;
     (cur.take_enum()? == 0).then_some(())?;
@@ -2537,11 +2604,23 @@ fn cache_first_intersection(
     cur.set_pos(cache_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_support_present = support_slot_present(&cur, table);
-    let first_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
+    let first_support_present = match support_slot_present(ctx, &cur, table) {
+        Ok(present) => present,
+        Err(error) => return Some(Err(error)),
+    };
+    let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+        Ok(surface) => surface.0,
+        Err(error) => return Some(Err(error)),
+    };
     let second_surface_start = cur.pos();
-    let second_support_present = support_slot_present(&cur, table);
-    let second_surface = optional_embedded_surface_with_bounds(&mut cur, table)?.0;
+    let second_support_present = match support_slot_present(ctx, &cur, table) {
+        Ok(present) => present,
+        Err(error) => return Some(Err(error)),
+    };
+    let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+        Ok(surface) => surface.0,
+        Err(error) => return Some(Err(error)),
+    };
     let surfaces = [
         SupportSlot::from_parsed(first_surface, first_support_present),
         SupportSlot::from_parsed(second_surface, second_support_present),
@@ -2571,7 +2650,7 @@ fn cache_first_intersection(
         cur.take_float_array()?,
     ];
     let discontinuity_flag = cur.take_long()? != 0;
-    Some((
+    Some(Ok((
         EmbeddedIntersection {
             surfaces,
             pcurves,
@@ -2579,7 +2658,7 @@ fn cache_first_intersection(
             discontinuities,
         },
         discontinuity_flag,
-    ))
+    )))
 }
 
 /// Writable shared-context fields in an `int_int_cur` subtype.
@@ -2688,53 +2767,67 @@ fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
 /// procedural surface without assigning it a document-level construction ID.
 /// Keep that distinction separate: a typed support reference still proves that
 /// its paired native pcurve slot is eligible, while `null_surface` does not.
-fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
+fn support_slot_present(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &Cur<'_>,
+    table: &SubtypeTable,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut probe = *cur;
     if probe.take_ident() == Some("null_surface") {
-        return false;
+        return Ok(false);
     }
 
     let mut parsed = *cur;
-    if let Some((Some(_), _)) = optional_embedded_surface_with_bounds(&mut parsed, table) {
-        return true;
+    if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
+        if parsed?.0.is_some() {
+            return Ok(true);
+        }
     }
 
     let mut probe = *cur;
     if probe.take_ident() != Some("spline") {
-        return false;
+        return Ok(false);
     }
     if matches!(probe.peek(), Some(Token::True | Token::False)) && probe.take_bool().is_none() {
-        return false;
+        return Ok(false);
     }
     let Some(Token::SubtypeOpen) = probe.peek() else {
-        return false;
+        return Ok(false);
     };
     let start = probe.pos();
     let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
-        return false;
+        return Ok(false);
     };
     let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
-        return false;
+        return Ok(false);
     };
     if name == "ref" {
         let Some(Token::Long(index)) = probe.toks().get(start + 2) else {
-            return false;
+            return Ok(false);
         };
         let Ok(index) = usize::try_from(*index) else {
-            return false;
+            return Ok(false);
         };
-        return table.span(index).is_some_and(|target| {
-            crate::nurbs::core::owned_surface_cache_resolving_refs(target, table).is_some()
-                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-                    target.tokens(),
-                    table,
-                )
-                .is_some()
-        });
+        let Some(target) = table.span(index) else {
+            return Ok(false);
+        };
+        if crate::nurbs::core::owned_surface_cache_resolving_refs(target, table).is_some() {
+            return Ok(true);
+        }
+        return crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            ctx,
+            target.tokens(),
+            table,
+        )
+        .transpose()
+        .map(|decoded| decoded.is_some());
     }
-    crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table).is_some()
-        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope.tokens(), table)
-            .is_some()
+    if crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table).is_some() {
+        return Ok(true);
+    }
+    crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)
+        .transpose()
+        .map(|decoded| decoded.is_some())
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
@@ -3134,14 +3227,15 @@ fn decode_embedded_surface_fields(
 /// Optional embedded support surface plus its four optional U/V bound fields.
 #[allow(clippy::type_complexity)]
 pub(super) fn optional_embedded_surface_with_bounds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Option<(Option<SurfaceGeometry>, [Option<f64>; 4])> {
+) -> Option<Result<(Option<SurfaceGeometry>, [Option<f64>; 4]), cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident();
     if kind == Some("null_surface") {
-        return Some((None, [None; 4]));
+        return Some(Ok((None, [None; 4])));
     }
     if kind == Some("spline") {
         if matches!(cur.peek(), Some(Token::True | Token::False)) {
@@ -3167,7 +3261,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some((surface, bounds));
+            return Some(Ok((surface, bounds)));
         }
     }
     cur.set_pos(saved);
@@ -3178,7 +3272,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 *bound = cur.take_optional_range_value()?.value();
             }
         }
-        return Some((Some(surface), bounds));
+        return Some(Ok((Some(surface), bounds)));
     }
     // Inline `spline { <subtype> }` support scope: resolve a solved surface
     // cache when present, or validate the procedural surface construction when
@@ -3197,12 +3291,12 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     surface,
                 )))
-            } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-                scope.tokens(),
-                table,
-            )
-            .is_some()
+            } else if let Some(decoded) =
+                crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)
             {
+                if let Err(error) = decoded {
+                    return Some(Err(error));
+                }
                 None
             } else {
                 return None;
@@ -3212,7 +3306,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some((surface, bounds));
+            return Some(Ok((surface, bounds)));
         }
     }
     cur.set_pos(saved);
@@ -3566,6 +3660,10 @@ mod cache_form_tests {
     /// enum, and the rest of the context continues unchanged.
     #[test]
     fn parameterized_cache_form_reads_the_interval_and_closed_form_enum() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -3583,7 +3681,7 @@ mod cache_form_tests {
             let table = crate::nurbs::toks::test_table(&bytes, int_width)
                 .expect("valid single-record byte fixture");
             let mut cur = Cur::at(&toks, 0);
-            let context = cache_first_curve_context(&mut cur, &table).unwrap_or_else(|| {
+            let context = cache_first_curve_context(&asm_decode_ctx, &mut cur, &table).transpose().expect("resource allocation did not fail").unwrap_or_else(|| {
                 panic!("parameterized cache-first context at width {int_width}")
             });
             // Every field of the context is read: the walk ends on the last
@@ -3612,6 +3710,10 @@ mod cache_form_tests {
     /// retained verbatim rather than misparsed.
     #[test]
     fn undefined_cache_form_is_rejected_for_verbatim_retention() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -3623,7 +3725,7 @@ mod cache_form_tests {
             let table = crate::nurbs::toks::test_table(&bytes, int_width)
                 .expect("valid single-record byte fixture");
             let mut cur = Cur::at(&toks, 0);
-            assert!(cache_first_curve_context(&mut cur, &table).is_none());
+            assert!(cache_first_curve_context(&asm_decode_ctx, &mut cur, &table).transpose().expect("resource allocation did not fail").is_none());
         }
     }
 }

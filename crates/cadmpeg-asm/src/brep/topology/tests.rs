@@ -37,6 +37,10 @@ fn triple(bytes: &mut Vec<u8>, tag: u8, values: [f64; 3]) {
 
 #[test]
 fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for width in [RefWidth::Four, RefWidth::Eight] {
         for tolerance in [0.0, 0.125] {
             let mut bytes = Vec::new();
@@ -96,7 +100,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 .collect();
             let table = nurbs::toks::SubtypeTable::from_records(&records);
             let decoded =
-                nurbs::proc_surface::procedural_surface_resolving_refs(&records[0].tokens, &table).transpose().expect("resource allocation did not fail")
+                nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx, &records[0].tokens, &table).transpose().expect("resource allocation did not fail")
                     .unwrap();
             let DecodedProceduralSurfaceDefinition::Sum {
                 revision_form: Some(form),
@@ -119,7 +123,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             let mut carriers = Carriers::default();
             let mut reach = Reachable::default();
             let format = crate::asm_format!("f3d");
-            keep_faces_and_carriers(
+            keep_faces_and_carriers(&asm_decode_ctx,
                 &mut out,
                 &records,
                 &by_index,
@@ -152,6 +156,11 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
 
 #[test]
 fn history_pcurve_use_has_no_invented_parameter_interval() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let record = |index, name: &str, fields: &[i64]| Record {
         index,
         name: name.into(),
@@ -175,6 +184,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
     };
     let mut out = AsmBrep::default();
     walk_reachable_topology(
+        &asm_decode_ctx,
         &mut out,
         &by_index,
         &table,
@@ -182,7 +192,8 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         &mut reach,
         DecodePurpose::History,
         crate::asm_format!("f3d"),
-    );
+    )
+    .expect("history topology is within resource limits");
     super::super::emit::emit_coedges(
         &mut out,
         &records,
