@@ -9,7 +9,7 @@ use crate::records::{
         edge_identity::DesignEdgeOperand,
     },
 };
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -1655,31 +1655,83 @@ fn bipartite_assignment(
         forbidden: Option<(usize, i64)>,
         visited: &mut HashSet<i64>,
         edge_members: &mut HashMap<i64, usize>,
-    ) -> bool {
+        visited_reservation: &mut Option<ScopedReservation<'_>>,
+        members_reservation: &mut Option<ScopedReservation<'_>>,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<bool, CodecError> {
+        let _depth = ctx
+            .map(|ctx| ctx.enter_nested("f3d edge assignment search"))
+            .transpose()?;
         for edge in &candidate_sets[member] {
-            if forbidden == Some((member, *edge)) || !visited.insert(*edge) {
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "f3d edge assignment candidate")?;
+            }
+            if forbidden == Some((member, *edge)) || visited.contains(edge) {
                 continue;
             }
+            if let Some(reservation) = visited_reservation {
+                reservation.grow(u64::from(i64::BITS / 8))?;
+            }
+            if let Some(ctx) = ctx {
+                visited.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d edge assignment visit allocation", 0, 1)
+                })?;
+            }
+            visited.insert(*edge);
             let displaced = edge_members.get(edge).copied();
-            if displaced.is_none_or(|displaced| {
-                augment(displaced, candidate_sets, forbidden, visited, edge_members)
-            }) {
+            let assignable = match displaced {
+                Some(displaced) => augment(
+                    displaced,
+                    candidate_sets,
+                    forbidden,
+                    visited,
+                    edge_members,
+                    visited_reservation,
+                    members_reservation,
+                    ctx,
+                )?,
+                None => true,
+            };
+            if assignable {
+                if displaced.is_none() {
+                    if let Some(ctx) = ctx {
+                        let bytes = u64::try_from(std::mem::size_of::<(i64, usize)>()).map_err(
+                            |_| ctx.refuse_codec_limit("f3d edge assignment member bytes", 0, 1),
+                        )?;
+                        if let Some(reservation) = members_reservation {
+                            reservation.grow(bytes)?;
+                        }
+                        edge_members.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d edge assignment member allocation", 0, 1)
+                        })?;
+                    }
+                }
                 edge_members.insert(*edge, member);
-                return true;
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
     }
 
     let mut edge_members = HashMap::new();
+    let mut members_reservation = ctx
+        .map(|ctx| ctx.reserve_scoped(0, "f3d edge assignment members"))
+        .transpose()?;
     for member in 0..candidate_sets.len() {
+        let mut visited = HashSet::new();
+        let mut visited_reservation = ctx
+            .map(|ctx| ctx.reserve_scoped(0, "f3d edge assignment visits"))
+            .transpose()?;
         if !augment(
             member,
             candidate_sets,
             forbidden,
-            &mut HashSet::new(),
+            &mut visited,
             &mut edge_members,
-        ) {
+            &mut visited_reservation,
+            &mut members_reservation,
+            ctx,
+        )? {
             return Ok(None);
         }
     }
