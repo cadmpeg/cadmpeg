@@ -11,6 +11,7 @@ use std::fmt::Write;
 
 use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::design::decode::text::lp_utf16_bounded_charged;
+use crate::design::decode::image::neutral_asset_id_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
@@ -1671,21 +1672,7 @@ fn decode_mesh_design_records(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let mut asset_for_filename = |filename: &str| {
-            let mut matches = scan.entries.iter().filter(|candidate| {
-                scan.is_design_asset_entry(candidate, ContainerRole::Image)
-                    && candidate.name.rsplit('/').next() == Some(filename)
-            });
-            let (Some(asset), None) = (matches.next(), matches.next()) else {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
-                )));
-            };
-            Ok((
-                copy_mesh_text(ctx, &asset.name, "f3d mesh image entry name")?,
-                crate::ids::neutral_asset_id(&asset.name),
-            ))
-        };
+        let mut asset_for_filename = |filename: &str| mesh_image_asset(ctx, scan, filename);
         let records = parse_mesh_design_records(
             ctx,
             scan.entry_bytes(&entry.name)?,
@@ -1698,6 +1685,26 @@ fn decode_mesh_design_records(
         }
     }
     Ok(out)
+}
+
+fn mesh_image_asset(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    filename: &str,
+) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError> {
+    let mut matches = scan.entries.iter().filter(|candidate| {
+        scan.is_design_asset_entry(candidate, ContainerRole::Image)
+            && candidate.name.rsplit('/').next() == Some(filename)
+    });
+    let (Some(asset), None) = (matches.next(), matches.next()) else {
+        return Err(CodecError::malformed(format_args!(
+            "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
+        )));
+    };
+    Ok((
+        copy_mesh_text(ctx, &asset.name, "f3d mesh image entry name")?,
+        neutral_asset_id_charged(ctx, &asset.name)?,
+    ))
 }
 
 fn push_mesh_record<T>(
@@ -2908,6 +2915,44 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "f3d Design UTF-16 text"));
+    }
+
+    #[test]
+    fn mesh_image_asset_identifier_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use std::io::{Cursor, Write};
+        use zip::CompressionMethod;
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(b"PNG").unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let expected = crate::ids::neutral_asset_id(ENTRY);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes =
+                u64::try_from(ENTRY.len() + expected.as_str().len() - 1).unwrap();
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let refusal = super::mesh_image_asset(&limited, scan, "mark.png");
+            assert!(matches!(
+                refusal,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == "f3d asset identifier"
+            ));
+            let admitted = super::mesh_image_asset(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                "mark.png",
+            )
+            .unwrap();
+            assert_eq!(admitted.0, ENTRY);
+            assert_eq!(admitted.1, expected);
+        });
     }
 
     #[test]
