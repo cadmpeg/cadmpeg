@@ -10,7 +10,7 @@ use super::reference::{first_matching as first_matching_reference, references};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::PmiId;
+use cadmpeg_ir::ids::{Identity, PmiId};
 use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
@@ -773,7 +773,7 @@ pub(super) fn decode(
                     push_source_id(
                         &mut presentation_semantics,
                         item,
-                        &definition,
+                        definition,
                         ctx,
                         "step_pmi_presentation_semantic_groups",
                         "step_pmi_presentation_semantic_members",
@@ -1131,7 +1131,7 @@ fn resolve_geometric_item_usages(
             for target in &targets {
                 push_target(
                     &mut annotation.targets,
-                    target.clone(),
+                    copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity")?,
                     ctx,
                     "step_pmi_geometric_usage_targets",
                 )?;
@@ -1156,40 +1156,40 @@ fn topology_targets(
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Body { body: body.clone() }, ctx, "step_pmi_topology_targets")?;
+        let body = copy_pmi_identity(body.as_str(), ctx, "step_pmi_topology_identity")?;
+        push_target(&mut targets, PmiTarget::Body { body }, ctx, "step_pmi_topology_targets")?;
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Face { face: face.clone() }, ctx, "step_pmi_topology_targets")?;
+        let face = copy_pmi_identity(face.as_str(), ctx, "step_pmi_topology_identity")?;
+        push_target(&mut targets, PmiTarget::Face { face }, ctx, "step_pmi_topology_targets")?;
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
-        push_target(&mut targets, PmiTarget::Edge { edge: edge.clone() }, ctx, "step_pmi_topology_targets")?;
+        let edge = copy_pmi_identity(edge.as_str(), ctx, "step_pmi_topology_identity")?;
+        push_target(&mut targets, PmiTarget::Edge { edge }, ctx, "step_pmi_topology_targets")?;
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
+        let vertex = copy_pmi_identity(vertex.as_str(), ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
-            PmiTarget::Vertex {
-                vertex: vertex.clone(),
-            },
+            PmiTarget::Vertex { vertex },
             ctx,
             "step_pmi_topology_targets",
         )?;
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
+        let point = copy_pmi_identity(point.as_str(), ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
-            PmiTarget::Point {
-                point: point.clone(),
-            },
+            PmiTarget::Point { point },
             ctx,
             "step_pmi_topology_targets",
         )?;
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
+        let curve = copy_pmi_identity(curve.as_str(), ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
-            PmiTarget::Curve {
-                curve: curve.clone(),
-            },
+            PmiTarget::Curve { curve },
             ctx,
             "step_pmi_topology_targets",
         )?;
@@ -1227,10 +1227,10 @@ fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
     ))
 }
 
-fn push_source_id<T: Clone>(
+fn push_source_id<T>(
     values: &mut BTreeMap<u64, Vec<T>>,
     source: u64,
-    id: &T,
+    id: T,
     ctx: Option<&DecodeContext<'_>>,
     group_operation: &'static str,
     item_operation: &'static str,
@@ -1240,15 +1240,15 @@ fn push_source_id<T: Clone>(
             ctx.charge_collection_items(1, group_operation)?;
         }
     }
-    let items = values.entry(source).or_default();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(1, item_operation)?;
     }
+    let items = values.entry(source).or_default();
     items.try_reserve(1).map_err(|_| match ctx {
         Some(ctx) => ctx.refuse_codec_limit(item_operation, 0, 1),
         None => cadmpeg_core::decode::refuse_local_limit(item_operation, 0, 1),
     })?;
-    items.push(id.clone());
+    items.push(id);
     Ok(())
 }
 
@@ -1261,10 +1261,11 @@ fn point_sources(
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
+        let id = copy_pmi_identity(point.id.as_str(), ctx, "step_pmi_point_source_identity")?;
         push_source_id(
             &mut points,
             source,
-            &point.id,
+            id,
             ctx,
             "step_pmi_point_source_groups",
             "step_pmi_point_source_items",
@@ -1282,10 +1283,11 @@ fn curve_sources(
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };
+        let id = copy_pmi_identity(curve.id.as_str(), ctx, "step_pmi_curve_source_identity")?;
         push_source_id(
             &mut curves,
             source,
-            &curve.id,
+            id,
             ctx,
             "step_pmi_curve_source_groups",
             "step_pmi_curve_source_items",
@@ -1803,6 +1805,56 @@ fn clone_pmi_text(
     })?;
     copy.push_str(value);
     Ok(copy)
+}
+
+fn copy_pmi_identity<T: From<Identity>>(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let copy = clone_pmi_text(value, ctx, operation)?;
+    let identity = Identity::new(copy)
+        .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
+    Ok(T::from(identity))
+}
+
+fn copy_pmi_target(
+    target: &PmiTarget,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<PmiTarget, CodecError> {
+    Ok(match target {
+        PmiTarget::Body { body } => PmiTarget::Body {
+            body: copy_pmi_identity(body.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Face { face } => PmiTarget::Face {
+            face: copy_pmi_identity(face.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Edge { edge } => PmiTarget::Edge {
+            edge: copy_pmi_identity(edge.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Vertex { vertex } => PmiTarget::Vertex {
+            vertex: copy_pmi_identity(vertex.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Point { point } => PmiTarget::Point {
+            point: copy_pmi_identity(point.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Curve { curve } => PmiTarget::Curve {
+            curve: copy_pmi_identity(curve.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Product { product } => PmiTarget::Product {
+            product: copy_pmi_identity(product.as_str(), ctx, operation)?,
+        },
+        PmiTarget::Occurrence { occurrence } => PmiTarget::Occurrence {
+            occurrence: copy_pmi_identity(occurrence.as_str(), ctx, operation)?,
+        },
+        PmiTarget::ShapeAspect { source_id } => {
+            let copy = clone_pmi_text(source_id.as_str(), ctx, operation)?;
+            let source_id = cadmpeg_core::text::NonBlankString::new(copy)
+                .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
+            PmiTarget::ShapeAspect { source_id }
+        }
+    })
 }
 
 fn datum_target_form(
