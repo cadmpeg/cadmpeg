@@ -485,6 +485,28 @@ fn located_presentation_loss(
         .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
 }
 
+fn push_list_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    offset: usize,
+    tag: &'static str,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    crate::wire::reserve_collection(ctx, losses, 1, "Rhino view list losses")?;
+    let loss = crate::wire::admitted_loss(
+        ctx,
+        crate::loss::RhinoLossCode::PresentationRecordDropped,
+        message,
+        "Rhino view list loss message",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(tag.len()),
+        "Rhino view list loss tag",
+    )?;
+    losses.push(loss.with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag)));
+    Ok(())
+}
+
 fn located_integrity_loss(
     offset: usize,
     tag: impl Into<String>,
@@ -1411,51 +1433,51 @@ fn parse_list(
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
-            losses.push(located_presentation_loss(
+            push_list_loss(ctx, &mut losses,
                 record.range.start,
                 list_tag,
-                format!(
+                format_args!(
                     "{kind} view list at offset {} could not be framed: {error}",
                     record.body().start
                 ),
-            ));
+            )?;
             return Ok((Vec::new(), losses));
         }
     };
     let signed_count = match reader.i32() {
         Ok(value) => value,
         Err(error) => {
-            losses.push(located_presentation_loss(
+            push_list_loss(ctx, &mut losses,
                 record.range.start,
                 list_tag,
-                format!(
+                format_args!(
                     "{kind} view list at offset {} has no readable count: {error}",
                     record.body().start
                 ),
-            ));
+            )?;
             return Ok((Vec::new(), losses));
         }
     };
     let Ok(count) = usize::try_from(signed_count) else {
-        losses.push(located_presentation_loss(
+        push_list_loss(ctx, &mut losses,
             record.range.start,
             list_tag,
-            format!(
+            format_args!(
                 "{kind} view list at offset {} has a negative count {signed_count}",
                 record.body().start
             ),
-        ));
+        )?;
         return Ok((Vec::new(), losses));
     };
     if count > 1 << 16 {
-        losses.push(located_presentation_loss(
+        push_list_loss(ctx, &mut losses,
             record.range.start,
             list_tag,
-            format!(
+            format_args!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
                 record.body().start
             ),
-        ));
+        )?;
         return Ok((Vec::new(), losses));
     }
     let mut views = Vec::new();
@@ -1464,26 +1486,26 @@ fn parse_list(
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
             Err(error) => {
-                losses.push(located_presentation_loss(
+                push_list_loss(ctx, &mut losses,
                     reader.position(),
                     "VIEW/RECORD",
-                    format!(
+                    format_args!(
                         "{kind} view record at offset {} could not be framed: {error}",
                         reader.position()
                     ),
-                ));
+                )?;
                 break;
             }
         };
         if view.typecode != VIEW_RECORD || view.short() {
-            losses.push(located_presentation_loss(
+            push_list_loss(ctx, &mut losses,
                 child_offset,
                 "VIEW/RECORD",
-                format!(
+                format_args!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
                     view.typecode
                 ),
-            ));
+            )?;
             break;
         }
         let next = view.next_offset();
@@ -1505,24 +1527,26 @@ fn parse_list(
                 views.push(value);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Err(error) => losses.push(located_presentation_loss(
+            Err(error) => push_list_loss(
+                ctx,
+                &mut losses,
                 view.header_start,
                 "VIEW/RECORD",
-                format!(
+                format_args!(
                     "{kind} view record at offset {} was omitted after child parsing failed: {error}",
                     view.header_start
                 ),
-            )),
+            )?,
         }
         if let Err(error) = reader.skip(next - reader.position()) {
-            losses.push(located_presentation_loss(
+            push_list_loss(ctx, &mut losses,
                 view.header_start,
                 "VIEW/RECORD",
-                format!(
+                format_args!(
                     "{kind} view record at offset {} could not advance to its bounded end: {error}",
                     view.header_start
                 ),
-            ));
+            )?;
             break;
         }
     }
@@ -1696,18 +1720,7 @@ pub(crate) fn install(
                     scale,
                     ViewListKind::Named,
                 )?;
-                if !parse_losses.is_empty() {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino opaque view records",
-                    )?;
-                    opaque_records.push(OpaqueRecord {
-                        table_typecode: table.typecode,
-                        record: record.clone(),
-                    });
-                }
+                let has_parse_losses = !parse_losses.is_empty();
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
@@ -1718,6 +1731,10 @@ pub(crate) fn install(
                     "Rhino view setting losses",
                 )?;
                 losses.append(&mut parse_losses);
+                if has_parse_losses {
+                    crate::wire::reserve_collection(ctx, &mut opaque_records, 1, "Rhino opaque view records")?;
+                    opaque_records.push(OpaqueRecord { table_typecode: table.typecode, record: record.clone() });
+                }
             }
             if record.typecode == ACTIVE_VIEWS {
                 let Some(scale) = binding.neutral_scale() else {
@@ -1740,18 +1757,7 @@ pub(crate) fn install(
                     scale,
                     ViewListKind::Active,
                 )?;
-                if !parse_losses.is_empty() {
-                    crate::wire::reserve_collection(
-                        ctx,
-                        &mut opaque_records,
-                        1,
-                        "Rhino opaque view records",
-                    )?;
-                    opaque_records.push(OpaqueRecord {
-                        table_typecode: table.typecode,
-                        record: record.clone(),
-                    });
-                }
+                let has_parse_losses = !parse_losses.is_empty();
                 reserve_admitted_vec(ctx, &mut views, parsed.len(), "Rhino document views")
                     .map_err(codec_error)?;
                 views.extend(parsed);
@@ -1762,6 +1768,10 @@ pub(crate) fn install(
                     "Rhino view setting losses",
                 )?;
                 losses.append(&mut parse_losses);
+                if has_parse_losses {
+                    crate::wire::reserve_collection(ctx, &mut opaque_records, 1, "Rhino opaque view records")?;
+                    opaque_records.push(OpaqueRecord { table_typecode: table.typecode, record: record.clone() });
+                }
             }
         }
     }
@@ -2115,6 +2125,60 @@ mod tests {
         .expect("service profile admits the retained list");
         assert_eq!(installed.losses.len(), 1);
         assert_eq!(installed.opaque_records.len(), 1);
+    }
+
+    #[test]
+    fn malformed_view_list_refuses_loss_collection_limit() {
+        let bytes = [0_u8];
+        let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
+        let error = with_collection_limit(&bytes, 0, |ctx| {
+            super::parse_list(
+                ctx,
+                &bytes,
+                &record,
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+                super::ViewListKind::Named,
+            )
+            .expect_err("malformed list loss exceeds collection limit")
+        });
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino view list losses"
+        ));
+        let (_, losses) = super::parse_list(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &record,
+            ArchiveVersion::V5,
+            crate::settings::MillimeterScale::IDENTITY,
+            super::ViewListKind::Named,
+        )
+        .expect("service profile admits loss");
+        assert_eq!(losses.len(), 1);
+    }
+
+    #[test]
+    fn malformed_view_list_refuses_loss_retained_limit() {
+        let bytes = [0_u8];
+        let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            super::parse_list(
+                ctx,
+                &bytes,
+                &record,
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+                super::ViewListKind::Named,
+            )
+            .expect_err("malformed list loss text exceeds retained limit")
+        });
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino view list loss message"
+        ));
     }
 
     #[test]
