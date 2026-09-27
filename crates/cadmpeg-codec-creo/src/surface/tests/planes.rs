@@ -29,7 +29,6 @@ use crate::surface::rows;
 use crate::surface::scalar_frames;
 use crate::surface::scalar_slots_with_tokens_and_end;
 use crate::surface::scalar_tokens;
-use crate::surface::sequential_named_local_system_slots;
 use crate::surface::slot_equality;
 use crate::surface::LocalSystemClassification;
 use crate::surface::OutlinePlane;
@@ -46,6 +45,18 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn sequential_named_local_system_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::sequential_named_local_system_slots(ctx, body, count, cache, refusal)
+    })
+}
+
 #[test]
 fn derives_one_held_coordinate_outline_plane() {
     let records = [PlaneEnvelopeRecord {

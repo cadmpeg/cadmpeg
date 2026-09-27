@@ -3,6 +3,44 @@
 use crate::scalar;
 use crate::surface::SurfacePrototypeFamily;
 
+#[test]
+fn local_system_slots_refuse_before_declared_count_reserve() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let body = [0x10];
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &service)
+        .expect("one local-system token fits the input limit");
+    let values = crate::surface::sequential_named_local_system_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut crate::surface::ScalarBodyRefusal::default(),
+    )
+    .expect("service profile admits the declared slot");
+    assert_eq!(values, Some(vec![Some(0.0)]));
+
+    let mut limited = service;
+    limited.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&body, &arena, &limited).expect("input fits the root limit");
+    let error = crate::surface::sequential_named_local_system_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut crate::surface::ScalarBodyRefusal::default(),
+    )
+    .expect_err("one local-system slot exceeds zero collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo local-system scalar slots"
+    ));
+}
+
 fn named_surface_limit_error(
     name: &str,
     body: &[u8],

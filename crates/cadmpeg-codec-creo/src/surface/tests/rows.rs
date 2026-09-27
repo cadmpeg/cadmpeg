@@ -73,6 +73,51 @@ fn named_spline_limit_error(
     .expect_err("the selected spline allocation exceeds its limit")
 }
 
+fn scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    super::with_decode_ctx(body, |ctx| {
+        crate::surface::scalar_slots(ctx, body, count, cache, refusal)
+    })
+}
+
+#[test]
+fn scalar_body_slots_refuse_before_declared_count_reserve() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let body = [0xe4];
+    assert_eq!(
+        scalar_slots(
+            &body,
+            1,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default(),
+        ),
+        Some(vec![Some(1.0)])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("one scalar token fits the input limit");
+    let error = crate::surface::scalar_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("one declared scalar slot exceeds zero collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo scalar body slots"
+    ));
+}
+
 #[test]
 fn named_spline_slots_refuse_before_declared_count_reserve() {
     assert_eq!(
@@ -1198,7 +1243,7 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
 
     // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f, 0x0f],
             3,
             &cache,
@@ -1208,7 +1253,7 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
     );
     // The same body with the undefined byte at slot 0, slot 1 and slot 2.
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0x00, 0x0f, 0x0f],
             3,
             &cache,
@@ -1217,7 +1262,7 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
         None
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x00, 0x0f],
             3,
             &cache,
@@ -1226,7 +1271,7 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
         None
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f, 0x00],
             3,
             &cache,
@@ -1237,7 +1282,7 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
     // The first two slots decode, so the refusal is at slot 2 and not earlier:
     // a two-slot declaration over the same two prefixes decodes.
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f],
             2,
             &cache,
@@ -1256,7 +1301,7 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f],
             2,
             &cache,
@@ -1265,7 +1310,7 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
         Some(vec![Some(1.0), Some(0.0)])
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f],
             3,
             &cache,
@@ -1274,7 +1319,7 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
         None
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[],
             1,
             &cache,
@@ -1283,7 +1328,7 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
         None
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[],
             0,
             &cache,
@@ -1301,7 +1346,7 @@ fn a_scalar_body_longer_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f, 0x0f],
             3,
             &cache,
@@ -1310,7 +1355,7 @@ fn a_scalar_body_longer_than_its_declared_count_is_refused() {
         Some(vec![Some(1.0), Some(0.0), Some(0.0)])
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4, 0x0f, 0x0f],
             2,
             &cache,
@@ -1319,7 +1364,7 @@ fn a_scalar_body_longer_than_its_declared_count_is_refused() {
         None
     );
     assert_eq!(
-        super::super::scalar_slots(
+        scalar_slots(
             &[0xe4],
             0,
             &cache,
