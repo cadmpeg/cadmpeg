@@ -562,7 +562,7 @@ pub(crate) struct MeshQuotient {
 
 #[derive(Clone)]
 pub(super) struct MeshCoordinateRootDomains {
-    domains: Vec<Vec<usize>>,
+    domains: Arc<Vec<Vec<usize>>>,
     edges: Arc<Vec<[usize; 2]>>,
     root_edges: Arc<Vec<Vec<usize>>>,
     edge_candidates: Arc<Vec<Vec<[usize; 2]>>>,
@@ -582,31 +582,46 @@ pub(super) struct MeshIncidenceBoundary<'a> {
     pub(super) domains: &'a [MeshFaceBoundaryDomain],
 }
 
+#[derive(Clone)]
 pub(super) struct MeshImplicitEdgeCandidates {
     source: MeshImplicitEdgeCandidateSource,
 }
 
+#[derive(Clone)]
 enum MeshImplicitEdgeCandidateSource {
     Cartesian {
-        left: Vec<usize>,
-        right: Vec<usize>,
+        domains: Arc<Vec<Vec<usize>>>,
+        left_root: usize,
+        right_root: usize,
         left_index: usize,
         right_index: usize,
         same_root: bool,
     },
     Required {
-        points: std::vec::IntoIter<usize>,
+        domains: Arc<Vec<Vec<usize>>>,
+        roots: [Option<usize>; 2],
+        indexes: [usize; 2],
         required: usize,
+        skip_required: bool,
+        remaining: usize,
     },
 }
 
 impl MeshImplicitEdgeCandidates {
-    pub(super) fn width_upper_bound(&self) -> usize {
+    pub(super) fn width_upper_bound(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         match &self.source {
-            MeshImplicitEdgeCandidateSource::Cartesian { left, right, .. } => {
-                left.len().saturating_mul(right.len())
-            }
-            MeshImplicitEdgeCandidateSource::Required { points, .. } => points.len(),
+            MeshImplicitEdgeCandidateSource::Cartesian {
+                domains,
+                left_root,
+                right_root,
+                ..
+            } => domains[*left_root]
+                .len()
+                .checked_mul(domains[*right_root].len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_implicit_edge_width", u64::MAX, u64::MAX)
+                }),
+            MeshImplicitEdgeCandidateSource::Required { remaining, .. } => Ok(*remaining),
         }
     }
 }
@@ -616,25 +631,71 @@ impl Iterator for MeshImplicitEdgeCandidates {
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.source {
-            MeshImplicitEdgeCandidateSource::Required { points, required } => {
-                points.next().map(|point| {
-                    if *required <= point {
-                        [*required, point]
-                    } else {
-                        [point, *required]
+            MeshImplicitEdgeCandidateSource::Required {
+                domains,
+                roots,
+                indexes,
+                required,
+                skip_required,
+                remaining,
+            } => loop {
+                let left = roots[0]
+                    .and_then(|root| domains[root].get(indexes[0]))
+                    .copied();
+                let right = roots[1]
+                    .and_then(|root| domains[root].get(indexes[1]))
+                    .copied();
+                let point = match (left, right) {
+                    (Some(left), Some(right)) if left < right => {
+                        indexes[0] += 1;
+                        left
                     }
-                })
-            }
+                    (Some(left), Some(right)) if right < left => {
+                        indexes[1] += 1;
+                        right
+                    }
+                    (Some(left), Some(_)) => {
+                        indexes[0] += 1;
+                        indexes[1] += 1;
+                        left
+                    }
+                    (Some(left), None) => {
+                        indexes[0] += 1;
+                        left
+                    }
+                    (None, Some(right)) => {
+                        indexes[1] += 1;
+                        right
+                    }
+                    (None, None) => return None,
+                };
+                if *skip_required && point == *required {
+                    continue;
+                }
+                if *remaining > 0 {
+                    *remaining -= 1;
+                }
+                return Some(if *required <= point {
+                    [*required, point]
+                } else {
+                    [point, *required]
+                });
+            },
             MeshImplicitEdgeCandidateSource::Cartesian {
-                left,
-                right,
+                domains,
+                left_root,
+                right_root,
                 left_index,
                 right_index,
                 same_root,
             } => {
+                let left = &domains[*left_root];
+                let right = &domains[*right_root];
                 while *left_index < left.len() {
                     let left_point = left[*left_index];
-                    let right_point = right[*right_index];
+                    let Some(&right_point) = right.get(*right_index) else {
+                        return None;
+                    };
                     *right_index += 1;
                     if *right_index == right.len() {
                         *left_index += 1;
@@ -670,12 +731,12 @@ pub(super) enum MeshEndpointCandidates<'a> {
 impl MeshCoordinateRootDomains {
     fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            domains: crate::resource::copy_retained_rows(
+            domains: Arc::new(crate::resource::copy_retained_rows(
                 ctx,
                 &self.domains,
                 "catia_coordinate_root_clone_domains",
                 "catia_coordinate_root_clone_points",
-            )?,
+            )?),
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
             edge_candidates: Arc::clone(&self.edge_candidates),
@@ -759,64 +820,37 @@ impl MeshCoordinateRootDomains {
         if let Some(required) = required_point {
             let required_in_left = self.domains[left].binary_search(&required).is_ok();
             let required_in_right = self.domains[right].binary_search(&required).is_ok();
-            let mut points = match (required_in_left, required_in_right) {
-                (true, false) => self.domains[right].clone(),
-                (false, true) => self.domains[left].clone(),
-                (false, false) => Vec::new(),
-                (true, true) if left == right => self.domains[left].clone(),
-                (true, true) => {
-                    let mut points =
-                        Vec::with_capacity(self.domains[left].len() + self.domains[right].len());
-                    let (mut left_index, mut right_index) = (0, 0);
-                    while left_index < self.domains[left].len()
-                        || right_index < self.domains[right].len()
-                    {
-                        let point = match (
-                            self.domains[left].get(left_index),
-                            self.domains[right].get(right_index),
-                        ) {
-                            (Some(left), Some(right)) if left < right => {
-                                left_index += 1;
-                                *left
-                            }
-                            (Some(left), Some(right)) if right < left => {
-                                right_index += 1;
-                                *right
-                            }
-                            (Some(left), Some(_)) => {
-                                left_index += 1;
-                                right_index += 1;
-                                *left
-                            }
-                            (Some(left), None) => {
-                                left_index += 1;
-                                *left
-                            }
-                            (None, Some(right)) => {
-                                right_index += 1;
-                                *right
-                            }
-                            (None, None) => break,
-                        };
-                        points.push(point);
-                    }
-                    points
-                }
+            let (roots, skip_required) = match (required_in_left, required_in_right) {
+                (true, false) => ([Some(right), None], false),
+                (false, true) => ([Some(left), None], false),
+                (false, false) => ([None, None], false),
+                (true, true) if left == right => ([Some(left), None], false),
+                (true, true) => ([Some(left), Some(right)], true),
             };
-            if left != right {
-                points.retain(|point| *point != required);
-            }
-            return Some(MeshImplicitEdgeCandidates {
+            let mut candidates = MeshImplicitEdgeCandidates {
                 source: MeshImplicitEdgeCandidateSource::Required {
-                    points: points.into_iter(),
+                    domains: Arc::clone(&self.domains),
+                    roots,
+                    indexes: [0, 0],
                     required,
+                    skip_required,
+                    remaining: 0,
                 },
-            });
+            };
+            let remaining = candidates.clone().count();
+            if let MeshImplicitEdgeCandidateSource::Required {
+                remaining: count, ..
+            } = &mut candidates.source
+            {
+                *count = remaining;
+            }
+            return Some(candidates);
         }
         Some(MeshImplicitEdgeCandidates {
             source: MeshImplicitEdgeCandidateSource::Cartesian {
-                left: self.domains[left].clone(),
-                right: self.domains[right].clone(),
+                domains: Arc::clone(&self.domains),
+                left_root: left,
+                right_root: right,
                 left_index: 0,
                 right_index: 0,
                 same_root: left == right,
@@ -1179,7 +1213,7 @@ impl MeshCoordinateRootDomains {
             return Ok(None);
         };
         Ok(Some(Self {
-            domains,
+            domains: Arc::new(domains),
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
             edge_candidates: Arc::new(edge_candidates),
@@ -1235,7 +1269,7 @@ impl MeshCoordinateRootDomains {
             return Ok(None);
         };
         Ok(Some(Self {
-            domains,
+            domains: Arc::new(domains),
             edges: Arc::clone(&self.edges),
             root_edges: Arc::clone(&self.root_edges),
             edge_candidates: Arc::new(crate::resource::copy_retained_rows(
@@ -1801,7 +1835,12 @@ impl MeshQuotient {
         )? {
             return Ok(None);
         }
-        let mut supported_candidates = edge_candidates.to_vec();
+        let mut supported_candidates = crate::resource::copy_retained_rows(
+            ctx,
+            edge_candidates,
+            "catia_quotient_supported_candidate_rows",
+            "catia_quotient_supported_candidate_pairs",
+        )?;
         loop {
             let mut changed = Vec::new();
             for (edge, candidates) in supported_candidates.iter_mut().enumerate() {
@@ -1824,7 +1863,7 @@ impl MeshQuotient {
                     return Ok(None);
                 }
                 if candidates.len() != before {
-                    changed.push(edge);
+                    crate::resource::push(ctx, &mut changed, edge, "catia_quotient_changed_edges")?;
                 }
             }
             if changed.is_empty() {
@@ -1848,7 +1887,7 @@ impl MeshQuotient {
             return Ok(None);
         };
         let coordinate_domains = MeshCoordinateRootDomains {
-            domains,
+            domains: Arc::new(domains),
             edges: Arc::new(edges),
             root_edges: Arc::new(root_edges),
             edge_candidates: Arc::new(supported_candidates),
@@ -1860,7 +1899,12 @@ impl MeshQuotient {
             coverage_matching,
         }) = coordinate_domains.refine_domains(
             ctx,
-            coordinate_domains.domains.clone(),
+            crate::resource::copy_retained_rows(
+                ctx,
+                &coordinate_domains.domains,
+                "catia_quotient_refine_domain_copy",
+                "catia_quotient_refine_domain_points",
+            )?,
             &coordinate_domains.edge_candidates,
             // The full edge set already reached arc consistency above. This pass
             // starts with Hall support and only revisits edges narrowed by it.
@@ -1872,7 +1916,7 @@ impl MeshQuotient {
             return Ok(None);
         };
         Ok(Some(MeshCoordinateRootDomains {
-            domains,
+            domains: Arc::new(domains),
             coverage_matching,
             ..coordinate_domains
         }))
@@ -13352,8 +13396,9 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
                 Some(MeshEndpointCandidates::Implicit(
                     MeshImplicitEdgeCandidates {
                         source: MeshImplicitEdgeCandidateSource::Cartesian {
-                            left: vec![0, 1],
-                            right: vec![2, 3],
+                            domains: Arc::new(vec![vec![0, 1], vec![2, 3]]),
+                            left_root: 0,
+                            right_root: 1,
                             left_index: 0,
                             right_index: 0,
                             same_root: false,
@@ -13802,6 +13847,10 @@ fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
     assert!(refused.contains("catia_quotient_domains"));
     assert!(refused.contains("catia_quotient_edge_ids"));
     assert!(refused.contains("catia_quotient_root_edge_entries"));
+    assert!(refused.contains("catia_quotient_supported_candidate_rows"));
+    assert!(refused.contains("catia_quotient_supported_candidate_pairs"));
+    assert!(refused.contains("catia_quotient_refine_domain_copy"));
+    assert!(refused.contains("catia_quotient_refine_domain_points"));
     assert!(refused.contains("catia_quotient_roots_by_point"));
     assert!(refused.contains("catia_quotient_refine_roots"));
     assert!(refused.contains("catia_quotient_refine_all_points"));
@@ -13812,7 +13861,7 @@ fn local_coordinate_refinement_charges_inner_root_entries() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let domains = MeshCoordinateRootDomains {
-        domains: vec![vec![0, 1], vec![1, 2], vec![0, 2]],
+        domains: Arc::new(vec![vec![0, 1], vec![1, 2], vec![0, 2]]),
         edges: Arc::new(vec![[0, 1], [1, 2]]),
         root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
         edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
@@ -13853,7 +13902,7 @@ fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let domains = MeshCoordinateRootDomains {
-        domains: vec![vec![0, 1], vec![1, 2], vec![0, 2]],
+        domains: Arc::new(vec![vec![0, 1], vec![1, 2], vec![0, 2]]),
         edges: Arc::new(vec![[0, 1], [1, 2]]),
         root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
         edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
@@ -13905,7 +13954,7 @@ fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
 #[test]
 fn coordinate_refinement_charges_hall_changed_roots_and_edges() {
     let domains = MeshCoordinateRootDomains {
-        domains: vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]],
+        domains: Arc::new(vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]]),
         edges: Arc::new(vec![[0, 2]]),
         root_edges: Arc::new(vec![vec![0], vec![], vec![0]]),
         edge_candidates: Arc::new(vec![vec![[0, 1], [0, 2], [1, 2]]]),
@@ -13915,7 +13964,7 @@ fn coordinate_refinement_charges_hall_changed_roots_and_edges() {
     let run = |ctx: &DecodeContext<'_>| {
         domains.refine_domains(
             ctx,
-            domains.domains.clone(),
+            domains.domains.as_ref().clone(),
             domains.edge_candidates.as_ref(),
             &[],
             true,
@@ -13949,7 +13998,7 @@ fn coordinate_root_copies_charge_retained_and_nested_collections() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     let domains = MeshCoordinateRootDomains {
-        domains: vec![vec![0], vec![1]],
+        domains: Arc::new(vec![vec![0], vec![1]]),
         edges: Arc::new(vec![[0, 1]]),
         root_edges: Arc::new(vec![vec![0], vec![0]]),
         edge_candidates: Arc::new(vec![vec![[0, 1], [1, 0]]]),

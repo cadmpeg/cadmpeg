@@ -420,6 +420,55 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
 }
 
 #[test]
+fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
+    let candidates = [
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[2, 2]],
+    ];
+    let quotient = crate::test_support::with_service_context(|ctx| {
+        crate::solve::mesh_quotient::initial_mesh_quotient(
+            ctx,
+            &candidates,
+            3,
+            &[[10, 11], [10, 12], [13, 11], [14, 14]],
+        )
+    })
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        quotient
+            .clone()
+            .prepare_coordinate_root_domains(ctx, 3, &candidates, None)
+    };
+    let selected = crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .expect("coordinate root domains");
+    assert_eq!(selected.edge_candidates()[0], [[0, 1]]);
+    let mut operations = std::collections::HashSet::new();
+    for limit in 0..256 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                operations.insert(refusal.operation);
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("fixture must retain a coordinate matching"),
+            Err(error) => panic!("unexpected coordinate refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_quotient_supported_candidate_rows",
+        "catia_quotient_supported_candidate_pairs",
+        "catia_quotient_changed_edges",
+        "catia_quotient_refine_domain_copy",
+        "catia_quotient_refine_domain_points",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
     catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
@@ -537,7 +586,7 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
         .implicit_edge_candidates(0, Some(1))
         .expect("required implicit candidates");
 
-    assert_eq!(implicit.width_upper_bound(), 3);
+    assert_eq!(implicit.width_upper_bound(&ctx).expect("bounded width"), 3);
     assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
 
     let mut visited = Vec::new();
