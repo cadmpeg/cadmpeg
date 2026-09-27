@@ -58,6 +58,20 @@ fn push_topology_vec<T>(
     Ok(())
 }
 
+fn append_topology_vec<T>(
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = source.len();
+    ctx.charge_collection_items(u64_from_index(count), operation)?;
+    target.try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
+    target.append(source);
+    Ok(())
+}
+
 fn push_topology_group<K: Ord, V>(
     values: &mut BTreeMap<K, Vec<V>>,
     key: K,
@@ -434,7 +448,7 @@ pub(super) fn decode(
         if record.partials.len() != 1 || matches!(record.parameter(1), Some(Value::Derived)) {
             continue;
         }
-        result.losses.push(
+        push_topology_vec(&mut result.losses,
             StepLossCode::OrientedShellOmitsCfsFaces
                 .note(format!(
                     "{name} #{id} omits the derived `cfs_faces` slot required by ISO 10303-21; \
@@ -447,7 +461,7 @@ pub(super) fn decode(
                     )
                     .with_tag("oriented_shell"),
                 ),
-        );
+        ctx, "step_topology_losses")?;
     }
     let vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange);
@@ -456,15 +470,15 @@ pub(super) fn decode(
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
         if !carrier_index.points.contains_key(&point_id) {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
-            )));
+            )), ctx, "step_topology_losses")?;
         }
     }
     let wire_models = exchange
@@ -506,10 +520,10 @@ pub(super) fn decode(
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft) {
-                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
+                push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                )));
+                )), ctx, "step_topology_losses")?;
             } else {
                 committed += 1;
                 built_wire_models.insert(model);
@@ -523,14 +537,14 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-            )));
+            )), ctx, "step_topology_losses")?;
         } else if let Some(failures) = failures {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
-            )));
+            )), ctx, "step_topology_losses")?;
         }
     }
     for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
@@ -551,10 +565,10 @@ pub(super) fn decode(
         let mut committed = 0;
         for mut built in built {
             if let Err(error) = commit_session.commit_model(built.draft) {
-                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
+                push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
-                )));
+                )), ctx, "step_topology_losses")?;
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
@@ -573,14 +587,14 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
-            )));
+            )), ctx, "step_topology_losses")?;
         } else if let Some(failures) = failures {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "SHELL_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved wire shell(s)",
                 failures.count
-            )));
+            )), ctx, "step_topology_losses")?;
         }
     }
     let decoded_pcurves = commit_session
@@ -608,9 +622,9 @@ pub(super) fn decode(
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
         if let Some(root_built) = built_roots.get(&key).cloned() {
@@ -656,10 +670,10 @@ pub(super) fn decode(
         for mut built in built {
             drop_committed_surfaces(&mut built.draft, &mut commit_session);
             if let Err(error) = commit_session.commit_model(built.draft) {
-                losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
+                push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("STEP topology root #{id}"),
                     &error,
-                )));
+                )), ctx, "step_topology_losses")?;
             } else {
                 for shell in &built.shell_sources {
                     result
@@ -681,14 +695,14 @@ pub(super) fn decode(
         }
         if body_ids.is_empty() {
             if let Some(message) = failure_message {
-                result.losses.push(
+                push_topology_vec(&mut result.losses,
                     StepLossCode::TopologyRootRejected
                         .note(format!("STEP topology root #{id} rejected: {message}")),
-                );
+                ctx, "step_topology_losses")?;
             } else {
-                result.losses.push(StepLossCode::TopologyRootIncomplete.note(format!(
+                push_topology_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(format!(
                         "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                    )));
+                    )), ctx, "step_topology_losses")?;
             }
         } else {
             result.body_by_root.insert(id, body_ids.clone());
@@ -703,27 +717,29 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map_or_else(String::new, |message| format!(": {message}"));
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                     failures.count,
-                )));
+                )), ctx, "step_topology_losses")?;
             }
         }
     }
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
-    result.losses.extend(pcurve_admission_note(&admissions));
+    if let Some(note) = pcurve_admission_note(&admissions) {
+        push_topology_vec(&mut result.losses, note, ctx, "step_topology_losses")?;
+    }
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} omitted unsupported or unresolved member(s): {}",
                 omitted
                     .iter()
                     .map(|member| format!("#{member}"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            )));
+            )), ctx, "step_topology_losses")?;
         }
         let Some(mut built) = build_geometric_set(id, record, exchange, carrier_index, &mut losses)
         else {
@@ -736,16 +752,16 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft) {
-            losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(topology_commit_error(
                 &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                 &error,
-            )));
+            )), ctx, "step_topology_losses")?;
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
             result.claims.extend(std::mem::take(&mut built.typed));
@@ -768,7 +784,7 @@ pub(super) fn decode(
         };
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
                 representation_type,
                 omitted
@@ -776,7 +792,7 @@ pub(super) fn decode(
                     .map(|member| format!("#{member}"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            )));
+            )), ctx, "step_topology_losses")?;
         }
         mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims);
     }
@@ -840,7 +856,7 @@ pub(super) fn decode(
                 .push(vertex.id.clone());
         }
     }
-    result.losses.append(&mut losses);
+    append_topology_vec(&mut result.losses, &mut losses, ctx, "step_topology_loss_merge")?;
     Ok(result)
 }
 
