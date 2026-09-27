@@ -1559,9 +1559,10 @@ pub(crate) fn loop_restore_directions(
 
 /// Decode complete ordered `lo_hist` rosters paired with named loop tables.
 pub(crate) fn loop_history_entries(
+    ctx: &DecodeContext<'_>,
     rows: &[FeatureRow],
     geometry_tables: &[FeatureGeometryTable],
-) -> Vec<FeatureLoopHistoryEntry> {
+) -> Result<Vec<FeatureLoopHistoryEntry>, CodecError> {
     const LABEL: &[u8] = b"\xe0\x01lo_hist\0";
     const RECORD_WIDTH: u32 = 6;
     let mut result = Vec::new();
@@ -1600,9 +1601,11 @@ pub(crate) fn loop_history_entries(
         let Ok(count) = usize::try_from(table.count) else {
             continue;
         };
-        let Some(entries) = loop_history_roster(&row.body, roster_offset, count) else {
+        let Some(decoded) = loop_history_roster(ctx, &row.body, roster_offset, count) else {
             continue;
         };
+        let entries = decoded?;
+        ctx.try_reserve_items(&mut result, entries.len(), "creo loop history entries")?;
         result.extend((0..table.count).zip(entries).map(|(ordinal, entry)| {
             FeatureLoopHistoryEntry {
                 feature_id: row.feature_id,
@@ -1616,16 +1619,20 @@ pub(crate) fn loop_history_entries(
         }));
     }
     result.sort_by_key(|entry| entry.offset);
-    result
+    Ok(result)
 }
 
 fn loop_history_roster(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     mut cursor: usize,
     count: usize,
-) -> Option<Vec<ParsedLoopHistoryEntry>> {
+) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
     (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
-    let mut entries = Vec::with_capacity(count);
+    let mut entries = Vec::new();
+    if let Err(error) = ctx.try_reserve_items(&mut entries, count, "creo loop history roster") {
+        return Some(Err(error));
+    }
     for index in 0..count {
         let offset = cursor;
         let (loop_id, after_id) = psb::compact_int(body, cursor);
@@ -1639,9 +1646,11 @@ fn loop_history_roster(
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
             ))
             .then_some(())?;
-            *field = body
-                .get(cursor..cursor.checked_add(token.length)?)?
-                .to_vec();
+            let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
+            *field = match ctx.copy_retained(bytes, "creo loop history field bytes") {
+                Ok(bytes) => bytes,
+                Err(error) => return Some(Err(error)),
+            };
             cursor = cursor.checked_add(token.length)?;
         }
         let boundary = if body.get(cursor) == Some(&0xe3) {
@@ -1672,9 +1681,11 @@ fn loop_history_roster(
                     psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
                 ))
                 .then_some(())?;
-                let bytes = body
-                    .get(cursor..cursor.checked_add(token.length)?)?
-                    .to_vec();
+                let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
+                let bytes = match ctx.copy_retained(bytes, "creo loop history trailing bytes") {
+                    Ok(bytes) => bytes,
+                    Err(error) => return Some(Err(error)),
+                };
                 cursor = cursor.checked_add(token.length)?;
                 matches!(
                     psb::token_at(body, cursor).map(|token| token.kind),
@@ -1693,7 +1704,7 @@ fn loop_history_roster(
             end_offset: cursor,
         });
     }
-    Some(entries)
+    Some(Ok(entries))
 }
 
 struct ParsedLoopHistoryEntry {
