@@ -64,8 +64,18 @@ fn radial_orientation_solves_each_face_boundary_independently() {
     let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 9)
         .expect("service resource budget")
         .expect("orientable multi-boundary shell");
-    assert_eq!(topology.body_kinds(&[9]), Some(vec![BodyKind::Solid]));
-    assert_eq!(topology.body_kinds(&[4, 5]), None);
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[9])
+            .expect("service resource budget"),
+        Some(vec![BodyKind::Solid])
+    );
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[4, 5])
+            .expect("service resource budget"),
+        None
+    );
     assert_eq!(topology.faces()[4].boundaries.len(), 2);
     let mut uses = vec![Vec::new(); 18];
     for face in topology.faces() {
@@ -82,6 +92,10 @@ fn radial_orientation_solves_each_face_boundary_independently() {
 
 #[test]
 fn open_standard_edge_incidence_classifies_a_sheet_body() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let mut topology = StandardTopology {
         faces: vec![FaceTopology {
             boundaries: vec![Boundary::new(vec![CoedgeUse {
@@ -108,13 +122,27 @@ fn open_standard_edge_incidence_classifies_a_sheet_body() {
         logical_vertex_count: 2,
     };
 
-    assert_eq!(topology.body_kinds(&[1]), None);
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[1])
+            .expect("service resource budget"),
+        None
+    );
     topology.edge_rows.pop();
-    assert_eq!(topology.body_kinds(&[1]), Some(vec![BodyKind::Sheet]));
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[1])
+            .expect("service resource budget"),
+        Some(vec![BodyKind::Sheet])
+    );
 }
 
 #[test]
 fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let use_ = |edge_row| CoedgeUse {
         edge_row,
         reversed: false,
@@ -155,11 +183,23 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
     };
 
     assert_eq!(
-        topology.body_kinds(&[2, 1]),
+        topology
+            .body_kinds(&ctx, &[2, 1])
+            .expect("service resource budget"),
         Some(vec![BodyKind::Solid, BodyKind::Sheet])
     );
-    assert_eq!(topology.body_kinds(&[3]), Some(vec![BodyKind::General]));
-    assert_eq!(topology.face_components(), vec![vec![0, 1], vec![2]]);
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[3])
+            .expect("service resource budget"),
+        Some(vec![BodyKind::General])
+    );
+    assert_eq!(
+        topology
+            .face_components(&ctx)
+            .expect("service resource budget"),
+        vec![vec![0, 1], vec![2]]
+    );
     crate::test_support::with_service_context(|ctx| {
         topology.orient_solid_body_cycles(ctx, &[2, 1])
     })

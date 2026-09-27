@@ -5594,7 +5594,7 @@ fn validate_standard_topology(
     {
         return Ok(None);
     }
-    let Some(body_kinds) = topology.body_kinds(&face_groups) else {
+    let Some(body_kinds) = topology.body_kinds(ctx, &face_groups)? else {
         return Ok(None);
     };
     let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
@@ -5624,8 +5624,12 @@ fn validate_standard_topology(
     for (&arena_index, &kind) in body_arena_indices.iter().zip(&body_kinds) {
         ir.model.bodies[arena_index].kind = kind;
     }
-    if !partition_standard_face_components(ir, annotations, &topology.face_components(), admission)?
-    {
+    if !partition_standard_face_components(
+        ir,
+        annotations,
+        &topology.face_components(ctx)?,
+        admission,
+    )? {
         return Ok(None);
     }
     Ok(Some(edge_vertices))

@@ -2,6 +2,9 @@
 //!
 //! Callers map their domain onto `0..len` node indices.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// A disjoint-set forest with path compression on `find`.
 #[derive(Debug, Clone)]
 pub(crate) struct UnionFind {
@@ -9,6 +12,18 @@ pub(crate) struct UnionFind {
 }
 
 impl UnionFind {
+    pub(crate) fn charged(
+        ctx: &DecodeContext<'_>,
+        length: usize,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let mut parents = ctx.alloc_filled(length, 0usize, operation)?;
+        for (node, parent) in parents.iter_mut().enumerate() {
+            *parent = node;
+        }
+        Ok(Self { parents })
+    }
+
     /// Creates `length` singleton sets, one per node `0..length`.
     pub(crate) fn new(length: usize) -> Self {
         Self {

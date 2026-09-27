@@ -322,6 +322,10 @@ fn standard_vertex_point_domain_entries_refuse_collection_limit() {
 
 #[test]
 fn body_kinds_rejects_an_overflowing_face_group_sum() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let topology = StandardTopology {
         faces: Vec::new(),
         edge_rows: Vec::new(),
@@ -329,7 +333,129 @@ fn body_kinds_rejects_an_overflowing_face_group_sum() {
         logical_vertex_count: 0,
     };
 
-    assert_eq!(topology.body_kinds(&[usize::MAX, 1]), None);
+    assert_eq!(
+        topology
+            .body_kinds(&ctx, &[usize::MAX, 1])
+            .expect("service resource budget"),
+        None
+    );
+}
+
+fn resource_limit_topology() -> StandardTopology {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology};
+
+    let face = || FaceTopology {
+        boundaries: vec![Boundary::new(vec![CoedgeUse {
+            edge_row: 0,
+            reversed: false,
+            start_vertex: 0,
+            end_vertex: 1,
+        }])
+        .expect("nonempty boundary")],
+    };
+    StandardTopology {
+        faces: vec![face(), face()],
+        edge_rows: (0..2)
+            .map(|edge| EdgeRow {
+                kind: 0,
+                handles: vec![edge],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            })
+            .collect(),
+        vertex_points: Vec::new(),
+        logical_vertex_count: 2,
+    }
+}
+
+#[test]
+fn body_group_allocations_refuse_before_missing_edge_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let topology = resource_limit_topology();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(topology
+        .body_kinds(&ctx, &[2])
+        .expect("service resource budget")
+        .is_none());
+
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match topology.body_kinds(&ctx, &[2]) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(None) => {}
+            Ok(Some(_)) => panic!("missing physical edge must reject the group"),
+            Err(error) => panic!("unexpected body group refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_body_group_slices",
+        "catia_body_group_union",
+        "catia_body_group_uses",
+        "catia_body_group_components",
+        "catia_body_group_seen_edges",
+        "catia_body_group_paired",
+        "catia_body_group_kinds",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn face_component_collections_refuse_before_group_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let topology = resource_limit_topology();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert_eq!(
+        topology
+            .face_components(&ctx)
+            .expect("service resource budget"),
+        vec![vec![0, 1]]
+    );
+
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match topology.face_components(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(groups) => assert_eq!(groups, vec![vec![0, 1]]),
+            Err(error) => panic!("unexpected face component refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_face_component_union",
+        "catia_face_component_edges",
+        "catia_face_component_labels",
+        "catia_face_components",
+        "catia_face_component_members",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]

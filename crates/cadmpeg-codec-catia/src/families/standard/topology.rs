@@ -33,16 +33,15 @@ pub(crate) struct StandardTopology {
 /// to exactly one partition. Each component is closed when all its edges have
 /// two uses; an isolated face has no closed component.
 fn classify_body_groups(
+    ctx: &DecodeContext<'_>,
     groups: &[impl AsRef<[FaceTopology]>],
     edge_count: usize,
-) -> Option<Vec<BodyKind>> {
-    use std::collections::hash_map::Entry;
-
+) -> Result<Option<Vec<BodyKind>>, CodecError> {
     let mut seen_edges = HashSet::new();
     let mut kinds = Vec::new();
     for group in groups {
         let faces = group.as_ref();
-        let mut union = UnionFind::new(faces.len());
+        let mut union = UnionFind::charged(ctx, faces.len(), "catia_body_group_union")?;
         let mut uses = HashMap::<usize, (usize, usize)>::new();
         for (face, topology) in faces.iter().enumerate() {
             for coedge in topology
@@ -51,38 +50,63 @@ fn classify_body_groups(
                 .flat_map(|boundary| &boundary.coedges)
             {
                 if coedge.edge_row >= edge_count {
-                    return None;
+                    return Ok(None);
                 }
-                match uses.entry(coedge.edge_row) {
-                    Entry::Occupied(mut entry) => {
-                        let (first_face, count) = entry.get_mut();
-                        union.union(face, *first_face);
-                        *count += 1;
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert((face, 1));
-                    }
+                if let Some((first_face, count)) = uses.get_mut(&coedge.edge_row) {
+                    union.union(face, *first_face);
+                    *count += 1;
+                } else {
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut uses,
+                        coedge.edge_row,
+                        (face, 1),
+                        "catia_body_group_uses",
+                    )?;
                 }
             }
         }
-        let components = (0..faces.len())
-            .map(|face| union.find(face))
-            .collect::<HashSet<_>>();
+        let mut components = HashSet::new();
+        for face in 0..faces.len() {
+            crate::resource::insert_set(
+                ctx,
+                &mut components,
+                union.find(face),
+                "catia_body_group_components",
+            )?;
+        }
         let mut paired_components = HashSet::new();
         let mut unpaired_components = HashSet::new();
         for (&edge, &(first_face, count)) in &uses {
-            if !seen_edges.insert(edge) {
-                return None;
+            if !crate::resource::insert_set(
+                ctx,
+                &mut seen_edges,
+                edge,
+                "catia_body_group_seen_edges",
+            )? {
+                return Ok(None);
             }
             let component = union.find(first_face);
             if count == 2 {
-                paired_components.insert(component);
+                crate::resource::insert_set(
+                    ctx,
+                    &mut paired_components,
+                    component,
+                    "catia_body_group_paired",
+                )?;
             } else {
-                unpaired_components.insert(component);
+                crate::resource::insert_set(
+                    ctx,
+                    &mut unpaired_components,
+                    component,
+                    "catia_body_group_unpaired",
+                )?;
             }
         }
         let closed_count = paired_components.difference(&unpaired_components).count();
-        kinds.push(
+        crate::resource::push(
+            ctx,
+            &mut kinds,
             if uses.values().any(|(_, count)| *count > 2)
                 || (closed_count != 0 && closed_count != components.len())
             {
@@ -92,9 +116,10 @@ fn classify_body_groups(
             } else {
                 BodyKind::Sheet
             },
-        );
+            "catia_body_group_kinds",
+        )?;
     }
-    (seen_edges.len() == edge_count).then_some(kinds)
+    Ok((seen_edges.len() == edge_count).then_some(kinds))
 }
 
 impl StandardTopology {
@@ -114,9 +139,11 @@ impl StandardTopology {
 
     /// Face-index components connected through shared physical edge rows, in
     /// first-face order.
-    #[must_use]
-    pub(super) fn face_components(&self) -> Vec<Vec<usize>> {
-        let mut union = UnionFind::new(self.faces.len());
+    pub(super) fn face_components(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<Vec<usize>>, CodecError> {
+        let mut union = UnionFind::charged(ctx, self.faces.len(), "catia_face_component_union")?;
         let mut first_face_by_edge = HashMap::<usize, usize>::new();
         for (face, topology) in self.faces.iter().enumerate() {
             for edge in topology
@@ -125,8 +152,16 @@ impl StandardTopology {
                 .flat_map(|boundary| &boundary.coedges)
                 .map(|coedge| coedge.edge_row)
             {
-                if let Some(other) = first_face_by_edge.insert(edge, face) {
+                if let Some(&other) = first_face_by_edge.get(&edge) {
                     union.union(face, other);
+                } else {
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut first_face_by_edge,
+                        edge,
+                        face,
+                        "catia_face_component_edges",
+                    )?;
                 }
             }
         }
@@ -135,13 +170,27 @@ impl StandardTopology {
         for face in 0..self.faces.len() {
             let root = union.find(face);
             let next = labels.len();
-            let component = *labels.entry(root).or_insert(next);
-            if component == components.len() {
-                components.push(Vec::new());
+            if !labels.contains_key(&root) {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut labels,
+                    root,
+                    next,
+                    "catia_face_component_labels",
+                )?;
             }
-            components[component].push(face);
+            let component = labels[&root];
+            if component == components.len() {
+                crate::resource::push(ctx, &mut components, Vec::new(), "catia_face_components")?;
+            }
+            crate::resource::push(
+                ctx,
+                &mut components[component],
+                face,
+                "catia_face_component_members",
+            )?;
         }
-        components
+        Ok(components)
     }
 
     /// The counted spine's physical edge rows, in table order ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
@@ -168,19 +217,24 @@ impl StandardTopology {
 
     /// Classify each consecutive FBB face group from physical-edge incidence.
     /// An edge cannot belong to faces in two different groups.
-    #[must_use]
-    pub(super) fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
+    pub(super) fn body_kinds(
+        &self,
+        ctx: &DecodeContext<'_>,
+        face_groups: &[usize],
+    ) -> Result<Option<Vec<BodyKind>>, CodecError> {
         let mut remaining = self.faces.as_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
-            let (group, rest) = remaining.split_at_checked(count)?;
-            groups.push(group);
+            let Some((group, rest)) = remaining.split_at_checked(count) else {
+                return Ok(None);
+            };
+            crate::resource::push(ctx, &mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
-            return None;
+            return Ok(None);
         }
-        classify_body_groups(&groups, self.edge_rows.len())
+        classify_body_groups(ctx, &groups, self.edge_rows.len())
     }
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
@@ -196,13 +250,13 @@ impl StandardTopology {
             let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
                 return Ok(None);
             };
-            groups.push(group);
+            crate::resource::push(ctx, &mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
             return Ok(None);
         }
-        let Some(kinds) = classify_body_groups(&groups, self.edge_rows.len()) else {
+        let Some(kinds) = classify_body_groups(ctx, &groups, self.edge_rows.len())? else {
             return Ok(None);
         };
         for (group, kind) in groups.into_iter().zip(kinds) {
