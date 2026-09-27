@@ -244,7 +244,7 @@ pub(super) fn emit_model_features(
         {
             insert_feature_source_property(ctx, &mut source_properties, "mdl_stored_name_prefix", char::from(prefix))?;
         }
-        let parameters = feature_parameters(scan, operation.feature_id);
+        let parameters = feature_parameters(ctx, scan, operation.feature_id)?;
         let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
@@ -476,7 +476,7 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         );
-        let parameters = feature_parameters(scan, feature_id);
+        let parameters = feature_parameters(ctx, scan, feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(
             || match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?

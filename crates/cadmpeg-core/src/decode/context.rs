@@ -300,6 +300,24 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
+    /// Formats temporary text while its scoped-byte reservation is held.
+    pub fn format_scoped(
+        &self,
+        value: impl std::fmt::Display,
+        operation: &'static str,
+    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
+        let mut count = FormattedByteCount(0);
+        std::fmt::write(&mut count, format_args!("{value}"))
+            .map_err(|_| CodecError::Malformed("scoped text formatting failed".into()))?;
+        let reservation = self.reserve_scoped(u64_from_index(count.0), operation)?;
+        let mut text = String::new();
+        text.try_reserve(count.0)
+            .map_err(|_| self.budget.materialized_allocation_failed(u64_from_index(count.0), operation))?;
+        std::fmt::write(&mut text, format_args!("{value}"))
+            .map_err(|_| CodecError::Malformed("scoped text formatting failed".into()))?;
+        Ok((text, reservation))
+    }
+
     /// Copies temporary UTF-8 text while its scoped-byte reservation is held.
     pub fn copy_scoped_text(
         &self,
@@ -807,6 +825,33 @@ mod tests {
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "test scoped text"));
+    }
+
+    #[test]
+    fn scoped_format_refuses_before_allocation_and_releases_on_drop() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        {
+            let (text, _reservation) = ctx
+                .format_scoped(format_args!("x{}", 12), "test scoped format")
+                .expect("three rendered bytes fit");
+            assert_eq!(text, "x12");
+        }
+        assert_eq!(
+            ctx.format_scoped(format_args!("y{}", 34), "test scoped format")
+                .expect("prior reservation was released")
+                .0,
+            "y34"
+        );
+        let error = ctx
+            .format_scoped(format_args!("z{}", 345), "test scoped format")
+            .expect_err("four bytes exceed the materialized allowance");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "test scoped format"));
     }
 
     #[test]

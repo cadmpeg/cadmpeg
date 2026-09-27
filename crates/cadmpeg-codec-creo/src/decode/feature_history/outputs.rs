@@ -310,34 +310,57 @@ pub(super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
     output_kind.map(|kind| kind == BodyKind::Solid)
 }
 
-fn feature_field_text(value: &crate::feature::rows::FeatureFieldValue) -> Option<String> {
+struct CommaList<'a, T>(&'a [T]);
+
+impl<T: std::fmt::Display> std::fmt::Display for CommaList<'_, T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(",")?;
+            }
+            write!(formatter, "{value}")?;
+        }
+        Ok(())
+    }
+}
+
+enum FeatureFieldText<'a> {
+    Empty,
+    CompactInt(u32),
+    CompactIntArray(&'a [u32]),
+    EntityReference(u32, bool),
+    ScalarArray(&'a [f64]),
+}
+
+impl std::fmt::Display for FeatureFieldText<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("empty"),
+            Self::CompactInt(value) => write!(formatter, "{value}"),
+            Self::CompactIntArray(values) => std::fmt::Display::fmt(&CommaList(values), formatter),
+            Self::EntityReference(entity_id, terminated) => write!(
+                formatter,
+                "entity:{entity_id}{}",
+                if *terminated { ":terminated" } else { "" }
+            ),
+            Self::ScalarArray(values) => std::fmt::Display::fmt(&CommaList(values), formatter),
+        }
+    }
+}
+
+fn feature_field_text(value: &crate::feature::rows::FeatureFieldValue) -> Option<FeatureFieldText<'_>> {
     match value {
-        crate::feature::rows::FeatureFieldValue::Empty => Some("empty".to_string()),
-        crate::feature::rows::FeatureFieldValue::CompactInt(value) => Some(value.to_string()),
-        crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => Some(
-            values
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
+        crate::feature::rows::FeatureFieldValue::Empty => Some(FeatureFieldText::Empty),
+        crate::feature::rows::FeatureFieldValue::CompactInt(value) => Some(FeatureFieldText::CompactInt(*value)),
+        crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => Some(FeatureFieldText::CompactIntArray(values)),
         crate::feature::rows::FeatureFieldValue::EntityReference {
             entity_id,
             terminated,
-        } => Some(format!(
-            "entity:{entity_id}{}",
-            if *terminated { ":terminated" } else { "" }
-        )),
+        } => Some(FeatureFieldText::EntityReference(*entity_id, *terminated)),
         crate::feature::rows::FeatureFieldValue::ScalarArray {
             decoded_values: Some(values),
             ..
-        } => Some(
-            values
-                .iter()
-                .map(f64::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
+        } => Some(FeatureFieldText::ScalarArray(values)),
         crate::feature::rows::FeatureFieldValue::ScalarArray {
             decoded_values: None,
             ..
@@ -346,26 +369,58 @@ fn feature_field_text(value: &crate::feature::rows::FeatureFieldValue) -> Option
     }
 }
 
-fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &str, value: String) {
-    if let std::collections::btree_map::Entry::Vacant(entry) = parameters.entry(base.to_string()) {
-        entry.insert(value);
-        return;
-    }
-    let mut occurrence = 2;
-    loop {
-        let name = format!("{base}#{occurrence}");
-        if let std::collections::btree_map::Entry::Vacant(entry) = parameters.entry(name) {
-            entry.insert(value);
-            return;
+fn insert_feature_parameter(
+    ctx: &DecodeContext<'_>,
+    parameters: &mut BTreeMap<String, String>,
+    base: impl std::fmt::Display,
+    value: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    let value = ctx.format_retained(value, "creo feature parameter value")?;
+    let (base, base_reservation) = ctx.format_scoped(base, "creo feature parameter key candidate")?;
+    let (key, key_reservation) = if parameters.contains_key(&base) {
+        let mut occurrence = 2usize;
+        loop {
+            let candidate = ctx.format_scoped(
+                format_args!("{base}#{occurrence}"),
+                "creo feature parameter key candidate",
+            )?;
+            if !parameters.contains_key(&candidate.0) {
+                break candidate;
+            }
+            occurrence += 1;
         }
-        occurrence += 1;
+    } else {
+        (base, base_reservation)
+    };
+    ctx.charge_retained(key.len() as u64, "creo feature parameter key")?;
+    ctx.charge_collection_items(1, "creo feature parameter nodes")?;
+    parameters.insert(key, value);
+    drop(key_reservation);
+    Ok(())
+}
+
+fn replace_feature_parameter(
+    ctx: &DecodeContext<'_>,
+    parameters: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    let value = ctx.format_retained(value, "creo feature parameter value")?;
+    if let Some(existing) = parameters.get_mut(key) {
+        *existing = value;
+    } else {
+        ctx.charge_collection_items(1, "creo feature parameter nodes")?;
+        let key = ctx.copy_retained_text(key, "creo feature parameter key")?;
+        parameters.insert(key, value);
     }
+    Ok(())
 }
 
 pub(in super::super) fn feature_parameters(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, CodecError> {
     let mut parameters = BTreeMap::new();
     for field in scan
         .features
@@ -377,10 +432,11 @@ pub(in super::super) fn feature_parameters(
             continue;
         };
         insert_feature_parameter(
+            ctx,
             &mut parameters,
-            &format!("choice.{}.{}", field.choice_label, field.name),
+            format_args!("choice.{}.{}", field.choice_label, field.name),
             value,
-        );
+        )?;
     }
     for affected in scan
         .features
@@ -397,15 +453,11 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             name,
-            affected
-                .ids
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        );
+            CommaList(&affected.ids),
+        )?;
     }
     for affected in scan
         .features
@@ -414,43 +466,35 @@ pub(in super::super) fn feature_parameters(
         .filter(|record| record.feature_id == feature_id)
     {
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             "replay_affected_geometry_ids",
-            affected
-                .geometry_ids
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        );
+            CommaList(&affected.geometry_ids),
+        )?;
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             "replay_affected_edge_ids",
-            affected
-                .edge_ids
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        );
+            CommaList(&affected.edge_ids),
+        )?;
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             "replay_geometry_extent",
             match affected.geometry_extent {
                 crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                 crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
-            }
-            .to_string(),
-        );
+            },
+        )?;
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             "replay_edge_extent",
             match affected.edge_extent {
                 crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                 crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
-            }
-            .to_string(),
-        );
+            },
+        )?;
     }
     for affected in scan
         .features
@@ -470,10 +514,11 @@ pub(in super::super) fn feature_parameters(
             ),
         ] {
             insert_feature_parameter(
+                ctx,
                 &mut parameters,
                 name,
-                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
-            );
+                CommaList(ids),
+            )?;
         }
         for (name, extent) in [
             (
@@ -484,14 +529,14 @@ pub(in super::super) fn feature_parameters(
             ("surface_merge_replay_quilt_extent", affected.quilt_extent),
         ] {
             insert_feature_parameter(
+                ctx,
                 &mut parameters,
                 name,
                 match extent {
                     crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                     crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
-                }
-                .to_string(),
-            );
+                },
+            )?;
         }
     }
     for direction in scan
@@ -505,13 +550,14 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::LoopRestoreDirectionLane::Secondary => "direction2",
         };
         insert_feature_parameter(
+            ctx,
             &mut parameters,
-            &format!("loop_restore.{name}"),
-            direction.value.to_string(),
-        );
+            format_args!("loop_restore.{name}"),
+            direction.value,
+        )?;
     }
     if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_some() {
-        parameters.insert("revolution_extent".to_string(), "full_turn".to_string());
+        replace_feature_parameter(ctx, &mut parameters, "revolution_extent", "full_turn")?;
     }
     for table in scan
         .features
@@ -524,43 +570,38 @@ pub(in super::super) fn feature_parameters(
                 continue;
             };
             insert_feature_parameter(
+                ctx,
                 &mut parameters,
-                &format!(
+                format_args!(
                     "generated_entity.{}.source_section_entity_id",
                     entry.entity_id
                 ),
-                source_entity_id.to_string(),
-            );
+                source_entity_id,
+            )?;
             insert_feature_parameter(
+                ctx,
                 &mut parameters,
-                &format!("generated_entity.{}.entry_class", entry.entity_id),
-                entry.class_id().to_string(),
-            );
+                format_args!("generated_entity.{}.entry_class", entry.entity_id),
+                entry.class_id(),
+            )?;
         }
     }
-    let owned_definitions = scan
-        .features
-        .definitions
-        .iter()
-        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
-        .collect::<Vec<_>>();
-    if let [definition] = owned_definitions.as_slice() {
-        parameters.insert(
-            "sketch_segment_count".to_string(),
-            definition
-                .segments
-                .as_ref()
-                .map_or(0, |segments| segments.rows.ordinary().count())
-                .to_string(),
-        );
-        parameters.insert(
-            "dimension_count".to_string(),
-            definition
-                .dimensions
-                .as_ref()
-                .map_or(0, |dimensions| dimensions.rows.len())
-                .to_string(),
-        );
+    if let Some(definition) = exactly_one(
+        scan.features.definitions.iter()
+            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
+    ) {
+        replace_feature_parameter(
+            ctx,
+            &mut parameters,
+            "sketch_segment_count",
+            definition.segments.as_ref().map_or(0, |segments| segments.rows.ordinary().count()),
+        )?;
+        replace_feature_parameter(
+            ctx,
+            &mut parameters,
+            "dimension_count",
+            definition.dimensions.as_ref().map_or(0, |dimensions| dimensions.rows.len()),
+        )?;
     }
     for transform in scan
         .features
@@ -573,31 +614,27 @@ pub(in super::super) fn feature_parameters(
         else {
             continue;
         };
+        let Some(profile_sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
         insert_feature_parameter(
+            ctx,
             &mut parameters,
             "profile_sketch",
-            match model_sketch_id(scan, definition) {
-                Some(id) => id,
-                None => continue,
-            }
-            .into_string(),
-        );
+            profile_sketch.as_str(),
+        )?;
         if feature_recipe(scan, feature_id)
             == Some(crate::feature::operations::FeatureRecipeKind::Extrude)
         {
             insert_feature_parameter(
+                ctx,
                 &mut parameters,
                 "sweep_direction",
-                transform
-                    .normal()
-                    .iter()
-                    .map(f64::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
+                CommaList(&transform.normal()),
+            )?;
         }
     }
-    parameters
+    Ok(parameters)
 }
 
 pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
