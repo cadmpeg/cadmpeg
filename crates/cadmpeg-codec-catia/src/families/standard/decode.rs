@@ -1960,11 +1960,16 @@ fn try_decode_standard_population(
         &mut curved_surfaces,
     );
     let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
-    let planes: HashMap<u32, crate::families::standard::records::PlaneParams> =
-        crate::families::standard::records::plane_params(brep, &plane_normals)
-            .into_iter()
-            .map(|plane| (plane.target, plane))
-            .collect();
+    let plane_rows = match crate::families::standard::records::plane_params(ctx, brep, &plane_normals) {
+        Ok(planes) => planes,
+        Err(error) => return Some(Err(error)),
+    };
+    let mut planes = HashMap::new();
+    for plane in plane_rows {
+        if let Err(error) = crate::resource::insert_map(ctx, &mut planes, plane.target, plane, "catia_plane_param_map") {
+            return Some(Err(error));
+        }
+    }
     let face_bounds = records
         .iter()
         .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
