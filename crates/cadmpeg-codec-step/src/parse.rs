@@ -577,6 +577,34 @@ fn push_charged<T>(
     Ok(())
 }
 
+struct PartialNameList<'a>(&'a partials::RecordPartials);
+
+impl fmt::Display for PartialNameList<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, part) in self.0.iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            output.write_str(&part.name)?;
+        }
+        Ok(())
+    }
+}
+
+struct SortedPartialNameList<'a>(&'a [&'a str]);
+
+impl fmt::Display for SortedPartialNameList<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, name) in self.0.iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            output.write_str(name)?;
+        }
+        Ok(())
+    }
+}
+
 struct HeaderAdmission {
     implementation_level: DeclaredImplementationLevel,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
@@ -1235,10 +1263,15 @@ impl Parser<'_, '_, '_> {
                 parts.push_charged(partial, self.budget)?;
             }
             self.next_kind()?;
-            let mut canonical_names = parts
-                .iter()
-                .map(|part| part.name.clone())
-                .collect::<Vec<_>>();
+            let mut canonical_names = Vec::new();
+            for part in parts.iter() {
+                push_charged(
+                    self.budget,
+                    &mut canonical_names,
+                    part.name.as_str(),
+                    "step_parse_canonical_partial_names",
+                )?;
+            }
             canonical_names.sort_unstable();
             if canonical_names
                 .windows(2)
@@ -1250,21 +1283,22 @@ impl Parser<'_, '_, '_> {
                 .windows(2)
                 .all(|window| window[0].name < window[1].name)
             {
-                let observed = parts
-                    .iter()
-                    .map(|part| part.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let message = format_parser_text(
+                    self.budget,
+                    "step_parse_complex_partial_diagnostic_text",
+                    format_args!(
+                        "complex partial records are not alphabetical: observed ({}), expected ({})",
+                        PartialNameList(&parts),
+                        SortedPartialNameList(&canonical_names),
+                    ),
+                )?;
                 push_charged(
                     self.budget,
                     &mut self.diagnostics,
                     ParseDiagnostic {
                         offset: start,
                         kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
-                        message: format!(
-                            "complex partial records are not alphabetical: observed ({observed}), expected ({})",
-                            canonical_names.join(", ")
-                        ),
+                        message,
                     },
                     "step_parse_diagnostics",
                 )?;

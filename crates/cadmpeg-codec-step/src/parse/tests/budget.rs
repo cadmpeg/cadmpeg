@@ -420,6 +420,29 @@ parser_vector_limit_test!(
     "step_parse_diagnostics"
 );
 parser_vector_limit_test!(
+    canonical_partial_name_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_canonical_partial_names"
+);
+
+#[test]
+fn complex_partial_diagnostic_text_refuses_retained_limit() {
+    let refused = (0..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(COMPLEX_VECTOR_SOURCE, &arena, &policy)
+            .expect("input fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(COMPLEX_VECTOR_SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_parse_complex_partial_diagnostic_text"
+        )
+    });
+    assert!(refused, "complex partial diagnostic text must reach the parser caller");
+}
+parser_vector_limit_test!(
     omitted_name_diagnostic_vector_refuses_collection_limit,
     OMITTED_VECTOR_SOURCE,
     "step_parse_diagnostics"
