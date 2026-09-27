@@ -94,6 +94,34 @@ fn one_state_history() -> crate::history_records::AsmHistory {
 }
 
 #[test]
+fn history_snapshot_old_references_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::history_records::{AsmBulletinBoard, AsmEntityChange, AsmEntityChangeKind};
+
+    let mut history = one_state_history();
+    history.states[0].bulletin_boards.push(AsmBulletinBoard {
+        id: "board".into(),
+        parent: "state".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 1,
+        changes: vec![AsmEntityChange {
+            id: "change".into(),
+            parent: "board".into(),
+            byte_offset: 0,
+            kind: AsmEntityChangeKind::Delete { old: 1 },
+        }],
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::bind_snapshot_revision_ids(&ctx, &mut history.states).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D ASM old references"));
+}
+
+#[test]
 fn history_graph_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

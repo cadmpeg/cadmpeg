@@ -260,7 +260,7 @@ pub(crate) fn decode(
             transition: None,
         });
     }
-    bind_snapshot_revision_ids(&mut states);
+    bind_snapshot_revision_ids(ctx, &mut states)?;
     bind_historical_entity_versions(&mut states);
     let record_table_binding_budget_exceeded =
         bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?;
@@ -284,33 +284,53 @@ pub(crate) fn decode(
     }))
 }
 
-fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
-    let mut old_references = states
+fn bind_snapshot_revision_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &mut [AsmDeltaState],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut old_references = Vec::new();
+    for old_reference in states
         .iter()
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
         .filter_map(super::history_records::AsmEntityChange::old_ref)
-        .collect::<Vec<_>>();
-    old_references.sort_unstable();
-    if old_references.first().is_none_or(|first| {
-        old_references
-            .iter()
-            .copied()
-            .ne(*first..*first + old_references.len() as i64)
-    }) {
-        return;
+    {
+        ctx.charge_collection_items(1, "collect F3D ASM old references")?;
+        old_references.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect F3D ASM old references", 0, 1)
+        })?;
+        old_references.push(old_reference);
     }
-    let snapshot_records = states
+    old_references.sort_unstable();
+    let Some(&first) = old_references.first() else {
+        return Ok(());
+    };
+    let count = i64::try_from(old_references.len()).map_err(|_| {
+        ctx.refuse_codec_limit("collect F3D ASM old references", 0, u64::MAX)
+    })?;
+    let Some(end) = first.checked_add(count) else {
+        return Ok(());
+    };
+    if old_references.iter().copied().ne(first..end) {
+        return Ok(());
+    }
+    let snapshot_record_count = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.name() != "End-of-ASM-data")
+        .count();
+    if snapshot_record_count != old_references.len() {
+        return Ok(());
+    }
+    for (record, revision_id) in states
         .iter_mut()
         .flat_map(|state| &mut state.records)
         .filter(|record| record.name() != "End-of-ASM-data")
-        .collect::<Vec<_>>();
-    if snapshot_records.len() != old_references.len() {
-        return;
-    }
-    for (record, revision_id) in snapshot_records.into_iter().zip(old_references) {
+        .zip(old_references)
+    {
         record.revision_id = Some(revision_id);
     }
+    Ok(())
 }
 
 fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
