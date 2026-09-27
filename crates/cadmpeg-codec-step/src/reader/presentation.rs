@@ -126,7 +126,7 @@ pub(super) fn decode(
             }
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
-            typed.insert(id);
+            claim_presentation_typed(&mut typed, id, ctx)?;
         } else if !style_targets.is_empty() || !layer_targets.is_empty() {
             deferred_invisibility.insert(id, (supported, style_targets, layer_targets));
         }
@@ -202,7 +202,7 @@ pub(super) fn decode(
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items,
         });
-        typed.insert(layer_id);
+        claim_presentation_typed(&mut typed, layer_id, ctx)?;
     }
     let mut styles = Vec::new();
     for (&id, record) in exchange.records() {
@@ -220,7 +220,7 @@ pub(super) fn decode(
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for style_id in styles {
         if overridden_styles.contains(&style_id) {
-            typed.insert(style_id);
+            claim_presentation_typed(&mut typed, style_id, ctx)?;
             continue;
         }
         let style = &exchange.records()[&style_id];
@@ -235,7 +235,7 @@ pub(super) fn decode(
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
-            typed.insert(style_id);
+            claim_presentation_typed(&mut typed, style_id, ctx)?;
             continue;
         }
         let domain = style_domain(target_step, exchange);
@@ -360,7 +360,8 @@ pub(super) fn decode(
             &mut BTreeSet::new(),
             0,
             graph_limit,
-        );
+            ctx,
+        )?;
         for (ordinal, target_step) in target_steps.into_iter().enumerate() {
             let targets = appearance_targets(
                 target_step,
@@ -409,17 +410,16 @@ pub(super) fn decode(
                 });
             }
         }
-        typed.insert(style_id);
+        claim_presentation_typed(&mut typed, style_id, ctx)?;
         if let Some(overridden) = overridden_style(style) {
-            typed.insert(overridden);
+            claim_presentation_typed(&mut typed, overridden, ctx)?;
         }
-        typed.extend(
-            color_cache
-                .keys()
-                .filter(|(id, _)| !invalid_surface_sides.contains(id))
-                .map(|(id, _)| *id),
-        );
-        typed.insert(color_id);
+        for &(id, _) in color_cache.keys() {
+            if !invalid_surface_sides.contains(&id) {
+                claim_presentation_typed(&mut typed, id, ctx)?;
+            }
+        }
+        claim_presentation_typed(&mut typed, color_id, ctx)?;
     }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
@@ -463,7 +463,7 @@ pub(super) fn decode(
             }
         }
         if supported {
-            typed.insert(invisibility_id);
+            claim_presentation_typed(&mut typed, invisibility_id, ctx)?;
         }
     }
     for (target, candidates) in scalar_color_candidates {
@@ -613,13 +613,20 @@ fn expand_style_targets(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-) -> Vec<u64> {
-    if depth >= graph_limit || !active.insert(id) {
-        return Vec::new();
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u64>, CodecError> {
+    if depth >= graph_limit || active.contains(&id) {
+        return Ok(Vec::new());
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_style_target_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_style_target_active")?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return vec![id];
+        let mut targets = Vec::new();
+        push_presentation_vec(&mut targets, id, ctx, "step_presentation_style_target_items")?;
+        return Ok(targets);
     };
     let Some(set_name) = record.partials.iter().find_map(|partial| {
         matches!(
@@ -629,20 +636,24 @@ fn expand_style_targets(
         .then_some(partial.name.as_str())
     }) else {
         active.remove(&id);
-        return vec![id];
+        let mut targets = Vec::new();
+        push_presentation_vec(&mut targets, id, ctx, "step_presentation_style_target_items")?;
+        return Ok(targets);
     };
-    typed.insert(id);
-    let targets = named_parameter(record, set_name, 1)
+    claim_presentation_typed(typed, id, ctx)?;
+    let mut targets = Vec::new();
+    for item in named_parameter(record, set_name, 1)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
         .filter_map(ValueExt::reference)
-        .flat_map(|item| {
-            expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit)
-        })
-        .collect();
+    {
+        for target in expand_style_targets(item, exchange, typed, active, depth + 1, graph_limit, ctx)? {
+            push_presentation_vec(&mut targets, target, ctx, "step_presentation_style_target_items")?;
+        }
+    }
     active.remove(&id);
-    targets
+    Ok(targets)
 }
 
 fn appearance_targets(
@@ -932,6 +943,24 @@ fn push_presentation_vec<T>(
         None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
     })?;
     values.push(value);
+    Ok(())
+}
+
+fn claim_presentation_typed(
+    typed: &mut HashSet<u64>,
+    id: u64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if !typed.contains(&id) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_presentation_typed_claims")?;
+        }
+        typed.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_presentation_typed_claims", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_presentation_typed_claims", 0, 1),
+        })?;
+        typed.insert(id);
+    }
     Ok(())
 }
 
