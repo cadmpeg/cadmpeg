@@ -89,7 +89,7 @@ pub(super) fn keep_faces_and_carriers(
             continue;
         }
         let Some(surf_ref) = r.ref_at(7) else {
-            count_kind(&mut out.stats.missing_face_surface_kinds, "null-reference");
+            count_kind(ctx, &mut out.stats.missing_face_surface_kinds, "null-reference")?;
             continue;
         };
         let Some(surf_rec) = by_index.get(&surf_ref) else {
@@ -97,9 +97,10 @@ pub(super) fn keep_faces_and_carriers(
             // cannot be emitted (the IR requires one), so it is dropped.
 
             count_kind(
+                ctx,
                 &mut out.stats.missing_face_surface_kinds,
                 "dangling-reference",
-            );
+            )?;
             continue;
         };
         crate::decode_alloc::insert_hash_set(ctx, kept_faces, r.index as i64, "ASM topology kept_faces")?;
@@ -228,11 +229,10 @@ pub(super) fn keep_faces_and_carriers(
                 let native_kind = if surf_rec.head() == "spline" {
                     nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens)
                         .transpose()?
-                        .unwrap_or_else(|| surf_rec.head().to_owned())
                 } else {
-                    surf_rec.head().to_owned()
+                    None
                 };
-                count_kind(&mut out.stats.unknown_surface_kinds, &native_kind);
+                count_kind(ctx, &mut out.stats.unknown_surface_kinds, native_kind.as_deref().unwrap_or_else(|| surf_rec.head()))?;
             }
         }
     }
@@ -403,11 +403,11 @@ pub(super) fn walk_reachable_topology(
                                         .insert(super::CoedgeRecordIndex(ci), parameter_range);
                                     crate::decode_alloc::insert_hash_set(ctx, kept_pcurves, pc, "ASM topology kept_pcurves")?;
                                 } else {
-                                    count_kind(&mut out.stats.undecoded_pcurve_kinds, prec.head());
+                                    count_kind(ctx, &mut out.stats.undecoded_pcurve_kinds, prec.head())?;
                                 }
                             }
                         } else {
-                            count_kind(&mut out.stats.undecoded_pcurve_kinds, "dangling-reference");
+                            count_kind(ctx, &mut out.stats.undecoded_pcurve_kinds, "dangling-reference")?;
                         }
                     }
                     if let Some(ei) = ce.ref_at(6) {
@@ -497,15 +497,17 @@ pub(super) fn walk_reachable_topology(
                                                 crate::decode_alloc::insert_hash_set(ctx, undecoded_carriers, cv, "ASM topology undecoded_carriers")?;
 
                                                 count_kind(
+                                                    ctx,
                                                     &mut out.stats.procedural_curve_kinds,
                                                     crec.head(),
-                                                );
+                                                )?;
                                             }
                                         } else {
                                             count_kind(
+                                                ctx,
                                                 &mut out.stats.procedural_curve_kinds,
                                                 "dangling-reference",
-                                            );
+                                            )?;
                                         }
                                     }
                                     _ => {}
@@ -756,7 +758,7 @@ fn keep_wire_edge(
         crate::decode_alloc::insert_hash_set(ctx, kept_curves, curve_index, "ASM topology kept_curves")?;
     } else {
             let Some(curve_record) = by_index.get(&curve_index) else {
-                count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
+                count_kind(ctx, &mut out.stats.procedural_curve_kinds, "dangling-reference")?;
                 return Ok(());
             };
             if purpose == DecodePurpose::History {
@@ -832,7 +834,7 @@ fn keep_wire_edge(
             } else {
                 crate::decode_alloc::insert_hash_set(ctx, undecoded_carriers, curve_index, "ASM topology undecoded_carriers")?;
 
-                count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
+                count_kind(ctx, &mut out.stats.procedural_curve_kinds, curve_record.head())?;
             }
     }
     Ok(())

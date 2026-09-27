@@ -1628,3 +1628,21 @@ fn body_classification_refuses_collection_limit() {
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.operation, "ASM shell bodies");
 }
+
+#[test]
+fn loss_kind_count_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut kinds = std::collections::BTreeMap::new();
+    let error = super::count_kind(&ctx, &mut kinds, "one")
+        .expect_err("one distinct loss kind exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}

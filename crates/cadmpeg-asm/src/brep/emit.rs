@@ -3424,7 +3424,7 @@ fn emit_carrier_curve(
         Err(CarrierCurveError::Invalid(cause)) => {
             out.surfaces.truncate(surface_start);
             out.curves.truncate(curve_start);
-            count_kind(&mut out.stats.procedural_curve_kinds, cause);
+            count_kind(ctx, &mut out.stats.procedural_curve_kinds, cause)?;
         }
     }
     Ok(())
@@ -4929,10 +4929,7 @@ pub(super) fn count_other_records(
             && !undecoded_carriers.contains(&i)
             && !transferred
         {
-            *out.stats
-                .other_record_kinds
-                .entry(r.name.clone())
-                .or_default() += 1;
+            count_kind(ctx, &mut out.stats.other_record_kinds, &r.name)?;
         }
     }
     Ok(())

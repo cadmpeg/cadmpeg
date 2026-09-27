@@ -396,8 +396,19 @@ pub fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>
     }
 }
 
-fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
-    *counts.entry(kind.to_owned()).or_default() += 1;
+fn count_kind(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    counts: &mut std::collections::BTreeMap<String, usize>,
+    kind: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(count) = counts.get_mut(kind) {
+        *count += 1;
+        return Ok(());
+    }
+    ctx.charge_collection_items(1, "ASM loss kind")?;
+    let key = crate::decode_alloc::copy_string(ctx, kind, "ASM loss kind")?;
+    counts.insert(key, 1);
+    Ok(())
 }
 
 // ---- geometry carrier decode -------------------------------------------------
