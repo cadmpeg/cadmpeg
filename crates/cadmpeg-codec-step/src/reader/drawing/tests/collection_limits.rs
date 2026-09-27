@@ -271,3 +271,133 @@ fn drawing_association_claims_refuse_collection_limit() {
         "step_drawing_typed_claims",
     );
 }
+
+fn wrapper_refuses_collection(operation: &str) {
+    let source = format!("{HEADER}#1=ANNOTATION_PLANE('','',#2);#2=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid wrapper exchange");
+    let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
+    let refused = (0..=16).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+#[test]
+fn drawing_wrapper_pending_refuses_collection_limit() {
+    wrapper_refuses_collection("step_drawing_wrapper_pending");
+}
+
+#[test]
+fn drawing_wrapper_active_refuses_collection_limit() {
+    wrapper_refuses_collection("step_drawing_wrapper_active");
+}
+
+#[test]
+fn drawing_wrapper_complete_refuses_collection_limit() {
+    wrapper_refuses_collection("step_drawing_wrapper_complete");
+}
+
+#[test]
+fn drawing_wrapper_identities_refuse_collection_limit() {
+    wrapper_refuses_collection("step_drawing_wrapper_identities");
+}
+
+#[test]
+fn drawing_wrapper_identity_text_refuses_retained_limit() {
+    let source = format!("{HEADER}#1=ANNOTATION_PLANE('','',#2);#2=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid wrapper exchange");
+    let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_wrapper_identity_text"
+    ));
+}
+
+#[test]
+fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
+    let targets = BTreeMap::from([(1, ["first".to_owned(), "second".to_owned()].into_iter().collect())]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_drawing_ambiguous_identity_copy"
+    ));
+}
+
+#[test]
+fn drawing_ambiguous_identity_text_refuses_retained_limit() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
+    let targets = BTreeMap::from([(1, ["first".to_owned(), "second".to_owned()].into_iter().collect())]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_ambiguous_identity_text"
+    ));
+}
+
+#[test]
+fn drawing_local_target_text_refuses_retained_limit() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
+    let targets = BTreeMap::from([(1, ["local-target".to_owned()].into_iter().collect())]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::target_resolution(1, &targets, &HashSet::new(), &exchange, &BTreeMap::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_local_target_text"
+    ));
+}
+
+#[test]
+fn drawing_external_target_text_refuses_retained_limit() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
+    let documents = BTreeMap::from([(1, "long-external-uri")]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::target_resolution(1, &BTreeMap::new(), &HashSet::new(), &exchange, &documents, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_external_target_text"
+    ));
+}
