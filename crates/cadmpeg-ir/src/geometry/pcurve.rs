@@ -1844,6 +1844,45 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy admitted knots and poles under a decode caller's resource policy.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        fn copy_lane<T: Copy>(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            values: &[T],
+            operation: &'static str,
+        ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+            let count = u64::try_from(values.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            let bytes = count
+                .checked_mul(u64::try_from(std::mem::size_of::<T>())
+                    .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            ctx.charge_collection_items(count, operation)?;
+            ctx.charge_retained(bytes, operation)?;
+            let mut copy = Vec::new();
+            copy.try_reserve_exact(values.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+            copy.extend_from_slice(values);
+            Ok(copy)
+        }
+
+        let knots = copy_lane(ctx, self.knots.as_slice(), operation)?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                points: copy_lane(ctx, points, operation)?,
+            },
+            PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                points: copy_lane(ctx, points, operation)?,
+            },
+        };
+        Ok(Self { degree: self.degree, knots: KnotVector::new(knots)
+            .map_err(cadmpeg_core::CodecError::malformed)?, poles, periodic: self.periodic })
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
