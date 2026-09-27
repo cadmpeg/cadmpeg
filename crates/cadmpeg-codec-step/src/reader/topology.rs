@@ -695,9 +695,10 @@ pub(super) fn decode(
         }
     }
     for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
-        let scope_root = named_refs(record, "SHELL_BASED_WIREFRAME_MODEL", 1)
+        let scope_root = named_reference_values(record, "SHELL_BASED_WIREFRAME_MODEL", 1)
             .into_iter()
             .flatten()
+            .filter_map(Value::reference)
             .any(|shell| result.body_by_shell.contains_key(&shell));
         let outcome = build_shell_wire(
             model,
@@ -1262,7 +1263,7 @@ fn build_wire(
             },
         });
     };
-    let Some(sets) = named_refs(model, "EDGE_BASED_WIREFRAME_MODEL", 1) else {
+    let Some(sets) = named_reference_values(model, "EDGE_BASED_WIREFRAME_MODEL", 1) else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -1273,7 +1274,7 @@ fn build_wire(
     };
     let scoped = sets.len() > 1;
     let mut outcome = BuildOutcome::Built(Vec::new());
-    for set_id in sets {
+    for set_id in sets.iter().filter_map(Value::reference) {
         match build_wire_set(
             id,
             set_id,
@@ -1457,7 +1458,7 @@ fn build_shell_wire(
             },
         });
     };
-    let Some(shell_ids) = named_refs(model, "SHELL_BASED_WIREFRAME_MODEL", 1) else {
+    let Some(shell_ids) = named_reference_values(model, "SHELL_BASED_WIREFRAME_MODEL", 1) else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -1468,7 +1469,7 @@ fn build_shell_wire(
     };
     let scoped = shell_ids.len() > 1;
     let mut outcome = BuildOutcome::Built(Vec::new());
-    for shell_id in shell_ids {
+    for shell_id in shell_ids.iter().filter_map(Value::reference) {
         match build_shell_wire_set(
             id,
             shell_id,
