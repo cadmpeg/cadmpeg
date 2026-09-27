@@ -4026,8 +4026,9 @@ pub(super) fn data_block_references(
 
 /// Decode complete part-local color tables from class-declaring offset stores.
 pub(super) fn part_color_tables(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
+) -> Result<(Vec<PartColorTable>, Vec<PartColorDefinition>), CodecError> {
     const CLASS_NAME: &str = "UGS::COLOR_table";
     let mut tables = Vec::new();
     let mut definitions = Vec::new();
@@ -4048,7 +4049,7 @@ pub(super) fn part_color_tables(
         else {
             continue;
         };
-        let parsed_tables = crate::om::color_tables(storage);
+        let parsed_tables = crate::om::color_tables(ctx, storage)?;
         let [table] = parsed_tables.as_slice() else {
             continue;
         };
@@ -4088,7 +4089,7 @@ pub(super) fn part_color_tables(
         });
     }
 
-    (tables, definitions)
+    Ok((tables, definitions))
 }
 
 fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
