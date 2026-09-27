@@ -4,36 +4,14 @@
 use crate::loss::Diagnostics;
 use std::ops::Range;
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{
+    admitted_vec, checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError,
+};
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
-
-pub(crate) fn admitted_points<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, FramingError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)
-        .map_err(|error| match error {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-            error => FramingError::unpositioned(error.to_string()),
-        })?;
-    let mut points = Vec::new();
-    points.try_reserve_exact(count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        })
-    })?;
-    Ok(points)
-}
 
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
@@ -453,7 +431,7 @@ fn legacy_annotation_fields(
         .ok_or_else(|| {
             FramingError::structural(point_count_offset, "invalid legacy annotation point count")
         })?;
-    let mut points = admitted_points(ctx, point_count, "Rhino legacy annotation points")?;
+    let mut points = admitted_vec(ctx, point_count, "Rhino legacy annotation points")?;
     for _ in 0..point_count {
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
@@ -635,7 +613,7 @@ pub(crate) fn v2_annotation_direct(
         1 << 20,
         point_count_offset,
     )?;
-    let mut points = admitted_points(ctx, point_bytes / 16, "Rhino V2 annotation points")?;
+    let mut points = admitted_vec(ctx, point_bytes / 16, "Rhino V2 annotation points")?;
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;

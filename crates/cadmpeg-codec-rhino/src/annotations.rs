@@ -358,11 +358,8 @@ fn decode_annotation(
             1 << 20,
             outer.position(),
         )?;
-        points = crate::dimensions::admitted_points(
-            ctx,
-            bytes / 16,
-            "Rhino modern annotation leader points",
-        )?;
+        points =
+            crate::chunks::admitted_vec(ctx, bytes / 16, "Rhino modern annotation leader points")?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
             let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {

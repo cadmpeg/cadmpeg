@@ -147,6 +147,41 @@ pub(crate) enum FramingError {
     Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
+/// Allocates a count-driven decode vector after charging the active session.
+pub(crate) fn admitted_vec<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, FramingError> {
+    let mut values = Vec::new();
+    reserve_admitted_vec(ctx, &mut values, count, operation)?;
+    Ok(values)
+}
+
+/// Charges and reserves additional entries in a decode vector before growth.
+pub(crate) fn reserve_admitted_vec<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), FramingError> {
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(additional), operation)
+        .map_err(|error| match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            error => FramingError::unpositioned(error.to_string()),
+        })?;
+    values.try_reserve(additional).map_err(|_| {
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: cadmpeg_core::decode::u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
 impl FramingError {
     pub(crate) fn structural(offset: usize, message: impl Into<String>) -> Self {
         Self::Structural {

@@ -4,9 +4,10 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{
-    evaluation, evaluation_properties, extended_geometry_json, parse_value,
-    parse_value_with_warnings, poly_edge, project, structured_value_properties, EmbeddedGeometry,
-    GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS, HISTORY_CLASS,
+    evaluation, evaluation_properties, extended_geometry_json, parse_records, parse_value,
+    parse_value_with_warnings, poly_edge, project, structured_value_properties, uuid_list,
+    EmbeddedGeometry, GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS,
+    HISTORY_CLASS, HISTORY_RECORD,
 };
 use crate::chunks::TCODE_CRC;
 use crate::chunks::{ArchiveVersion, BoundedReader};
@@ -42,6 +43,167 @@ fn value(type_code: i32, payload: &[u8]) -> Vec<u8> {
     body.extend(7_i32.to_le_bytes());
     body.extend(payload);
     anonymous_value(0, &body)
+}
+
+fn with_collection_limit<R>(
+    data: &[u8],
+    max_collection_items: u64,
+    apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("history fixture fits the root limit");
+    apply(&ctx)
+}
+
+#[test]
+fn history_value_array_refuses_collection_limit() {
+    let mut payload = 2_i32.to_le_bytes().to_vec();
+    payload.extend(11_i32.to_le_bytes());
+    payload.extend(12_i32.to_le_bytes());
+    let bytes = value(2, &payload);
+    let refusal = with_collection_limit(&bytes, 1, |ctx| {
+        parse_value_with_warnings(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            ArchiveVersion::V8,
+            &mut Diagnostics::new(),
+        )
+    })
+    .expect_err("two history values exceed one collection item");
+    assert!(matches!(
+        refusal,
+        crate::chunks::FramingError::Resource(limit)
+            if limit.operation == "Rhino history value array"
+    ));
+}
+
+#[test]
+fn history_uuid_list_refuses_collection_limit() {
+    let mut body = 2_i32.to_le_bytes().to_vec();
+    body.extend(id(1).to_wire());
+    body.extend(id(2).to_wire());
+    let bytes = anonymous_value(0, &body);
+    let refusal = with_collection_limit(&bytes, 1, |ctx| {
+        uuid_list(ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8)
+    })
+    .expect_err("two history UUIDs exceed one collection item");
+    assert!(matches!(
+        refusal,
+        crate::chunks::FramingError::Resource(limit)
+            if limit.operation == "Rhino history UUID list"
+    ));
+}
+
+#[test]
+fn history_record_slot_refuses_collection_limit() {
+    let bytes = source_band_history_record(ArchiveVersion::V5, 1);
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
+        .expect("history record chunk");
+    let record = crate::container::Record::long(HISTORY_RECORD, chunk.range(), chunk.body());
+    let refusal = with_collection_limit(&bytes, 0, |ctx| {
+        parse_records(
+            ctx,
+            &bytes,
+            &[record],
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+            0x1000_0026,
+        )
+    })
+    .expect_err("one admitted history record exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino history records"
+    ));
+}
+
+#[test]
+fn opaque_history_record_slot_refuses_collection_limit() {
+    let record = crate::container::Record::short(HISTORY_RECORD, 0..0, 0);
+    let refusal = with_collection_limit(&[], 0, |ctx| {
+        parse_records(
+            ctx,
+            &[],
+            &[record],
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+            0x1000_0026,
+        )
+    })
+    .expect_err("one opaque history record exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino opaque history records"
+    ));
+}
+
+#[test]
+fn history_subd_edge_collections_refuse_collection_limits() {
+    let mut chain = id(42).to_wire().to_vec();
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend(11_u32.to_le_bytes());
+    chain.extend(12_u32.to_le_bytes());
+    chain.extend(2_i32.to_le_bytes());
+    chain.extend([0, 1]);
+    let mut chains = 1_i32.to_le_bytes().to_vec();
+    chains.extend(anonymous_value(1, &chain));
+    let bytes = value(14, &anonymous_value(1, &chains));
+    for (limit, operation) in [
+        (0, "Rhino history SubD edge chains"),
+        (6, "Rhino history SubD edges"),
+    ] {
+        let refusal = with_collection_limit(&bytes, limit, |ctx| {
+            parse_value_with_warnings(
+                ctx,
+                &bytes,
+                0,
+                bytes.len(),
+                ArchiveVersion::V8,
+                &mut Diagnostics::new(),
+            )
+        })
+        .expect_err("SubD edge collection exceeds limit");
+        assert!(matches!(
+            refusal,
+            crate::chunks::FramingError::Resource(actual) if actual.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn history_polyedge_list_refuses_collection_limit() {
+    let mut polyedge = 0_i32.to_le_bytes().to_vec();
+    polyedge.extend(2_i32.to_le_bytes());
+    polyedge.extend(0.25_f64.to_le_bytes());
+    polyedge.extend(0.75_f64.to_le_bytes());
+    polyedge.extend(3_i32.to_le_bytes());
+    let mut polyedges = 1_i32.to_le_bytes().to_vec();
+    polyedges.extend(anonymous_value(0, &polyedge));
+    let bytes = value(13, &anonymous_value(0, &polyedges));
+    let refusal = with_collection_limit(&bytes, 0, |ctx| {
+        parse_value_with_warnings(
+            ctx,
+            &bytes,
+            0,
+            bytes.len(),
+            ArchiveVersion::V8,
+            &mut Diagnostics::new(),
+        )
+    })
+    .expect_err("one polyedge exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        crate::chunks::FramingError::Resource(limit)
+            if limit.operation == "Rhino history polyedges"
+    ));
 }
 
 fn id(value: u8) -> Uuid {
@@ -237,8 +399,14 @@ fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
     body.extend(42_i32.to_le_bytes());
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous_value(9, &body);
-    let (parsed, next) = parse_value(&bytes, 0, bytes.len(), ArchiveVersion::V8)
-        .expect("future history minor is bounded");
+    let (parsed, next) = parse_value(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0,
+        bytes.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("future history minor is bounded");
     assert_eq!(next, bytes.len());
     assert!(matches!(parsed.value, Value::Integers(values) if values == [42]));
 }
@@ -446,8 +614,14 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
             class, &payload,
         ));
         let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
-        let (parsed, _) = parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
-            .expect("embedded geometry");
+        let (parsed, _) = parse_value(
+            &cadmpeg_test_support::service_decode_context(),
+            &geometry_value,
+            0,
+            geometry_value.len(),
+            ArchiveVersion::V8,
+        )
+        .expect("embedded geometry");
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
             warnings: &mut Diagnostics::new(),
@@ -534,8 +708,14 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
         &crate::test_support::test_archive::point_payload([1.0, 2.0, 3.0]),
     ));
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
-    let (parsed, _) = parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
-        .expect("embedded geometry");
+    let (parsed, _) = parse_value(
+        &cadmpeg_test_support::service_decode_context(),
+        &geometry_value,
+        0,
+        geometry_value.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("embedded geometry");
     let Value::Geometries(values) = &parsed.value else {
         panic!("embedded geometry value");
     };
@@ -579,8 +759,14 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
     geometry_payload.extend(geometry);
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
-    let (parsed, next) = parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
-        .expect("embedded geometry");
+    let (parsed, next) = parse_value(
+        &cadmpeg_test_support::service_decode_context(),
+        &geometry_value,
+        0,
+        geometry_value.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("embedded geometry");
     assert_eq!(next, geometry_value.len());
     assert!(matches!(&parsed.value, Value::Geometries(values)
         if values.len() == 1
@@ -623,8 +809,14 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut polyedges = 1_i32.to_le_bytes().to_vec();
     polyedges.extend(anonymous_value(0, &polyedge));
     let polyedge_value = value(13, &anonymous_value(0, &polyedges));
-    let (parsed, _) = parse_value(&polyedge_value, 0, polyedge_value.len(), ArchiveVersion::V8)
-        .expect("polyedge");
+    let (parsed, _) = parse_value(
+        &cadmpeg_test_support::service_decode_context(),
+        &polyedge_value,
+        0,
+        polyedge_value.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("polyedge");
     let Value::PolyEdges(values) = parsed.value else {
         panic!("expected polyedges");
     };
@@ -645,8 +837,14 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut chains = 1_i32.to_le_bytes().to_vec();
     chains.extend(anonymous_value(1, &chain));
     let chain_value = value(14, &anonymous_value(1, &chains));
-    let (parsed, _) = parse_value(&chain_value, 0, chain_value.len(), ArchiveVersion::V8)
-        .expect("SubD edge chain");
+    let (parsed, _) = parse_value(
+        &cadmpeg_test_support::service_decode_context(),
+        &chain_value,
+        0,
+        chain_value.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("SubD edge chain");
     assert!(matches!(parsed.value, Value::SubdEdgeChains(values)
         if values.len() == 1
             && values[0].subd_id == subd_id
@@ -704,9 +902,15 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
     chains.extend(anonymous_value(1, &chain));
     let value = value(14, &anonymous_value(1, &chains));
     let mut warnings = Diagnostics::new();
-    let (parsed, _) =
-        parse_value_with_warnings(&value, 0, value.len(), ArchiveVersion::V8, &mut warnings)
-            .expect("mismatched redundant arrays remain bounded");
+    let (parsed, _) = parse_value_with_warnings(
+        &cadmpeg_test_support::service_decode_context(),
+        &value,
+        0,
+        value.len(),
+        ArchiveVersion::V8,
+        &mut warnings,
+    )
+    .expect("mismatched redundant arrays remain bounded");
     assert!(matches!(
         parsed.value,
         Value::SubdEdgeChains(values)
@@ -1030,8 +1234,14 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
         }
         edge.extend(3_i32.to_le_bytes());
         let bytes = anonymous_value(0, &edge);
-        let (edge, next) = poly_edge(&bytes, 0, bytes.len(), ArchiveVersion::V8)
-            .expect("source-shaped history polyedge");
+        let (edge, next) = poly_edge(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0,
+            bytes.len(),
+            ArchiveVersion::V8,
+        )
+        .expect("source-shaped history polyedge");
         assert_eq!(next, bytes.len());
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
