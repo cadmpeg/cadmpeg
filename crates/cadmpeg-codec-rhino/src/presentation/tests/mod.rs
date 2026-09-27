@@ -623,6 +623,7 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
     ]);
     let minor_zero_bytes = embedded_bitmap_payload(0, id, 1);
     let minor_zero = parse_embedded_image(
+        &cadmpeg_test_support::service_decode_context(),
         &minor_zero_bytes,
         0..minor_zero_bytes.len(),
         ArchiveVersion::V8,
@@ -635,6 +636,7 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
 
     let minor_one_bytes = embedded_bitmap_payload(1, id, 1);
     let minor_one = parse_embedded_image(
+        &cadmpeg_test_support::service_decode_context(),
         &minor_one_bytes,
         0..minor_one_bytes.len(),
         ArchiveVersion::V8,
@@ -651,8 +653,14 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
     assert_eq!(minor_one.buffer_byte_len, 4);
 
     let raw_bytes = embedded_bitmap_payload(0, id, 0);
-    let raw = parse_embedded_image(&raw_bytes, 0..raw_bytes.len(), ArchiveVersion::V8, 42)
-        .expect("raw embedded bitmap");
+    let raw = parse_embedded_image(
+        &cadmpeg_test_support::service_decode_context(),
+        &raw_bytes,
+        0..raw_bytes.len(),
+        ArchiveVersion::V8,
+        42,
+    )
+    .expect("raw embedded bitmap");
     assert_eq!(raw.compression_method, EmbeddedImageCompression::Raw);
     assert_eq!(raw.uncompressed_byte_len, 3);
     assert_eq!(raw.buffer_byte_len, 7);
@@ -670,6 +678,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[0xaa, 0xbb],
     );
     let contiguous_record = parse_windows_bitmap(
+        &cadmpeg_test_support::service_decode_context(),
         &contiguous,
         0..contiguous.len(),
         WINDOWS_BITMAP,
@@ -699,6 +708,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[0xcc, 0xdd],
     );
     let split_record = parse_windows_bitmap(
+        &cadmpeg_test_support::service_decode_context(),
         &split,
         0..split.len(),
         WINDOWS_BITMAP,
@@ -721,9 +731,15 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[stored_bitmap_buffer(&pixels)],
         &[0xee, 0xff],
     );
-    let ex_record =
-        parse_windows_bitmap(&ex, 0..ex.len(), WINDOWS_BITMAP_EX, ArchiveVersion::V8, 72)
-            .expect("minor-five Windows bitmap Ex");
+    let ex_record = parse_windows_bitmap(
+        &cadmpeg_test_support::service_decode_context(),
+        &ex,
+        0..ex.len(),
+        WINDOWS_BITMAP_EX,
+        ArchiveVersion::V8,
+        72,
+    )
+    .expect("minor-five Windows bitmap Ex");
     assert_eq!(ex_record.file_path, "relative/example.bmp");
     assert_eq!(
         ex_record.pixel_buffer_byte_len as usize,
@@ -746,6 +762,7 @@ fn legacy_windows_bitmap_uses_raw_palette_and_pixels() {
         &[0xaa, 0xbb],
     );
     let record = parse_windows_bitmap(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         WINDOWS_BITMAP,
@@ -768,6 +785,7 @@ fn windows_bitmap_rejects_a_buffer_size_that_disagrees_with_header() {
         &[],
     );
     assert!(parse_windows_bitmap(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         WINDOWS_BITMAP,

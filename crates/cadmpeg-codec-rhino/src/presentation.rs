@@ -3993,6 +3993,7 @@ fn xform(reader: &mut BoundedReader<'_>) -> Result<[[FiniteReal; 4]; 4], Framing
 }
 
 fn parse_embedded_image(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -4006,7 +4007,7 @@ fn parse_embedded_image(
             "embedded-image version is unsupported",
         ));
     }
-    let file_path = utf16(&mut reader)?;
+    let file_path = crate::settings::utf16_retained(ctx, &mut reader, "Rhino image path")?;
     let image_crc32 = reader.u32()?;
     let compression_method = match reader.i32()? {
         0 => EmbeddedImageCompression::Raw,
@@ -4063,17 +4064,32 @@ fn parse_embedded_image(
         None
     };
     let name = if packed & 0x0f >= 1 {
-        utf16(&mut reader)?
+        crate::settings::utf16_retained(ctx, &mut reader, "Rhino image name")?
     } else {
         String::new()
     };
     reader.skip_remaining()?;
     let source_uuid = source_uuid.filter(|id| !id.is_nil());
-    let key = source_uuid.map_or_else(|| format!("record-{source_offset}"), |id| id.to_string());
     Ok(EmbeddedImageRecord {
-        id: format!("rhino:presentation:image#{key}"),
+        id: if let Some(id) = source_uuid {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:image#{id}"),
+                "Rhino image ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:image#record-{source_offset}"),
+                "Rhino image ID",
+            )?
+        },
         source_offset: source_offset as u64,
-        source_uuid: source_uuid.map(|id| id.to_string()),
+        source_uuid: source_uuid
+            .map(|id| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino image source UUID")
+            })
+            .transpose()?,
         name,
         file_path,
         image_crc32,
@@ -4081,7 +4097,11 @@ fn parse_embedded_image(
         uncompressed_byte_len,
         buffer_offset: buffer_offset as u64,
         buffer_byte_len: (buffer_end - buffer_offset) as u64,
-        buffer_sha256: cadmpeg_ir::hash::sha256_hex(&data[buffer_offset..buffer_end]),
+        buffer_sha256: hex(
+            ctx,
+            &cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end]),
+            "Rhino image SHA-256",
+        )?,
     })
 }
 
@@ -4122,6 +4142,7 @@ fn bitmap_buffer(
 }
 
 fn parse_windows_bitmap(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     class_uuid: Uuid,
@@ -4136,7 +4157,7 @@ fn parse_windows_bitmap(
                 "Windows bitmap version is unsupported",
             ));
         }
-        utf16(&mut reader)?
+        crate::settings::utf16_retained(ctx, &mut reader, "Rhino Windows bitmap path")?
     } else {
         String::new()
     };
@@ -4210,9 +4231,17 @@ fn parse_windows_bitmap(
     reader.skip_remaining()?;
     let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
-        id: format!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
+        id: crate::wire::admitted_format(
+            ctx,
+            format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
+            "Rhino Windows bitmap ID",
+        )?,
         source_offset: source_offset as u64,
-        class_uuid: class_uuid.to_string(),
+        class_uuid: crate::wire::admitted_format(
+            ctx,
+            format_args!("{class_uuid}"),
+            "Rhino Windows bitmap class UUID",
+        )?,
         file_path,
         header_size,
         width_pixels,
@@ -4226,7 +4255,11 @@ fn parse_windows_bitmap(
         important_colors,
         pixel_buffer_offset: pixel_buffer_offset as u64,
         pixel_buffer_byte_len: buffer.len() as u64,
-        pixel_buffer_sha256: cadmpeg_ir::hash::sha256_hex(buffer),
+        pixel_buffer_sha256: hex(
+            ctx,
+            &cadmpeg_ir::hash::sha256(buffer),
+            "Rhino Windows bitmap SHA-256",
+        )?,
     })
 }
 
@@ -5234,9 +5267,14 @@ pub(crate) fn install(
                 }
             } else if table_type == BITMAP_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, EMBEDDED_BITMAP) {
-                    if let Ok(value) =
-                        parse_embedded_image(scan.data, range, scan.archive, record.range.start)
-                    {
+                    if let Some(value) = optional_malformed(parse_embedded_image(
+                        ctx,
+                        scan.data,
+                        range,
+                        scan.archive,
+                        record.range.start,
+                    ))? {
+                        crate::wire::reserve_collection(ctx, &mut images, 1, "Rhino images")?;
                         images.push(value);
                         parsed = true;
                     }
@@ -5247,13 +5285,20 @@ pub(crate) fn install(
                     &mut Diagnostics::new(),
                 ) {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
-                        if let Ok(value) = parse_windows_bitmap(
+                        if let Some(value) = optional_malformed(parse_windows_bitmap(
+                            ctx,
                             scan.data,
                             class.class_data_range,
                             class.class_uuid,
                             scan.archive,
                             record.range.start,
-                        ) {
+                        ))? {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut windows_bitmaps,
+                                1,
+                                "Rhino Windows bitmaps",
+                            )?;
                             windows_bitmaps.push(value);
                             parsed = true;
                         }

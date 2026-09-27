@@ -326,14 +326,18 @@ impl DefinitionDiagnostic {
     }
 }
 
-/// Renders a SHA-1 digest as retained lowercase hexadecimal.
+/// Renders digest bytes as retained lowercase hexadecimal.
 pub(crate) fn hex(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8; 20],
+    bytes: &[u8],
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut value = crate::wire::admitted_retained_string(ctx, 40, operation)?;
+    let byte_len = bytes
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("hex digest length overflow"))?;
+    let mut value = crate::wire::admitted_retained_string(ctx, byte_len, operation)?;
     for byte in bytes {
         value.push(char::from(DIGITS[usize::from(byte >> 4)]));
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));

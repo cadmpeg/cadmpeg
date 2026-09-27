@@ -85,6 +85,26 @@ fn sha1_text_refuses_retained_limit() {
 }
 
 #[test]
+fn sha256_text_refuses_retained_limit() {
+    with_retained_limit(63, |ctx| {
+        let error = crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
+            .expect_err("sixty-four hex bytes exceed retained limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino test SHA-256"
+        ));
+    });
+    with_retained_limit(64, |ctx| {
+        assert_eq!(
+            crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
+                .expect("digest text fits retained limit"),
+            "5a".repeat(32)
+        );
+    });
+}
+
+#[test]
 fn reference_object_array_ranges_refuse_collection_limit() {
     let archive = ArchiveVersion::V8;
     let mut data = 1_i32.to_le_bytes().to_vec();

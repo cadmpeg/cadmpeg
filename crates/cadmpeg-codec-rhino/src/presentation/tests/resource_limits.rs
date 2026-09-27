@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    anonymous, legacy_text_style_bytes, light_payload, model_attributes_status_chunk,
-    modern_font_chunk, object_rendering_with_negative_minor, texture_payload, utf16_bytes,
+    anonymous, bitmap_header, embedded_bitmap_payload, legacy_text_style_bytes, light_payload,
+    model_attributes_status_chunk, modern_font_chunk, object_rendering_with_negative_minor,
+    stored_bitmap_buffer, texture_payload, utf16_bytes, windows_bitmap_payload,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
@@ -278,6 +279,180 @@ fn light_collection_refuses_collection_limit() {
 fn duplicate_light_id_refuses_retained_limit() {
     assert!(
         matches!(push_light_refusal(u64::MAX, u64::MAX, 0, true), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate light ID")
+    );
+}
+
+fn embedded_image_refusal(limit: u64) -> FramingError {
+    let bytes = embedded_bitmap_payload(1, Uuid::from_canonical([0x44; 16]), 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("image root admitted");
+    crate::presentation::parse_embedded_image(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+        .expect_err("image retained value exceeds limit")
+}
+
+#[test]
+fn embedded_image_path_refuses_retained_limit() {
+    assert!(
+        matches!(embedded_image_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino image path")
+    );
+}
+
+#[test]
+fn embedded_image_name_refuses_retained_limit() {
+    assert!(
+        matches!(embedded_image_refusal(9), FramingError::Resource(refusal) if refusal.operation == "Rhino image name")
+    );
+}
+
+#[test]
+fn embedded_image_id_refuses_retained_limit() {
+    assert!(
+        matches!(embedded_image_refusal(16), FramingError::Resource(refusal) if refusal.operation == "Rhino image ID")
+    );
+}
+
+#[test]
+fn embedded_image_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:image#44444444-4444-4444-4444-444444444444".len();
+    assert!(
+        matches!(embedded_image_refusal(u64::try_from(16 + id_len).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino image source UUID")
+    );
+}
+
+#[test]
+fn embedded_image_sha256_refuses_retained_limit() {
+    let id_len = "rhino:presentation:image#44444444-4444-4444-4444-444444444444".len();
+    assert!(
+        matches!(embedded_image_refusal(u64::try_from(16 + id_len + 36).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino image SHA-256")
+    );
+}
+
+fn windows_bitmap_refusal(limit: u64, ex: bool) -> FramingError {
+    let class_uuid = if ex {
+        crate::presentation::WINDOWS_BITMAP_EX
+    } else {
+        crate::presentation::WINDOWS_BITMAP
+    };
+    let pixels = [0x11; 24];
+    let bytes = windows_bitmap_payload(
+        class_uuid,
+        0,
+        if ex { "relative/example.bmp" } else { "" },
+        bitmap_header(3, 2, 24, 24, 0),
+        &[stored_bitmap_buffer(&pixels)],
+        &[],
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("bitmap root admitted");
+    crate::presentation::parse_windows_bitmap(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        class_uuid,
+        ArchiveVersion::V8,
+        72,
+    )
+    .expect_err("bitmap retained value exceeds limit")
+}
+
+#[test]
+fn windows_bitmap_path_refuses_retained_limit() {
+    assert!(
+        matches!(windows_bitmap_refusal(0, true), FramingError::Resource(refusal) if refusal.operation == "Rhino Windows bitmap path")
+    );
+}
+
+#[test]
+fn windows_bitmap_id_refuses_retained_limit() {
+    assert!(
+        matches!(windows_bitmap_refusal(0, false), FramingError::Resource(refusal) if refusal.operation == "Rhino Windows bitmap ID")
+    );
+}
+
+#[test]
+fn windows_bitmap_class_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:windows_bitmap#offset-72".len();
+    assert!(
+        matches!(windows_bitmap_refusal(u64::try_from(id_len).expect("budget fits"), false), FramingError::Resource(refusal) if refusal.operation == "Rhino Windows bitmap class UUID")
+    );
+}
+
+#[test]
+fn windows_bitmap_sha256_refuses_retained_limit() {
+    let id_len = "rhino:presentation:windows_bitmap#offset-72".len();
+    assert!(
+        matches!(windows_bitmap_refusal(u64::try_from(id_len + 36).expect("budget fits"), false), FramingError::Resource(refusal) if refusal.operation == "Rhino Windows bitmap SHA-256")
+    );
+}
+
+fn bitmap_install_refusal(embedded: bool) -> cadmpeg_core::CodecError {
+    let archive = ArchiveVersion::V8;
+    let class_uuid = if embedded {
+        crate::presentation::EMBEDDED_BITMAP
+    } else {
+        crate::presentation::WINDOWS_BITMAP
+    };
+    let payload = if embedded {
+        embedded_bitmap_payload(0, Uuid::from_canonical([0x44; 16]), 0)
+    } else {
+        let pixels = [0x11; 24];
+        windows_bitmap_payload(
+            class_uuid,
+            0,
+            "",
+            bitmap_header(3, 2, 24, 24, 0),
+            &[stored_bitmap_buffer(&pixels)],
+            &[],
+        )
+    };
+    let class =
+        crate::test_support::test_dump::class_wrapper(archive, class_uuid.to_wire(), &payload);
+    let record = crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8090,
+        &class,
+        std::slice::from_ref(&(0..class.len())),
+    );
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "80",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+            crate::test_support::test_dump::table(
+                archive,
+                crate::presentation::BITMAP_TABLE,
+                &[record],
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes.clone()).expect("bitmap document scanned");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("bitmap root admitted");
+    crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+        .expect_err("bitmap collection exceeds limit")
+}
+
+#[test]
+fn installed_embedded_image_refuses_collection_limit() {
+    assert!(
+        matches!(bitmap_install_refusal(true), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino images")
+    );
+}
+
+#[test]
+fn installed_windows_bitmap_refuses_collection_limit() {
+    assert!(
+        matches!(bitmap_install_refusal(false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino Windows bitmaps")
     );
 }
 
