@@ -113,6 +113,49 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
 }
 
 #[test]
+fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let prefix = "Fusion% Asset:Name[Active]/Design1/";
+    let bulk_name = format!("{prefix}BulkStream.dat");
+    let meta_name = format!("{prefix}MetaStream.dat");
+    let type_guid = "11111111-2222-3333-4444-555555555555";
+    let mut design_type = crate::design::test_support::design_type(
+        type_guid,
+        None,
+        7,
+        "Fusion",
+        vec![17],
+    );
+    design_type.id = crate::ids::native_design_type_id(&meta_name, 0);
+    let types = [design_type];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::stream_types_by_entity(&ctx, &types, &bulk_name).err().unwrap();
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d stream types by entity"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::stream_types_by_class_tag(&ctx, &types, &bulk_name).err().unwrap();
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d stream types by class tag"
+    ));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let by_entity = super::stream_types_by_entity(&ctx, &types, &bulk_name).unwrap();
+    assert_eq!(by_entity.get(&17), Some(&(type_guid, 7)));
+    let by_class = super::stream_types_by_class_tag(&ctx, &types, &bulk_name).unwrap();
+    assert_eq!(by_class.get(&256).map(|design_type| design_type.type_guid.as_str()), Some(type_guid));
+    assert!(super::stream_types_by_entity(&ctx, &types, "other/BulkStream.dat")
+        .unwrap().is_empty());
+}
+
+#[test]
 fn design_primary_frames_charge_registration_and_frame_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
