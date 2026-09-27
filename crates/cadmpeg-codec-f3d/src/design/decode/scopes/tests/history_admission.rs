@@ -123,6 +123,35 @@ fn history_bound_scope_admission_refuses_group_and_output_limits() {
 }
 
 #[test]
+fn equivalent_scope_variant_refuses_work_and_materialization_limits() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for (work_cap, materialized_cap, dimension, operation) in [
+        (Some(0), None, ResourceDimension::WorkUnits, "f3d scope variant comparison"),
+        (None, Some(0), ResourceDimension::MaterializedBytes, "f3d scope variant JSON"),
+    ] {
+        let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        if let Some(cap) = work_cap {
+            policy.limits.max_work_units = cap;
+        }
+        if let Some(cap) = materialized_cap {
+            policy.limits.max_materialized_bytes = cap;
+        }
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap();
+        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert_eq!(scopes.len(), 2);
+    }
+}
+
+#[test]
 fn retains_the_unique_history_bound_scope_envelope() {
     let mut scopes = vec![scope(42, 200, 9, 8), scope(42, 100, 7, 6)];
     let histories = [history(vec![
