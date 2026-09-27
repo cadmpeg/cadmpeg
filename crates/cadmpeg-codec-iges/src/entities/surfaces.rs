@@ -641,38 +641,39 @@ fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
     weights: &[NonZeroReal],
-) -> Result<NurbsSurface, cadmpeg_ir::geometry::nurbs::NurbsError> {
-    let surface_weights = weights
-        .iter()
-        .copied()
-        .flat_map(|weight| [weight, weight])
-        .collect::<Vec<_>>();
-    let weights = if surface_weights.iter().all(|weight| weight.get() == 1.0) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<NurbsSurface, CodecError> {
+    let mut pole_rows = reserve_optional_vec(ctx, first.pole_count(), "iges ruled same-basis pole rows")?;
+    for index in 0..first.pole_count() {
+        let first_point = first.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("ruled first rail pole is missing"))?;
+        let second_point = second.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("ruled second rail pole is missing"))?;
+        let mut row = reserve_optional_vec(ctx, 2, "iges ruled same-basis pole row controls")?;
+        row.extend([first_point, second_point]);
+        pole_rows.push(row);
+    }
+    let weight_rows = if weights.iter().all(|weight| weight.get() == 1.0) {
         None
     } else {
-        Some(surface_weights)
+        let mut rows = reserve_optional_vec(ctx, weights.len(), "iges ruled same-basis weight rows")?;
+        for weight in weights {
+            let mut row = reserve_optional_vec(ctx, 2, "iges ruled same-basis weight row controls")?;
+            row.extend([*weight, *weight]);
+            rows.push(row);
+        }
+        Some(rows)
     };
-    NurbsPoleGrid::from_checked_lanes(
-        first
-            .control_points()
-            .into_iter()
-            .zip(second.control_points())
-            .map(|(first, second)| vec![first, second])
-            .collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-    )
-    .and_then(|poles| {
-        NurbsSurface::new(
-            NurbsSurfaceAxis::new(
-                first.degree(),
-                first.knots().clone(),
-                first.periodic() && second.periodic(),
-            ),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            poles,
-            false,
-        )
-    })
+    let poles = NurbsPoleGrid::from_checked_lanes(pole_rows, weight_rows)
+        .map_err(CodecError::malformed)?;
+    let mut u_knots = reserve_optional_vec(ctx, first.knots().len(), "iges ruled same-basis u knots")?;
+    u_knots.extend_from_slice(first.knots());
+    let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled same-basis v knots")?;
+    v_knots.extend([0.0, 0.0, 1.0, 1.0]);
+    NurbsSurface::new(
+        NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic() && second.periodic()),
+        NurbsSurfaceAxis::new(1, v_knots, false),
+        poles,
+        false,
+    ).map_err(CodecError::malformed)
 }
 
 /// Refuses a pole count above the codec limit, naming the limit it exceeds.
@@ -715,28 +716,35 @@ fn ruled_surface_carrier(
                 return Ok(None);
             };
             admit_surface_pole_count(ctx, pole_count)?;
-            return same_basis_ruled_surface(first, second, &weights)
-                .map(Some)
-                .map_err(cadmpeg_core::CodecError::malformed);
+            return same_basis_ruled_surface(first, second, &weights, ctx).map(Some);
         }
     }
     let lanes = ruled_surface_span_lanes(first, second, ctx)?;
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
+    let mut pole_rows = reserve_optional_vec(ctx, control_points.len().div_ceil(2), "iges ruled span pole rows")?;
+    for points in control_points.chunks(2) {
+        let mut row = reserve_optional_vec(ctx, points.len(), "iges ruled span pole row controls")?;
+        row.extend_from_slice(points);
+        pole_rows.push(row);
+    }
+    let weight_rows = if let Some(weights) = weights {
+        let mut rows = reserve_optional_vec(ctx, weights.len().div_ceil(2), "iges ruled span weight rows")?;
+        for weights in weights.chunks(2) {
+            let mut row = reserve_optional_vec(ctx, weights.len(), "iges ruled span weight row controls")?;
+            row.extend(weights.iter().copied().map(NonZeroReal::from));
+            rows.push(row);
+        }
+        Some(rows)
+    } else { None };
+    let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled span v knots")?;
+    v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     Ok(Some(
         NurbsSurface::from_checked_lanes(
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
-            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            NurbsSurfaceLanes::new(
-                control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-                weights.map(|values| {
-                    values
-                        .chunks(2_usize)
-                        .map(|row| row.iter().copied().map(Into::into).collect())
-                        .collect()
-                }),
-            ),
+            NurbsSurfaceAxis::new(1, v_knots, false),
+            NurbsSurfaceLanes::new(pole_rows, weight_rows),
             false,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
