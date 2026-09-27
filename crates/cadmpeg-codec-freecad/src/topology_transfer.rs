@@ -7,7 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
+use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPole2};
+use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{
@@ -22,7 +23,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -375,8 +376,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .surfaces
                     .get(surface - 1)
                     .map(surface_parameter_affine);
-                let primary_read = match pcurve_geometry(&self.tables.curve2ds[primary - 1]) {
+                let primary_read = match pcurve_geometry(self.ctx, &self.tables.curve2ds[primary - 1]) {
                     Ok(geometry) => geometry,
+                    Err(PcurveGeometryError::Resource(error)) => return Err(error),
                     Err(error) => {
                         reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                         self.losses
@@ -407,9 +409,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
                 });
                 if let Some(secondary) = secondary {
-                    let secondary_read = match pcurve_geometry(&self.tables.curve2ds[secondary - 1])
+                    let secondary_read = match pcurve_geometry(self.ctx, &self.tables.curve2ds[secondary - 1])
                     {
                         Ok(geometry) => geometry,
+                        Err(PcurveGeometryError::Resource(error)) => return Err(error),
                         Err(error) => {
                             reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                             self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
@@ -1657,8 +1660,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
             _ => return Ok(None),
         };
-        let read = match pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) {
+        let read = match pcurve_geometry(self.ctx, &self.tables.curve2ds[curve_index - 1]) {
             Ok(geometry) => geometry,
+            Err(PcurveGeometryError::Resource(error)) => return Err(error),
             Err(error) => {
                 reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                 self.losses
@@ -1841,12 +1845,50 @@ fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
     cadmpeg_ir::scalar::PositiveReal::new(value)
 }
 
+#[derive(Debug)]
+pub(crate) enum PcurveGeometryError {
+    Nurbs(NurbsError),
+    Resource(CodecError),
+}
+
+impl std::fmt::Display for PcurveGeometryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Nurbs(error) => error.fmt(formatter),
+            Self::Resource(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl From<NurbsError> for PcurveGeometryError {
+    fn from(error: NurbsError) -> Self {
+        Self::Nurbs(error)
+    }
+}
+
+impl From<CodecError> for PcurveGeometryError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+impl From<PcurveGeometryError> for CodecError {
+    fn from(error: PcurveGeometryError) -> Self {
+        match error {
+            PcurveGeometryError::Nurbs(error) => error.into(),
+            PcurveGeometryError::Resource(error) => error,
+        }
+    }
+}
+
 /// Read a 2D curve record into neutral geometry. `Ok(None)` states a record
 /// the neutral model cannot carry; `Err` states a B-spline record whose lanes
 /// the carrier refuses.
 pub(crate) fn pcurve_geometry(
+    ctx: &DecodeContext<'_>,
     curve: &TextCurve2d,
-) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
+) -> Result<Option<PcurveGeometry>, PcurveGeometryError> {
+    let _depth = ctx.enter_nested("FreeCAD pcurve geometry nesting")?;
     Ok(match curve {
         TextCurve2d::Line { origin, direction } => NonzeroPoint2::new(direction.get())
             .map(|direction| cadmpeg_ir::geometry::pcurve::LinePcurve::new(*origin, direction))
@@ -1914,20 +1956,48 @@ pub(crate) fn pcurve_geometry(
                 )
             })
             .map(PcurveGeometry::Hyperbola),
-        TextCurve2d::Nurbs(nurbs) => Some(PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_finite_lanes(
-                nurbs.degree,
-                nurbs.knots.clone(),
-                nurbs.control_points.clone(),
-                nurbs.weights.clone(),
-                nurbs.periodic,
-            )?,
-        }),
+        TextCurve2d::Nurbs(nurbs) => {
+            let poles = if let Some(weights) = &nurbs.weights {
+                if weights.len() != nurbs.control_points.len() {
+                    return Err(NurbsError::WeightLaneLength {
+                        field: "pcurve poles".into(),
+                        poles: nurbs.control_points.len(),
+                        weights: weights.len(),
+                    }.into());
+                }
+                let mut rows = collection_vec(ctx, nurbs.control_points.len(), "FreeCAD pcurve rational poles")?;
+                for (index, (point, weight)) in nurbs.control_points.iter().zip(weights).enumerate() {
+                    let Some(weight) = NonZeroReal::from_finite(*weight) else {
+                        return Err(NurbsError::UnusableWeight {
+                            field: "pcurve poles".into(),
+                            index,
+                            weight: weight.get(),
+                        }.into());
+                    };
+                    rows.push(WeightedPole2 { point: *point, weight });
+                }
+                PcurveNurbsPoles::Rational { points: rows }
+            } else {
+                PcurveNurbsPoles::Polynomial {
+                    points: copied_items(ctx, &nurbs.control_points, "FreeCAD pcurve polynomial poles")?,
+                }
+            };
+            let mut knots = collection_vec(ctx, nurbs.knots.len(), "FreeCAD pcurve knots")?;
+            knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
+            Some(PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_raw_knots_and_admitted_poles(
+                    nurbs.degree,
+                    knots,
+                    poles,
+                    nurbs.periodic,
+                )?,
+            })
+        },
         TextCurve2d::Trimmed {
             parameter_range,
             basis,
         } => {
-            let Some(basis) = pcurve_geometry(basis.curve())? else {
+            let Some(basis) = pcurve_geometry(ctx, basis.curve())? else {
                 return Ok(None);
             };
             cadmpeg_ir::geometry::pcurve::TrimmedPcurve::from_finite_parts(
@@ -1939,7 +2009,7 @@ pub(crate) fn pcurve_geometry(
             .map(PcurveGeometry::Trimmed)
         }
         TextCurve2d::Offset { distance, basis } => {
-            let Some(basis) = pcurve_geometry(basis.curve())? else {
+            let Some(basis) = pcurve_geometry(ctx, basis.curve())? else {
                 return Ok(None);
             };
             cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
