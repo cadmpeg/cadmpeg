@@ -4298,13 +4298,14 @@ fn partition_standard_face_components(
 }
 
 pub(super) fn apply_standard_native_edge_faces(
+    ctx: &DecodeContext<'_>,
     edge_faces: &mut [[usize; 2]],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
-) {
+) -> Result<(), CodecError> {
     if edge_faces.len() != supports.len() {
-        return;
+        return Ok(());
     }
     let mut face_by_carrier = HashMap::<u32, Option<usize>>::new();
     for (face, record) in records.iter().enumerate() {
@@ -4314,10 +4315,11 @@ pub(super) fn apply_standard_native_edge_faces(
             }
             crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } => *tag,
         };
-        face_by_carrier
-            .entry(carrier)
-            .and_modify(|stored| *stored = None)
-            .or_insert(Some(face));
+        if let Some(stored) = face_by_carrier.get_mut(&carrier) {
+            *stored = None;
+        } else {
+            crate::resource::insert_map(ctx, &mut face_by_carrier, carrier, Some(face), "catia_standard_native_face_carriers")?;
+        }
     }
     for (faces, support) in edge_faces.iter_mut().zip(supports) {
         if faces[0] != faces[1] {
@@ -4326,15 +4328,18 @@ pub(super) fn apply_standard_native_edge_faces(
         let Some(owner_ids) = native_edge_faces.get(&support.tag) else {
             continue;
         };
-        let candidates = owner_ids
-            .iter()
+        let mut candidates = HashSet::new();
+        for face in owner_ids.iter()
             .filter_map(|owner| face_by_carrier.get(owner).copied().flatten())
             .filter(|face| *face != faces[0])
-            .collect::<HashSet<_>>();
+        {
+            crate::resource::insert_set(ctx, &mut candidates, face, "catia_standard_native_face_candidates")?;
+        }
         if let Some(&face) = candidates.iter().next().filter(|_| candidates.len() == 1) {
             faces[1] = face;
         }
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -4787,7 +4792,8 @@ fn attach_standard_topology(
         .map_err(StandardTopologyError::Resource)?;
     let mut open_face_domains = None;
     let mut endpoint_face_assignments = None;
-    apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
+    apply_standard_native_edge_faces(ctx, &mut edge_faces, &supports, records, native_edge_faces)
+        .map_err(StandardTopologyError::Resource)?;
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
     }

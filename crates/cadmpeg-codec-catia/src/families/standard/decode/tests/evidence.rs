@@ -1797,6 +1797,45 @@ fn standard_extrusion_definition_copy_refuses_retained_id_limit() {
 }
 
 #[test]
+fn standard_native_edge_face_carrier_and_candidate_limits_refuse() {
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20].map(|target| {
+        StandardSurfaceRecord::Analytic(SurfacePrefix {
+            pos: 0,
+            target,
+            kind: AnalyticSurfaceKind::Cylinder,
+        })
+    });
+    let owners = HashMap::from([(700, HashSet::from([20]))]);
+    for (limit, operation) in [
+        (0, "catia_standard_native_face_carriers"),
+        (2, "catia_standard_native_face_candidates"),
+    ] {
+        let mut faces = [[0, 0]];
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::standard::decode::apply_standard_native_edge_faces(
+                ctx, &mut faces, &supports, &records, &owners,
+            )
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == operation));
+    }
+    let mut faces = [[0, 0]];
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::apply_standard_native_edge_faces(
+            ctx, &mut faces, &supports, &records, &owners,
+        )
+    })
+    .expect("service context admits native face evidence");
+    assert_eq!(faces, [[0, 1]]);
+}
+
+#[test]
 fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     let mut ir = CadIr::empty();
     for index in 0..138 {
