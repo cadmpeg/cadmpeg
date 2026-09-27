@@ -164,6 +164,45 @@ pub(crate) fn admitted_loss(
     Ok(code.note(&message))
 }
 
+/// Serializes retained JSON after measuring and admitting its exact bytes.
+pub(crate) fn admitted_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.checked_add(bytes.len()).ok_or(std::io::ErrorKind::OutOfMemory)?;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    ctx.charge_retained(u64_from_index(count.0), operation)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(count.0).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(count.0),
+            operation,
+        })
+    })?;
+    serde_json::to_writer(&mut bytes, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
+}
+
 impl<T> ExactVec<T> {
     /// Charges and allocates storage for a count bounded by the input window.
     pub(crate) fn new(

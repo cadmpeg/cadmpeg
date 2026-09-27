@@ -545,7 +545,7 @@ pub(crate) fn project(
     key: &str,
     name: Option<String>,
     native_ref: String,
-    mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
+    mut resolve_captive: impl FnMut(Uuid) -> Result<Option<String>, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use std::collections::BTreeMap;
@@ -637,16 +637,14 @@ pub(crate) fn project(
                             morph.preserve_structure.to_string(),
                         ),
                     ]);
-                    parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
-                        |(index, id)| {
-                            resolve_captive(*id).map(|record| {
-                                (
-                                    cadmpeg_core::nonblank_literal!("captive_{index}_object"),
-                                    record,
-                                )
-                            })
-                        },
-                    ));
+                    for (index, id) in morph.captive_ids.iter().enumerate() {
+                        if let Some(record) = resolve_captive(*id)? {
+                            parameters.insert(
+                                cadmpeg_core::nonblank_literal!("captive_{index}_object"),
+                                record,
+                            );
+                        }
+                    }
                     parameters
                 },
             }),
@@ -811,7 +809,7 @@ mod tests {
         assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&morph, "test", None, "native".to_string(), |_| None)
+        let feature = project(&morph, "test", None, "native".to_string(), |_| Ok(None))
             .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -822,7 +820,7 @@ mod tests {
         };
         assert!(!parameters.contains_key("captive_0_object"));
         let resolved = project(&morph, "test", None, "native".to_string(), |_| {
-            Some("rhino:object:record#000007".to_string())
+            Ok(Some("rhino:object:record#000007".to_string()))
         })
         .expect("the fixture states named properties");
         let cadmpeg_ir::features::FeatureDefinition::Operation(

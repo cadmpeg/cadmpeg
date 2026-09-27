@@ -1137,13 +1137,17 @@ fn extended_geometry_json(
             "loops": loops,
             "basepoint": hatch.basepoint,
         });
-        if let Some(gradient) = hatch
-            .gradient
-            .as_ref()
-            .map(crate::hatch::gradient_json)
-            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
-        {
-            semantic["gradient"] = gradient;
+        if let Some(gradient) = hatch.gradient.as_ref() {
+            let value = match crate::hatch::gradient_json(expand.ctx(), gradient) {
+                Ok(value) => value,
+                Err(error) => {
+                    *refusal = Some(error);
+                    return None;
+                }
+            };
+            if let Ok(gradient) = serde_json::from_str::<serde_json::Value>(&value) {
+                semantic["gradient"] = gradient;
+            }
         }
         semantic
     } else if value.class_id == crate::detail::CLASS {
