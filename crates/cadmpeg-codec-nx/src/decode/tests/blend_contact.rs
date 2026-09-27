@@ -685,8 +685,12 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
 
-    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
-    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
+    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None)
+        .unwrap()
+        .unwrap()[0];
+    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None)
+        .unwrap()
+        .unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -697,8 +701,9 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, 2.0]),
     );
-    let rational_parameter =
-        closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()[0];
+    let rational_parameter = closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None)
+        .unwrap()
+        .unwrap()[0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
     let quadratic = test_pcurve(
@@ -711,8 +716,9 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let quadratic_parameter =
-        closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()[0];
+    let quadratic_parameter = closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None)
+        .unwrap()
+        .unwrap()[0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
     let folded = test_pcurve(
@@ -725,18 +731,24 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let first_fold =
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap()[0];
-    let second_fold =
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap()[0];
+    let first_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+        .unwrap()
+        .unwrap()[0];
+    let second_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+        .unwrap()
+        .unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+            .unwrap()
+            .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+            .unwrap()
+            .unwrap(),
         [2.0, 0.0]
     );
 
@@ -753,11 +765,15 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     )
     .unwrap();
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),)
+            .unwrap()
+            .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),).unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),)
+            .unwrap()
+            .unwrap(),
         [2.0, 0.0]
     );
 
@@ -772,11 +788,15 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),)
+            .unwrap()
+            .unwrap(),
         [0.0, 1.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),).unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),)
+            .unwrap()
+            .unwrap(),
         [1.0, 0.0]
     );
 }
