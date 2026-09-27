@@ -48,6 +48,7 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::Exchange;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
@@ -257,46 +258,72 @@ impl StepDialect {
     /// format layer. The first identifier is the identity, matching the dialect
     /// note the codec reports, and the whole list is recorded under
     /// [`DECLARED_FILE_SCHEMA_IDENTIFIERS`].
-    pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
-        let identifiers = exchange.schema_identifiers();
-        let dialect = identifiers.first().map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(
-                identifier,
-                exchange.primary_schema_object_identifier().as_deref(),
-            )
+    pub(crate) fn classify(
+        exchange: &Exchange,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<DialectMatch, CodecError> {
+        let first = exchange.schema_identifiers().next();
+        let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
+        let dialect = first.map_or(Self::Unknown, |identifier| {
+            Self::from_schema_identifier(identifier, object_identifier.as_deref())
         });
 
         let mut declared = BTreeMap::new();
-        if let Some(identifier) = identifiers.first() {
+        if let Some(identifier) = first {
+            charge_declared_entry(ctx)?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
-                identifier.clone(),
+                copy_declared(identifier, ctx)?,
             );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
+                charge_declared_entry(ctx)?;
                 declared.insert(
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
-                    arcs.into(),
+                    copy_declared(arcs, ctx)?,
                 );
             }
         }
-        if identifiers.len() > 1 {
+        if exchange.schema_identifiers().nth(1).is_some() {
+            charge_declared_entry(ctx)?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIERS),
-                identifiers.join(","),
+                exchange.joined_schema_identifiers(ctx)?,
             );
         }
+        charge_declared_entry(ctx)?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
-            exchange.implementation_level().into(),
+            copy_declared(exchange.implementation_level(), ctx)?,
         );
 
-        if dialect == Self::Unknown {
+        Ok(if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Grammar::of(&NEAREST_STRATEGY.id()))
         } else {
             DialectMatch::admitted(dialect.id())
         }
-        .with_declared(declared)
+        .with_declared(declared))
     }
+}
+
+fn charge_declared_entry(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
+    }
+    Ok(())
+}
+
+fn copy_declared(text: &str, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
+    let operation = "step_dialect_declared_text";
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(u64_from_index(text.len()), operation)?;
+    }
+    let mut copy = String::new();
+    copy.try_reserve_exact(text.len()).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(text.len())),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(text.len())),
+    })?;
+    copy.push_str(text);
+    Ok(copy)
 }
 
 /// The dialect-unverified loss a match requires.

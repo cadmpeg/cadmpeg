@@ -210,7 +210,7 @@ fn bind_entity_reference(
     if resource_uri.is_empty() || anchor_name.is_empty() {
         return Err("reference has an incomplete resource identity");
     }
-    if root.schema_identifiers() != target.schema_identifiers() {
+    if !root.schema_identifiers().eq(target.schema_identifiers()) {
         return Err("resource schemas differ");
     }
     let root_units = unit_signatures(root);
@@ -586,7 +586,7 @@ fn compose_part26_point(
     if source.mapping_edition != "ISO/TS 10303-26:2011" {
         return Part26Composition::Unbound("Part 26 mapping edition is not selected");
     }
-    if source.schema_id != target.schema_identifiers().join(",") {
+    if source.schema_id != target.schema_identifiers().collect::<Vec<_>>().join(",") {
         return Part26Composition::Unbound("resource schemas differ");
     }
     if source.unit_signature != part21_unit_signature(target) {

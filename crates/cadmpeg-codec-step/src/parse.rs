@@ -333,18 +333,47 @@ impl Exchange {
     }
 
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
-    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
-        self.schema_identifiers
-            .iter()
-            .map(|identifier| identifier.text().to_owned())
-            .collect()
+    pub(crate) fn schema_identifiers(&self) -> impl Iterator<Item = &str> {
+        self.schema_identifiers.iter().map(|identifier| identifier.text())
+    }
+
+    pub(crate) fn joined_schema_identifiers(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<String, CodecError> {
+        let operation = "step_schema_identifier_list";
+        let len = self.schema_identifiers.iter().enumerate().try_fold(
+            0usize,
+            |sum, (index, identifier)| {
+                sum.checked_add(identifier.text().len())
+                    .and_then(|sum| sum.checked_add(usize::from(index != 0)))
+            },
+        );
+        let len = len.ok_or_else(|| refuse_index(ctx, operation))?;
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(u64_from_index(len), operation)?;
+        }
+        let mut joined = String::new();
+        joined
+            .try_reserve_exact(len)
+            .map_err(|_| refuse_index(ctx, operation))?;
+        for identifier in self.schema_identifiers() {
+            if !joined.is_empty() {
+                joined.push(',');
+            }
+            joined.push_str(identifier);
+        }
+        Ok(joined)
     }
 
     /// Numeric object-identifier components for the primary schema identifier.
-    pub(crate) fn primary_schema_object_identifier(&self) -> Option<Vec<u64>> {
+    pub(crate) fn primary_schema_object_identifier(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<Vec<u64>>, CodecError> {
         self.schema_identifiers
             .first()
-            .and_then(AdmittedSchemaIdentifier::numeric_object_identifier)
+            .map_or(Ok(None), |identifier| identifier.numeric_object_identifier(ctx))
     }
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.

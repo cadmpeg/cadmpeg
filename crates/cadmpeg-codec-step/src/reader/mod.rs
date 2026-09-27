@@ -125,11 +125,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         diagnostics: &[ParseDiagnostic],
         ctx: &'ctx DecodeContext<'arena>,
         mode: DecodeMode,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut attributes = BTreeMap::new();
         attributes.insert(
             cadmpeg_core::nonblank_literal!("schema"),
-            schema_name(exchange),
+            exchange.joined_schema_identifiers(Some(ctx))?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("data_sections"),
@@ -144,7 +144,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         }
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
-        let primary = StepDialect::classify(exchange);
+        let primary = StepDialect::classify(exchange, Some(ctx))?;
         let dialect_loss = crate::dialect::dialect_loss(&primary);
         let ir = CadIr::empty();
 
@@ -185,7 +185,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             )
         }));
 
-        Self {
+        Ok(Self {
             ir,
             matched: primary,
             source_attributes: attributes,
@@ -194,7 +194,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             admitted_ir_entities: 0,
             semantic_input_work: 0,
             ctx,
-        }
+        })
     }
 
     fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
@@ -300,7 +300,7 @@ fn decode_exchange_mode(
     mode: DecodeMode,
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode)?;
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
@@ -1211,10 +1211,6 @@ fn claim_trivia(
         }
     }
     Ok(())
-}
-
-fn schema_name(exchange: &Exchange) -> String {
-    exchange.schema_identifiers().join(",")
 }
 
 fn decode_text(
