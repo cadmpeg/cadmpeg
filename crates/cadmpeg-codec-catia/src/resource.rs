@@ -65,6 +65,17 @@ pub(crate) fn reserve_vec<T>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
 }
 
+/// Reserve storage for items already charged as one aggregate admission.
+pub(crate) fn reserve_admitted_vec<T>(
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    values
+        .try_reserve(additional)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+}
+
 pub(crate) fn copy_slice<T: Clone>(
     ctx: &DecodeContext<'_>,
     values: &[T],

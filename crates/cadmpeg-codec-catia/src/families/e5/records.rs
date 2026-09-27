@@ -414,18 +414,35 @@ fn parse_e5_rolling_ball_jet(
     };
     // Knots, multiplicities, three channel lanes, sites, and stations each
     // contain one item per declared station.
-    let station_count_u64 = station_count as u64;
+    let station_count_u64 = u64::try_from(station_count).map_err(|_| {
+        ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
+    })?;
     ctx.charge_collection_items(
-        station_count_u64 * 7,
+        station_count_u64.checked_mul(7).ok_or_else(|| {
+            ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
+        })?,
         "decode CATIA E5 rolling-ball stations",
     )?;
+    let mut knots = Vec::new();
+    let mut multiplicities = Vec::new();
+    let mut positions = Vec::new();
+    let mut first_derivatives = Vec::new();
+    let mut second_derivatives = Vec::new();
+    let mut sites = Vec::new();
+    let mut stations = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut knots, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut multiplicities, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut positions, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut first_derivatives, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut second_derivatives, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut sites, station_count, "decode CATIA E5 rolling-ball stations")?;
+    crate::resource::reserve_admitted_vec(&mut stations, station_count, "decode CATIA E5 rolling-ball stations")?;
     Ok((|| {
-        let knots =
-            view.read_counted(station_count_u64, 8, |view| FiniteReal::new(view.f64_le()?))?;
+        read_d8_counted(&mut view, station_count_u64, 8, &mut knots, |view| FiniteReal::new(view.f64_le()?))?;
         if knots.windows(2).any(|pair| pair[0] >= pair[1]) {
             return None;
         }
-        let multiplicities = view.read_counted(station_count_u64, 4, View::u32_le)?;
+        read_d8_counted(&mut view, station_count_u64, 4, &mut multiplicities, |view| view.u32_le())?;
         // `station_count < 2` is refused above, so the interior station count is
         // the exact difference. The checked subtraction refuses a stated count this
         // record cannot span instead of saturating it to an empty interior, which
@@ -441,9 +458,9 @@ fn parse_e5_rolling_ball_jet(
         {
             return None;
         }
-        let positions = read_d8_channel_rows(&mut view, station_count_u64)?;
-        let first_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
-        let second_derivatives = read_d8_channel_rows(&mut view, station_count_u64)?;
+        read_d8_channel_rows(&mut view, station_count_u64, &mut positions)?;
+        read_d8_channel_rows(&mut view, station_count_u64, &mut first_derivatives)?;
+        read_d8_channel_rows(&mut view, station_count_u64, &mut second_derivatives)?;
         if view.remaining() != E5_D8_TAIL_BYTES {
             return None;
         }
@@ -471,11 +488,11 @@ fn parse_e5_rolling_ball_jet(
         {
             return None;
         }
-        let sites = positions
+        for ((position, first), second) in positions
             .into_iter()
             .zip(first_derivatives)
             .zip(second_derivatives)
-            .map(|((position, first), second)| {
+        {
                 let first_limit =
                     FinitePoint3::from_coordinates(position[0], position[1], position[2]);
                 let second_limit =
@@ -499,7 +516,7 @@ fn parse_e5_rolling_ball_jet(
                 } else {
                     f64::NAN
                 };
-                (
+                sites.push((
                     first_limit,
                     second_limit,
                     center,
@@ -509,9 +526,8 @@ fn parse_e5_rolling_ball_jet(
                     position[9],
                     first,
                     second,
-                )
-            })
-            .collect::<Vec<_>>();
+                ));
+        }
         if sites.iter().any(
             |(
                 _first_limit,
@@ -535,10 +551,7 @@ fn parse_e5_rolling_ball_jet(
         ) {
             return None;
         }
-        let stations = sites
-            .into_iter()
-            .map(
-                |(
+        for (
                     first_limit,
                     second_limit,
                     center,
@@ -548,25 +561,22 @@ fn parse_e5_rolling_ball_jet(
                     angle,
                     first,
                     second,
-                )| RollingBallJetSite {
+                ) in sites {
+            let site = RollingBallJetSite {
                     first_limit,
                     second_limit,
                     center,
                     angle,
                     first_derivative: rolling_ball_jet_derivative(first),
                     second_derivative: rolling_ball_jet_derivative(second),
-                },
-            )
-            .zip(knots)
-            .zip(multiplicities)
-            .map(
-                |((site, knot), multiplicity)| cadmpeg_ir::geometry::RollingBallJetStation {
-                    knot,
-                    multiplicity,
-                    site,
-                },
-            )
-            .collect();
+                };
+            let index = stations.len();
+            stations.push(cadmpeg_ir::geometry::RollingBallJetStation {
+                knot: *knots.get(index)?,
+                multiplicity: *multiplicities.get(index)?,
+                site,
+            });
+        }
         Some(E5RollingBallJet {
             pos: record.pos,
             record_id: View::u32_le_at(data, record.pos + 9)?,
@@ -576,11 +586,26 @@ fn parse_e5_rolling_ball_jet(
     })())
 }
 
+fn read_d8_counted<T>(
+    view: &mut View<'_>,
+    station_count_u64: u64,
+    width: usize,
+    values: &mut Vec<T>,
+    mut read: impl FnMut(&mut View<'_>) -> Option<T>,
+) -> Option<()> {
+    view.counted(station_count_u64, width)?;
+    for _ in 0..station_count_u64 {
+        values.push(read(view)?);
+    }
+    Some(())
+}
+
 fn read_d8_channel_rows(
     view: &mut View<'_>,
     station_count_u64: u64,
-) -> Option<Vec<[FiniteReal; 10]>> {
-    view.read_counted(station_count_u64, 80, |view| {
+    rows: &mut Vec<[FiniteReal; 10]>,
+) -> Option<()> {
+    read_d8_counted(view, station_count_u64, 80, rows, |view| {
         let mut row = [FiniteReal::ZERO; 10];
         for value in &mut row {
             *value = FiniteReal::new(view.f64_le()?)?;
