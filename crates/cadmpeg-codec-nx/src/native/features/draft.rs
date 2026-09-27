@@ -10,6 +10,7 @@ use crate::container::Container;
 use crate::om::compact::CompactIndexAtom;
 use crate::om::compact::CountedIndexMembers;
 use crate::om::compact::ExtendedCompactIndex;
+#[cfg(test)]
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::draft_identity::DraftIdentityForm;
@@ -33,6 +34,7 @@ use super::unique_offset_data_store;
 use super::visit_feature_history_operation_records;
 
 use crate::om::draft_leading::DraftLeadingLane;
+mod borrowed_wires;
 
 /// Ordered construction reference carried by a bounded draft-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,11 +60,8 @@ pub(in crate::native) struct FeatureDraftConstructionReference {
 }
 
 /// Counted compact-index lane preceding a bounded draft construction graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDraftConstructionIndexLaneWire",
-    into = "FeatureDraftConstructionIndexLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionIndexLaneWire")]
 pub(in crate::native) struct FeatureDraftConstructionIndexLane {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -99,6 +98,7 @@ struct FeatureDraftConstructionIndexLaneWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureDraftConstructionIndexLane> for FeatureDraftConstructionIndexLaneWire {
     fn from(lane: FeatureDraftConstructionIndexLane) -> Self {
         let (declared_count, tokens, data_blocks): (_, Vec<_>, _) = match lane.indices {
@@ -226,11 +226,8 @@ pub(in crate::native) struct FeatureDraftConstructionGraphPayload {
 }
 
 /// Complete signed Q1.55 lane in a reconstructed draft graph payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDraftConstructionFixedLaneWire",
-    into = "FeatureDraftConstructionFixedLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionFixedLaneWire")]
 pub(in crate::native) struct FeatureDraftConstructionFixedLane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
@@ -272,6 +269,7 @@ struct FeatureDraftConstructionFixedLaneWire {
     value_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureDraftConstructionFixedLane> for FeatureDraftConstructionFixedLaneWire {
     fn from(record: FeatureDraftConstructionFixedLane) -> Self {
         Self {
@@ -355,11 +353,8 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
 }
 
 /// Complete shifted-binary32 lane in a reconstructed draft graph payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDraftConstructionBinary32LaneWire",
-    into = "FeatureDraftConstructionBinary32LaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionBinary32LaneWire")]
 pub(in crate::native) struct FeatureDraftConstructionBinary32Lane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
@@ -403,6 +398,7 @@ struct FeatureDraftConstructionBinary32LaneWire {
     value_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBinary32LaneWire {
     fn from(record: FeatureDraftConstructionBinary32Lane) -> Self {
         Self {
@@ -497,11 +493,8 @@ pub(in crate::native) struct FeatureDraftConstructionGraphString {
 }
 
 /// Complete identity frame in a reconstructed draft construction payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDraftConstructionIdentityFrameWire",
-    into = "FeatureDraftConstructionIdentityFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionIdentityFrameWire")]
 pub(in crate::native) struct FeatureDraftConstructionIdentityFrame {
     /// Globally unique frame identity.
     pub(in crate::native) id: String,
@@ -545,6 +538,7 @@ struct FeatureDraftConstructionIdentityFrameWire {
     identity_source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDraftConstructionIdentityFrame> for FeatureDraftConstructionIdentityFrameWire {
     fn from(value: FeatureDraftConstructionIdentityFrame) -> Self {
         let identity_payload_offset = value.frame.identity_offset();
@@ -593,11 +587,8 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
 }
 
 /// End-anchored compact-index lane in a bounded draft construction payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDraftConstructionTerminalLaneWire",
-    into = "FeatureDraftConstructionTerminalLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionTerminalLaneWire")]
 pub(in crate::native) struct FeatureDraftConstructionTerminalLane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
@@ -625,6 +616,7 @@ struct FeatureDraftConstructionTerminalLaneWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDraftConstructionTerminalLane> for FeatureDraftConstructionTerminalLaneWire {
     fn from(lane: FeatureDraftConstructionTerminalLane) -> Self {
         Self {
