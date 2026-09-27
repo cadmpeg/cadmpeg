@@ -175,3 +175,49 @@ fn mesh_selection_completion_refuses_collection_limit() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_selection_completion"));
 }
+
+#[test]
+fn mesh_selection_completion_refuses_existing_nested_direction_copies() {
+    use cadmpeg_core::CodecError;
+
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0, start: 0, end: 1, reversed: Some(false),
+        }]],
+    }]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: Vec::new(),
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![false]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        search.fixed_remaining_faces_are_orientable()
+    };
+    crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
+    let mut refusals = HashSet::new();
+    for cap in 0..=32 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(true) => break,
+            _ => panic!("unexpected selected completion result"),
+        }
+    }
+    assert!(refusals.contains("catia_direction_copy_rows"));
+    assert!(refusals.contains("catia_direction_copy_values"));
+}

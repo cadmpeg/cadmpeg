@@ -9512,25 +9512,18 @@ impl MeshSelectionSearch<'_, '_> {
                     return Ok(false);
                 }
                 let node = constraints.len();
-                self.ctx
-                    .charge_collection_items(1, "catia_selection_constraint_nodes")?;
-                constraints.push(Vec::new());
+                crate::resource::push(self.ctx, &mut constraints, Vec::new(), "catia_selection_constraint_nodes")?;
                 for (use_, &direction) in boundary.iter().zip(directions) {
                     let reversed = use_.reversed.unwrap_or(direction);
                     if use_.reversed.is_some() && reversed != direction {
                         return Ok(false);
                     }
-                    if !edge_uses.contains_key(&use_.edge) {
-                        self.ctx
-                            .charge_collection_items(1, "catia_selection_edge_keys")?;
-                    }
+                    crate::resource::admit_map_entry(self.ctx, &mut edge_uses, &use_.edge, "catia_selection_edge_keys")?;
                     let uses = edge_uses.entry(use_.edge).or_default();
                     if uses.len() == 2 {
                         return Ok(false);
                     }
-                    self.ctx
-                        .charge_collection_items(1, "catia_selection_edge_uses")?;
-                    uses.push((node, reversed));
+                    crate::resource::push(self.ctx, uses, (node, reversed), "catia_selection_edge_uses")?;
                 }
             }
         }
@@ -9544,10 +9537,8 @@ impl MeshSelectionSearch<'_, '_> {
                     return Ok(false);
                 }
             } else {
-                self.ctx
-                    .charge_collection_items(2, "catia_selection_adjacent_constraints")?;
-                constraints[*left_node].push((*right_node, parity));
-                constraints[*right_node].push((*left_node, parity));
+                crate::resource::push(self.ctx, &mut constraints[*left_node], (*right_node, parity), "catia_selection_adjacent_constraints")?;
+                crate::resource::push(self.ctx, &mut constraints[*right_node], (*left_node, parity), "catia_selection_adjacent_constraints")?;
             }
         }
         let mut flips = self
@@ -9558,9 +9549,8 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             }
             flips[root] = Some(false);
-            self.ctx
-                .charge_collection_items(1, "catia_selection_orientation_stack")?;
-            let mut stack = vec![root];
+            let mut stack = Vec::new();
+            crate::resource::push(self.ctx, &mut stack, root, "catia_selection_orientation_stack")?;
             while let Some(node) = stack.pop() {
                 self.ctx
                     .charge_work(1, "catia_selection_orientation_work")?;
@@ -9574,9 +9564,7 @@ impl MeshSelectionSearch<'_, '_> {
                         Some(_) => {}
                         None => {
                             flips[neighbor] = Some(required);
-                            self.ctx
-                                .charge_collection_items(1, "catia_selection_orientation_stack")?;
-                            stack.push(neighbor);
+                            crate::resource::push(self.ctx, &mut stack, neighbor, "catia_selection_orientation_stack")?;
                         }
                     }
                 }
@@ -9590,14 +9578,14 @@ impl MeshSelectionSearch<'_, '_> {
     }
 
     fn fixed_remaining_faces_are_orientable(&self) -> Result<bool, CodecError> {
-        self.ctx.charge_collection_items(
-            u64::try_from(self.selected.len()).map_err(|_| {
-                self.ctx
-                    .refuse_codec_limit("catia_selection_completion", u64::MAX, u64::MAX)
-            })?,
-            "catia_selection_completion",
-        )?;
-        let mut completion = self.selected.clone();
+        let mut completion = Vec::new();
+        crate::resource::reserve_vec(self.ctx, &mut completion, self.selected.len(), "catia_selection_completion")?;
+        for selected in &self.selected {
+            completion.push(match selected {
+                Some((index, directions)) => Some((*index, copy_mesh_boundary_directions(self.ctx, directions)?)),
+                None => None,
+            });
+        }
         for (face, selected) in completion.iter_mut().enumerate() {
             if selected.is_some() {
                 continue;
@@ -9627,19 +9615,26 @@ impl MeshSelectionSearch<'_, '_> {
                     "catia_selection_completion_directions",
                 )?;
             }
-            let Some(directions) = assignment
-                .boundaries
-                .iter()
-                .map(|boundary| {
-                    boundary
-                        .iter()
-                        .map(|use_| use_.reversed)
-                        .collect::<Option<Vec<_>>>()
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
+            let mut directions = Vec::new();
+            crate::resource::reserve_admitted_vec(&mut directions, assignment.boundaries.len(), "catia_selection_completion_boundaries")?;
+            let mut complete = true;
+            for boundary in &assignment.boundaries {
+                if boundary.iter().any(|use_| use_.reversed.is_none()) {
+                    complete = false;
+                    break;
+                }
+                let mut row = Vec::new();
+                crate::resource::reserve_admitted_vec(&mut row, boundary.len(), "catia_selection_completion_directions")?;
+                for use_ in boundary {
+                    if let Some(reversed) = use_.reversed {
+                        row.push(reversed);
+                    }
+                }
+                directions.push(row);
+            }
+            if !complete {
                 continue;
-            };
+            }
             *selected = Some((0, directions));
         }
         self.selection_orientable(&completion)
