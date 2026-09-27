@@ -922,13 +922,13 @@ impl CodecBackend for FcstdCodec {
             )?;
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
-            ir.model.curves.extend(curve_transfer.curves);
+            ir.model.curves = curve_transfer.curves;
             for (owner, procedural) in curve_transfer.procedural {
                 ir.model
                     .add_procedural_curve(owner, procedural)
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
-            ir.model.surfaces.extend(surface_transfer.surfaces);
+            ir.model.surfaces = surface_transfer.surfaces;
             for (owner, procedural) in surface_transfer.procedural {
                 ir.model
                     .add_procedural_surface(owner, procedural)
@@ -975,7 +975,7 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "design_census", &design_census)?;
             element_map::bind_topology(ctx, &mut element_maps, &topology_occurrences)?;
-            let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
+            let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     ctx,
                     &mut ir,
@@ -990,7 +990,7 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            gui_losses.clone_from(&gui_graph.losses);
+            gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 ir.model.entity_count() as u64,
                 &mut admitted_entities,
@@ -1018,13 +1018,7 @@ impl CodecBackend for FcstdCodec {
                     .iter_mut()
                     .find(|entry| entry.name == entry_name)
                 {
-                    if !entry
-                        .referenced_by
-                        .iter()
-                        .any(|candidate| candidate == owner)
-                    {
-                        entry.referenced_by.push(owner.to_owned());
-                    }
+                    container::add_entry_reference(ctx, entry, owner)?;
                 }
             }
             ir.native

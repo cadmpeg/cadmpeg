@@ -179,6 +179,39 @@ fn entry_data_copy_refuses_at_retained_limit() {
     });
 }
 
+fn resource_entry_record() -> crate::native::EntryRecord {
+    crate::native::EntryRecord {
+        id: "fcstd:native:entry#GuiDocument.xml".into(),
+        name: "GuiDocument.xml".into(),
+        role: cadmpeg_core::container::ContainerRole::GuiDocument,
+        referenced_by: Vec::new(),
+        data: Vec::new(),
+    }
+}
+
+#[test]
+fn gui_entry_reference_refuses_at_collection_limit() {
+    collection_context(0, |ctx| {
+        let mut entry = resource_entry_record();
+        assert!(matches!(super::add_entry_reference(ctx, &mut entry, "owner"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FCStd GUI entry references"));
+    });
+}
+
+#[test]
+fn gui_entry_reference_identity_refuses_at_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = "owner".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let mut entry = resource_entry_record();
+    assert!(matches!(super::add_entry_reference(&ctx, &mut entry, "owner"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI entry reference identity"));
+}
+
 #[test]
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";

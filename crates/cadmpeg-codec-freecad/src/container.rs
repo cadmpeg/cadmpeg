@@ -154,6 +154,19 @@ pub(crate) fn entry_records(
     Ok(records)
 }
 
+pub(crate) fn add_entry_reference(
+    ctx: &DecodeContext<'_>,
+    entry: &mut EntryRecord,
+    owner: &str,
+) -> Result<(), CodecError> {
+    if entry.referenced_by.iter().any(|candidate| candidate == owner) {
+        return Ok(());
+    }
+    reserve_vec_items(ctx, &mut entry.referenced_by, 1, "FCStd GUI entry references")?;
+    entry.referenced_by.push(retained_string(ctx, owner, "FCStd GUI entry reference identity")?);
+    Ok(())
+}
+
 pub(crate) fn source_attributes(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
