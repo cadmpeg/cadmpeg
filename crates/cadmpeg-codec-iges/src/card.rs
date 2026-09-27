@@ -202,12 +202,13 @@ impl FramingRecoveries {
         }
     }
 
-    pub(crate) fn notes(&self) -> Vec<LossNote> {
-        self.0
-            .iter()
-            .map(|((section, defect), recovery)| {
-                IgesLossCode::CardFramingRecovered
-                    .note(format!(
+    pub(crate) fn notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
+        let mut notes = Vec::new();
+        for ((section, defect), recovery) in &self.0 {
+            reserve_vec_growth(ctx, &mut notes, 1, "iges framing recovery loss slots")?;
+            let message = format_retained(
+                ctx,
+                format_args!(
                         "IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
                         section.name(),
                         defect.description(),
@@ -217,13 +218,32 @@ impl FramingRecoveries {
                         recovery.used,
                         recovery.count,
                         defect.unit(),
-                    ))
-                .with_provenance(
-                    SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), recovery.offset)
-                        .with_tag(format!("{}:framing", section.name())),
-                )
-            })
-            .collect()
+                ),
+                "iges framing recovery loss message",
+            )?;
+            let tag = format_retained(
+                ctx,
+                format_args!("{}:framing", section.name()),
+                "iges framing recovery loss tag",
+            )?;
+            let code = IgesLossCode::CardFramingRecovered;
+            ctx.charge_retained(
+                4 + code.code().len() as u64,
+                "iges framing recovery loss kind",
+            )?;
+            ctx.charge_retained(4, "iges framing recovery loss source format")?;
+            notes.push(
+                code.note(message).with_provenance(
+                    SourceProvenance::in_stream(
+                        "iges",
+                        cadmpeg_ir::stream_name!("iges"),
+                        recovery.offset,
+                    )
+                    .with_tag(tag),
+                ),
+            );
+        }
+        Ok(notes)
     }
 }
 
