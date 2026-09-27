@@ -62,6 +62,7 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
         "iges offset neutral vertex slots",
         "iges offset neutral curve slots",
         "iges offset neutral edge slots",
+        "iges offset procedural curve slots",
         "iges offset wire edge slots",
     ] {
         assert_offset_collection_refusal(&linear, operation);

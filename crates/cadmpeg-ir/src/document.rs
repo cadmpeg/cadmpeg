@@ -1072,11 +1072,17 @@ impl Model {
                     "curve {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            CurveGeometry::Solved(geometry) => {
-                curve.geometry = CurveGeometry::Procedural {
+            CurveGeometry::Solved(_) => {
+                let previous = std::mem::replace(&mut curve.geometry, CurveGeometry::Procedural {
                     construction: procedural.id.clone(),
-                    cache: Some(geometry.clone()),
-                };
+                    cache: None,
+                });
+                if let (
+                    CurveGeometry::Solved(geometry),
+                    CurveGeometry::Procedural { cache, .. },
+                ) = (previous, &mut curve.geometry) {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_curves.push(procedural);
