@@ -109,6 +109,19 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
 }
 
 #[test]
+fn type142_boundary_creation_refuses_nested_slots_and_index_node() {
+    let bytes = subrange_nurbs_surface_boundary_file_with_source_precision();
+    for operation in [
+        "iges Type142 boundary pcurve pointers",
+        "iges Type142 boundary segments",
+        "iges trimming boundary index nodes",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn boundary_carrier_index_and_selected_edge_refuse_unadmitted_storage() {
     let bytes = bounded_plane_file();
     for operation in [
