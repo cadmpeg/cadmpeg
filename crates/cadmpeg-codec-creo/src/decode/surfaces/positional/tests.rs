@@ -1,13 +1,57 @@
-use cadmpeg_test_support::wire;
+// SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-// SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::wire;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::build_prt;
 use crate::CreoCodec;
+
+#[test]
+fn paired_sphere_association_copy_refuses_before_vec_growth() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
+    ]);
+    payload.push(0xe3);
+    crate::test_support::push_named_analytic_prototype(
+        &mut payload,
+        "torus",
+        &[("radius1", 1.0), ("radius2", 2.0)],
+    );
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let scan = crate::container::scan_bytes_ok(build_prt(
+        "paired-sphere-association-limit",
+        &[("ND:0:VisibGeom:0", payload)],
+    ));
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("root input is admitted");
+        super::transfer_paired_envelope_spheres(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    };
+    assert_eq!(run(3).expect("service limit admits the association"), 0);
+    let error = run(2).expect_err("the copied association follows two discovery charges");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo paired sphere associations"
+    ));
+}
 
 #[test]
 fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
