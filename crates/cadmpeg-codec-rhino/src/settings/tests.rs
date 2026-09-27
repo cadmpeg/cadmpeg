@@ -10,6 +10,7 @@ use crate::test_support::test_dump::{
     metadata_record, short_chunk, utf16_bytes, uuid_bytes,
 };
 use crate::wire::Uuid;
+use std::sync::OnceLock;
 
 fn parse_test_metadata(
     data: &[u8],
@@ -1193,7 +1194,7 @@ fn layer_metadata_with_record_count_and_id(
     record_count: usize,
     id: [u8; 16],
 ) -> (settings::DocumentMetadata, Diagnostics) {
-    let (data, tables) = layer_fixture(extension, writer_version, record_count, id);
+    let (data, tables) = layer_fixture(extension, writer_version, record_count, id, &[]);
     let mut warnings = Diagnostics::new();
     let metadata = parse_test_metadata(&data, ArchiveVersion::V8, &tables, &mut warnings);
     (metadata, warnings)
@@ -1204,6 +1205,7 @@ fn layer_fixture(
     writer_version: Option<i64>,
     record_count: usize,
     id: [u8; 16],
+    userdata: &[u8],
 ) -> (Vec<u8>, Vec<crate::container::Table>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
@@ -1248,6 +1250,7 @@ fn layer_fixture(
         &[
             long_chunk(archive, 0x0002_fffb, &uuid_body),
             crc_chunk(archive, 0x0002_fffc, &payload),
+            userdata.to_vec(),
             short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
@@ -1265,6 +1268,238 @@ fn layer_fixture(
     tables.push(table);
     (data, tables)
 }
+
+fn metadata_limit_operations(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    source_id: [u8; 16],
+    extension: &[u8],
+    userdata: &[u8],
+) -> Vec<&'static str> {
+    let (data, mut layer_tables) =
+        layer_fixture(extension, Some(200_912_010), 1, source_id, userdata);
+    layer_tables.remove(0);
+    let mut tables = vec![
+        metadata_table(
+            super::PROPERTIES,
+            0,
+            vec![
+                crate::container::Record::short(super::WRITER_VERSION, 0..0, 200_912_010),
+                crate::container::Record::long(super::PREVIEW, 0..0, 0..0),
+            ],
+        ),
+        metadata_table(
+            super::SETTINGS,
+            0,
+            vec![
+                crate::container::Record::short(super::CURRENT_LAYER, 0..0, 3),
+                crate::container::Record::long(0x2000_ffff, 0..0, 0..0),
+            ],
+        ),
+    ];
+    tables.append(&mut layer_tables);
+    let mut limit = 0_u64;
+    let mut operations = Vec::new();
+    for _ in 0..128 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = limit;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = limit;
+            }
+            other => panic!("unsupported metadata test dimension: {other:?}"),
+        }
+        let ctx = retained_limit_context(&data, &arena, &policy);
+        match settings::parse_metadata(
+            &ctx,
+            &data,
+            ArchiveVersion::V8,
+            &tables,
+            &mut Diagnostics::new(),
+        ) {
+            Ok(metadata) => {
+                assert_eq!(metadata.layers.len(), 1);
+                return operations;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension =>
+            {
+                operations.push(refusal.operation);
+                let next = refusal.used + refusal.additional;
+                limit = next.max(limit + 1);
+            }
+            Err(error) => panic!("unexpected metadata error: {error}"),
+        }
+    }
+    panic!("metadata limit ladder did not terminate");
+}
+
+fn metadata_collection_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_materialized_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            [0x44; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_opaque_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_extension_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut extension = vec![37];
+        extension.extend(utf16_bytes("description"));
+        extension.push(0);
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &extension,
+            &[],
+        )
+    })
+}
+
+fn metadata_userdata_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let archive = ArchiveVersion::V8;
+        let mut entry = super::LAYER_PER_VIEWPORT_ID.to_le_bytes().to_vec();
+        entry.extend(Uuid::from_canonical([1; 16]).to_wire());
+        let mut outer_body = 1_i32.to_le_bytes().to_vec();
+        outer_body.extend(anonymous_chunk(archive, 2, &entry));
+        let userdata = class_userdata_with_payload(
+            archive,
+            settings::LAYER_EXTENSIONS.to_wire(),
+            [0; 16],
+            &outer_body,
+        );
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &[0],
+            &userdata,
+        )
+    })
+}
+
+macro_rules! metadata_limit_test {
+    ($name:ident, $operations:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let operations = $operations();
+            assert!(operations.contains(&$operation), "reached {operations:?}");
+        }
+    };
+}
+
+metadata_limit_test!(
+    property_previews_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino property previews"
+);
+metadata_limit_test!(
+    property_singletons_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino property singleton keys"
+);
+metadata_limit_test!(
+    unsupported_settings_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino unsupported settings"
+);
+metadata_limit_test!(
+    setting_singletons_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino setting singleton keys"
+);
+metadata_limit_test!(
+    layer_uuid_keys_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer UUID keys"
+);
+metadata_limit_test!(
+    metadata_layers_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino metadata layers"
+);
+metadata_limit_test!(
+    layer_index_counts_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer index counts"
+);
+metadata_limit_test!(
+    layer_parent_counts_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer parent counts"
+);
+metadata_limit_test!(
+    metadata_opaque_records_refuse_collection_limit,
+    metadata_opaque_operations,
+    "Rhino metadata opaque records"
+);
+metadata_limit_test!(
+    property_singleton_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino property singleton workspace"
+);
+metadata_limit_test!(
+    setting_singleton_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino setting singleton workspace"
+);
+metadata_limit_test!(
+    layer_uuid_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer UUID workspace"
+);
+metadata_limit_test!(
+    layer_index_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer index workspace"
+);
+metadata_limit_test!(
+    layer_parent_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer parent workspace"
+);
+metadata_limit_test!(
+    layer_extension_items_refuse_collection_limit,
+    metadata_extension_operations,
+    "Rhino layer extension items"
+);
+metadata_limit_test!(
+    layer_userdata_resource_refusal_propagates,
+    metadata_userdata_operations,
+    "Rhino layer extension entries"
+);
 
 /// The layer parent link rests on the stamp, so the loss follows the stamp.
 #[test]
@@ -1372,7 +1607,12 @@ fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     metadata.layers.push(duplicate);
 
     let mut warnings = Diagnostics::new();
-    super::report_layer_parent_references(&metadata.layers, &mut warnings);
+    super::report_layer_parent_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &metadata.layers,
+        &mut warnings,
+    )
+    .expect("parent count map fits service profile");
 
     assert!(
         warnings.iter().any(|warning| {
@@ -1392,7 +1632,7 @@ fn layer_metadata_with_description(description: &str) -> settings::DocumentMetad
 }
 
 fn layer_text_refusal(extension: &[u8], limit: u64) -> cadmpeg_core::CodecError {
-    let (data, tables) = layer_fixture(extension, None, 1, [0; 16]);
+    let (data, tables) = layer_fixture(extension, None, 1, [0; 16], &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = limit;
