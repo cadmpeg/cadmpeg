@@ -6,13 +6,13 @@ use expectation::{ExpectationLabel, ReferenceExpectation};
 
 use crate::card::{CardScan, Section};
 use crate::decode_resource::{
-    insert_optional_btree_map, insert_optional_btree_set, push_formatted_note, reserve_vec,
-    reserve_vec_growth,
+    format_retained, insert_optional_btree_map, insert_optional_btree_set, push_formatted_note,
+    reserve_vec, reserve_vec_growth,
 };
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -734,61 +734,109 @@ pub(crate) fn losses(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
     scan: &CardScan<'_>,
     parameters: &[ParameterRecord],
-) -> Vec<LossNote> {
-    let directory_offsets = scan
-        .section(Section::Directory)
-        .map(|(sequence, line)| (sequence, line.offset))
-        .collect::<BTreeMap<_, _>>();
-    let parameter_lines = scan
-        .section(Section::Parameter)
-        .map(|(sequence, line)| (sequence, line.offset))
-        .collect::<BTreeMap<_, _>>();
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    graph
-        .iter()
-        .flat_map(|(source, edges)| {
-            let directory_offsets = &directory_offsets;
-            let parameter_lines = &parameter_lines;
-            let records = &records;
-            edges
-                .iter()
-                .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
-                .map(move |edge| {
-                    let parameter_location = edge.origin.parameter_index().and_then(|index| {
-                        let record = records.get(source)?;
-                        let span = record.tokens().get(index)?.span.start;
-                        let card = u32::try_from(span / 64).ok()?;
-                        let sequence = record.line_range.start.checked_add(card)?;
-                        let offset = parameter_lines
-                            .get(&sequence)?
-                            .checked_add((span % 64) as u64)?;
-                        Some((offset, format!("D{source}:parameter[{index}]")))
-                    });
-                    let location = parameter_location.or_else(|| {
-                        directory_offsets
-                            .get(source)
-                            .copied()
-                            .map(|offset| (offset, format!("D{source}")))
-                    });
-                    let mut note = IgesLossCode::PointerUnresolved.note(format!(
-                        "IGES Directory Entry D{source} {:?} pointer {} has {} resolution; expected {}",
-                        edge.origin,
-                        edge.raw_pointer,
-                        edge.resolution.key(),
-                        edge.expected
-                    ));
-                    if let Some((offset, tag)) = location {
-        note = note.with_provenance(
-            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), offset).with_tag(tag),
-        );
-                    }
-                    note
-                })
-        })
-        .collect()
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let scan_work = u64_from_index(scan.lines.len())
+        .checked_mul(2)
+        .ok_or_else(|| refuse_local_limit("iges graph loss offset scans", u64::MAX, 1))?;
+    ctx.charge_work(scan_work, "iges graph loss offset scans")?;
+    let mut directory_offsets = BTreeMap::new();
+    for (sequence, line) in scan.section(Section::Directory) {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut directory_offsets,
+            sequence,
+            line.offset,
+            "iges graph loss directory offsets",
+        )?;
+    }
+    let mut parameter_lines = BTreeMap::new();
+    for (sequence, line) in scan.section(Section::Parameter) {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut parameter_lines,
+            sequence,
+            line.offset,
+            "iges graph loss parameter offsets",
+        )?;
+    }
+    let mut records = BTreeMap::new();
+    ctx.charge_work(
+        u64_from_index(parameters.len()),
+        "iges graph loss record index",
+    )?;
+    for record in parameters {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges graph loss parameter records",
+        )?;
+    }
+    let mut losses = Vec::new();
+    for (source, edges) in graph {
+        ctx.charge_work(u64_from_index(edges.len()), "iges graph loss edge scan")?;
+        for edge in edges
+            .iter()
+            .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
+        {
+            reserve_vec_growth(ctx, &mut losses, 1, "iges graph loss notes")?;
+            let parameter_location = edge.origin.parameter_index().and_then(|index| {
+                let record = records.get(source)?;
+                let span = record.tokens().get(index)?.span.start;
+                let card = u32::try_from(span / 64).ok()?;
+                let sequence = record.line_range.start.checked_add(card)?;
+                let offset = parameter_lines
+                    .get(&sequence)?
+                    .checked_add((span % 64) as u64)?;
+                Some((offset, index))
+            });
+            let location = if let Some((offset, index)) = parameter_location {
+                Some((
+                    offset,
+                    format_retained(
+                        ctx,
+                        format_args!("D{source}:parameter[{index}]"),
+                        "iges graph loss tag",
+                    )?,
+                ))
+            } else {
+                directory_offsets
+                    .get(source)
+                    .copied()
+                    .map(|offset| {
+                        format_retained(ctx, format_args!("D{source}"), "iges graph loss tag")
+                            .map(|tag| (offset, tag))
+                    })
+                    .transpose()?
+            };
+            let message = format_retained(
+                ctx,
+                format_args!(
+                    "IGES Directory Entry D{source} {:?} pointer {} has {} resolution; expected {}",
+                    edge.origin,
+                    edge.raw_pointer,
+                    edge.resolution.key(),
+                    edge.expected
+                ),
+                "iges graph loss message",
+            )?;
+            let code = IgesLossCode::PointerUnresolved;
+            ctx.charge_retained(4 + code.code().len() as u64, "iges graph loss kind")?;
+            let mut note = code.note(message);
+            if let Some((offset, tag)) = location {
+                let format =
+                    format_retained(ctx, format_args!("iges"), "iges graph loss source format")?;
+                note = note.with_provenance(
+                    SourceProvenance::in_stream(format, cadmpeg_ir::stream_name!("iges"), offset)
+                        .with_tag(tag),
+                );
+            }
+            losses.push(note);
+        }
+    }
+    Ok(losses)
 }
 
 #[cfg(test)]
