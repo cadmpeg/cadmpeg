@@ -4157,13 +4157,27 @@ fn t_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token], tabl
                     type_code,
                     subtransform,
                     trailing_value,
-                    discontinuities: form.discontinuities.clone(),
+                    discontinuities: propagate_resource!(copy_revision_discontinuities(ctx, &form.discontinuities)),
                     discontinuity_flag: form.tail_flag,
                     revision_form: Some(*form),
                 }),
             ))
         }
     }))
+}
+
+fn copy_revision_discontinuities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &[Vec<f64>; 6],
+) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
+    Ok([
+        crate::decode_alloc::collect_vec(ctx, source[0].iter().copied(), "ASM revision discontinuities")?,
+        crate::decode_alloc::collect_vec(ctx, source[1].iter().copied(), "ASM revision discontinuities")?,
+        crate::decode_alloc::collect_vec(ctx, source[2].iter().copied(), "ASM revision discontinuities")?,
+        crate::decode_alloc::collect_vec(ctx, source[3].iter().copied(), "ASM revision discontinuities")?,
+        crate::decode_alloc::collect_vec(ctx, source[4].iter().copied(), "ASM revision discontinuities")?,
+        crate::decode_alloc::collect_vec(ctx, source[5].iter().copied(), "ASM revision discontinuities")?,
+    ])
 }
 
 fn deformable_surface_frame(
@@ -4698,7 +4712,7 @@ fn procedural_resolving_refs(
 
 #[cfg(test)]
 mod reference_allocation_tests {
-    use super::{procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
+    use super::{copy_revision_discontinuities, procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
     use crate::nurbs::toks::{Cur, SubtypeTable};
     use crate::sab::{Record, Token};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -4733,6 +4747,18 @@ mod reference_allocation_tests {
         let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
         let error = procedural_surface_resolving_refs(&ctx, &tokens, &table()).unwrap().err().expect("resource refusal");
         assert_refusal(error, ResourceDimension::CollectionItems, "ASM procedural surface references");
+    }
+
+    #[test]
+    fn revision_discontinuity_copy_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = [vec![1.0], Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        let error = copy_revision_discontinuities(&ctx, &source)
+            .expect_err("one discontinuity exceeds zero items");
+        assert_refusal(error, ResourceDimension::CollectionItems, "ASM revision discontinuities");
     }
 
     #[test]
