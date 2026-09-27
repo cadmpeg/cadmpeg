@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::admission::admit_temporary_clones;
 use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
+use cadmpeg_core::decode::DecodeContext;
 
-pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConvertError> {
+pub(super) fn admit(
+    native: &SldprtNative,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
         let expected_classes =
             crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
@@ -78,6 +83,19 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                 "SolidWorks sketch entity offset is outside its native payload marker set".into(),
             ));
         }
+    }
+    let _expected_lanes_reservation = admit_temporary_clones(
+        ctx,
+        native.feature_input_lanes.iter(),
+        "validate SLDPRT expected lane copies",
+    )?;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            u64::try_from(native.feature_input_lanes.len()).map_err(|_| {
+                ctx.refuse_codec_limit("SLDPRT expected lane pairs", u64::MAX - 1, u64::MAX)
+            })?,
+            "validate SLDPRT expected lane pairs",
+        )?;
     }
     for (lane, expected_lane) in expected_lanes(native) {
         if !crate::resolved_features::scalars::scalar_indices_match(

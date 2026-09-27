@@ -960,7 +960,7 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(crate::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native)?;
+        lanes::admit(&native, ctx)?;
         Ok(native)
     }
 
