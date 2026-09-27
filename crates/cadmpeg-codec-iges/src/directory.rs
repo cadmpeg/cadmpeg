@@ -318,8 +318,12 @@ impl QuarantinedDirectoryRecord {
     }
 
     /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
+    pub(crate) fn identity(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        format_retained(
+            ctx,
+            format_args!("iges:quarantine:directory#{}", self.sequence),
+            "iges directory quarantine identity",
+        )
     }
 
     pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {

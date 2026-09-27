@@ -15,6 +15,38 @@ use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
 #[test]
+fn parameter_quarantine_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = super::QuarantinedParameterRecord {
+        sequence: 3,
+        ownership: super::QuarantinedCards::None {
+            directory_offset: 160,
+        },
+        failing_offset: None,
+        defect: super::ParameterDefect::NoOwnedCards,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        record.identity(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges parameter quarantine identity"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        record.identity(&ctx).unwrap(),
+        "iges:quarantine:parameter#3"
+    );
+}
+
+#[test]
 fn parameter_quarantine_loss_refuses_owned_range_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

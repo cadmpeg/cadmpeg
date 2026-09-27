@@ -20,6 +20,48 @@ use crate::test_support::test_curves_and_surfaces::{
 use crate::test_support::test_drawing_and_trimming::test_surface_domains::transform_chain_overflow_file;
 use crate::IgesCodec;
 
+#[test]
+fn transfer_ledger_refuses_row_and_note_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut ledger = cadmpeg_ir::report::decode::TransferLedger::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges transfer ledger rows"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::record_retained_transfer(&ctx, &mut ledger, "D1".into(), "iges:entity:directory#1".into(), "retained"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges transfer ledger note"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::record_retained_transfer(
+        &ctx,
+        &mut ledger,
+        "D1".into(),
+        "iges:entity:directory#1".into(),
+        "retained",
+    )
+    .unwrap();
+    assert_eq!(ledger.entries.len(), 1);
+    assert_eq!(ledger.entries[0].source, "D1");
+    assert_eq!(ledger.entries[0].target(), Some("iges:entity:directory#1"));
+}
+
 fn directory_fixture() -> (
     Vec<crate::directory::DirectoryEntry>,
     crate::global::GlobalTable,
