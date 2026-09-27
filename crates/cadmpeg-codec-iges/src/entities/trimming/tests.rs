@@ -50,6 +50,38 @@ use crate::IgesCodec;
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
+fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected trimming collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("trimming collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn trimming_projection_refuses_counted_boundary_vectors() {
+    for (bytes, operation) in [
+        (bounded_plane_file(), "iges Type141 boundary segments"),
+        (multi_pcurve_boundary_file(), "iges Type141 segment pcurves"),
+        (trimmed_plane_file(), "iges Type144 boundary sequences"),
+        (bounded_plane_file(), "iges Type143 boundary sequences"),
+        (bounded_plane_file(), "iges trimming linear candidates"),
+        (bounded_plane_file(), "iges trimming boundary items"),
+        (multi_pcurve_boundary_file(), "iges trimming segment pcurves"),
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+}
+
 #[test]
 fn implicit_outer_surface_attachment_refuses_procedural_slot() {
     let bytes = trimmed_plane_with_boundaries(
