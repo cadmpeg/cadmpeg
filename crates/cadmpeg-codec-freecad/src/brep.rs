@@ -28,7 +28,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
-use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items, retained_string};
+use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items, retained_string, retained_strings};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -5657,6 +5657,52 @@ pub(crate) struct CurveTransfer {
     pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
+fn clone_nurbs_curve(ctx: &DecodeContext<'_>, nurbs: &NurbsCurve) -> Result<NurbsCurve, CodecError> {
+    let count = nurbs.knots().len().checked_add(nurbs.pole_count())
+        .ok_or_else(|| crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD NURBS curve copy"))?;
+    ctx.charge_collection_items(count as u64, "FreeCAD NURBS curve copy")?;
+    nurbs.try_clone().map_err(|_| crate::resource::collection_allocation_failed(ctx, count as u64, "FreeCAD NURBS curve copy"))
+}
+
+fn clone_nurbs_surface(ctx: &DecodeContext<'_>, nurbs: &NurbsSurface) -> Result<NurbsSurface, CodecError> {
+    let count = nurbs.u_count().checked_mul(nurbs.v_count())
+        .and_then(|count| count.checked_add(nurbs.u_count()))
+        .and_then(|count| count.checked_add(nurbs.u_knots().len()))
+        .and_then(|count| count.checked_add(nurbs.v_knots().len()))
+        .ok_or_else(|| crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD NURBS surface copy"))?;
+    ctx.charge_collection_items(count as u64, "FreeCAD NURBS surface copy")?;
+    nurbs.try_clone().map_err(|_| crate::resource::collection_allocation_failed(ctx, count as u64, "FreeCAD NURBS surface copy"))
+}
+
+fn clone_curve_geometry(ctx: &DecodeContext<'_>, geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
+    match geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =>
+            Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(clone_nurbs_curve(ctx, nurbs)?))),
+        _ => Ok(geometry.clone()),
+    }
+}
+
+fn clone_surface_geometry(ctx: &DecodeContext<'_>, geometry: &SurfaceGeometry) -> Result<SurfaceGeometry, CodecError> {
+    match geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
+            Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(clone_nurbs_surface(ctx, nurbs)?))),
+        _ => Ok(geometry.clone()),
+    }
+}
+
+fn clone_source_association(ctx: &DecodeContext<'_>, source: &SourceObjectAssociation) -> Result<SourceObjectAssociation, CodecError> {
+    Ok(SourceObjectAssociation {
+        format: source.format,
+        object_id: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, source.object_id.as_str(), "FreeCAD geometry source association")?)
+            .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
+        name: source.name.as_deref().map(|name| retained_string(ctx, name, "FreeCAD geometry source name")).transpose()?,
+        color: source.color.clone(),
+        visible: source.visible,
+        layer: source.layer.as_deref().map(|layer| retained_string(ctx, layer, "FreeCAD geometry source layer")).transpose()?,
+        instance_path: retained_strings(ctx, &source.instance_path, "FreeCAD geometry source instance path")?,
+    })
+}
+
 pub(crate) fn transfer_text_curves(
     ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
@@ -5820,7 +5866,7 @@ fn append_text_curve(
                 ),
             ))
         }
-        TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
+        TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(clone_nurbs_curve(ctx, nurbs)?)),
         TextCurve::Trimmed {
             parameter_range,
             basis,
@@ -5897,8 +5943,8 @@ fn append_text_curve(
     reserve_vec_items(ctx, &mut transfer.curves, 1, "FreeCAD transferred curves")?;
     transfer.curves.push(Curve {
         id,
-        geometry: geometry.clone(),
-        source_object: Some(association.clone()),
+        geometry: clone_curve_geometry(ctx, &geometry)?,
+        source_object: Some(clone_source_association(ctx, association)?),
     });
     Ok(geometry)
 }
@@ -6084,7 +6130,7 @@ fn append_text_surface(
             ))
         }
         TextSurface::Nurbs(nurbs) => {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()))
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(clone_nurbs_surface(ctx, nurbs)?))
         }
         TextSurface::Extrusion {
             direction,
@@ -6265,8 +6311,8 @@ fn append_text_surface(
     reserve_vec_items(ctx, &mut transfer.surfaces, 1, "FreeCAD transferred surfaces")?;
     transfer.surfaces.push(Surface {
         id,
-        geometry: geometry.clone(),
-        source_object: Some(association.clone()),
+        geometry: clone_surface_geometry(ctx, &geometry)?,
+        source_object: Some(clone_source_association(ctx, association)?),
     });
     Ok(geometry)
 }
@@ -6549,6 +6595,33 @@ pub(crate) mod tests {
         });
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD transferred surfaces"));
+    }
+
+    #[test]
+    fn nurbs_curve_copy_refuses_at_caller_limit() {
+        let knots = vec![FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ONE];
+        let points = vec![FinitePoint3::ZERO, FinitePoint3::ZERO];
+        let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(
+            1, knots, points, None, false,
+        ).expect("valid curve lanes");
+        let result = with_collection_limit(&[], 5, |ctx| super::clone_nurbs_curve(ctx, &nurbs));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD NURBS curve copy"));
+    }
+
+    #[test]
+    fn nurbs_surface_copy_refuses_at_caller_limit() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+        let knots = vec![FiniteReal::ZERO, FiniteReal::ZERO, FiniteReal::ONE, FiniteReal::ONE];
+        let axis = || NurbsSurfaceAxis::new(1, knots.clone(), false);
+        let nurbs = NurbsSurface::from_finite_lanes(
+            axis(), axis(), NurbsSurfaceLanes::new(
+                vec![vec![FinitePoint3::ZERO; 2]; 2], None,
+            ), false,
+        ).expect("valid surface lanes");
+        let result = with_collection_limit(&[], 13, |ctx| super::clone_nurbs_surface(ctx, &nurbs));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD NURBS surface copy"));
     }
 
     fn test_parse_text(bytes: &[u8]) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
