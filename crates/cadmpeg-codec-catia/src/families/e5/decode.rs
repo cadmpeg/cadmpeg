@@ -292,6 +292,7 @@ pub(in crate::families) fn try_decode_e5(
         let mut topology_annotations = annotations.clone();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
             let transferred = match transfer_e5_topology(
+                ctx,
                 &mut topology_ir,
                 &mut topology_annotations,
                 topology,
@@ -1097,6 +1098,7 @@ struct E5Ownership {
 }
 
 fn transfer_e5_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
@@ -1163,7 +1165,7 @@ fn transfer_e5_topology(
         &boundary.surface_curve_plan,
     );
 
-    let Some(e5_ownership) = resolve_e5_ownership(topology) else {
+    let Some(e5_ownership) = resolve_e5_ownership(ctx, topology)? else {
         return Ok(false);
     };
     let E5Ownership { bodies, face_shell } = e5_ownership;
@@ -1625,22 +1627,35 @@ fn prune_e5_unused_surfaces(
 }
 
 /// Resolves body face groupings into region/shell components, or `None` on failure.
-#[allow(clippy::question_mark)]
-fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Option<E5Ownership> {
-    let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
-        vec![(
-            None,
-            topology.faces.iter().map(|face| face.record_id).collect(),
-        )]
+fn resolve_e5_ownership(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    topology: &crate::families::e5::graph::E5Topology,
+) -> Result<Option<E5Ownership>, cadmpeg_core::CodecError> {
+    let mut body_faces = Vec::new();
+    if topology.bodies.is_empty() {
+        let mut faces = Vec::new();
+        for face in &topology.faces {
+            crate::resource::push(ctx, &mut faces, face.record_id, "catia_e5_ownership_faces")?;
+        }
+        crate::resource::push(
+            ctx,
+            &mut body_faces,
+            (None, faces),
+            "catia_e5_ownership_bodies",
+        )?;
     } else {
-        topology
-            .bodies
-            .iter()
-            .map(|body| (Some(body.record_id), body.faces.clone()))
-            .collect()
-    };
-    let Some(bodies) = e5_ownership_plan(topology, &body_faces) else {
-        return None;
+        for body in &topology.bodies {
+            let faces = crate::resource::copy_slice(ctx, &body.faces, "catia_e5_ownership_faces")?;
+            crate::resource::push(
+                ctx,
+                &mut body_faces,
+                (Some(body.record_id), faces),
+                "catia_e5_ownership_bodies",
+            )?;
+        }
+    }
+    let Some(bodies) = e5_ownership_plan(ctx, topology, &body_faces)? else {
+        return Ok(None);
     };
     let mut face_shell = HashMap::new();
     for (body, plan) in bodies.iter().enumerate() {
@@ -1650,11 +1665,17 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
                 cadmpeg_ir::ids::IdentityKey::from(body).dash(component),
             );
             for face in faces {
-                face_shell.insert(*face, shell.clone());
+                crate::resource::insert_map(
+                    ctx,
+                    &mut face_shell,
+                    *face,
+                    shell.clone(),
+                    "catia_e5_face_shells",
+                )?;
             }
         }
     }
-    Some(E5Ownership { bodies, face_shell })
+    Ok(Some(E5Ownership { bodies, face_shell }))
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
@@ -2935,121 +2956,193 @@ struct E5BodyPlan {
 }
 
 fn e5_ownership_plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::families::e5::graph::E5Topology,
     body_faces: &[(Option<u32>, Vec<u32>)],
-) -> Option<Vec<E5BodyPlan>> {
+) -> Result<Option<Vec<E5BodyPlan>>, cadmpeg_core::CodecError> {
     if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
-        return None;
+        return Ok(None);
     }
     let mut body_by_face = HashMap::new();
     for (body, (_, faces)) in body_faces.iter().enumerate() {
         for face in faces {
-            if body_by_face.insert(*face, body).is_some() {
-                return None;
+            if body_by_face.contains_key(face) {
+                return Ok(None);
             }
+            crate::resource::insert_map(
+                ctx,
+                &mut body_by_face,
+                *face,
+                body,
+                "catia_e5_body_faces",
+            )?;
         }
     }
-    let mut uses = vec![HashMap::<u32, usize>::new(); body_faces.len()];
-    let mut bodies_by_edge = topology
-        .edges
-        .keys()
-        .map(|edge| (*edge, HashSet::new()))
-        .collect::<HashMap<_, _>>();
+    let mut uses = ctx.alloc_filled(
+        body_faces.len(),
+        HashMap::<u32, usize>::new(),
+        "catia_e5_body_uses",
+    )?;
+    let mut bodies_by_edge = HashMap::new();
+    for &edge in topology.edges.keys() {
+        crate::resource::insert_map(
+            ctx,
+            &mut bodies_by_edge,
+            edge,
+            HashSet::new(),
+            "catia_e5_edge_bodies",
+        )?;
+    }
     for face in &topology.faces {
-        let body = *body_by_face.get(&face.record_id)?;
+        let Some(&body) = body_by_face.get(&face.record_id) else {
+            return Ok(None);
+        };
         for edge in face
             .loops
             .iter()
             .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
         {
-            bodies_by_edge.get_mut(&edge)?.insert(body);
-            *uses[body].entry(edge).or_default() += 1;
+            let Some(edge_bodies) = bodies_by_edge.get_mut(&edge) else {
+                return Ok(None);
+            };
+            crate::resource::insert_set(ctx, edge_bodies, body, "catia_e5_edge_body_members")?;
+            if let Some(count) = uses[body].get_mut(&edge) {
+                *count += 1;
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut uses[body],
+                    edge,
+                    1usize,
+                    "catia_e5_body_edge_uses",
+                )?;
+            }
         }
     }
     if body_by_face.len() != topology.faces.len()
         || bodies_by_edge.values().any(|bodies| bodies.len() != 1)
     {
-        return None;
+        return Ok(None);
     }
-    body_faces
-        .iter()
-        .enumerate()
-        .map(|(body, (record_id, faces))| {
-            let face_indices: HashMap<u32, usize> = faces
+    let mut plans = Vec::new();
+    for (body, (record_id, faces)) in body_faces.iter().enumerate() {
+        let mut face_indices = HashMap::new();
+        for (index, &face) in faces.iter().enumerate() {
+            crate::resource::insert_map(
+                ctx,
+                &mut face_indices,
+                face,
+                index,
+                "catia_e5_face_indices",
+            )?;
+        }
+        if face_indices.len() != faces.len() {
+            return Ok(None);
+        }
+        let mut parents = UnionFind::charged(ctx, faces.len(), "catia_e5_face_union")?;
+        let mut first_face_by_edge = HashMap::<u32, usize>::new();
+        for face in topology
+            .faces
+            .iter()
+            .filter(|face| body_by_face[&face.record_id] == body)
+        {
+            let face_index = face_indices[&face.record_id];
+            for edge in face
+                .loops
                 .iter()
-                .copied()
-                .enumerate()
-                .map(|(index, face)| (face, index))
-                .collect();
-            if face_indices.len() != faces.len() {
-                return None;
-            }
-            let mut parents = UnionFind::new(faces.len());
-            let mut first_face_by_edge = HashMap::<u32, usize>::new();
-            for face in topology
-                .faces
-                .iter()
-                .filter(|face| body_by_face[&face.record_id] == body)
+                .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
             {
-                let face_index = face_indices[&face.record_id];
-                for edge in face
-                    .loops
-                    .iter()
-                    .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
-                {
-                    if let Some(other) = first_face_by_edge.insert(edge, face_index) {
-                        parents.union(face_index, other);
-                    }
+                if let Some(other) = first_face_by_edge.get_mut(&edge) {
+                    parents.union(face_index, *other);
+                    *other = face_index;
+                } else {
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut first_face_by_edge,
+                        edge,
+                        face_index,
+                        "catia_e5_first_edge_face",
+                    )?;
                 }
             }
-            let mut labels = HashMap::<usize, usize>::new();
-            let mut components = Vec::<Vec<u32>>::new();
-            let mut face_components = Vec::with_capacity(faces.len());
-            for (face_index, face) in faces.iter().copied().enumerate() {
-                let root = parents.find(face_index);
-                let next = labels.len();
-                let component = *labels.entry(root).or_insert(next);
-                face_components.push(component);
-                if component == components.len() {
-                    components.push(Vec::new());
-                }
-                components[component].push(face);
-            }
-            let body_uses = &uses[body];
-            let mut closed_components = vec![true; components.len()];
-            let mut component_has_edges = vec![false; components.len()];
-            for (&edge, &count) in body_uses {
-                let component = face_components[first_face_by_edge[&edge]];
-                component_has_edges[component] = true;
-                closed_components[component] &= count == 2;
-            }
-            let closed_component_count = closed_components
-                .iter()
-                .zip(component_has_edges)
-                .filter(|(closed, has_edges)| **closed && *has_edges)
-                .count();
-            let kind = if body_uses.values().any(|count| *count > 2)
-                || (closed_component_count != 0 && closed_component_count != components.len())
-            {
-                BodyKind::General
-            } else if closed_component_count == components.len() && !components.is_empty() {
-                BodyKind::Solid
+        }
+        let mut labels = HashMap::<usize, usize>::new();
+        let mut components = Vec::<Vec<u32>>::new();
+        let mut face_components = Vec::new();
+        for (face_index, face) in faces.iter().copied().enumerate() {
+            let root = parents.find(face_index);
+            let component = if let Some(&existing) = labels.get(&root) {
+                existing
             } else {
-                BodyKind::Sheet
+                let next = labels.len();
+                crate::resource::insert_map(
+                    ctx,
+                    &mut labels,
+                    root,
+                    next,
+                    "catia_e5_component_labels",
+                )?;
+                next
             };
-            Some(E5BodyPlan {
+            crate::resource::push(
+                ctx,
+                &mut face_components,
+                component,
+                "catia_e5_face_components",
+            )?;
+            if component == components.len() {
+                crate::resource::push(ctx, &mut components, Vec::new(), "catia_e5_components")?;
+            }
+            crate::resource::push(
+                ctx,
+                &mut components[component],
+                face,
+                "catia_e5_component_faces",
+            )?;
+        }
+        let body_uses = &uses[body];
+        let mut closed_components =
+            ctx.alloc_filled(components.len(), true, "catia_e5_closed_components")?;
+        let mut component_has_edges =
+            ctx.alloc_filled(components.len(), false, "catia_e5_component_edges")?;
+        for (&edge, &count) in body_uses {
+            let component = face_components[first_face_by_edge[&edge]];
+            component_has_edges[component] = true;
+            closed_components[component] &= count == 2;
+        }
+        let closed_component_count = closed_components
+            .iter()
+            .zip(component_has_edges)
+            .filter(|(closed, has_edges)| **closed && *has_edges)
+            .count();
+        let kind = if body_uses.values().any(|count| *count > 2)
+            || (closed_component_count != 0 && closed_component_count != components.len())
+        {
+            BodyKind::General
+        } else if closed_component_count == components.len() && !components.is_empty() {
+            BodyKind::Solid
+        } else {
+            BodyKind::Sheet
+        };
+        crate::resource::push(
+            ctx,
+            &mut plans,
+            E5BodyPlan {
                 record_id: *record_id,
                 kind,
                 components,
-            })
-        })
-        .collect()
+            },
+            "catia_e5_body_plans",
+        )?;
+    }
+    Ok(Some(plans))
 }
 
 #[cfg(test)]
 mod route_tests {
     mod loop_admission;
     mod occurrence_ranges;
+    mod ownership_limits;
     mod plane_frames;
 
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
@@ -3843,6 +3936,7 @@ mod route_tests {
         crate::test_support::with_service_context(|ctx| {
             let mut admission = super::FamilyEntityAdmission::new(ctx);
             assert!(super::transfer_e5_topology(
+                ctx,
                 &mut ir,
                 &mut annotations,
                 &topology,
@@ -3870,6 +3964,10 @@ mod route_tests {
 
     #[test]
     fn e5_ownership_requires_complete_bodies_and_partitions_face_components() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         let face = |record_id, edge_use| E5Face {
             record_id,
             surface: 100 + record_id,
@@ -3907,46 +4005,65 @@ mod route_tests {
             vertex_refs: Vec::new(),
         };
 
-        let plan = e5_ownership_plan(&topology(vec![face(1, 10)], vec![10]), &[(None, vec![1])])
-            .expect("required invariant");
+        let plan = e5_ownership_plan(
+            &ctx,
+            &topology(vec![face(1, 10)], vec![10]),
+            &[(None, vec![1])],
+        )
+        .expect("service resource budget")
+        .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1]]);
 
         let plan = e5_ownership_plan(
+            &ctx,
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(None, vec![1, 2])],
         )
+        .expect("service resource budget")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Solid);
         assert_eq!(plan[0].components, vec![vec![1, 2]]);
 
         let plan = e5_ownership_plan(
+            &ctx,
             &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
             &[(None, vec![1, 2])],
         )
+        .expect("service resource budget")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
 
         let plan = e5_ownership_plan(
+            &ctx,
             &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
             &[(None, vec![1, 2, 3])],
         )
+        .expect("service resource budget")
         .expect("required invariant");
         assert_eq!(plan[0].kind, BodyKind::General);
         assert_eq!(plan[0].components, vec![vec![1, 2], vec![3]]);
 
         assert!(e5_ownership_plan(
+            &ctx,
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(Some(1), vec![1]), (Some(2), vec![2])],
         )
+        .expect("service resource budget")
         .is_none());
         assert!(e5_ownership_plan(
+            &ctx,
             &topology(vec![face(1, 10)], vec![10, 11]),
             &[(None, vec![1])],
         )
+        .expect("service resource budget")
         .is_none());
-        assert!(e5_ownership_plan(&topology(Vec::new(), Vec::new()), &[]).is_none());
+        assert!(
+            e5_ownership_plan(&ctx, &topology(Vec::new(), Vec::new()), &[])
+                .expect("service resource budget")
+                .is_none()
+        );
     }
 
     #[test]
