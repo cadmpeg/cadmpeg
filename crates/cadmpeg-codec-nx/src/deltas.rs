@@ -1820,6 +1820,25 @@ enum MergeEvent {
     Tombstone { offset: usize, kind: RecordKind },
 }
 
+fn push_merge_event(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    events: &mut BTreeMap<(u8, u32), Vec<MergeEvent>>,
+    key: (u8, u32),
+    event: MergeEvent,
+) -> Result<(), CodecError> {
+    if !events.contains_key(&key) {
+        ctx.charge_collection_items(1, "NX deltas merge event keys")?;
+        reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), Vec<MergeEvent>)>()))?;
+    }
+    let bucket = events.entry(key).or_default();
+    ctx.charge_collection_items(1, "NX deltas merge events")?;
+    reservation.grow(u64_from_index(std::mem::size_of::<MergeEvent>()))?;
+    bucket.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX deltas merge events", 0, 1))?;
+    bucket.push(event);
+    Ok(())
+}
+
 /// Overlay supported complete deltas records onto one paired partition stream.
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
@@ -1871,7 +1890,9 @@ fn merge_records(
 ) -> Result<Vec<u8>, CodecError> {
     let current_scopes = current_revision_scopes(census, deltas.len());
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
+    let mut replacement_reservation = ctx.reserve_scoped(0, "NX deltas replacement keys")?;
     let mut unmatched_events = unmatched_tombstones.map(|totals| (totals, BTreeMap::new()));
+    let mut event_reservation = ctx.reserve_scoped(0, "NX deltas merge events")?;
     for record in census
         .records
         .iter()
@@ -1881,40 +1902,43 @@ fn merge_records(
             continue;
         };
         if mergeable_record(ctx, record, kind)? {
+            if !replacements.contains_key(&(kind, record.xmt)) {
+                ctx.charge_collection_items(1, "NX deltas replacement keys")?;
+                replacement_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Record)>()))?;
+            }
             replacements.insert((kind, record.xmt), record);
             if let Some((_, events)) = &mut unmatched_events {
-                events
-                    .entry((kind, record.xmt))
-                    .or_insert_with(Vec::new)
-                    .push(MergeEvent::Full {
-                        offset: record.offset,
-                    });
+                push_merge_event(ctx, &mut event_reservation, events, (kind, record.xmt), MergeEvent::Full {
+                    offset: record.offset,
+                })?;
             }
         }
     }
 
     let mut tombstones = BTreeMap::new();
+    let mut tombstone_reservation = ctx.reserve_scoped(0, "NX deltas tombstone keys")?;
     for tombstone in census
         .tombstones
         .iter()
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let kind = tombstone.kind.code();
+        if !tombstones.contains_key(&(kind, tombstone.xmt)) {
+            ctx.charge_collection_items(1, "NX deltas tombstone keys")?;
+            tombstone_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Tombstone)>()))?;
+        }
         tombstones.insert((kind, tombstone.xmt), tombstone);
         if let Some((_, events)) = &mut unmatched_events {
-            events
-                .entry((kind, tombstone.xmt))
-                .or_insert_with(Vec::new)
-                .push(MergeEvent::Tombstone {
-                    offset: tombstone.offset,
-                    kind: tombstone.kind,
-                });
+            push_merge_event(ctx, &mut event_reservation, events, (kind, tombstone.xmt), MergeEvent::Tombstone {
+                offset: tombstone.offset,
+                kind: tombstone.kind,
+            })?;
         }
     }
 
     let graph = crate::topology::Graph::parse(ctx, partition)?;
     if let Some((totals, events)) = unmatched_events {
-        *totals = count_unmatched_events(events, &graph);
+        *totals = count_unmatched_events(ctx, events, &graph)?;
     }
     let topology_carriers = graph.referenced_carrier_xmts();
     replacements.retain(|key, record| {
@@ -1922,22 +1946,36 @@ fn merge_records(
             .get(key)
             .is_none_or(|tombstone| record.offset > tombstone.offset)
     });
-    let deletions = tombstones
-        .into_iter()
-        .filter(|(key, tombstone)| {
-            NodeKind::try_from(key.0)
+    let mut deletions = BTreeMap::new();
+    let mut deletion_reservation = ctx.reserve_scoped(0, "NX deltas deletion keys")?;
+    for (key, tombstone) in tombstones {
+        if NodeKind::try_from(key.0)
                 .ok()
                 .and_then(|kind| graph.get(kind, key.1))
                 .is_some()
                 && !topology_carriers.contains(&key.1)
                 && replacements
-                    .get(key)
+                    .get(&key)
                     .is_none_or(|record| tombstone.offset > record.offset)
-        })
-        .collect::<BTreeMap<_, _>>();
-    let build = |include_topology: bool| {
+        {
+            ctx.charge_collection_items(1, "NX deltas deletion keys")?;
+            deletion_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Tombstone)>()))?;
+            deletions.insert(key, tombstone);
+        }
+    }
+    let build = |include_topology: bool| -> Result<_, CodecError> {
         let included = |kind: u8| include_topology || !matches!(kind, 12..=19);
-        let mut merged = partition.to_vec();
+        let total_len = replacements
+            .iter()
+            .filter(|((kind, _), _)| included(*kind))
+            .try_fold(partition.len(), |sum, (_, record)| sum.checked_add(record.canonical_bytes.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(partition.len())))?;
+        let reservation = ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
+        let mut merged = Vec::new();
+        merged.try_reserve_exact(total_len).map_err(|_| {
+            ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(total_len))
+        })?;
+        merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
                 if let Some(node) = NodeKind::try_from(kind)
@@ -1953,12 +1991,14 @@ fn merge_records(
                 merged.extend_from_slice(&record.canonical_bytes);
             }
         }
-        merged
+        Ok((merged, reservation))
     };
     if !graph.body_shape_shells().is_empty() {
-        return Ok(build(false));
+        let (merged, reservation) = build(false)?;
+        reservation.commit()?;
+        return Ok(merged);
     }
-    let merged = build(true);
+    let (merged, merged_reservation) = build(true)?;
     let merged_graph = crate::topology::Graph::parse(ctx, &merged)?;
     let base_complete = graph.has_complete_body_topology();
     let merged_complete = merged_graph.has_complete_body_topology();
@@ -1970,8 +2010,11 @@ fn merge_records(
             .saturating_add(deleted_faces)
             < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
-        Ok(build(false))
+        let (selected, reservation) = build(false)?;
+        reservation.commit()?;
+        Ok(selected)
     } else {
+        merged_reservation.commit()?;
         Ok(merged)
     }
 }
@@ -2000,16 +2043,18 @@ fn unmatched_terminal_tombstones_by_family(
 ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
     let census = walk(ctx, deltas)?;
     let graph = crate::topology::Graph::parse(ctx, partition)?;
-    Ok(count_unmatched_events(collect_unmatched_events(ctx, &census, deltas.len())?, &graph))
+    let (events, _reservation) = collect_unmatched_events(ctx, &census, deltas.len())?;
+    count_unmatched_events(ctx, events, &graph)
 }
 
-fn collect_unmatched_events(
-    ctx: &DecodeContext<'_>,
+fn collect_unmatched_events<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     census: &Census,
     stream_len: usize,
-) -> Result<BTreeMap<(u8, u32), Vec<MergeEvent>>, CodecError> {
+) -> Result<(BTreeMap<(u8, u32), Vec<MergeEvent>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let current_scopes = current_revision_scopes(census, stream_len);
     let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX unmatched deltas events")?;
     for record in census
         .records
         .iter()
@@ -2021,12 +2066,9 @@ fn collect_unmatched_events(
         if !mergeable_record(ctx, record, kind)? {
             continue;
         }
-        events
-            .entry((kind, record.xmt))
-            .or_default()
-            .push(MergeEvent::Full {
-                offset: record.offset,
-            });
+        push_merge_event(ctx, &mut reservation, &mut events, (kind, record.xmt), MergeEvent::Full {
+            offset: record.offset,
+        })?;
     }
     for tombstone in census
         .tombstones
@@ -2034,23 +2076,25 @@ fn collect_unmatched_events(
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let kind = tombstone.kind.code();
-        events
-            .entry((kind, tombstone.xmt))
-            .or_default()
-            .push(MergeEvent::Tombstone {
-                offset: tombstone.offset,
-                kind: tombstone.kind,
-            });
+        push_merge_event(ctx, &mut reservation, &mut events, (kind, tombstone.xmt), MergeEvent::Tombstone {
+            offset: tombstone.offset,
+            kind: tombstone.kind,
+        })?;
     }
-    Ok(events)
+    Ok((events, reservation))
 }
 
 fn count_unmatched_events(
+    ctx: &DecodeContext<'_>,
     events: BTreeMap<(u8, u32), Vec<MergeEvent>>,
     graph: &crate::topology::Graph,
-) -> BTreeMap<&'static str, usize> {
+) -> Result<BTreeMap<&'static str, usize>, CodecError> {
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
+        let count = u64_from_index(events.len());
+        let work = count.checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX unmatched deltas events", 0, count))?;
+        ctx.charge_work(work, "sort NX unmatched deltas events")?;
         events.sort_by_key(|event| match event {
             MergeEvent::Full { offset } | MergeEvent::Tombstone { offset, .. } => *offset,
         });
@@ -2067,10 +2111,13 @@ fn count_unmatched_events(
             })
         {
             let name = tombstone_kind.name();
+            if !unmatched.contains_key(name) {
+                ctx.charge_collection_items(1, "NX unmatched tombstone families")?;
+            }
             *unmatched.entry(name).or_default() += 1;
         }
     }
-    unmatched
+    Ok(unmatched)
 }
 
 fn mergeable_record(ctx: &DecodeContext<'_>, record: &Record, kind: u8) -> Result<bool, CodecError> {
