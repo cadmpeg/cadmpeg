@@ -14,7 +14,8 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -64,7 +65,6 @@ pub(crate) struct DecodedPoint {
 }
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
-#[derive(Clone)]
 enum AnalyticRecord {
     Point(DecodedPoint),
     Surface(DecodedSurface),
@@ -74,42 +74,47 @@ enum AnalyticRecord {
 /// Decode validated point records in source order.
 ///
 /// Positions are returned in millimetres. Malformed candidates are skipped.
-pub(crate) fn points(stream: &[u8]) -> Vec<DecodedPoint> {
-    analytic_records(stream)
-        .into_iter()
-        .filter_map(|record| match record {
+pub(crate) fn points(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<DecodedPoint>, CodecError> {
+    analytic_records(ctx, stream, |record| match record {
             AnalyticRecord::Point(point) => Some(point),
             AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
         })
-        .collect()
 }
 
 /// Decode validated analytic surface records in source order.
-pub(crate) fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
-    analytic_records(stream)
-        .into_iter()
-        .filter_map(|record| match record {
+pub(crate) fn surfaces(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<DecodedSurface>, CodecError> {
+    analytic_records(ctx, stream, |record| match record {
             AnalyticRecord::Surface(surface) => Some(surface),
             AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
         })
-        .collect()
 }
 
 /// Decode validated analytic curve records in source order.
-pub(crate) fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
-    analytic_records(stream)
-        .into_iter()
-        .filter_map(|record| match record {
+pub(crate) fn curves(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<DecodedCurve>, CodecError> {
+    analytic_records(ctx, stream, |record| match record {
             AnalyticRecord::Curve(curve) => Some(curve),
             AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
         })
-        .collect()
 }
 
-fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
+fn analytic_records<T>(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    mut project: impl FnMut(AnalyticRecord) -> Option<T>,
+) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     let mut p = 0usize;
     while p + 2 <= stream.len() {
+        ctx.charge_work(1, "scan NX analytic records")?;
         if stream[p] != 0x00 {
             p += 1;
             continue;
@@ -130,8 +135,13 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
                 candidates[slot] = analytic_candidate(stream, p, kind, *frame);
             }
         }
-        if let Some((record, end)) = select_analytic_candidate(stream, &candidates) {
-            out.push(record);
+        if let Some((record, end)) = select_analytic_candidate(stream, candidates) {
+            if let Some(record) = project(record) {
+                ctx.charge_collection_items(1, "nx analytic records")?;
+                out.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx analytic records", 0, 1))?;
+                out.push(record);
+            }
             p = end;
         } else if let Some(end) = frames.iter().flatten().map(|frame| frame.end).max() {
             // A complete structural frame owns its bytes even when its analytic
@@ -142,7 +152,7 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
             p += 1;
         }
     }
-    out
+    Ok(out)
 }
 
 fn is_analytic_kind(kind: NodeKind) -> bool {
@@ -199,19 +209,20 @@ fn analytic_candidate(
 
 fn select_analytic_candidate(
     stream: &[u8],
-    candidates: &[Option<AnalyticCandidate>; 2],
+    candidates: [Option<AnalyticCandidate>; 2],
 ) -> Option<(AnalyticRecord, usize)> {
-    let mut valid = candidates.iter().flatten();
-    let first = valid.next()?;
-    let Some(second) = valid.next() else {
-        return Some((first.record.clone(), first.frame.end));
-    };
-    let first_boundary = fixed_record_boundary(stream, first.frame.end);
-    let second_boundary = fixed_record_boundary(stream, second.frame.end);
-    match (first_boundary, second_boundary) {
-        (true, false) => Some((first.record.clone(), first.frame.end)),
-        (false, true) => Some((second.record.clone(), second.frame.end)),
-        _ => None,
+    match candidates {
+        [Some(first), None] | [None, Some(first)] => Some((first.record, first.frame.end)),
+        [Some(first), Some(second)] => {
+            let first_boundary = fixed_record_boundary(stream, first.frame.end);
+            let second_boundary = fixed_record_boundary(stream, second.frame.end);
+            match (first_boundary, second_boundary) {
+                (true, false) => Some((first.record, first.frame.end)),
+                (false, true) => Some((second.record, second.frame.end)),
+                _ => None,
+            }
+        }
+        [None, None] => None,
     }
 }
 

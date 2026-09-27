@@ -64,7 +64,7 @@ pub(super) fn ordered_point_candidates<'a>(
 ) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::points(stream)
+        geometry::points(ctx, stream)?
             .into_iter()
             .map(|point| (point.pos, point.position)),
         graph,
@@ -80,7 +80,7 @@ pub(super) fn ordered_surface_candidates<'a>(
 ) -> Result<Vec<(SurfaceGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::surfaces(stream)
+        geometry::surfaces(ctx, stream)?
             .into_iter()
             .map(|surface| (surface.pos, surface.geometry)),
         graph,
@@ -102,7 +102,7 @@ pub(super) fn ordered_curve_candidates<'a>(
 ) -> Result<Vec<(CurveGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
         ctx,
-        geometry::curves(stream)
+        geometry::curves(ctx, stream)?
             .into_iter()
             .map(|curve| (curve.pos, curve.geometry)),
         graph,
