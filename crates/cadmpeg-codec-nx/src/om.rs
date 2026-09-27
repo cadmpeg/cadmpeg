@@ -1232,9 +1232,14 @@ impl<'a> Section<'a> {
             ends.push(overlap_end);
         }
         ends.push(terminal);
-        Ok(ends
-            .into_iter()
-            .find_map(|end| operation_state_block_before_boundary(bytes, start, end, base_offset)))
+        for end in ends {
+            if let Some(block) =
+                operation_state_block_before_boundary(ctx, bytes, start, end, base_offset)?
+            {
+                return Ok(Some(block));
+            }
+        }
+        Ok(None)
     }
 
     /// Decode the bounded per-object status lane after the operation records.
@@ -1253,9 +1258,10 @@ impl<'a> Section<'a> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
-        Ok(self
-            .operation_state_block(ctx)?
-            .and_then(OperationStateBlock::into_messages))
+        let Some(block) = self.operation_state_block(ctx)? else {
+            return Ok(None);
+        };
+        block.into_messages(ctx)
     }
 
     /// Decode complete rows in an audit-trail record area.
