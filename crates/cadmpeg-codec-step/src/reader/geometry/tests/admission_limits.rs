@@ -88,3 +88,53 @@ fn geometry_ir_points_refuse_collection_limit() {
                 && refusal.operation == "step_geometry_ir_points"
     ));
 }
+
+#[test]
+fn geometry_losses_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let note = crate::loss::StepLossCode::DecodeWarning.note("invalid geometry");
+    assert!(matches!(
+        super::super::push_geometry_vec(&mut Vec::new(), note, &ctx, "step_geometry_losses"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_geometry_losses"
+    ));
+}
+
+#[test]
+fn uncertainty_values_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        crate::decode_alloc::charged_join(&ctx, "step_uncertainty_values_text", ["0.1", "0.2"], ", "),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_uncertainty_values_text"
+    ));
+}
+
+#[test]
+fn uncertainty_note_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        crate::decode_alloc::charged_format(
+            &ctx,
+            "step_uncertainty_note_text",
+            format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"),
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_uncertainty_note_text"
+    ));
+}
