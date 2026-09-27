@@ -494,11 +494,12 @@ fn bind_occurrences(
         };
         let headers = indexed_records(ctx, bytes)?;
         let (placements, failures) = occurrence_placements_with_failures(
+            ctx,
             bytes,
             &headers,
             serializer_magic,
             placement_offsets.as_ref(),
-        );
+        )?;
         ctx.charge_collection_items(1, "collect F3D xref streams")?;
         streams.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D xref streams", 0, 1))?;
         streams.push((placements, failures, crate::ids::native_scope_charged(ctx, &entry.name)?));
@@ -836,37 +837,51 @@ fn occurrence_placements_filtered(
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
 ) -> Vec<OccurrencePlacement> {
-    occurrence_placements_with_failures(bytes, records, serializer_magic, typed_offsets).0
+    occurrence_placements_with_failures(&cadmpeg_test_support::service_decode_context(), bytes, records, serializer_magic, typed_offsets).expect("test placement parse").0
 }
 
 /// Parse admitted placement records and retain role names from records whose
 /// target path is valid but whose remaining generation-specific payload is not.
 fn occurrence_placements_with_failures(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
-) -> (Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>) {
+) -> Result<(Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>), CodecError> {
     let mut placements = Vec::new();
     let mut failures = Vec::new();
-    records
+    for record in records
         .iter()
         .filter(|record| typed_offsets.is_none_or(|offsets| offsets.contains(&record.offset)))
-        .for_each(|record| {
+    {
             let Some(body) = bytes.get(record.offset..record.end) else {
-                return;
+                continue;
             };
             if let Some(placement) = occurrence_placement(body, serializer_magic) {
+                ctx.charge_collection_items(1, "collect F3D xref placements")?;
+                placements.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D xref placements", 0, 1)
+                })?;
                 placements.push(placement);
             } else if let Some((link_names, _)) = occurrence_path(body) {
+                ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
+                failures.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1)
+                })?;
                 failures.push(OccurrencePlacementFailure { link_names });
             } else if let Some(link_name) = legacy_occurrence_role(body) {
+                let link_names = collect_charged(ctx, [link_name], "collect F3D legacy xref role")?;
+                ctx.charge_collection_items(1, "collect F3D xref placement failures")?;
+                failures.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D xref placement failures", 0, 1)
+                })?;
                 failures.push(OccurrencePlacementFailure {
-                    link_names: vec![link_name],
+                    link_names,
                 });
             }
-        });
-    (placements, failures)
+    }
+    Ok((placements, failures))
 }
 
 /// Parse one record body, header included, requiring the member sequence to end

@@ -303,6 +303,47 @@ fn xref_reference_copy_refuses_retained_limit() {
 }
 
 #[test]
+fn xref_placement_collection_refuses_collection_limit() {
+    let bytes = occurrence_record("role", 10, &[1], None);
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placements"));
+}
+
+#[test]
+fn xref_placement_failure_collection_refuses_collection_limit() {
+    let mut bytes = occurrence_record("role", 10, &[1], None);
+    bytes.pop();
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref placement failures"));
+}
+
+#[test]
+fn xref_legacy_failure_role_refuses_collection_limit() {
+    let mut bytes = legacy_occurrence_record("aaaabbbb-cccc-dddd-eeee-ffff00001111", 10, None);
+    bytes.pop();
+    let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes)
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let error = super::occurrence_placements_with_failures(&ctx, &bytes, &records, None, None)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D legacy xref role"));
+}
+
+#[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
@@ -908,11 +949,12 @@ fn malformed_legacy_typed_placement_reports_its_role() {
     let mut bytes = legacy_occurrence_record(role, 10, None);
     bytes.pop();
     let (placements, failures) = super::occurrence_placements_with_failures(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
         None,
         None,
-    );
+    ).unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);
@@ -963,7 +1005,7 @@ fn malformed_role_placement_is_retained_as_a_decode_failure() {
     let records = super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
 
     let (placements, failures) =
-        super::occurrence_placements_with_failures(&bytes, &records, None, None);
+        super::occurrence_placements_with_failures(&cadmpeg_test_support::service_decode_context(), &bytes, &records, None, None).unwrap();
 
     assert!(placements.is_empty());
     assert_eq!(failures.len(), 1);
