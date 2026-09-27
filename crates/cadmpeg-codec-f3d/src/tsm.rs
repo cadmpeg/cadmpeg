@@ -154,6 +154,33 @@ fn copy_string_charged(
     Ok(copy)
 }
 
+fn format_retained(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    render: impl Fn(&mut dyn std::fmt::Write) -> std::fmt::Result,
+) -> Result<String, CodecError> {
+    struct Length(usize);
+
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut length = Length(0);
+    render(&mut length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes = u64::try_from(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut output = String::new();
+    output
+        .try_reserve(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    render(&mut output).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    Ok(output)
+}
+
 #[derive(Clone, Copy)]
 struct GripPoint {
     point: Point3,
@@ -179,36 +206,42 @@ pub(crate) fn decode(
     let Some(folder) = scan.design_asset_folder() else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let prefix = format!("{folder}{ENTRY_MARKER}");
     let mut cages = Vec::new();
     let mut losses = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         std::path::Path::new(&entry.name)
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
-            && entry.name.starts_with(&prefix)
+            && entry
+                .name
+                .strip_prefix(folder)
+                .is_some_and(|relative| relative.starts_with(ENTRY_MARKER))
     }) {
         match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
                 if !parsed.unknown_record_kinds.is_empty() {
                     let count = parsed.unknown_record_kinds.values().sum::<usize>();
-                    let kinds = parsed
-                        .unknown_record_kinds
-                        .iter()
-                        .map(|(kind, count)| format!("{kind}={count}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    losses.push(F3dLossCode::TsplineRecordUntyped.note(format!(
-                        "{count} T-spline record(s) were retained without typed semantics: {kinds}."
-                    )));
+                    let message = format_retained(ctx, "describe untyped T-spline records", |out| {
+                        write!(out, "{count} T-spline record(s) were retained without typed semantics: ")?;
+                        for (index, (kind, count)) in parsed.unknown_record_kinds.iter().enumerate() {
+                            if index != 0 {
+                                out.write_str(", ")?;
+                            }
+                            write!(out, "{kind}={count}")?;
+                        }
+                        out.write_str(".")
+                    })?;
+                    push_charged(ctx, &mut losses, F3dLossCode::TsplineRecordUntyped.note(message), "collect T-spline loss notes")?;
                 }
-                cages.push(parsed.surface);
+                push_charged(ctx, &mut cages, parsed.surface, "collect T-spline cages")?;
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => losses.push(
-                F3dLossCode::TsplineCageUndecoded
-                    .note(format!("T-spline control cage not decoded: {error}")),
-            ),
+            Err(error) => {
+                let message = format_retained(ctx, "describe undecoded T-spline cage", |out| {
+                    write!(out, "T-spline control cage not decoded: {error}")
+                })?;
+                push_charged(ctx, &mut losses, F3dLossCode::TsplineCageUndecoded.note(message), "collect T-spline loss notes")?;
+            }
         }
     }
     Ok((cages, losses))
@@ -1739,6 +1772,46 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
         super::parse(&ctx, "synthetic.tsm", source.as_bytes()).unwrap_err()
+    }
+
+    #[test]
+    fn tsm_loss_text_refuses_retained_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::format_retained(&ctx, "describe undecoded T-spline cage", |out| {
+            std::fmt::Write::write_str(out, "four")
+        })
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "describe undecoded T-spline cage"));
+    }
+
+    #[test]
+    fn tsm_cage_collection_refuses_item_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut cages = Vec::new();
+        let error = super::push_charged(&ctx, &mut cages, 1_u8, "collect T-spline cages")
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect T-spline cages"));
+    }
+
+    #[test]
+    fn tsm_loss_collection_refuses_item_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut losses = Vec::new();
+        let error = super::push_charged(&ctx, &mut losses, 1_u8, "collect T-spline loss notes")
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect T-spline loss notes"));
     }
 
     fn quad_source() -> String {
