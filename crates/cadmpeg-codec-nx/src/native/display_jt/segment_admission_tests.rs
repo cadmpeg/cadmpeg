@@ -65,7 +65,10 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     data[165..181].copy_from_slice(&[2; 16]);
     data[181..185].copy_from_slice(&1_u32.to_le_bytes());
     data[185..189].copy_from_slice(&24_u32.to_le_bytes());
-    let indices = super::display_jt_indices(None, &container).unwrap();
+    let index_arena = DecodeArena::new();
+    let index_policy = DecodePolicy::service();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &index_policy).unwrap();
+    let indices = super::display_jt_indices(&index_ctx, &container).unwrap();
     let documents = super::display_jt_documents(None, &container, &indices).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
