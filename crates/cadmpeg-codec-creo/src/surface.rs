@@ -5903,11 +5903,11 @@ fn counted_parameter_scalar_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
-    let mut states = ctx.alloc_filled(
-        body.len() + 1,
-        BTreeMap::new(),
-        "creo_counted_parameter_slots",
-    )?;
+    let state_count = body.len() + 1;
+    let mut states = Vec::new();
+    ctx.try_reserve_items(&mut states, state_count, "creo_counted_parameter_slots")?;
+    states.resize_with(state_count, BTreeMap::new);
+    ctx.charge_collection_items(1, "creo counted parameter initial state")?;
     states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);
@@ -5925,34 +5925,48 @@ fn counted_parameter_scalar_slots(
                     .checked_add(run)
                     .is_some_and(|next| next <= count)
                 {
-                    let mut slots = vec![(Some(0.0), vec![body[cursor]])];
+                    let mut slots =
+                        counted_parameter_suffix(ctx, Some(0.0), &body[cursor..cursor + 1])?;
+                    ctx.try_reserve_items(
+                        &mut slots,
+                        run - 1,
+                        "creo counted parameter zero-run slots",
+                    )?;
                     slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
                     add_counted_parameter_state(
+                        ctx,
                         &mut states[cursor + 1],
                         slots_used + run,
-                        advance_counted_parameter_parse(parse, slots),
-                    );
+                        advance_counted_parameter_parse(ctx, parse, slots)?,
+                    )?;
                 }
                 continue;
             }
 
             if body[cursor] == 0x18 {
                 add_counted_parameter_state(
+                    ctx,
                     &mut states[cursor + 1],
                     slots_used + 1,
-                    advance_counted_parameter_parse(parse.clone(), vec![(Some(0.0), vec![0x18])]),
-                );
+                    advance_counted_parameter_parse(
+                        ctx,
+                        clone_counted_parameter_parse(ctx, &parse)?,
+                        counted_parameter_suffix(ctx, Some(0.0), &[0x18])?,
+                    )?,
+                )?;
                 if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache)
                     .filter(|(_, next)| *next > cursor + 1)
                 {
                     add_counted_parameter_state(
+                        ctx,
                         &mut states[next],
                         slots_used + 1,
                         advance_counted_parameter_parse(
+                            ctx,
                             parse,
-                            vec![(Some(value), body[cursor..next].to_vec())],
-                        ),
-                    );
+                            counted_parameter_suffix(ctx, Some(value), &body[cursor..next])?,
+                        )?,
+                    )?;
                 }
                 continue;
             }
@@ -5965,13 +5979,15 @@ fn counted_parameter_scalar_slots(
                 cache,
             ) {
                 add_counted_parameter_state(
+                    ctx,
                     &mut states[next],
                     slots_used + 1,
                     advance_counted_parameter_parse(
+                        ctx,
                         parse,
-                        vec![(value, body[cursor..next].to_vec())],
-                    ),
-                );
+                        counted_parameter_suffix(ctx, value, &body[cursor..next])?,
+                    )?,
+                )?;
             }
         }
     }
@@ -5981,38 +5997,80 @@ fn counted_parameter_scalar_slots(
     }
 }
 
-#[derive(Clone)]
 enum CountedParameterParse {
     Unique(Vec<ScalarTokenSlot>),
     Ambiguous,
 }
 
 fn advance_counted_parameter_parse(
+    ctx: &DecodeContext<'_>,
     parse: CountedParameterParse,
     mut suffix: Vec<ScalarTokenSlot>,
-) -> CountedParameterParse {
+) -> Result<CountedParameterParse, CodecError> {
     match parse {
         CountedParameterParse::Unique(mut slots) => {
+            ctx.try_reserve_items(
+                &mut slots,
+                suffix.len(),
+                "creo counted parameter accumulated slots",
+            )?;
             slots.append(&mut suffix);
-            CountedParameterParse::Unique(slots)
+            Ok(CountedParameterParse::Unique(slots))
         }
-        CountedParameterParse::Ambiguous => CountedParameterParse::Ambiguous,
+        CountedParameterParse::Ambiguous => Ok(CountedParameterParse::Ambiguous),
     }
 }
 
+fn clone_counted_parameter_parse(
+    ctx: &DecodeContext<'_>,
+    parse: &CountedParameterParse,
+) -> Result<CountedParameterParse, CodecError> {
+    let CountedParameterParse::Unique(slots) = parse else {
+        return Ok(CountedParameterParse::Ambiguous);
+    };
+    let mut copy = Vec::new();
+    ctx.try_reserve_items(
+        &mut copy,
+        slots.len(),
+        "creo counted parameter branch slots",
+    )?;
+    for (value, token) in slots {
+        copy.push((
+            *value,
+            ctx.copy_retained(token, "creo counted parameter branch token")?,
+        ));
+    }
+    Ok(CountedParameterParse::Unique(copy))
+}
+
+fn counted_parameter_suffix(
+    ctx: &DecodeContext<'_>,
+    value: Option<f64>,
+    token: &[u8],
+) -> Result<Vec<ScalarTokenSlot>, CodecError> {
+    let token = ctx.copy_retained(token, "creo counted parameter token bytes")?;
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, 1, "creo counted parameter suffix slot")?;
+    slots.push((value, token));
+    Ok(slots)
+}
+
 fn add_counted_parameter_state(
+    ctx: &DecodeContext<'_>,
     states: &mut BTreeMap<usize, CountedParameterParse>,
     slots_used: usize,
     candidate: CountedParameterParse,
-) {
+) -> Result<(), CodecError> {
     match states.entry(slots_used) {
         std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo counted parameter state entries")?;
             entry.insert(candidate);
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
             entry.insert(CountedParameterParse::Ambiguous);
         }
     }
+    Ok(())
 }
 
 fn named_spline_scalar_slot(
