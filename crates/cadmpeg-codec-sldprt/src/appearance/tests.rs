@@ -32,7 +32,11 @@ fn appearance_from_nameless_block_keeps_source_owner() {
     source.extend(make_block(0x43, "", &payload));
     let scan = crate::container::scan_bytes(&source);
 
-    let definitions = super::definitions(&scan);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    let definitions = super::definitions(&ctx, &scan).unwrap();
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].source_name.as_str(), "block@8");
 }
