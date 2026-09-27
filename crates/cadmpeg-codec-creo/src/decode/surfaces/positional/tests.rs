@@ -251,9 +251,11 @@ fn paired_envelope_spheres_do_not_join_rows_from_two_prototypes_in_one_frame() {
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.prototype_records.len(), 2);
     assert_eq!(
-        super::super::prototypes::unique_surface_prototype_associations(&scan)
-            .expect("prototype associations")
-            .len(),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::super::prototypes::unique_surface_prototype_associations(ctx, &scan)
+        })
+        .expect("prototype associations")
+        .len(),
         2
     );
 

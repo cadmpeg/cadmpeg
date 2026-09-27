@@ -42,7 +42,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     }
     let mut transferred = 0;
     let mut associations = Vec::new();
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan)? {
+    for (prototype, associated_row, section) in unique_surface_prototype_associations(ctx, scan)? {
         let prototype = prototype.record();
         let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
             continue;

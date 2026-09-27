@@ -46,9 +46,11 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     );
     assert!(crate::surface::prototype_cone_frame(prototype).is_some());
     assert_eq!(
-        super::unique_surface_prototype_associations(&scan)
-            .expect("prototype associations")
-            .len(),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::unique_surface_prototype_associations(ctx, &scan)
+        })
+        .expect("prototype associations")
+        .len(),
         1
     );
 
