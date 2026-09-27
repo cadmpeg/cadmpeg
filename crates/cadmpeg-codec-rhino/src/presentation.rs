@@ -4301,7 +4301,7 @@ fn parse_texture_mapping(
     let projection = reader.u32()?;
     let primitive_transform = xform(&mut reader)?;
     let uvw_transform = xform(&mut reader)?;
-    let name = utf16(&mut reader)?;
+    let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino texture mapping name")?;
     let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
         (None, false)
@@ -4318,22 +4318,44 @@ fn parse_texture_mapping(
                         && value.item_uuid == MAPPING_CRC_CACHE
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
-        (Some(value.class_uuid.to_string()), cache_requires_opaque)
+        (
+            Some(crate::wire::admitted_format(
+                ctx,
+                format_args!("{}", value.class_uuid),
+                "Rhino texture mapping primitive UUID",
+            )?),
+            cache_requires_opaque,
+        )
     };
     reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
     let capped = version.1 >= 1 && reader.bool()?;
     reader.skip_remaining()?;
-    let key = if id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        id.to_string()
-    };
     Ok(ParsedTextureMapping {
         value: TextureMappingRecord {
-            id: format!("rhino:presentation:texture_mapping#{key}"),
+            id: if id.is_nil() {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:presentation:texture_mapping#record-{source_offset}"),
+                    "Rhino texture mapping ID",
+                )?
+            } else {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:presentation:texture_mapping#{id}"),
+                    "Rhino texture mapping ID",
+                )?
+            },
             source_offset: source_offset as u64,
-            source_uuid: (!id.is_nil()).then(|| id.to_string()),
+            source_uuid: (!id.is_nil())
+                .then(|| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino texture mapping source UUID",
+                    )
+                })
+                .transpose()?,
             name,
             mapping_type,
             projection,
@@ -5313,6 +5335,12 @@ pub(crate) fn install(
                         scan.archive,
                         record.range.start,
                     ))? {
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut texture_mappings,
+                            1,
+                            "Rhino texture mappings",
+                        )?;
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
                             losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(

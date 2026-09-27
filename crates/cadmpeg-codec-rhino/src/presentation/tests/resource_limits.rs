@@ -456,6 +456,105 @@ fn installed_windows_bitmap_refuses_collection_limit() {
     );
 }
 
+fn texture_mapping_payload() -> Vec<u8> {
+    let mut body = crate::test_support::test_dump::MESH_CLASS.to_vec();
+    body.extend(6_u32.to_le_bytes());
+    body.extend(1_u32.to_le_bytes());
+    for _ in 0..2 {
+        for index in 0..16 {
+            body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+        }
+    }
+    body.extend(utf16_bytes("custom mesh mapping"));
+    body.extend(crate::test_support::test_dump::class_wrapper(
+        ArchiveVersion::V8,
+        crate::test_support::test_dump::MESH_CLASS,
+        &[],
+    ));
+    body.extend(0_u32.to_le_bytes());
+    body.push(0);
+    anonymous(1, &body)
+}
+
+fn texture_mapping_refusal(limit: u64) -> FramingError {
+    let bytes = texture_mapping_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("mapping root admitted");
+    crate::presentation::parse_texture_mapping(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+        .err()
+        .expect("mapping retained value exceeds limit")
+}
+
+#[test]
+fn texture_mapping_name_refuses_retained_limit() {
+    assert!(
+        matches!(texture_mapping_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino texture mapping name")
+    );
+}
+
+#[test]
+fn texture_mapping_primitive_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(texture_mapping_refusal(19), FramingError::Resource(refusal) if refusal.operation == "Rhino texture mapping primitive UUID")
+    );
+}
+
+#[test]
+fn texture_mapping_id_refuses_retained_limit() {
+    assert!(
+        matches!(texture_mapping_refusal(55), FramingError::Resource(refusal) if refusal.operation == "Rhino texture mapping ID")
+    );
+}
+
+#[test]
+fn texture_mapping_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:texture_mapping#00000000-0000-0000-0000-000000000000".len();
+    assert!(
+        matches!(texture_mapping_refusal(u64::try_from(55 + id_len).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino texture mapping source UUID")
+    );
+}
+
+#[test]
+fn installed_texture_mapping_refuses_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let payload = texture_mapping_payload();
+    let class = crate::test_support::test_dump::class_wrapper(
+        archive,
+        crate::presentation::TEXTURE_MAPPING.to_wire(),
+        &payload,
+    );
+    let record = crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_807a,
+        &class,
+        std::slice::from_ref(&(0..class.len())),
+    );
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "80",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0025, &[record]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes.clone()).expect("mapping document scanned");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("mapping root admitted");
+    let error =
+        crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+            .expect_err("mapping collection exceeds limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino texture mappings")
+    );
+}
+
 fn font_refusal(limit: u64) -> FramingError {
     let bytes = modern_font_chunk(7, &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
