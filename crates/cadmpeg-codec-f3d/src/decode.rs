@@ -2468,6 +2468,7 @@ impl<'a> F3dDecodeSession<'a> {
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;

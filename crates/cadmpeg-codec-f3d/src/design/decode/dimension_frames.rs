@@ -1061,6 +1061,7 @@ fn parse_dimension_null_locus_pair(
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
 pub(crate) fn decode_dimension_annotation_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
@@ -1186,14 +1187,15 @@ pub(crate) fn decode_dimension_annotation_frames(
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
-                if let Some(mut frame) = parse_dimension_annotation_frame(
+                if let Some(mut frame) = parse_dimension_annotation_frame_charged(
+                    ctx,
                     bytes,
                     at,
                     containing_companion_record_index,
                     &governed_owners,
                     &geometry_indices,
                     &sketch_entities,
-                )
+                )?
                 .filter(|frame| frame.paired_byte_offset() < end as u64)
                 {
                     frame.id = ids::native_design_dimension_annotation_frame_id(
@@ -1216,14 +1218,14 @@ pub(crate) fn decode_dimension_annotation_frames(
     Ok(out)
 }
 
-fn parse_dimension_annotation_frame(
+fn parse_dimension_annotation_draft(
     bytes: &[u8],
     start: usize,
     companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-) -> Option<DesignDimensionAnnotationFrame> {
+) -> Option<crate::records::dimensions::DesignDimensionAnnotationFrameDraft> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -1366,8 +1368,7 @@ fn parse_dimension_annotation_frame(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    DesignDimensionAnnotationFrame::try_new(
-        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+    Some(crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: String::new(),
             companion_record_index,
             governing_companion_record_index: *governing_companion_record_index,
@@ -1386,9 +1387,53 @@ fn parse_dimension_annotation_frame(
             paired_byte_offset: paired_byte_offset as u64,
             owner_reference,
             owner_reference_offset: (paired_byte_offset + 20) as u64,
-        },
-    )
-    .ok()
+    })
+}
+
+#[cfg(test)]
+fn parse_dimension_annotation_frame(
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: Option<u32>,
+    governed_owners: &HashMap<u32, u32>,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionAnnotationFrame> {
+    let draft = parse_dimension_annotation_draft(
+        bytes,
+        start,
+        companion_record_index,
+        governed_owners,
+        geometry_indices,
+        sketch_entities,
+    )?;
+    DesignDimensionAnnotationFrame::try_new(draft).ok()
+}
+
+fn parse_dimension_annotation_frame_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: Option<u32>,
+    governed_owners: &HashMap<u32, u32>,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Result<Option<DesignDimensionAnnotationFrame>, CodecError> {
+    let Some(draft) = parse_dimension_annotation_draft(
+        bytes,
+        start,
+        companion_record_index,
+        governed_owners,
+        geometry_indices,
+        sketch_entities,
+    ) else {
+        return Ok(None);
+    };
+    match DesignDimensionAnnotationFrame::try_new_charged(ctx, draft) {
+        Ok(frame) => Ok(Some(frame)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension
