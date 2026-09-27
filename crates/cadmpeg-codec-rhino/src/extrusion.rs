@@ -203,7 +203,10 @@ pub(crate) fn decode(
                 // The document budget is not rolled back: any buffer the cache
                 // inflated before failing is retained in the arena, so its
                 // charge must stand (see `mesh::MeshBudget`).
-                warnings.push(format!("extrusion mesh cache dropped: {cache_error}"));
+                warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!("extrusion mesh cache dropped: {cache_error}"),
+                )?;
                 reader.skip(reader.remaining())?;
                 Vec::new()
             }
@@ -224,15 +227,25 @@ pub(crate) fn decode(
                 return Err(error);
             }
             Err(cache_error) => {
-                warnings.push(format!("V5 extrusion mesh cache dropped: {cache_error}"));
+                warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
+                )?;
                 Vec::new()
             }
         }
     };
     for mesh in &meshes {
-        warnings.extend(mesh.warnings.iter().cloned());
+        warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings)?;
     }
-    finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
+    finish_payload(
+        expand.ctx(),
+        data,
+        &outer,
+        reader,
+        &payload_children,
+        &mut warnings,
+    )?;
 
     let path_delta = path_to.vector_from(path_from);
     let path_length = path_delta.norm();
@@ -850,6 +863,7 @@ fn read_mesh_cache(
         )?;
         meshes.push(mesh);
         finish_anonymous(
+            expand.ctx(),
             data,
             &mut cache_reader,
             &item,
@@ -863,6 +877,7 @@ fn read_mesh_cache(
             .ok_or_else(|| error(wrapper_start, "mesh-cache item count overflow"))?;
     }
     finish_anonymous(
+        expand.ctx(),
         data,
         reader,
         &cache,
@@ -963,6 +978,7 @@ fn anonymous_chunk(
 }
 
 fn finish_anonymous(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
@@ -977,16 +993,18 @@ fn finish_anonymous(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{name} CRC mismatch at offset {}", chunk.header_start),
-        );
+            format_args!("{name} CRC mismatch at offset {}", chunk.header_start),
+        )?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
 fn finish_payload(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &Chunk,
     mut reader: BoundedReader<'_>,
@@ -999,13 +1017,14 @@ fn finish_payload(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
+            format_args!(
                 "extrusion payload CRC mismatch at offset {}",
                 chunk.header_start
             ),
-        );
+        )?;
     }
     Ok(())
 }
@@ -1949,6 +1968,41 @@ pub(crate) mod tests {
         assert_eq!(decoded.boundaries.len(), 1);
         assert!(decoded.meshes.is_empty());
         assert_eq!(decoded.warnings.len(), 1);
+    }
+
+    #[test]
+    fn malformed_mesh_cache_diagnostic_refuses_collection_limit() {
+        let malformed = crc_chunk(CHUNKS, ANONYMOUS, &[1, 0, 0, 0, 0, 0, 0, 0, 2]);
+        let bytes = payload(3, [false, false], Some(malformed));
+        let mut limit = 0_u64;
+        for _ in 0..128 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("root view");
+            let refusal = super::decode(
+                crate::mesh::MeshExpand::new(&ctx, root),
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                None,
+                MillimeterScale::IDENTITY,
+                &[],
+                &mut crate::mesh::MeshBudget::new(),
+            )
+            .expect_err("mesh cache warning exceeds collection limit");
+            let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(item)) = refusal
+            else {
+                panic!("expected resource refusal, got {refusal:?}");
+            };
+            if item.operation == "Rhino diagnostics" {
+                return;
+            }
+            limit = (item.used + item.additional).max(limit + 1);
+        }
+        panic!("mesh cache diagnostic boundary was not reached");
     }
 
     #[test]

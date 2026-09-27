@@ -110,8 +110,38 @@ impl Diagnostics {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: &mut Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::wire::reserve_collection(ctx, &mut self.0, other.0.len(), "Rhino diagnostic copies")?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut self.0,
+            other.0.len(),
+            "Rhino diagnostic copies",
+        )?;
         self.0.append(&mut other.0);
+        Ok(())
+    }
+
+    /// Copies diagnostics into another report after admitting the slots and text.
+    pub(crate) fn extend_cloned_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(
+            ctx,
+            &mut self.0,
+            other.0.len(),
+            "Rhino diagnostic copies",
+        )?;
+        for diagnostic in &other.0 {
+            self.0.push(RhinoDiagnostic {
+                code: diagnostic.code,
+                message: crate::wire::copy_retained_string(
+                    ctx,
+                    &diagnostic.message,
+                    "Rhino diagnostic copy text",
+                )?,
+            });
+        }
         Ok(())
     }
 
@@ -498,6 +528,29 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn diagnostic_copy_refuses_collection_limit() {
+        let mut source = super::Diagnostics::new();
+        source.push("mesh warning");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .extend_cloned_admitted(&ctx, &source)
+            .expect_err("one diagnostic copy exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(item)
+                if item.operation == "Rhino diagnostic copies"
+        ));
+        let mut copy = super::Diagnostics::new();
+        copy.extend_cloned_admitted(&cadmpeg_test_support::service_decode_context(), &source)
+            .expect("service profile admits diagnostic copy");
+        assert_eq!(copy, source);
+    }
+
+    #[test]
     fn diagnostics_refuse_collection_and_retained_limits() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -514,12 +567,15 @@ mod tests {
         ));
         let mut retained_policy = cadmpeg_core::decode::DecodePolicy::service();
         retained_policy.limits.max_retained_bytes = 0;
-        let (retained_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &retained_policy,
-        )
-        .expect("empty root admitted");
+        let (retained_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
+                .expect("empty root admitted");
         let refusal = super::Diagnostics::new()
-            .push_coded_admitted(&retained_ctx, RhinoLossCode::IntegrityFailure, format_args!("fixture warning"))
+            .push_coded_admitted(
+                &retained_ctx,
+                RhinoLossCode::IntegrityFailure,
+                format_args!("fixture warning"),
+            )
             .expect_err("diagnostic text exceeds zero retained bytes");
         assert!(matches!(
             refusal,
