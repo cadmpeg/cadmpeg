@@ -931,6 +931,69 @@ fn copied_section_name_refuses_before_retained_text_growth() {
 }
 
 #[test]
+fn nonvisible_geometry_section_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"nonvisible";
+    let scanned = container::Section::scan("NovisGeom".to_string(), 0, data.len(), None, data)
+        .expect("section extent");
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(data, &arena, &policy).expect("root input is admitted");
+        super::nonvisible_geometry_sections(&ctx, std::slice::from_ref(&scanned))
+    };
+    assert_eq!(run(1).expect("one nonvisible section admitted").len(), 1);
+    let error = run(0).expect_err("one section requires an output Vec item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo nonvisible geometry sections"
+    ));
+}
+
+#[test]
+fn loop_array_section_sources_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for (name, data, source) in [
+        ("VisibGeom", b"model".as_slice(), 0),
+        ("NovisGeom", b"nonvisible".as_slice(), 1),
+        ("Xsections", b"Sld_Xsections\0".as_slice(), 2),
+    ] {
+        let scanned = container::Section::scan(name.to_string(), 0, data.len(), None, data)
+            .expect("section extent");
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+                .expect("root input is admitted");
+            let sections = std::slice::from_ref(&scanned);
+            let (model, nonvisible, all) = match source {
+                0 => (sections, &[][..], &[][..]),
+                1 => (&[][..], sections, &[][..]),
+                _ => (&[][..], &[][..], sections),
+            };
+            super::loop_array_sections(&ctx, model, nonvisible, all)
+        };
+        assert_eq!(run(1).expect("one loop section admitted").len(), 1);
+        let error = run(0).expect_err("one loop section requires an output Vec item");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "creo loop array sections"
+        ));
+    }
+}
+
+#[test]
 fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
     let data = b"0123#Geomlists\n0123";
     let section = container::Section::scan("Geomlists".to_string(), 4, data.len(), None, data)

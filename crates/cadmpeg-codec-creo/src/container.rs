@@ -1302,6 +1302,46 @@ fn model_geometry_sections<'a>(
     Ok(selected)
 }
 
+fn nonvisible_geometry_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'a>],
+) -> Result<Vec<ScannedSection<'a>>, CodecError> {
+    let mut selected = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.section.name() == "NovisGeom")
+    {
+        ctx.try_reserve_items(&mut selected, 1, "creo nonvisible geometry sections")?;
+        selected.push(section.copy_retained(ctx)?);
+    }
+    Ok(selected)
+}
+
+fn loop_array_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    model: &[ScannedSection<'a>],
+    nonvisible: &[ScannedSection<'a>],
+    sections: &[ScannedSection<'a>],
+) -> Result<Vec<ScannedSection<'a>>, CodecError> {
+    let mut selected = Vec::new();
+    for section in model.iter().chain(nonvisible) {
+        ctx.try_reserve_items(&mut selected, 1, "creo loop array sections")?;
+        selected.push(section.copy_retained(ctx)?);
+    }
+    for section in sections
+        .iter()
+        .filter(|section| section.section.name() == "Xsections")
+    {
+        if find(section.region, b"Sld_Xsections\0", 0).is_some() {
+            ctx.try_reserve_items(&mut selected, 1, "creo loop array sections")?;
+            selected.push(section.copy_retained(ctx)?);
+        }
+    }
+    selected.sort_by_key(|section| section.section.offset());
+    selected.dedup_by_key(|section| section.section.offset());
+    Ok(selected)
+}
+
 fn surface_rows(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
@@ -2427,24 +2467,13 @@ pub(crate) fn scan_bytes<'a>(
     let family_table = family_table(&data, &sections);
     let legacy_family_table =
         legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
-    let nonvisible_geometry_sections = sections
-        .iter()
-        .filter(|section| section.section.name() == "NovisGeom")
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut loop_array_sections = model_geometry_sections.clone();
-    loop_array_sections.extend(nonvisible_geometry_sections.iter().cloned());
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_some() {
-            loop_array_sections.push(section.clone());
-        }
-    }
-    loop_array_sections.sort_by_key(|section| section.section.offset());
-    loop_array_sections.dedup_by_key(|section| section.section.offset());
+    let nonvisible_geometry_sections = nonvisible_geometry_sections(ctx, &sections)?;
+    let loop_array_sections = loop_array_sections(
+        ctx,
+        &model_geometry_sections,
+        &nonvisible_geometry_sections,
+        &sections,
+    )?;
     let loop_arrays = loop_array_scan(&loop_array_sections);
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
