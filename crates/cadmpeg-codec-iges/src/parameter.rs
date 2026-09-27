@@ -16,7 +16,19 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::ops::Range;
+
+struct BackPointer(Option<u32>);
+
+impl fmt::Display for BackPointer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(value) => write!(formatter, "back-pointer {value}"),
+            None => formatter.write_str("no readable back-pointer"),
+        }
+    }
+}
 
 /// One typed lexical value in an entity parameter record.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -3916,16 +3928,15 @@ fn resolve_ownership<'a>(
         let pointer = back_pointers.get(card).copied().flatten();
         if pointer != Some(*owner) {
             recoveries.record(
-                Section::Parameter,
-                FramingDefect::ParameterOwner,
-                *card as usize,
+                ctx,
+                (Section::Parameter, FramingDefect::ParameterOwner),
+                usize::try_from(*card).map_err(|_| {
+                    CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
+                })?,
                 lines.get(card).map_or(0, |line| line.offset),
-                pointer.map_or_else(
-                    || "no readable back-pointer".to_owned(),
-                    |value| format!("back-pointer {value}"),
-                ),
-                format!("the declared range of D{owner}"),
-            );
+                format_args!("{}", BackPointer(pointer)),
+                format_args!("the declared range of D{owner}"),
+            )?;
         }
     }
     let mut resolved = Vec::new();
@@ -3973,16 +3984,18 @@ fn resolve_ownership<'a>(
         let run = run()?;
         if let Some(first) = run.first().copied() {
             recoveries.record(
-                Section::Parameter,
-                FramingDefect::ParameterOwner,
-                first as usize,
+                ctx,
+                (Section::Parameter, FramingDefect::ParameterOwner),
+                usize::try_from(first).map_err(|_| {
+                    CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
+                })?,
                 lines.get(&first).map_or(0, |line| line.offset),
-                format!(
+                format_args!(
                     "an unusable declared range for D{} (start {}, count {})",
                     entry.sequence, entry.parameter_start, entry.parameter_line_count
                 ),
-                format!("the back-pointer census run of {} card(s)", run.len()),
-            );
+                format_args!("the back-pointer census run of {} card(s)", run.len()),
+            )?;
             reserve_optional_vec_growth(
                 ctx,
                 &mut resolved,
@@ -4218,16 +4231,15 @@ pub(crate) fn assemble_with_context(
             continue;
         }
         recoveries.record(
-            Section::Parameter,
-            FramingDefect::UnclaimedParameterCard,
-            *sequence as usize,
+            ctx,
+            (Section::Parameter, FramingDefect::UnclaimedParameterCard),
+            usize::try_from(*sequence).map_err(|_| {
+                CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
+            })?,
             line.offset,
-            pointer.map_or_else(
-                || "no readable back-pointer".to_owned(),
-                |value| format!("back-pointer {value}"),
-            ),
-            "no owning Directory Entry",
-        );
+            format_args!("{}", BackPointer(pointer)),
+            format_args!("no owning Directory Entry"),
+        )?;
     }
     Ok(ParameterAssembly {
         records,

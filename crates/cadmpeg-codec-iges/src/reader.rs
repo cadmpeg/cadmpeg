@@ -227,8 +227,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         global_losses.extend(conditional_losses);
         charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
         let references = graph::build(&directory, ctx)?;
-        let mut framing_recoveries = scan.recoveries.clone();
-        framing_recoveries.merge(parameter_recoveries);
+        let mut scan = scan;
+        let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
+        framing_recoveries.merge(parameter_recoveries, ctx)?;
         Ok(Self {
             scan,
             global,
