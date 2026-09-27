@@ -293,3 +293,38 @@ fn conflicting_unit_loss_refuses_collection_limit() {
                 && refusal.operation == "step_geometry_losses"
     ));
 }
+
+fn uncertainty_refusal(collection_limit: u64) -> CodecError {
+    let records = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) REPRESENTATION_CONTEXT('model','3D'));";
+    let source = format!("{HEADER}{records}{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid uncertainty exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("source fits policy");
+    match super::super::linear_uncertainty(&exchange, &ctx) {
+        Err(error) => error,
+        Ok(_) => panic!("uncertainty collection did not refuse"),
+    }
+}
+
+#[test]
+fn uncertainty_context_measures_refuse_collection_limit() {
+    assert!(matches!(
+        uncertainty_refusal(1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_uncertainty_context_measures"
+    ));
+}
+
+#[test]
+fn uncertainty_distinct_candidates_refuse_collection_limit() {
+    assert!(matches!(
+        uncertainty_refusal(2),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_uncertainty_distinct_candidates"
+    ));
+}
