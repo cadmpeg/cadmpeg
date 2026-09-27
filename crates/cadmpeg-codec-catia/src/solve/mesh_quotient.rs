@@ -10015,6 +10015,157 @@ fn general_mesh_search_charges_unselected_and_face_state_arrays() {
 }
 
 #[test]
+fn fixed_mesh_search_charges_edge_direction_and_selection_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let edge_rows = (0..2)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let candidates = [vec![[0, 0]], vec![[1, 1]]];
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_fixed_mesh_endpoint_pairs(
+            ctx,
+            MeshEndpointGeometry {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+            },
+            &candidates,
+            &selected,
+            &[[0, 0], [1, 1]],
+            &budget,
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    run(&service_ctx).expect("service resource budget");
+
+    let mut refused = HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(_) => {
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected fixed search refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "adaptive caps must admit the fixed search fixture"
+    );
+    assert!(refused.contains("catia_fixed_mesh_edge_directions"));
+    assert!(refused.contains("catia_fixed_mesh_selection"));
+}
+
+#[test]
+fn fixed_mesh_direction_overflow_charges_general_face_state() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    const BOUNDARY_COUNT: usize = 13;
+    let edge_count = BOUNDARY_COUNT * 2 + 1;
+    let edge_rows = (0..edge_count)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let candidates = vec![vec![[0, 1]]; edge_count];
+    let identities = (0..edge_count)
+        .map(|edge| [(edge * 2) as u32, (edge * 2 + 1) as u32])
+        .collect::<Vec<_>>();
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: (0..BOUNDARY_COUNT)
+            .map(|boundary| {
+                vec![
+                    MeshBoundaryEdgeCandidate {
+                        edge: boundary * 2,
+                        start: 0,
+                        end: 1,
+                        reversed: Some(false),
+                    },
+                    MeshBoundaryEdgeCandidate {
+                        edge: boundary * 2 + 1,
+                        start: 1,
+                        end: 0,
+                        reversed: None,
+                    },
+                ]
+            })
+            .collect(),
+    }];
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(1);
+        resolve_fixed_mesh_endpoint_pairs(
+            ctx,
+            MeshEndpointGeometry {
+                edge_rows: &edge_rows,
+                vertex_points: &vertex_points,
+            },
+            &candidates,
+            &selected,
+            &identities,
+            &budget,
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    run(&service_ctx).expect("service resource budget");
+
+    let mut refused = HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(_) => {
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected overflow-search refusal: {error}"),
+        }
+    }
+    assert!(completed, "adaptive caps must admit the overflow fixture");
+    assert!(refused.contains("catia_general_mesh_fixed_face_directions"));
+}
+
+#[test]
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
