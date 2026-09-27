@@ -4616,9 +4616,9 @@ fn curve_selection_parameter_domain_from_geometry(
         SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve)
             .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let parameters: Vec<cadmpeg_ir::scalar::FiniteReal> = polyline.parameters()?.collect();
-            let lower = parameters.first()?.get();
-            let upper = parameters.last()?.get();
+            let mut parameters = polyline.parameters()?;
+            let lower = parameters.next()?.get();
+            let upper = parameters.last().map_or(lower, |parameter| parameter.get());
             (lower < upper).then_some([lower, upper])
         }
         SolvedCurveGeometry::Transformed(placed) => {
