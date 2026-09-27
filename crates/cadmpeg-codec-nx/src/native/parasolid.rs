@@ -1824,8 +1824,8 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
 }
 
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "chart_wire::ChartWire", into = "chart_wire::ChartWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "chart_wire::ChartWire")]
 pub(super) struct ParasolidChartRecord {
     /// Globally unique physical-record identity.
     pub(super) id: String,
