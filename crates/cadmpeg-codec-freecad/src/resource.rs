@@ -63,3 +63,34 @@ pub(crate) fn reserve_vec_items<T>(
         })
     })
 }
+
+pub(crate) fn retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::Malformed("retained text lost UTF-8 encoding".into()))
+}
+
+pub(crate) fn retained_suffix(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    suffix: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut output = retained_string(ctx, value, operation)?;
+    ctx.charge_retained(suffix.len() as u64, operation)?;
+    output.try_reserve(suffix.len()).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: ctx.policy().limits.max_retained_bytes,
+            used: 0,
+            additional: suffix.len() as u64,
+            operation,
+        })
+    })?;
+    output.push_str(suffix);
+    Ok(output)
+}

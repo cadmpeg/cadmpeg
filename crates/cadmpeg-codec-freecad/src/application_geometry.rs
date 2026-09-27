@@ -17,6 +17,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
+use crate::resource::{collection_vec, reserve_vec_items, retained_string, retained_suffix};
 
 const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
@@ -41,7 +42,7 @@ pub(crate) fn transfer(
                 property.id
             )));
         }
-        let root_entry = validate_value_root(property, geometry_kind.value_tag())?;
+        let root_entry = validate_value_root(ctx, property, geometry_kind.value_tag())?;
         let side_entry_matches_root = property.side_entries().len()
             == usize::from(root_entry.is_some())
             && property.side_entries().first() == root_entry.as_ref();
@@ -63,12 +64,15 @@ pub(crate) fn transfer(
                 ))
             })?;
         if geometry_kind == GeometryKind::Mesh {
+            reserve_vec_items(ctx, &mut ir.model.tessellations, 1, "FreeCAD mesh tessellations")?;
             ir.model
                 .tessellations
                 .push(parse_mesh(ctx, property, &entry.data)?);
             transferred = true;
         } else if geometry_kind == GeometryKind::Points {
-            ir.model.points.extend(parse_points(property, &entry.data)?);
+            let points = parse_points(ctx, property, &entry.data)?;
+            reserve_vec_items(ctx, &mut ir.model.points, points.len(), "FreeCAD point records")?;
+            ir.model.points.extend(points);
             transferred = true;
         }
     }
@@ -91,6 +95,7 @@ impl GeometryKind {
 }
 
 fn validate_value_root(
+    ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_tag: &str,
 ) -> Result<Option<String>, CodecError> {
@@ -100,31 +105,32 @@ fn validate_value_root(
             property.id
         ))
     })?;
-    let roots = document
+    let mut roots = document
         .root_element()
         .children()
-        .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
-        .collect::<Vec<_>>();
-    if roots.len() != 1 {
+        .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
+    let root = roots.next();
+    let extra = roots.next().is_some();
+    let Some(root) = root.filter(|_| !extra) else {
         return Err(CodecError::malformed(format_args!(
             "geometry property {} must contain exactly one {expected_tag} value root, found {}",
             property.id,
-            roots.len()
+            document.root_element().children().filter(|node| node.is_element() && node.has_tag_name(expected_tag)).count()
         )));
-    }
-    let root = roots[0];
+    };
     Ok(root
         .attribute("file")
         .filter(|value| !value.is_empty())
-        .map(str::to_owned))
+        .map(|value| retained_string(ctx, value, "FreeCAD geometry side-entry name"))
+        .transpose()?)
 }
 
-fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
+fn association(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
+        object_id: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, &property.owner, "FreeCAD geometry object identity")?)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-        name: Some(property.name.clone()),
+        name: Some(retained_string(ctx, &property.name, "FreeCAD geometry property name")?),
         color: None,
         visible: None,
         layer: None,
@@ -142,9 +148,10 @@ fn parse_mesh(
     reader.skip(mesh_hdr::LEN - mesh_hdr::INFORMATION)?;
     let point_count = reader.count(byte_order, "mesh point count")?;
     let facet_count = reader.count(byte_order, "mesh facet count")?;
-    let vertices = (0..point_count)
-        .map(|_| reader.point3(byte_order, "mesh point"))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut vertices = collection_vec(ctx, point_count, "FreeCAD mesh vertices")?;
+    for _ in 0..point_count {
+        vertices.push(reader.point3(byte_order, "mesh point")?);
+    }
     // Each facet consumes three point indices and three neighbour indices (24 bytes),
     // so the declared count cannot exceed the unread payload.
     let facet_capacity = reader
@@ -186,7 +193,7 @@ fn parse_mesh(
     }
     reader.finish("mesh payload")?;
     Ok(Tessellation::from_parts(
-        format!("{}:mesh", property.id),
+        retained_suffix(ctx, &property.id, ":mesh", "FreeCAD mesh identity")?,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,
@@ -194,28 +201,26 @@ fn parse_mesh(
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))?
-    .with_source_object(Some(association(property)?)))
+    .with_source_object(Some(association(ctx, property)?)))
 }
 
-fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, CodecError> {
+fn parse_points(ctx: &DecodeContext<'_>, property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, CodecError> {
     let mut reader = Reader::new(bytes);
     let count = reader.count(ByteOrder::Little, "point-cloud point count")?;
     let transform = point_transform(property)?;
-    let source_object = association(property)?;
-    let points = (0..count)
-        .map(|index| {
-            let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-            Ok(Point::new(
+    let mut points = collection_vec(ctx, count, "FreeCAD point-cloud points")?;
+    for index in 0..count {
+        let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
+        points.push(Point::new(
                 PointId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
                     crate::native::model_key(&property.id, index.to_string())
                         .map_err(CodecError::malformed)?,
                 ),
                 transform_point(transform, position)?,
-                Some(source_object.clone()),
-            ))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+                Some(association(ctx, property)?),
+            ));
+    }
     reader.finish("point-cloud payload")?;
     Ok(points)
 }
@@ -405,7 +410,7 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{parse_mesh, ByteOrder, Reader};
+    use super::{association, parse_mesh, parse_points, ByteOrder, Reader};
     use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
     use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
     use crate::test_support::test_archive::archive_entries;
@@ -414,6 +419,64 @@ pub(crate) mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    fn resource_test_property() -> PropertyRecord {
+        PropertyRecord {
+            id: "fcstd:native:property#Geometry".to_owned(),
+            owner: "fcstd:native:object#Geometry".to_owned(),
+            name: "Geometry".to_owned(),
+            type_name: "Points::PropertyPointKernel".to_owned(),
+            family: PropertyFamily::Unknown,
+            status: None,
+            body: PropertyBody::Transient,
+            order: 0,
+            xml: RetainedXml::from_text("<Property><Points/></Property>".to_owned(), 0)
+                .expect("valid XML span"),
+        }
+    }
+
+    #[test]
+    fn mesh_vertex_collection_limit_refuses_before_allocation() {
+        let mut mesh = Vec::new();
+        mesh.extend_from_slice(&0xa0b0_c0d0_u32.to_le_bytes());
+        mesh.extend_from_slice(&0x0001_0000_u32.to_le_bytes());
+        mesh.extend_from_slice(&[0; mesh_hdr::LEN - mesh_hdr::INFORMATION]);
+        mesh.extend_from_slice(&1_u32.to_le_bytes());
+        mesh.extend_from_slice(&0_u32.to_le_bytes());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&mesh, &arena, &policy)
+            .expect("root mesh is within the input limit");
+        assert!(matches!(parse_mesh(&ctx, &resource_test_property(), &mesh),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD mesh vertices"));
+    }
+
+    #[test]
+    fn point_cloud_collection_limit_refuses_before_allocation() {
+        let points = 1_u32.to_le_bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
+            .expect("root points are within the input limit");
+        assert!(matches!(parse_points(&ctx, &resource_test_property(), &points),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD point-cloud points"));
+    }
+
+    #[test]
+    fn geometry_association_refuses_on_retained_limit() {
+        let property = resource_test_property();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = property.owner.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within the input limit");
+        assert!(matches!(association(&ctx, &property), Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD geometry object identity"));
+    }
 
     #[test]
     fn mesh_facet_collection_limit_refuses_before_triangle_allocation() {
