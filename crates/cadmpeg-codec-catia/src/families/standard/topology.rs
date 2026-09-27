@@ -11,7 +11,8 @@ use crate::solve::missing_edge::{
     standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
 };
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -184,47 +185,59 @@ impl StandardTopology {
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
     /// and non-manifold general groups retain their reconstructed loop senses.
-    pub(super) fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
+    pub(super) fn orient_solid_body_cycles(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        face_groups: &[usize],
+    ) -> Result<Option<()>, CodecError> {
         let mut remaining = self.faces.as_mut_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
-            let (group, rest) = remaining.split_at_mut_checked(count)?;
+            let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
+                return Ok(None);
+            };
             groups.push(group);
             remaining = rest;
         }
         if !remaining.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let kinds = classify_body_groups(&groups, self.edge_rows.len())?;
+        let Some(kinds) = classify_body_groups(&groups, self.edge_rows.len()) else {
+            return Ok(None);
+        };
         for (group, kind) in groups.into_iter().zip(kinds) {
-            if kind == BodyKind::Solid {
-                orient_face_cycles(group)?;
+            if kind == BodyKind::Solid && orient_face_cycles(ctx, group)?.is_none() {
+                return Ok(None);
             }
         }
-        Some(())
+        Ok(Some(()))
     }
 
     /// Bind logical port/corner components to coordinate-row indices from one
     /// exact unordered endpoint pair per physical edge. A result is returned
     /// only when the induced bijection is unique.
-    #[must_use]
-    pub(super) fn bind_vertex_points(&self, edge_point_pairs: &[[usize; 2]]) -> Option<Vec<usize>> {
+    pub(super) fn bind_vertex_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_point_pairs: &[[usize; 2]],
+    ) -> Result<Option<Vec<usize>>, CodecError> {
         if edge_point_pairs.len() != self.edge_rows.len()
             || self.logical_vertex_count != self.vertex_points.len()
         {
-            return None;
+            return Ok(None);
         }
-        let edge_vertices = self.edge_vertices()?;
+        let Some(edge_vertices) = self.edge_vertices(ctx)? else {
+            return Ok(None);
+        };
         let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
-        let mut domains = alloc_filled(
+        let mut domains = ctx.alloc_filled(
             self.logical_vertex_count,
             all_points,
             "catia standard vertex point domains",
-        )
-        .ok()?;
+        )?;
         for (edge, pair) in edge_vertices.into_iter().zip(edge_point_pairs) {
             if pair[0] >= self.vertex_points.len() || pair[1] >= self.vertex_points.len() {
-                return None;
+                return Ok(None);
             }
             let [start, end] = edge;
             let candidates = HashSet::from(*pair);
@@ -232,17 +245,19 @@ impl StandardTopology {
             domains[end].retain(|point| candidates.contains(point));
         }
         if domains.iter().any(HashSet::is_empty) {
-            return None;
+            return Ok(None);
         }
 
-        unique_coordinate_bijection(&domains, &self.vertex_points)
+        unique_coordinate_bijection(ctx, &domains, &self.vertex_points)
     }
 
     /// Logical endpoint components in physical edge-row direction.
-    #[must_use]
-    pub(crate) fn edge_vertices(&self) -> Option<Vec<[usize; 2]>> {
+    pub(crate) fn edge_vertices(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
         let mut edge_vertices =
-            alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices").ok()?;
+            ctx.alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices")?;
         for face in &self.faces {
             for boundary in &face.boundaries {
                 for coedge in &boundary.coedges {
@@ -252,7 +267,7 @@ impl StandardTopology {
                         [coedge.start_vertex, coedge.end_vertex]
                     };
                     match edge_vertices[coedge.edge_row] {
-                        Some(previous) if previous != endpoints => return None,
+                        Some(previous) if previous != endpoints => return Ok(None),
                         Some(_) => {}
                         None => edge_vertices[coedge.edge_row] = Some(endpoints),
                     }
@@ -260,7 +275,7 @@ impl StandardTopology {
             }
         }
 
-        edge_vertices.into_iter().collect()
+        Ok(edge_vertices.into_iter().collect())
     }
 
     /// Replace provisional trim-handle endpoint components with the quotient
@@ -406,13 +421,15 @@ pub(crate) struct TrimRecord {
 }
 
 pub(crate) fn reconstruct_incidence(
+    ctx: &DecodeContext<'_>,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     reconstruct_incidence_with_edge_classes(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
@@ -423,52 +440,78 @@ pub(crate) fn reconstruct_incidence(
 }
 
 fn reconstruct_incidence_with_edge_classes(
+    ctx: &DecodeContext<'_>,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
     edge_classes: Option<&[usize]>,
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     reconstruct_incidence_with_edge_classes_and_mesh(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        None,
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: None,
+        },
     )
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct StandardIncidenceEvidence<'a> {
+    pub(super) edge_classes: Option<&'a [usize]>,
+    pub(super) mesh_bytes: Option<&'a [u8]>,
+}
+
 pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
+    ctx: &DecodeContext<'_>,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
-    edge_classes: Option<&[usize]>,
-    mesh_bytes: Option<&[u8]>,
-) -> Option<StandardTopology> {
-    let completed_edge_faces = complete_duplicate_face_slots(
+    evidence: StandardIncidenceEvidence<'_>,
+) -> Result<Option<StandardTopology>, CodecError> {
+    let StandardIncidenceEvidence {
+        edge_classes,
+        mesh_bytes,
+    } = evidence;
+    let Some(completed_edge_faces) = complete_duplicate_face_slots(
+        ctx,
         &edge_rows,
         edge_faces,
         edge_points,
         face_count,
         edge_classes,
         mesh_bytes,
-    )?;
+    )?
+    else {
+        return Ok(None);
+    };
     let edge_faces = completed_edge_faces.as_slice();
-    let mut face_edges = alloc_filled(face_count, Vec::new(), "catia standard face edges").ok()?;
+    let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia standard face edges")?;
     for (edge, &[left, right]) in edge_faces.iter().enumerate() {
-        face_edges.get_mut(left)?.push(edge);
+        let Some(face) = face_edges.get_mut(left) else {
+            return Ok(None);
+        };
+        face.push(edge);
         if right != left {
-            face_edges.get_mut(right)?.push(edge);
+            let Some(face) = face_edges.get_mut(right) else {
+                return Ok(None);
+            };
+            face.push(edge);
         }
     }
     let mut faces = Vec::with_capacity(face_count);
     for incident in face_edges {
-        let cycles = incidence_cycles(&incident, edge_points)?;
+        let Some(cycles) = incidence_cycles(&incident, edge_points) else {
+            return Ok(None);
+        };
         faces.push(FaceTopology {
             boundaries: cycles
                 .into_iter()
@@ -491,26 +534,30 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
                 .collect(),
         });
     }
-    orient_face_cycles(&mut faces)?;
-    Some(StandardTopology {
+    if orient_face_cycles(ctx, &mut faces)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(StandardTopology {
         faces,
         edge_rows,
         logical_vertex_count: vertex_points.len(),
         vertex_points,
-    })
+    }))
 }
 
 pub(super) fn complete_duplicate_face_slots(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     face_count: usize,
     edge_classes: Option<&[usize]>,
     mesh_bytes: Option<&[u8]>,
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     const MAX_DUPLICATE_FACE_OPERATIONS: usize = 65_536;
 
-    struct SearchInputs<'a> {
+    struct SearchInputs<'a, 'ctx> {
+        ctx: &'a DecodeContext<'ctx>,
         unresolved: &'a [usize],
         edge_rows: &'a [EdgeRow],
         edge_faces: &'a [[usize; 2]],
@@ -520,45 +567,51 @@ pub(super) fn complete_duplicate_face_slots(
     }
 
     fn search(
-        inputs: &SearchInputs<'_>,
+        inputs: &SearchInputs<'_, '_>,
         degrees: &mut [BTreeMap<usize, u8>],
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
         operations: &mut usize,
         exhausted: &mut bool,
-    ) {
+    ) -> Result<(), CodecError> {
         if *exhausted || solutions.len() > 1 {
-            return;
+            return Ok(());
         }
         if used.iter().all(|value| *value) {
             let closed = degrees
                 .iter()
                 .all(|face| face.values().all(|degree| *degree == 2));
-            let mesh_valid = closed
-                && inputs.mesh_bytes.is_none_or(|bytes| {
-                    let mut completed = inputs.edge_faces.to_vec();
-                    for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
-                        completed[edge][1] = face;
-                    }
-                    standard_mesh_boundary_assignments(bytes, &completed, None).is_some()
-                });
-            if mesh_valid
-                && solutions.first().is_none_or(|existing| {
+            let mesh_valid = if !closed {
+                false
+            } else if let Some(bytes) = inputs.mesh_bytes {
+                let mut completed = inputs.edge_faces.to_vec();
+                for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
+                    completed[edge][1] = face;
+                }
+                standard_mesh_boundary_assignments(inputs.ctx, bytes, &completed, None)?.is_some()
+            } else {
+                true
+            };
+            if mesh_valid {
+                let distinct = if let Some(existing) = solutions.first() {
                     !duplicate_face_assignments_equivalent(
+                        inputs.ctx,
                         inputs.unresolved,
                         inputs.edge_rows,
                         inputs.edge_faces,
                         inputs.edge_points,
                         inputs.edge_classes,
-                        existing,
-                        assignment,
-                    )
-                })
-            {
-                solutions.push(assignment.to_vec());
+                        [existing, assignment],
+                    )?
+                } else {
+                    true
+                };
+                if distinct {
+                    solutions.push(assignment.to_vec());
+                }
             }
-            return;
+            return Ok(());
         }
         let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
             values
@@ -595,7 +648,7 @@ pub(super) fn complete_duplicate_face_slots(
         for (index, edge, face) in choices {
             if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
                 *exhausted = true;
-                return;
+                return Ok(());
             }
             *operations += 1;
             let [start, end] = inputs.edge_points[edge];
@@ -614,7 +667,7 @@ pub(super) fn complete_duplicate_face_slots(
             used[index] = true;
             search(
                 inputs, degrees, assignment, used, solutions, operations, exhausted,
-            );
+            )?;
             used[index] = false;
             match start_degree_before {
                 Some(degree) => {
@@ -635,16 +688,17 @@ pub(super) fn complete_duplicate_face_slots(
                 }
             }
             if *exhausted || solutions.len() > 1 {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_points.len()
         || edge_faces.iter().flatten().any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
 
     let mut completed = edge_faces.to_vec();
@@ -654,14 +708,13 @@ pub(super) fn complete_duplicate_face_slots(
         .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
         .collect::<Vec<_>>();
     if unresolved.is_empty() {
-        return Some(completed);
+        return Ok(Some(completed));
     }
-    let mut degrees = alloc_filled(
+    let mut degrees = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u8>::new(),
         "catia standard endpoint degrees",
-    )
-    .ok()?;
+    )?;
     for (edge, faces) in edge_faces.iter().enumerate() {
         let mut incident = *faces;
         incident.sort_unstable();
@@ -672,7 +725,10 @@ pub(super) fn complete_duplicate_face_slots(
         } {
             for &point in &edge_points[edge] {
                 let degree = degrees[face].entry(point).or_default();
-                *degree = degree.checked_add(1)?;
+                let Some(next) = degree.checked_add(1) else {
+                    return Ok(None);
+                };
+                *degree = next;
             }
         }
     }
@@ -681,7 +737,7 @@ pub(super) fn complete_duplicate_face_slots(
         .flat_map(BTreeMap::values)
         .any(|degree| *degree > 2)
     {
-        return None;
+        return Ok(None);
     }
     unresolved.sort_by_key(|&edge| {
         let [start, end] = edge_points[edge];
@@ -698,6 +754,7 @@ pub(super) fn complete_duplicate_face_slots(
     let mut operations = 0;
     let mut exhausted = false;
     let inputs = SearchInputs {
+        ctx,
         unresolved: &unresolved,
         edge_rows,
         edge_faces,
@@ -705,18 +762,16 @@ pub(super) fn complete_duplicate_face_slots(
         edge_classes,
         mesh_bytes: None,
     };
-    let mut assignment = alloc_filled(
+    let mut assignment = ctx.alloc_filled(
         unresolved.len(),
         0,
         "catia standard unresolved edge assignment",
-    )
-    .ok()?;
-    let mut assigned = alloc_filled(
+    )?;
+    let mut assigned = ctx.alloc_filled(
         unresolved.len(),
         false,
         "catia standard unresolved edge marks",
-    )
-    .ok()?;
+    )?;
     search(
         &inputs,
         &mut degrees,
@@ -725,14 +780,17 @@ pub(super) fn complete_duplicate_face_slots(
         &mut solutions,
         &mut operations,
         &mut exhausted,
-    );
+    )?;
     if exhausted {
-        return None;
+        return Ok(None);
     }
     if solutions.len() > 1 {
-        let bytes = mesh_bytes?;
+        let Some(bytes) = mesh_bytes else {
+            return Ok(None);
+        };
         solutions.clear();
         let inputs = SearchInputs {
+            ctx,
             unresolved: &unresolved,
             edge_rows,
             edge_faces,
@@ -740,18 +798,16 @@ pub(super) fn complete_duplicate_face_slots(
             edge_classes,
             mesh_bytes: Some(bytes),
         };
-        let mut assignment = alloc_filled(
+        let mut assignment = ctx.alloc_filled(
             unresolved.len(),
             0,
             "catia standard unresolved edge assignment",
-        )
-        .ok()?;
-        let mut assigned = alloc_filled(
+        )?;
+        let mut assigned = ctx.alloc_filled(
             unresolved.len(),
             false,
             "catia standard unresolved edge marks",
-        )
-        .ok()?;
+        )?;
         search(
             &inputs,
             &mut degrees,
@@ -760,36 +816,35 @@ pub(super) fn complete_duplicate_face_slots(
             &mut solutions,
             &mut operations,
             &mut exhausted,
-        );
+        )?;
         if exhausted {
-            return None;
+            return Ok(None);
         }
     }
     let [assignment] = solutions.as_slice() else {
-        return None;
+        return Ok(None);
     };
     for (&edge, &face) in unresolved.iter().zip(assignment) {
         completed[edge][1] = face;
     }
-    Some(completed)
+    Ok(Some(completed))
 }
 
 fn duplicate_face_assignments_equivalent(
+    ctx: &DecodeContext<'_>,
     unresolved: &[usize],
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-    left: &[usize],
-    right: &[usize],
-) -> bool {
-    let Ok(mut classified) = alloc_filled(
+    assignments: [&[usize]; 2],
+) -> Result<bool, CodecError> {
+    let [left, right] = assignments;
+    let mut classified = ctx.alloc_filled(
         unresolved.len(),
         false,
         "catia standard duplicate assignment marks",
-    ) else {
-        return false;
-    };
+    )?;
     for first in 0..unresolved.len() {
         if classified[first] {
             continue;
@@ -822,13 +877,16 @@ fn duplicate_face_assignments_equivalent(
         left_faces.sort_unstable();
         right_faces.sort_unstable();
         if left_faces != right_faces {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
-pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
+pub(crate) fn orient_face_cycles(
+    ctx: &DecodeContext<'_>,
+    faces: &mut [FaceTopology],
+) -> Result<Option<()>, CodecError> {
     let boundaries = faces
         .iter_mut()
         .flat_map(|face| &mut face.boundaries)
@@ -842,7 +900,11 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
                 .push((node, coedge.reversed));
         }
     }
-    let flips = solve_boundary_orientation_constraints(boundaries.len(), &edge_uses, true)?;
+    let Some(flips) =
+        solve_boundary_orientation_constraints(ctx, boundaries.len(), &edge_uses, true)?
+    else {
+        return Ok(None);
+    };
     for (boundary, flip) in boundaries.into_iter().zip(flips) {
         if flip {
             boundary.coedges.reverse();
@@ -852,34 +914,34 @@ pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
             }
         }
     }
-    Some(())
+    Ok(Some(()))
 }
 
 pub(crate) fn solve_boundary_orientation_constraints(
+    ctx: &DecodeContext<'_>,
     boundary_count: usize,
     edge_uses: &HashMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
-) -> Option<Vec<bool>> {
-    let mut constraints = alloc_filled(
+) -> Result<Option<Vec<bool>>, CodecError> {
+    let mut constraints = ctx.alloc_filled(
         boundary_count,
         Vec::<(usize, bool)>::new(),
         "catia standard boundary constraints",
-    )
-    .ok()?;
+    )?;
     for uses in edge_uses.values() {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             if !require_paired_uses && uses.len() == 1 {
                 continue;
             }
-            return None;
+            return Ok(None);
         };
         if *left_node >= boundary_count || *right_node >= boundary_count {
-            return None;
+            return Ok(None);
         }
         let parity = left_reversed == right_reversed;
         if left_node == right_node {
             if parity {
-                return None;
+                return Ok(None);
             }
         } else {
             constraints[*left_node].push((*right_node, parity));
@@ -887,7 +949,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
     }
 
-    let mut flips = alloc_filled(boundary_count, None, "catia standard boundary flips").ok()?;
+    let mut flips = ctx.alloc_filled(boundary_count, None, "catia standard boundary flips")?;
     let mut result = Vec::new();
     for root in 0..boundary_count {
         if let Some(flip) = flips[root] {
@@ -900,7 +962,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
             for &(neighbor, parity) in &constraints[face] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
-                    Some(existing) if existing != required => return None,
+                    Some(existing) if existing != required => return Ok(None),
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
@@ -911,7 +973,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
         result.push(false);
     }
-    Some(result)
+    Ok(Some(result))
 }
 
 pub(crate) fn incidence_cycles(
@@ -990,43 +1052,62 @@ pub(crate) fn incidence_cycles(
 /// Parses the FBB-only spine. Its edge rows and trim handles use one selected
 /// big-endian width; the
 /// following counted `05 08 01` table supplies vertex coordinates.
-#[must_use]
-pub(crate) fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
-    let face_run = largest_fbb_run(bytes)?;
+pub(crate) fn parse_fbb(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (mut edge_rows, _, vertex_header, handle_width) =
-        parse_fbb_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    classify_fbb_edge_layouts(&mut edge_rows, &trims)?;
-    reconstruct(edge_rows, vertex_points, &trims)
+    let Some((mut edge_rows, _, vertex_header, handle_width)) =
+        parse_fbb_edge_tables(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
+        return Ok(None);
+    }
+    reconstruct(ctx, edge_rows, vertex_points, &trims)
 }
 
 /// Parse an FBB-only spine and apply its global native endpoint identities.
 /// This closes the cross-face quotient independently of face-local trim-handle
 /// names.
-#[must_use]
 pub(super) fn parse_fbb_with_native_vertices(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_ports: &[[u32; 2]],
-) -> Option<StandardTopology> {
-    parse_fbb(bytes)?.with_native_edge_vertices(edge_ports)
+) -> Result<Option<StandardTopology>, CodecError> {
+    Ok(parse_fbb(ctx, bytes)?.and_then(|topology| topology.with_native_edge_vertices(edge_ports)))
 }
 
 pub(super) fn reconstruct(
+    ctx: &DecodeContext<'_>,
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut faces = Vec::with_capacity(trims.len());
     for trim in trims {
-        let cycles = boundary_cycles(trim.packet.triangles())?;
+        let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
+            return Ok(None);
+        };
         let mut boundaries = Vec::with_capacity(cycles.len());
         for cycle in cycles {
-            boundaries.push(cover_cycle(&cycle, &edge_rows, &mut union)?);
+            let Some(boundary) = cover_cycle(ctx, &cycle, &edge_rows, &mut union)? else {
+                return Ok(None);
+            };
+            boundaries.push(boundary);
         }
         faces.push(FaceTopology { boundaries });
     }
@@ -1046,12 +1127,12 @@ pub(super) fn reconstruct(
         }
     }
 
-    Some(StandardTopology {
+    Ok(Some(StandardTopology {
         faces,
         edge_rows,
         vertex_points,
         logical_vertex_count: roots.len(),
-    })
+    }))
 }
 
 pub(crate) fn reconstruct_mesh_selection(

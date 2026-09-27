@@ -9,6 +9,10 @@ use cadmpeg_ir::topology::BodyKind;
 
 #[test]
 fn radial_orientation_solves_each_face_boundary_independently() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = (0..18)
         .map(|edge| EdgeRow {
             kind: 1,
@@ -57,7 +61,8 @@ fn radial_orientation_solves_each_face_boundary_independently() {
         [8, 10],
         [9, 11],
     ];
-    let topology = reconstruct_incidence(rows, points, &edge_faces, &edge_points, 9)
+    let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 9)
+        .expect("service resource budget")
         .expect("orientable multi-boundary shell");
     assert_eq!(topology.body_kinds(&[9]), Some(vec![BodyKind::Solid]));
     assert_eq!(topology.body_kinds(&[4, 5]), None);
@@ -155,9 +160,11 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
     );
     assert_eq!(topology.body_kinds(&[3]), Some(vec![BodyKind::General]));
     assert_eq!(topology.face_components(), vec![vec![0, 1], vec![2]]);
-    topology
-        .orient_solid_body_cycles(&[2, 1])
-        .expect("closed group orientation");
+    crate::test_support::with_service_context(|ctx| {
+        topology.orient_solid_body_cycles(ctx, &[2, 1])
+    })
+    .expect("service resource budget")
+    .expect("closed group orientation");
 
     for edge in 0..2 {
         assert_ne!(

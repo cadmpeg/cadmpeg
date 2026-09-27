@@ -1,8 +1,9 @@
 use super::{
     refine_repeated_edge_face_candidates, repeated_edge_face_handle_candidates_from_sets,
-    repeated_face_endpoint_closures, unique_duplicate_face_assignment,
-    visualization_endpoint_pairs, FaceOptions, StandardMeshBoundaryContext,
-    INDEXED_VISUALIZATION_POINT_HEADER_LEN, INDEXED_VISUALIZATION_POINT_MARKER,
+    repeated_face_endpoint_closures, resolve_edge_faces_from_runs,
+    unique_duplicate_face_assignment, visualization_endpoint_pairs, FaceOptions, MeshEdgeRun,
+    StandardMeshBoundaryContext, INDEXED_VISUALIZATION_POINT_HEADER_LEN,
+    INDEXED_VISUALIZATION_POINT_MARKER,
 };
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
 use std::collections::HashSet;
@@ -18,6 +19,115 @@ fn row(handles: &[u32]) -> EdgeRow {
 
 fn handles(values: &[u32]) -> HashSet<u32> {
     values.iter().copied().collect()
+}
+
+#[test]
+fn edge_run_face_collection_refuses_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let run = MeshEdgeRun {
+        edge: 0,
+        face: 1,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        resolve_edge_faces_from_runs(&service_ctx, &[[1, 1]], &[run]).expect("service budget"),
+        Some(vec![[1, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run])
+        .expect_err("edge run face collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_run_faces"));
+}
+
+#[test]
+fn edge_port_queue_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::propagate_edge_port_points(&service_ctx, &ports, &pairs)
+            .expect("service resource budget"),
+        Some(vec![Some([0, 1])])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::propagate_edge_port_points(&ctx, &ports, &pairs)
+        .expect_err("the edge queue exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_queue"));
+}
+
+#[test]
+fn edge_port_solution_propagates_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
+            .expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        .expect_err("the solution exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_solution"));
+}
+
+#[test]
+fn edge_port_component_pairs_propagate_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        super::bind_edge_port_candidates(&service_ctx, &ports, &candidates)
+            .expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::bind_edge_port_candidates(&ctx, &ports, &candidates)
+        .expect_err("component pairs exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_edge_port_pairs"));
 }
 
 fn raw_visualization_table(mode: u8, triples: &[[f32; 3]]) -> Vec<u8> {
@@ -130,6 +240,7 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
 
 #[test]
 fn repeated_long_row_selects_one_majority_sharing_face() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11, 12, 13, 14])];
     let faces = vec![
         handles(&[10, 11, 12, 13, 14, 90]),
@@ -137,14 +248,42 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
         handles(&[10, 14, 70]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1]]);
 }
 
 #[test]
+fn repeated_handle_candidates_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let rows = vec![row(&[10, 11])];
+    let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        repeated_edge_face_handle_candidates_from_sets(&service_ctx, &rows, &faces, &[[0, 0]],)
+            .expect("service budget"),
+        Some(vec![vec![1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect_err("candidate collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_repeated_edge_handle_face_candidates"));
+}
+
+#[test]
 fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11, 12, 13])];
     let faces = vec![
         handles(&[10, 11, 12, 13]),
@@ -152,7 +291,8 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
         handles(&[11, 12, 13]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![Vec::<usize>::new()]);
@@ -160,6 +300,7 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
 
 #[test]
 fn repeated_short_row_retains_every_complete_handle_sharing_face() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11])];
     let faces = vec![
         handles(&[10, 11, 90]),
@@ -168,7 +309,8 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
         handles(&[10, 60]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1, 2]]);
@@ -176,11 +318,14 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
 
 #[test]
 fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11]), row(&[20, 21])];
     let faces = vec![handles(&[10, 11, 20]), handles(&[20, 21])];
 
     assert!(
-        repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0], [0, 1]],).is_none()
+        repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0], [0, 1]],)
+            .expect("service resource budget")
+            .is_none()
     );
 }
 
@@ -200,36 +345,114 @@ fn handle_face_candidates_do_not_reopen_resolved_incidence() {
 
 #[test]
 fn endpoint_degree_closure_selects_optional_second_face() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [0, 0], [0, 1]];
     let allowed = [Vec::new(), vec![1], Vec::new()];
     let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
 
-    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
-        .expect("bounded endpoint closure");
+    let completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![vec![[0, 1], [0, 1], [0, 1]]]);
 }
 
 #[test]
+fn endpoint_degree_closure_refuses_face_degree_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+    catia_test_context!(service_ctx);
+    assert!(repeated_face_endpoint_closures(
+        &service_ctx,
+        &edge_faces,
+        &allowed,
+        &endpoint_pairs,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+        .expect_err("face degree collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia missing-edge face degrees"));
+}
+
+#[test]
+fn endpoint_degree_closure_charges_branch_search_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("endpoint closure fixture must remain viable"),
+            Err(error) => panic!("unexpected endpoint closure refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "collection limit 64 must admit the closure fixture"
+    );
+    assert!(operations.contains("catia missing-edge branch assignment"));
+    assert!(operations.contains("catia missing-edge used branches"));
+}
+
+#[test]
 fn endpoint_degree_closure_retains_one_face_incidences() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [0, 0], [1, 1], [0, 1]];
     let allowed = [Vec::new(), vec![1], vec![0], Vec::new()];
     let endpoint_pairs = [[0, 1], [1, 2], [1, 2], [2, 0]];
 
-    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
-        .expect("bounded endpoint closure");
+    let completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![edge_faces.to_vec()]);
 }
 
 #[test]
 fn endpoint_degree_closure_retains_symmetric_face_swaps() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [2, 3], [2, 2], [3, 3]];
     let allowed = [Vec::new(), Vec::new(), vec![0, 1], vec![0, 1]];
     let endpoint_pairs = [[0, 1]; 4];
 
-    let mut completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 4)
-        .expect("bounded endpoint closure");
+    let mut completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 4)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
     completed.sort();
 
     assert_eq!(
@@ -244,14 +467,18 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 #[test]
 fn candidate_contexts_share_edge_row_storage() {
     const CANDIDATES: usize = 1024;
+    catia_test_context!(ctx);
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let base = StandardMeshBoundaryContext::parse(&bytes, &faces).expect("quad boundary context");
+    let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
+        .expect("service resource budget")
+        .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
     assert_eq!(Arc::strong_count(&base.analysis), 1);
     for _ in 0..CANDIDATES {
         candidates.push(
-            base.with_edge_faces(&faces)
+            base.with_edge_faces(&ctx, &faces)
+                .expect("service resource budget")
                 .expect("quad candidate context"),
         );
         assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
@@ -317,7 +544,8 @@ fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
 fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize]];
-    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| true);
+    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| Ok(true))
+        .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 0]]));
 }
 
@@ -326,8 +554,9 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize, 1]];
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
-        assignment[0][1] == 1
-    });
+        Ok(assignment[0][1] == 1)
+    })
+    .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 1]]));
 }
 
