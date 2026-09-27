@@ -389,7 +389,9 @@ fn decode_retains_topology_owned_point_at_origin() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [0.0, 0.0, 0.0]);
 
-    assert_eq!(crate::geometry::points(&stream).len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| {
+        crate::geometry::points(ctx, &stream).unwrap().len()
+    }), 1);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
@@ -552,7 +554,9 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
     let mut stream = plane.clone();
     stream.extend(plane);
 
-    assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| {
+        crate::geometry::surfaces(ctx, &stream).unwrap().len()
+    }), 2);
     let graph = crate::topology::Graph::parse(&stream);
     assert!(graph.get(NodeKind::Plane, 77).is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
