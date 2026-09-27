@@ -428,11 +428,22 @@ impl<'a> ParsedStreams<'a> {
 
     /// Move the delta censuses into the native extractor after all semantic
     /// residuals have been built. Each delta walk is owned by one decode.
-    pub(super) fn take_delta_censuses(&mut self) -> Vec<Option<Census>> {
-        self.streams
-            .iter_mut()
-            .map(|stream| stream.delta_census.take())
-            .collect()
+    pub(super) fn take_delta_censuses(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<Option<Census>>, CodecError> {
+        ctx.charge_collection_items(
+            u64::try_from(self.streams.len()).unwrap_or(u64::MAX),
+            "nx delta census slots",
+        )?;
+        let mut censuses = Vec::new();
+        censuses
+            .try_reserve_exact(self.streams.len())
+            .map_err(|_| ctx.refuse_codec_limit("nx delta census slots", 0, 1))?;
+        for stream in &mut self.streams {
+            censuses.push(stream.delta_census.take());
+        }
+        Ok(censuses)
     }
 
     /// The cached parses of the stream at `ordinal`.
@@ -566,6 +577,28 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "nx parsed stream records"
+        ));
+    }
+
+    #[test]
+    fn delta_census_transfer_refuses_slots_at_collection_limit() {
+        let scan = scan_with_streams(vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }]);
+        let error = with_collection_limit(2, |ctx| {
+            let mut parsed = ParsedStreams::parse(ctx, &scan)
+                .expect("topology and parsed record use the two available slots");
+            parsed.take_delta_censuses(ctx)
+        })
+        .expect_err("census transfer needs a third collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx delta census slots"
         ));
     }
 
