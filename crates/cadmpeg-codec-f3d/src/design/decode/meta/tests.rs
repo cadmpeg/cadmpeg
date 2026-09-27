@@ -16,6 +16,91 @@ use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
 #[test]
+fn design_primary_frames_charge_registration_and_frame_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    let meta = crate::metastream::MetaStream {
+        types: vec![crate::design::test_support::design_type(
+            "00000000-0000-0000-0000-000000000001",
+            None,
+            0,
+            "Test",
+            vec![42],
+        )],
+        records: vec![crate::design::test_support::primary_record(42, 0)],
+        secondary_records: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    for (allowance, operation) in [
+        (0, "f3d registered primary entities"),
+        (1, "f3d design primary frames"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::design_primary_frames(&ctx, &bytes, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        let frames = super::design_primary_frames(ctx, &bytes, &meta).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].entity_id, 42);
+    });
+}
+
+#[test]
+fn typed_primary_frames_charge_all_collections() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    let type_guid = "00000000-0000-0000-0000-000000000001";
+    let meta = crate::metastream::MetaStream {
+        types: vec![crate::design::test_support::design_type(
+            type_guid,
+            None,
+            0,
+            "Test",
+            vec![42],
+        )],
+        records: vec![crate::design::test_support::primary_record(42, 0)],
+        secondary_records: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    for (allowance, operation) in [
+        (0, "f3d typed primary entities"),
+        (1, "f3d registered primary entities"),
+        (2, "f3d design primary frames"),
+        (3, "f3d resolved primary entities"),
+        (4, "f3d typed primary frames"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
+            .err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        let frames = super::typed_primary_frames(ctx, &bytes, &meta, type_guid, "test").unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].entity_id, 42);
+    });
+}
+
+#[test]
 fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::HashMap;

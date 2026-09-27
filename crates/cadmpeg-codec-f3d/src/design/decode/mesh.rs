@@ -1272,7 +1272,7 @@ where
     let stream = native_scope_charged(ctx, source_entry_name)?;
     let records = IndexedRecordOffsets::build(ctx, bytes)?;
     let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+        typed_primary_frames(ctx, bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1291,7 +1291,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+            typed_primary_frames(ctx, bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
                 .into_iter()
                 .map(|frame| parse_mesh_entry_name_record(bytes, frame)),
             "f3d mesh entry-name records",
@@ -1303,7 +1303,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+            typed_primary_frames(ctx, bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
                 .into_iter()
                 .map(|frame| parse_mesh_guid_record(bytes, frame)),
             "f3d mesh GUID records",
@@ -1315,7 +1315,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+            typed_primary_frames(ctx, bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
                 .into_iter()
                 .map(|frame| parse_mesh_body_record(bytes, frame)),
             "f3d mesh body records",
@@ -1328,7 +1328,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(
+            typed_primary_frames(ctx,
                 bytes,
                 meta,
                 MESH_TEXTURE_TABLE_TYPE_GUID,
@@ -1345,7 +1345,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+            typed_primary_frames(ctx, bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
                 .into_iter()
                 .map(|frame| parse_mesh_wrapper_record(bytes, frame)),
             "f3d mesh wrapper records",
@@ -1357,7 +1357,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(
+            typed_primary_frames(ctx,
                 bytes,
                 meta,
                 MESH_FEATURE_SCOPE_TYPE_GUID,
@@ -1374,7 +1374,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
+            typed_primary_frames(ctx, bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
                 .into_iter()
                 .map(|frame| parse_mesh_scene_state_record(bytes, frame)),
             "f3d mesh scene-state records",
@@ -1386,7 +1386,7 @@ where
         ctx,
         collect_mesh_records(
             ctx,
-            typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
+            typed_primary_frames(ctx, bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
                 .into_iter()
                 .map(|frame| parse_scene_node_record(bytes, frame)),
             "f3d mesh scene-node records",
@@ -1396,7 +1396,7 @@ where
     )?;
     let mut scene_auxiliary_frames = typed_frame_map(
         ctx,
-        typed_primary_frames(
+        typed_primary_frames(ctx,
             bytes,
             meta,
             SCENE_AUXILIARY_TYPE_GUID,
@@ -1406,7 +1406,7 @@ where
     )?;
     let filename_frames = typed_frame_map(
         ctx,
-        typed_primary_frames(
+        typed_primary_frames(ctx,
             bytes,
             meta,
             MESH_TEXTURE_FILENAME_TYPE_GUID,
@@ -1415,7 +1415,7 @@ where
         "mesh-texture-filename",
     )?;
     let mut owner_records = Vec::new();
-    for frame in typed_primary_frames(
+    for frame in typed_primary_frames(ctx,
         bytes,
         meta,
         MESH_COLLECTION_OWNER_TYPE_GUID,
@@ -1435,7 +1435,7 @@ where
     )?;
     let body_owner_frames = typed_frame_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+        typed_primary_frames(ctx, bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
         "mesh-body-owner",
     )?;
 
@@ -1886,7 +1886,7 @@ mod tests {
         SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION,
         SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION,
     };
-    use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
+    use crate::design::decode::meta::{typed_primary_frames as typed_primary_frames_with_context, TypedPrimaryFrame};
     use crate::design::test_support::{design_type, primary_record};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
@@ -1902,6 +1902,17 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
+
+    fn typed_primary_frames<'a>(
+        bytes: &[u8],
+        meta: &'a crate::metastream::MetaStream,
+        type_guid: &str,
+        record_kind: &str,
+    ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            typed_primary_frames_with_context(ctx, bytes, meta, type_guid, record_kind)
+        })
+    }
 
     fn parse_mesh_design_records<F>(
         bytes: &[u8],
@@ -1935,7 +1946,7 @@ mod tests {
     #[test]
     fn mesh_typed_frame_map_refuses_collection_limit() {
         let graph = synthetic_mesh_graph(false);
-        let frames = crate::design::decode::meta::typed_primary_frames(
+        let frames = typed_primary_frames(
             &graph.bytes,
             &graph.meta,
             super::MESH_COLLECTION_TYPE_GUID,
@@ -1958,7 +1969,7 @@ mod tests {
     #[test]
     fn mesh_collection_body_references_refuse_collection_limit() {
         let graph = synthetic_mesh_graph(false);
-        let frames = crate::design::decode::meta::typed_primary_frames(
+        let frames = typed_primary_frames(
             &graph.bytes,
             &graph.meta,
             super::MESH_COLLECTION_TYPE_GUID,
@@ -1985,7 +1996,7 @@ mod tests {
     #[test]
     fn mesh_scope_body_references_refuse_collection_limit() {
         let graph = synthetic_mesh_graph(false);
-        let frames = crate::design::decode::meta::typed_primary_frames(
+        let frames = typed_primary_frames(
             &graph.bytes,
             &graph.meta,
             super::MESH_FEATURE_SCOPE_TYPE_GUID,

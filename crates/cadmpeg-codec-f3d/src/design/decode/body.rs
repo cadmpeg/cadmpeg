@@ -1116,6 +1116,7 @@ pub(crate) struct DecodedBodyVisibility {
 }
 
 pub(crate) fn decode_all_body_visibility(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
@@ -1130,7 +1131,7 @@ pub(crate) fn decode_all_body_visibility(
         else {
             continue;
         };
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let hidden_by_entity = typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
         for record in selected_body_map_records(bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
@@ -1160,11 +1161,12 @@ struct BrowserNodeVisibility {
 }
 
 fn typed_browser_node_hidden_flags(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
-    let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
-    let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
+    let nodes = crate::design::decode::presentation::browser_node_records(ctx, bytes, meta)?;
+    let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
         nodes_by_entity
@@ -1782,8 +1784,9 @@ mod tests {
             ],
             secondary_records: Vec::new(),
         };
-        let visibility =
-            typed_browser_node_hidden_flags(&bytes, &meta).expect("typed presentation graph");
+        let visibility = crate::design::test_support::with_test_decode_context(|ctx| {
+            typed_browser_node_hidden_flags(ctx, &bytes, &meta)
+        }).expect("typed presentation graph");
         let selected = visibility.get(&entity).expect("presentation-selected node");
         assert_eq!(selected.byte_offset, selected_offset);
         assert!(!selected.hidden);
@@ -1816,8 +1819,9 @@ mod tests {
             ],
             secondary_records: Vec::new(),
         };
-        let visibility =
-            typed_browser_node_hidden_flags(&nodes_only, &meta).expect("typed browser nodes");
+        let visibility = crate::design::test_support::with_test_decode_context(|ctx| {
+            typed_browser_node_hidden_flags(ctx, &nodes_only, &meta)
+        }).expect("typed browser nodes");
         assert!(
             !visibility.contains_key(&entity),
             "two unjoined typed nodes are ambiguous"

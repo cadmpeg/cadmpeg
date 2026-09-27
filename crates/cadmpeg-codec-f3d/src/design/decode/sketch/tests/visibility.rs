@@ -121,7 +121,9 @@ fn sketch_visibility_accepts_settled_container_header() {
     };
 
     let visibilities =
-        decode_sketch_visibilities_in_stream(&bytes, &metadata).expect("settled header");
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            decode_sketch_visibilities_in_stream(ctx, &bytes, &metadata)
+        }).expect("settled header");
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert!(visibilities[0].1.visible);
