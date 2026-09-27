@@ -263,9 +263,11 @@ pub(crate) fn transfer(
                 &object.id,
                 &owned,
                 &feature_ids,
-                objects,
-                &properties_by_owner,
-                entries,
+                PatternSources {
+                    objects,
+                    properties_by_owner: &properties_by_owner,
+                    entries,
+                },
             )?
             .unwrap_or_else(|| {
                 FeatureDefinition::Operation(FeatureOperation::Native {
@@ -5790,16 +5792,26 @@ fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<Strin
         .cloned()
 }
 
+#[derive(Clone, Copy)]
+struct PatternSources<'a, 'b> {
+    objects: &'a [ObjectRecord],
+    properties_by_owner: &'a HashMap<&'b str, Vec<&'b PropertyRecord>>,
+    entries: &'a [EntryRecord],
+}
+
 fn pattern_definition(
     ctx: &DecodeContext<'_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
+    sources: PatternSources<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        ..
+    } = sources;
     let seeds = (|| -> Option<Vec<FeatureId>> {
         let originals = property(properties, "Originals")
             .filter(|property| !property.links().is_empty())
@@ -5857,59 +5869,54 @@ fn pattern_definition(
     })();
     let Some(seeds) = seeds else { return Ok(None) };
 
-    let pattern = if kind.ends_with("MultiTransform") {
-        let Some(transformations) = property(properties, "Transformations") else {
-            return Ok(None);
-        };
-        if transformations.links().is_empty() {
-            return Ok(None);
-        }
-        ctx.charge_collection_items(
-            transformations.links().len() as u64,
-            "freecad pattern stages",
-        )?;
-        let mut stages = Vec::with_capacity(transformations.links().len());
-        for link in transformations.links() {
-            let Some((object, owned)) = (|| {
-                let target = link.as_ref()?.object()?;
-                let object = objects.iter().find(|object| object.id == target)?;
-                let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                Some((object, owned))
-            })() else {
+    let pattern =
+        if kind.ends_with("MultiTransform") {
+            let Some(transformations) = property(properties, "Transformations") else {
                 return Ok(None);
             };
-            let Some(pattern) = pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-                ctx,
-                &object.type_name,
-                owned,
-                objects,
-                properties_by_owner,
-                entries,
-            )?
+            if transformations.links().is_empty() {
+                return Ok(None);
+            }
+            ctx.charge_collection_items(
+                transformations.links().len() as u64,
+                "freecad pattern stages",
+            )?;
+            let mut stages = Vec::with_capacity(transformations.links().len());
+            for link in transformations.links() {
+                let Some((object, owned)) = (|| {
+                    let target = link.as_ref()?.object()?;
+                    let object = objects.iter().find(|object| object.id == target)?;
+                    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
+                    Some((object, owned))
+                })() else {
+                    return Ok(None);
+                };
+                let Some(pattern) = pattern_kind::<
+                    cadmpeg_ir::features::patterns::NoNestedComposite,
+                >(ctx, &object.type_name, owned, sources)?
+                else {
+                    return Ok(None);
+                };
+                stages.push(PatternStage {
+                    pattern: Box::new(pattern),
+                });
+            }
+            let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
             else {
                 return Ok(None);
             };
-            stages.push(PatternStage {
-                pattern: Box::new(pattern),
-            });
-        }
-        let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
-        else {
-            return Ok(None);
+            let Some(pattern) =
+                PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
+            else {
+                return Ok(None);
+            };
+            pattern
+        } else {
+            let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
+                return Ok(None);
+            };
+            pattern
         };
-        let Some(pattern) = PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
-        else {
-            return Ok(None);
-        };
-        pattern
-    } else {
-        let Some(pattern) =
-            pattern_kind(ctx, kind, properties, objects, properties_by_owner, entries)?
-        else {
-            return Ok(None);
-        };
-        pattern
-    };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Pattern {
             seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
@@ -5969,10 +5976,13 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
+    sources: PatternSources<'_, '_>,
 ) -> Result<Option<PatternKind<C>>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        entries,
+    } = sources;
     if kind.ends_with("Mirrored") {
         return Ok((|| {
             Some(
@@ -6028,17 +6038,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
-        let Some(first) = linear_pattern_axis(
-            ctx,
-            properties,
-            "",
-            count,
-            mode,
-            objects,
-            properties_by_owner,
-            entries,
-        )?
-        else {
+        let Some(first) = linear_pattern_axis(ctx, properties, "", count, mode, sources)? else {
             return Ok(None);
         };
         let Some(count2) = integer_constraint_selector(properties, "Occurrences2", 1, false) else {
@@ -6051,34 +6051,24 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             let Some(mode2) = enumeration_selector(properties, "Mode2", 0) else {
                 return Ok(None);
             };
-            let Some(second) = linear_pattern_axis(
-                ctx,
-                properties,
-                "2",
-                count2 as u32,
-                mode2,
-                objects,
-                properties_by_owner,
-                entries,
-            )?
+            let Some(second) =
+                linear_pattern_axis(ctx, properties, "2", count2 as u32, mode2, sources)?
             else {
                 return Ok(None);
             };
             let Some(pattern) = (|| {
-                Some(
-                    PatternKind::new(PatternTransform::Composite {
-                        stages: C::rebuild(vec![
-                            PatternStage {
-                                pattern: Box::new(first),
-                            },
-                            PatternStage {
-                                pattern: Box::new(second),
-                            },
-                        ])
-                        .ok()?,
-                    })
+                PatternKind::new(PatternTransform::Composite {
+                    stages: C::rebuild(vec![
+                        PatternStage {
+                            pattern: Box::new(first),
+                        },
+                        PatternStage {
+                            pattern: Box::new(second),
+                        },
+                    ])
                     .ok()?,
-                )
+                })
+                .ok()
             })() else {
                 return Ok(None);
             };
@@ -6101,8 +6091,15 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         let Some(axis_origin) = cadmpeg_ir::features::FinitePoint3::new(axis_origin) else {
             return Ok(None);
         };
-        let Some(angles) =
-            pattern_locations(ctx, properties, "", count, mode, "Angle", "Offset", entries)?
+        let Some(angles) = pattern_locations(
+            ctx,
+            properties,
+            "",
+            count,
+            mode,
+            ("Angle", "Offset"),
+            entries,
+        )?
         else {
             return Ok(None);
         };
@@ -6144,10 +6141,13 @@ fn linear_pattern_axis(
     suffix: &str,
     count: u32,
     mode: u64,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-    entries: &[EntryRecord],
+    sources: PatternSources<'_, '_>,
 ) -> Result<Option<cadmpeg_ir::features::patterns::StagePatternKind>, CodecError> {
+    let PatternSources {
+        objects,
+        properties_by_owner,
+        entries,
+    } = sources;
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
@@ -6160,7 +6160,13 @@ fn linear_pattern_axis(
     }
     let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
     let Some(offsets) = pattern_locations(
-        ctx, properties, suffix, count, mode, "Length", "Offset", entries,
+        ctx,
+        properties,
+        suffix,
+        count,
+        mode,
+        ("Length", "Offset"),
+        entries,
     )?
     else {
         return Ok(None);
@@ -6197,10 +6203,10 @@ fn pattern_locations(
     suffix: &str,
     count: u32,
     mode: u64,
-    extent_base: &str,
-    offset_base: &str,
+    value_fields: (&str, &str),
     entries: &[EntryRecord],
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    let (extent_base, offset_base) = value_fields;
     if count == 0 {
         return Ok(None);
     }

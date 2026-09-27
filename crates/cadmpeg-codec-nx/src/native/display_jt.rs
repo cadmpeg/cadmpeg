@@ -3059,8 +3059,10 @@ pub(super) fn display_jt_polygon_meshes(
             valences,
             values(TopologyPacketRole::VertexGroups).unwrap_or_default(),
             values(TopologyPacketRole::VertexFlags).unwrap_or_default(),
-            values(TopologyPacketRole::SplitFaceSymbols).unwrap_or_default(),
-            values(TopologyPacketRole::SplitFacePositions).unwrap_or_default(),
+            crate::jt_topology::SplitLanes {
+                faces: values(TopologyPacketRole::SplitFaceSymbols).unwrap_or_default(),
+                positions: values(TopologyPacketRole::SplitFacePositions).unwrap_or_default(),
+            },
             crate::jt_topology::AttributeMaskLanes {
                 small: attribute_masks,
                 context_7_next_30,

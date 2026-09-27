@@ -31,7 +31,7 @@ pub(in super::super) fn resolved_revolution_axis(
     let Some(segments) = definition
         .variables
         .as_ref()
-        .and_then(|_| definition.segments.as_ref())
+        .and(definition.segments.as_ref())
         .filter(|segments| segments.is_complete())
     else {
         return Ok(None);
@@ -198,10 +198,13 @@ pub(in super::super) fn revolution_axis_for_transfer(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-    definition: &crate::feature::definitions::FeatureDefinition,
-    transform: &crate::placement::FeatureSectionTransform,
+    section: (
+        &crate::feature::definitions::FeatureDefinition,
+        &crate::placement::FeatureSectionTransform,
+    ),
     extent: Option<&RevolveExtent>,
 ) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
+    let (definition, transform) = section;
     Ok(
         resolved_revolution_axis(ctx, definition, transform)?.or_else(|| {
             full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
@@ -239,8 +242,7 @@ pub(super) fn feature_revolution_axis_for_transfer(
             ir,
             source_carriers,
             feature_id,
-            definition,
-            transform,
+            (definition, transform),
             extent,
         )?,
         None => None,

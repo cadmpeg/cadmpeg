@@ -42,7 +42,7 @@ fn uniform_pattern_intervals_report_collection_limit() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
     let admitted =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, "Length", "Offset", &[])
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
             .expect("service profile")
             .expect("uniform locations");
     assert_eq!(admitted.len(), 4);
@@ -51,7 +51,7 @@ fn uniform_pattern_intervals_report_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
     let error =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, "Length", "Offset", &[])
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
             .expect_err("three intervals exceed the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -67,7 +67,7 @@ fn irregular_pattern_intervals_report_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
     let error =
-        crate::design::pattern_locations(&ctx, &properties, "", 4, 1, "Length", "Offset", &[])
+        crate::design::pattern_locations(&ctx, &properties, "", 4, 1, ("Length", "Offset"), &[])
             .expect_err("three intervals exceed the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

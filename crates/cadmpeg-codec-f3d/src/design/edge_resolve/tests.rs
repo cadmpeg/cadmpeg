@@ -244,7 +244,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             Some(7),
             &treatment_feature_id,
             None,
-         None).unwrap(),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
@@ -295,7 +295,6 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -365,7 +364,6 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -382,7 +380,6 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -409,7 +406,6 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -954,7 +950,6 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         Some(7),
         &feature_id,
         None,
-        None,
     )
     .unwrap();
     assert!(matches!(
@@ -1001,7 +996,6 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -1017,7 +1011,6 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Unresolved
@@ -1035,7 +1028,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-         None).unwrap(),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
@@ -1106,7 +1099,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             Some(3.0),
-         None).unwrap(),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 2
     ));
@@ -1123,7 +1116,6 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             Some(3.0),
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -1148,7 +1140,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             None,
-         None).unwrap(),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 3
     ));
@@ -1166,7 +1158,6 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             None,
-            None
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
@@ -1917,8 +1908,7 @@ fn edge_assignment_refuses_collection_limit() {
     policy.limits.max_collection_items = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::edge_resolve::unique_bipartite_assignment(&candidates, Some(&ctx))
-        .err()
-        .expect("two assignment slots exceed five admitted collection items");
+        .expect_err("two assignment slots exceed five admitted collection items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

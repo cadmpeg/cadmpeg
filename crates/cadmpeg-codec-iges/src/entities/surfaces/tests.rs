@@ -305,8 +305,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::ruled_surface_carrier(&first, &second, Some(&ctx))
-        .err()
-        .expect("two unit weights exceed one admitted collection item");
+        .expect_err("two unit weights exceed one admitted collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems

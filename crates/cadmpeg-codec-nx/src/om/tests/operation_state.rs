@@ -127,8 +127,7 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = operation_state_group_table_before_counter_map(Some(&ctx), &bytes, map_start, 0)
-        .err()
-        .expect("the final group exceeds the admitted collection count");
+        .expect_err("the final group exceeds the admitted collection count");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

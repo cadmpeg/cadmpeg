@@ -5730,7 +5730,6 @@ pub(crate) fn topology_rows_with_face_ids(
 
 /// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
 /// Any malformed row or count mismatch withholds the entire array.
-#[must_use]
 pub(crate) fn depdb_cross_section_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &[u8],
@@ -5850,8 +5849,11 @@ fn parse_depdb_curve_segment(
         return Ok(None);
     };
     let body = ctx.copy_retained(&segment[prefix.end..*suffix_start], "creo curve row body")?;
-    let (scalar_tokens, references, opaque_spans) =
-        curve_scalar_lane(ctx, &body, prefix.type_byte, cache)?;
+    let CurveScalarLane {
+        scalar_tokens,
+        references,
+        opaque_spans,
+    } = curve_scalar_lane(ctx, &body, prefix.type_byte, cache)?;
     Ok(Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
@@ -6107,19 +6109,19 @@ fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
     terminal_count <= 4
 }
 
+#[derive(Debug)]
+struct CurveScalarLane {
+    scalar_tokens: Vec<CurveParameterScalar>,
+    references: Vec<CurveParameterReference>,
+    opaque_spans: Vec<CurveParameterOpaqueSpan>,
+}
+
 fn curve_scalar_lane(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
     type_byte: u8,
     cache: &scalar::ScalarCache,
-) -> Result<
-    (
-        Vec<CurveParameterScalar>,
-        Vec<CurveParameterReference>,
-        Vec<CurveParameterOpaqueSpan>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
     let mut scalars = Vec::new();
     let mut references = Vec::new();
     let mut claimed = ctx.alloc_filled(body.len(), false, "creo curve scalar claims")?;
@@ -6184,7 +6186,11 @@ fn curve_scalar_lane(
             offset: start,
         });
     }
-    Ok((scalars, references, opaque_spans))
+    Ok(CurveScalarLane {
+        scalar_tokens: scalars,
+        references,
+        opaque_spans,
+    })
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
@@ -6225,8 +6231,11 @@ pub(crate) fn parameter_records_with_face_ids(
         }
         let body =
             ctx.copy_retained(&row[body_start..suffix_start], "creo curve parameter body")?;
-        let (scalar_tokens, references, opaque_spans) =
-            curve_scalar_lane(ctx, &body, type_byte, &cache)?;
+        let CurveScalarLane {
+            scalar_tokens,
+            references,
+            opaque_spans,
+        } = curve_scalar_lane(ctx, &body, type_byte, &cache)?;
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,

@@ -741,11 +741,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         chamfer = project_chamfer(
                             scope,
                             &parameters,
-                            construction_groups,
-                            edge_operands,
-                            edge_identity_operands,
-                            edge_treatment_vertex_operands,
-                            histories,
+                            inputs,
                             ctx,
                         )?;
                     }
@@ -2103,16 +2099,7 @@ fn project_fillet_arm(
             },
         );
     }
-    if let Some(definition) = project_variable_fillet(
-        scope,
-        parameters,
-        inputs.construction_groups,
-        inputs.edge_operands,
-        inputs.edge_identity_operands,
-        inputs.edge_treatment_vertex_operands,
-        inputs.histories,
-        ctx,
-    )? {
+    if let Some(definition) = project_variable_fillet(scope, parameters, inputs, ctx)? {
         return Ok(definition);
     }
     if parameters.is_empty() {
@@ -5444,11 +5431,7 @@ pub(super) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
 fn project_variable_fillet(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
-    construction_groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
-    histories: &[crate::history_records::AsmHistory],
+    inputs: &ProjectInputs<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
@@ -5456,6 +5439,11 @@ fn project_variable_fillet(
         FeatureDefinition, FeatureOperation,
     };
 
+    let construction_groups = inputs.construction_groups;
+    let edge_operands = inputs.edge_operands;
+    let edge_identity_operands = inputs.edge_identity_operands;
+    let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
+    let histories = inputs.histories;
     let stream = or_none!(native_stream(&scope.id));
     let mut groups = construction_groups
         .iter()
@@ -5606,11 +5594,7 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
 fn project_chamfer(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
-    construction_groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
-    edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
-    histories: &[crate::history_records::AsmHistory],
+    inputs: &ProjectInputs<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
@@ -5618,6 +5602,11 @@ fn project_chamfer(
         FeatureDefinition, FeatureOperation,
     };
 
+    let construction_groups = inputs.construction_groups;
+    let edge_operands = inputs.edge_operands;
+    let edge_identity_operands = inputs.edge_identity_operands;
+    let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
+    let histories = inputs.histories;
     let native_scope = native_stream(&scope.id);
     let mut edge_groups = construction_groups
         .iter()

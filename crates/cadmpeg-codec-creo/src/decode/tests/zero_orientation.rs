@@ -599,8 +599,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
-            &carrier_only_definition,
-            &transform,
+            (&carrier_only_definition, &transform),
             Some(&full_turn),
         ))
         .expect("test section solve"),
