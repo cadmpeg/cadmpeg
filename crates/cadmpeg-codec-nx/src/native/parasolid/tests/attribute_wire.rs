@@ -87,3 +87,122 @@ fn resolved_class_relations_preserve_non_null_definition_wire() {
         r#"{"id":"class","topology_attribute_reference":"topology","entity_51_record":"entity","attribute_class_use":"use","definition_xmt":2,"attribute_definition":"definition"}"#,
     );
 }
+
+#[test]
+fn attribute_class_use_borrowed_wire_matches_owned_bytes() {
+    use crate::native::parasolid::{ParasolidAttributeClassUse, ParasolidAttributeClassUseWire};
+
+    let record = ParasolidAttributeClassUse {
+        id: "nx:s3:attribute-class-use#2-8".into(),
+        stream_ordinal: 3,
+        entity_51_record: "entity".into(),
+        definition_xmt: 2_u32.try_into().unwrap(),
+        attribute_definition: "definition".into(),
+        inflated_offset: 8,
+    };
+    let old = serde_json::to_vec(&ParasolidAttributeClassUseWire::from(record.clone())).unwrap();
+    assert_eq!(serde_json::to_vec(&record).unwrap(), old);
+}
+
+#[test]
+fn attribute_class_use_retained_limit_refuses_borrowed_serialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::NativeNamespace;
+
+    use crate::native::parasolid::{ParasolidAttributeClassUse, ATTRIBUTE_CLASS_USE_CLONE_COUNT};
+
+    let record = ParasolidAttributeClassUse {
+        id: "nx:s3:attribute-class-use#2-8".into(),
+        stream_ordinal: 3,
+        entity_51_record: "entity".into(),
+        definition_xmt: 2_u32.try_into().unwrap(),
+        attribute_definition: "definition".into(),
+        inflated_offset: 8,
+    };
+    let json = serde_json::to_vec(&record).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(json.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(0));
+    let error = NativeNamespace::default()
+        .set_arena(&limited, "a", std::slice::from_ref(&record))
+        .unwrap_err();
+    ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    NativeNamespace::default()
+        .set_arena(&service, "a", &[record])
+        .unwrap();
+    ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+}
+
+#[test]
+fn topology_attribute_class_use_borrowed_wire_matches_owned_bytes() {
+    use crate::native::parasolid::{
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeClassUseWire,
+    };
+
+    let record = ParasolidTopologyAttributeClassUse {
+        id: "nx:s3:topology-attribute-class-use#2-8".into(),
+        topology_attribute_reference: "topology".into(),
+        entity_51_record: "entity".into(),
+        attribute_class_use: "class".into(),
+        definition_xmt: 2_u32.try_into().unwrap(),
+        attribute_definition: "definition".into(),
+        stream_ordinal: 3,
+        inflated_offset: 8,
+    };
+    let old = serde_json::to_vec(&ParasolidTopologyAttributeClassUseWire::from(
+        record.clone(),
+    ))
+    .unwrap();
+    assert_eq!(serde_json::to_vec(&record).unwrap(), old);
+}
+
+#[test]
+fn topology_attribute_class_use_retained_limit_refuses_borrowed_serialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::NativeNamespace;
+
+    use crate::native::parasolid::{
+        ParasolidTopologyAttributeClassUse, TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT,
+    };
+
+    let record = ParasolidTopologyAttributeClassUse {
+        id: "nx:s3:topology-attribute-class-use#2-8".into(),
+        topology_attribute_reference: "topology".into(),
+        entity_51_record: "entity".into(),
+        attribute_class_use: "class".into(),
+        definition_xmt: 2_u32.try_into().unwrap(),
+        attribute_definition: "definition".into(),
+        stream_ordinal: 3,
+        inflated_offset: 8,
+    };
+    let json = serde_json::to_vec(&record).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(json.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(0));
+    let error = NativeNamespace::default()
+        .set_arena(&limited, "a", std::slice::from_ref(&record))
+        .unwrap_err();
+    TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    NativeNamespace::default()
+        .set_arena(&service, "a", &[record])
+        .unwrap();
+    TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+}
