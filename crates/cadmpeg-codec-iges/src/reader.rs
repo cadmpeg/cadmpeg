@@ -155,10 +155,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &global,
             Some(ctx),
         )?;
-        global_losses.extend(
-            global
-                .conditional_double_precision_losses(parameter::uses_double_precision(&parameters)),
-        );
+        let conditional_losses = global.conditional_double_precision_losses(
+            parameter::uses_double_precision(&parameters),
+            ctx,
+        )?;
+        crate::decode_resource::reserve_vec_growth(
+            ctx,
+            &mut global_losses,
+            conditional_losses.len(),
+            "iges combined global loss notes",
+        )?;
+        global_losses.extend(conditional_losses);
         charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
         let references = graph::build(&directory, ctx)?;
         let mut framing_recoveries = scan.recoveries.clone();
