@@ -582,6 +582,7 @@ fn candidate_contexts_share_edge_row_storage() {
 
 #[test]
 fn face_options_hold_the_retained_face_in_ascending_order() {
+    catia_test_context!(ctx);
     for (retained, others) in [
         (3usize, vec![]),
         (3, vec![5, 9]),
@@ -589,7 +590,7 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
         (5, vec![1, 9]),
         (0, vec![0usize; 0]),
     ] {
-        let options = FaceOptions::from_admitted(retained, others.clone());
+        let options = FaceOptions::from_admitted(&ctx, retained, others.clone()).expect("service budget");
         let mut expected = others;
         expected.push(retained);
         expected.sort_unstable();
@@ -601,42 +602,89 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
 
 #[test]
 fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
+    catia_test_context!(ctx);
     // Unsorted, with a repeat, and holding `retained` itself. The type does
     // the filter, the sort and the dedup, so the caller states none of them.
-    let options = FaceOptions::from_admitted(5, [9usize, 1, 5, 9, 1, 3]);
+    let options = FaceOptions::from_admitted(&ctx, 5, [9usize, 1, 5, 9, 1, 3]).expect("service budget");
 
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![1, 3, 5, 9]);
     assert_eq!(options.count(), 4);
     assert_eq!(options.first, 1);
 
     // `retained` smaller than every admitted face, still unsorted and repeated.
-    let options = FaceOptions::from_admitted(0, [4usize, 2, 4]);
+    let options = FaceOptions::from_admitted(&ctx, 0, [4usize, 2, 4]).expect("service budget");
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![0, 2, 4]);
 
     // Nothing admitted beyond the retained face.
-    let options = FaceOptions::from_admitted(7, [7usize, 7]);
+    let options = FaceOptions::from_admitted(&ctx, 7, [7usize, 7]).expect("service budget");
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![7]);
     assert_eq!(options.count(), 1);
 }
 
 #[test]
 fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
+    catia_test_context!(ctx);
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize]];
-    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| Ok(true))
+    let solved = unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 1, |_| Ok(true))
         .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 0]]));
 }
 
 #[test]
 fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment() {
+    catia_test_context!(ctx);
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize, 1]];
-    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
+    let solved = unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 2, |assignment| {
         Ok(assignment[0][1] == 1)
     })
     .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 1]]));
+}
+
+#[test]
+fn duplicate_face_assignment_refuses_before_unresolved_slot_storage() {
+    let serialized = [[0usize, 0]];
+    let allowed = [vec![0usize, 1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |faces| {
+            Ok(faces[0][1] == 1)
+        })
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![[0, 1]]));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_duplicate_face_unresolved"
+    ));
+}
+
+#[test]
+fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::standard_mesh_edge_runs(ctx, &bytes)
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget").expect("runs").len(), 4);
+    let mut limit = 0;
+    let mut refused = HashSet::new();
+    for _ in 0..256 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(Some(runs)) => {
+                assert_eq!(runs.len(), 4);
+                break;
+            }
+            outcome => panic!("unexpected mesh runs outcome: {outcome:?}"),
+        }
+    }
+    assert!(refused.contains("catia_mesh_edge_run_rows"));
 }
 
 mod ports_and_coverage;

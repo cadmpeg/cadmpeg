@@ -867,18 +867,21 @@ pub(crate) fn standard_mesh_edge_runs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
-    Ok(standard_mesh_analysis(ctx, bytes)?.map(|analysis| mesh_edge_runs(&analysis)))
+    standard_mesh_analysis(ctx, bytes)?
+        .map(|analysis| mesh_edge_runs(ctx, &analysis))
+        .transpose()
 }
 
-fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
-    let mut runs = analysis
-        .occurrences
-        .iter()
-        .flatten()
-        .copied()
-        .collect::<Vec<_>>();
+fn mesh_edge_runs(
+    ctx: &DecodeContext<'_>,
+    analysis: &StandardMeshAnalysis,
+) -> Result<Vec<MeshEdgeRun>, CodecError> {
+    let mut runs = Vec::new();
+    for run in analysis.occurrences.iter().flatten() {
+        crate::resource::push(ctx, &mut runs, *run, "catia_mesh_edge_run_rows")?;
+    }
     runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
-    runs
+    Ok(runs)
 }
 
 /// Complete repeated standard edge-face slots from exact trim-boundary
@@ -1383,28 +1386,32 @@ impl FaceOptions {
     ///
     /// `admitted` states the faces the slot allows, in any order, with or
     /// without repeats, and with or without `retained` among them.
-    fn from_admitted(retained: usize, admitted: impl IntoIterator<Item = usize>) -> Self {
-        let mut others = admitted
-            .into_iter()
-            .filter(|face| *face != retained)
-            .collect::<Vec<_>>();
+    fn from_admitted(
+        ctx: &DecodeContext<'_>,
+        retained: usize,
+        admitted: impl IntoIterator<Item = usize>,
+    ) -> Result<Self, CodecError> {
+        let mut others = Vec::new();
+        for face in admitted.into_iter().filter(|face| *face != retained) {
+            crate::resource::push(ctx, &mut others, face, "catia_duplicate_face_options")?;
+        }
         others.sort_unstable();
         others.dedup();
         let at = others.partition_point(|face| *face < retained);
         if at == 0 {
-            return Self {
+            return Ok(Self {
                 first: retained,
                 rest: others,
-            };
+            });
         }
         // `others[0]` is smaller than `retained`, so it is the smallest face.
         // Removing it shifts the insertion point of `retained` down by one.
         let first = others.remove(0);
         others.insert(at - 1, retained);
-        Self {
+        Ok(Self {
             first,
             rest: others,
-        }
+        })
     }
 
     /// How many faces this slot admits. Never zero.
@@ -1419,6 +1426,7 @@ impl FaceOptions {
 }
 
 pub(super) fn unique_duplicate_face_assignment<F>(
+    ctx: &DecodeContext<'_>,
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     face_count: usize,
@@ -1430,6 +1438,7 @@ where
     const MAX_STATES: usize = 4_096;
 
     fn search<F>(
+        ctx: &DecodeContext<'_>,
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
@@ -1446,7 +1455,8 @@ where
         }
         if at == branches.len() {
             if valid(assignment)? && !solutions.iter().any(|solution| solution == assignment) {
-                solutions.push(assignment.to_vec());
+                let solution = crate::resource::copy_retained_slice(ctx, assignment, "catia_duplicate_face_solution")?;
+                crate::resource::push(ctx, solutions, solution, "catia_duplicate_face_solution_rows")?;
             }
             return Ok(());
         }
@@ -1459,6 +1469,7 @@ where
         for face in options.iter() {
             assignment[*edge][1] = face;
             search(
+                ctx,
                 branches,
                 at + 1,
                 assignment,
@@ -1483,23 +1494,24 @@ where
     {
         return Ok(None);
     }
-    let unresolved = serialized
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
-        .collect::<Vec<_>>();
-    if unresolved.is_empty() {
-        return Ok(Some(serialized.to_vec()));
+    let mut unresolved = Vec::new();
+    for (edge, faces) in serialized.iter().enumerate() {
+        if faces[0] == faces[1] {
+            crate::resource::push(ctx, &mut unresolved, edge, "catia_duplicate_face_unresolved")?;
+        }
     }
-    let mut assignment = serialized.to_vec();
+    if unresolved.is_empty() {
+        return Ok(Some(crate::resource::copy_retained_slice(ctx, serialized, "catia_duplicate_face_serialized")?));
+    }
+    let mut assignment = crate::resource::copy_retained_slice(ctx, serialized, "catia_duplicate_face_serialized")?;
     let mut branches = Vec::new();
     for edge in unresolved {
         let retained = assignment[edge][0];
-        let options = FaceOptions::from_admitted(retained, allowed_faces[edge].iter().copied());
+        let options = FaceOptions::from_admitted(ctx, retained, allowed_faces[edge].iter().copied())?;
         if options.rest.is_empty() {
             assignment[edge][1] = options.first;
         } else {
-            branches.push((edge, options));
+            crate::resource::push(ctx, &mut branches, (edge, options), "catia_duplicate_face_branches")?;
         }
     }
     branches.sort_unstable_by_key(|(edge, options)| (options.count(), *edge));
@@ -1507,6 +1519,7 @@ where
     let mut exhausted = false;
     let mut solutions = Vec::new();
     search(
+        ctx,
         &branches,
         0,
         &mut assignment,
@@ -1636,7 +1649,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     };
     let face_count = face_run.face_count();
     let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
-    unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
+    unique_duplicate_face_assignment(ctx, serialized, allowed_faces, face_count, |assignment| {
         if let Some(base) = context.as_ref() {
             let Some(context) = base.with_edge_faces(ctx, assignment)? else {
                 return Ok(false);
@@ -1755,12 +1768,15 @@ impl StandardMeshBoundaryContext {
         let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
             return Ok(None);
         };
-        let edge_runs = mesh_edge_runs(&analysis);
-        let cycle_lengths = analysis
-            .cycles
-            .iter()
-            .map(|cycles| cycles.iter().map(Vec::len).collect())
-            .collect();
+        let edge_runs = mesh_edge_runs(ctx, &analysis)?;
+        let mut cycle_lengths = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut cycle_lengths, analysis.cycles.len(), "catia_mesh_cycle_length_rows")?;
+        for cycles in &analysis.cycles {
+            let mut lengths = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut lengths, cycles.len(), "catia_mesh_cycle_lengths")?;
+            lengths.extend(cycles.iter().map(Vec::len));
+            cycle_lengths.push(lengths);
+        }
         Ok(Some(Self {
             analysis,
             coverage,
@@ -1781,9 +1797,9 @@ impl StandardMeshBoundaryContext {
         Ok(Some(Self {
             analysis: Arc::clone(&self.analysis),
             coverage,
-            edge_ports: self.edge_ports.clone(),
-            edge_runs: self.edge_runs.clone(),
-            cycle_lengths: self.cycle_lengths.clone(),
+            edge_ports: crate::resource::copy_retained_slice(ctx, &self.edge_ports, "catia_mesh_context_edge_ports")?,
+            edge_runs: crate::resource::copy_retained_slice(ctx, &self.edge_runs, "catia_mesh_context_edge_runs")?,
+            cycle_lengths: crate::resource::copy_retained_rows(ctx, &self.cycle_lengths, "catia_mesh_context_cycle_rows", "catia_mesh_context_cycle_lengths")?,
         }))
     }
 }
@@ -3498,18 +3514,28 @@ fn standard_mesh_assignment_corner_points(
         if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
             return None;
         }
-        let runs = mesh_edge_runs(&analysis);
+        let runs = match mesh_edge_runs(ctx, &analysis) {
+            Ok(runs) => runs,
+            Err(error) => return Some(Err(error)),
+        };
         let assignments =
             match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
                 Ok(Some(assignments)) => assignments,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-        let cycle_lengths = analysis
-            .cycles
-            .iter()
-            .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
-            .collect::<Vec<_>>();
+        let mut cycle_lengths = Vec::new();
+        if let Err(error) = crate::resource::reserve_vec(ctx, &mut cycle_lengths, analysis.cycles.len(), "catia_missing_cycle_length_rows") {
+            return Some(Err(error));
+        }
+        for cycles in &analysis.cycles {
+            let mut lengths = Vec::new();
+            if let Err(error) = crate::resource::reserve_vec(ctx, &mut lengths, cycles.len(), "catia_missing_cycle_lengths") {
+                return Some(Err(error));
+            }
+            lengths.extend(cycles.iter().map(Vec::len));
+            cycle_lengths.push(lengths);
+        }
         let mut corner_points = MeshCornerPoints::new();
         let mut run_constraints = Vec::new();
         for run in runs {
