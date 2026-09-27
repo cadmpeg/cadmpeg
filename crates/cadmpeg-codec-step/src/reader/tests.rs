@@ -1407,3 +1407,61 @@ fn opaque_preservation_loss_text_refuses_retained_limit() {
     });
     assert!(refused, "opaque loss text must charge retained bytes");
 }
+
+#[test]
+fn dialect_match_copy_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..256).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits collection policy");
+        let Ok(session) = super::StepDecodeSession::new(
+            &exchange, &diagnostics, &ctx, super::DecodeMode::Inspect,
+        ) else {
+            return false;
+        };
+        matches!(
+            session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_dialect_match_copy_items"
+        )
+    });
+    assert!(refused, "dialect declaration copy must charge each item");
+}
+
+#[test]
+fn dialect_match_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits retained policy");
+        let Ok(session) = super::StepDecodeSession::new(
+            &exchange, &diagnostics, &ctx, super::DecodeMode::Inspect,
+        ) else {
+            return false;
+        };
+        matches!(
+            session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_dialect_match_copy_text"
+        )
+    });
+    assert!(refused, "dialect declaration copy must charge retained text");
+}
