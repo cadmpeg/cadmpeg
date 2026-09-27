@@ -333,7 +333,7 @@ fn decode_with_occurrence_limits(
                 &parse.parameters,
                 &parse.trailing_pointer_analysis,
                 &context,
-                Some(ctx),
+                ctx,
             )?
         }
         None => entities::geometry::Projection::default(),

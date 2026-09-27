@@ -990,14 +990,12 @@ fn consumed_support_sequences(
 }
 
 fn admit_projected_entities(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     admitted: &mut u64,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.admit_entities(ir.model.entity_count() as u64, admitted, operation)
-    })
+    ctx.admit_entities(ir.model.entity_count() as u64, admitted, operation)
 }
 
 fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
@@ -1260,7 +1258,7 @@ pub(crate) fn project_geometry(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Projection, CodecError> {
     let mut sequences = SourceSequences::default();
     let global_table = global.global_table();
@@ -1403,7 +1401,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -1588,7 +1586,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -1681,7 +1679,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -1745,7 +1743,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -2009,7 +2007,7 @@ pub(crate) fn project_geometry(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -2190,18 +2188,16 @@ pub(crate) fn project_geometry(
     // decode report and the free-geometry shell; every `project` call appends
     // to `ir`; and every `admit_projected_entities` call can early-return on
     // the entity budget.
-    super::conics::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
-        &mut decoded,
-        &mut losses,
-        &mut wire_edges,
-    );
+    super::conics::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        &mut wire_edges,
-        &mut free_vertices,
-    );
+    super::copious::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
+        .merge_into(
+            &mut decoded,
+            &mut losses,
+            &mut wire_edges,
+            &mut free_vertices,
+        );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
     super::splines::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
@@ -2209,17 +2205,11 @@ pub(crate) fn project_geometry(
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    super::composite::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        &mut wire_edges,
-    );
+    super::composite::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    super::offsets::project(ir, directory, parameters, global, ctx, &mut sequences).merge_into(
-        &mut decoded,
-        &mut losses,
-        &mut wire_edges,
-    );
+    super::offsets::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
@@ -2229,7 +2219,7 @@ pub(crate) fn project_geometry(
         directory,
         parameters,
         global,
-        ctx,
+        Some(ctx),
         &mut sequences,
     )?
     .merge_into(&mut decoded, &mut losses, &mut wire_edges);
@@ -2239,7 +2229,7 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_composites_offsets",
     )?;
-    super::analytic_surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)
+    super::analytic_surfaces::project(ir, directory, parameters, global, Some(ctx), &mut sequences)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
@@ -2247,7 +2237,7 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    super::surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
+    super::surfaces::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
@@ -2287,7 +2277,7 @@ pub(crate) fn project_geometry(
     super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
-    super::csg::project(ir, directory, parameters, global, ctx)
+    super::csg::project(ir, directory, parameters, global, Some(ctx))
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
     let (structure_projection, placement_rejections) = super::structure::project(
@@ -2296,7 +2286,7 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        ctx,
+        Some(ctx),
         &mut sequences,
     );
     structure_projection.merge_into(&mut decoded, &mut losses);
@@ -2307,7 +2297,7 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        ctx,
+        Some(ctx),
         &sequences,
     )
     .merge_into(&mut decoded, &mut losses);
@@ -2323,11 +2313,11 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        ctx,
+        Some(ctx),
     )
     .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
-    super::annotation::project(ir, directory, parameters, global, ctx)
+    super::annotation::project(ir, directory, parameters, global, Some(ctx))
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations

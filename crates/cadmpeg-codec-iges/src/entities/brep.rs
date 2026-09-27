@@ -4,12 +4,14 @@
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
+use crate::decode_resource::reserve_vec;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::eval::{finite_or_refusal, EvaluationFailure};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
@@ -95,6 +97,7 @@ struct SurfaceSupport<'a> {
 enum SourceEdgeSelectionError {
     NoMatch,
     Ambiguous,
+    ResourceLimit(cadmpeg_core::decode::ResourceLimit),
 }
 
 fn compose_sense(left: Sense, right: Sense) -> Sense {
@@ -154,13 +157,27 @@ fn source_edge_for_vertices<'a>(
         .iter()
         .filter_map(|position| ir.model.edges.get(*position))
     {
-        let endpoints_agree = edge.param_range().is_some_and(|range| {
-            cadmpeg_ir::eval::curve_point(curve_geometry, range[0]).is_ok_and(|point| {
-                cadmpeg_ir::math::Point3::distance(point.get(), natural_start) <= tolerance
-            }) && cadmpeg_ir::eval::curve_point(curve_geometry, range[1]).is_ok_and(|point| {
-                cadmpeg_ir::math::Point3::distance(point.get(), natural_end) <= tolerance
-            })
-        });
+        let Some(range) = edge.param_range() else {
+            continue;
+        };
+        let Some(start) =
+            finite_or_refusal(cadmpeg_ir::eval::curve_point(curve_geometry, range[0]))
+                .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        else {
+            continue;
+        };
+        let start_agrees =
+            cadmpeg_ir::math::Point3::distance(start.get(), natural_start) <= tolerance;
+        if !start_agrees {
+            continue;
+        }
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::curve_point(curve_geometry, range[1]))
+            .map_err(SourceEdgeSelectionError::ResourceLimit)?
+        else {
+            continue;
+        };
+        let endpoints_agree =
+            cadmpeg_ir::math::Point3::distance(end.get(), natural_end) <= tolerance;
         if endpoints_agree {
             if matching.is_some() {
                 return Err(SourceEdgeSelectionError::Ambiguous);
@@ -209,6 +226,12 @@ fn project_pcurve_uses(
         .collect()
 }
 
+fn surface_point_or_refusal(
+    evaluation: Result<FinitePoint3, EvaluationFailure<Point3>>,
+) -> Result<Option<FinitePoint3>, super::composite::CompositeCurveError> {
+    finite_or_refusal(evaluation).map_err(|limit| CodecError::from(limit).into())
+}
+
 // Validation hands back the resolved pcurve geometry instead of a verdict:
 // projection needs exactly what was just computed, from the same unmutated
 // `ir` with the same arguments, so returning it keeps each pcurve resolved
@@ -227,15 +250,15 @@ fn resolve_pcurve_uses<'a>(
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
     let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
-    let mut resolved = Vec::with_capacity(uses.len());
-    let mut mapped = Vec::with_capacity(uses.len());
+    let mut resolved = reserve_vec(ctx, uses.len(), "iges B-rep resolved pcurves")?;
+    let mut mapped = reserve_vec(ctx, uses.len(), "iges B-rep mapped pcurves")?;
     for (_, sequence) in uses {
         let Some((geometry, range)) = pcurve_geometry(
             source,
@@ -246,23 +269,31 @@ fn resolve_pcurve_uses<'a>(
                 factor: support.factor,
             },
             Some(tolerance),
-            ctx,
+            Some(ctx),
             None,
         )?
         else {
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            cadmpeg_ir::eval::pcurve_uv(&geometry, range[0])
-                .ok()
-                .and_then(|uv| {
-                    cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v).ok()
-                }),
-            cadmpeg_ir::eval::pcurve_uv(&geometry, range[1])
-                .ok()
-                .and_then(|uv| {
-                    cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v).ok()
-                }),
+            finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(&geometry, range[0]))
+                .map_err(CodecError::from)?
+                .map(|uv| {
+                    surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                        index, support.id, uv.u, uv.v,
+                    ))
+                })
+                .transpose()?
+                .flatten(),
+            finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(&geometry, range[1]))
+                .map_err(CodecError::from)?
+                .map(|uv| {
+                    surface_point_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+                        index, support.id, uv.u, uv.v,
+                    ))
+                })
+                .transpose()?
+                .flatten(),
         ) else {
             return Ok(None);
         };
@@ -285,7 +316,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
@@ -324,7 +355,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "vertex-list count is not positive"));
             continue;
         };
-        let mut points = Vec::with_capacity(count);
+        let mut points = reserve_vec(ctx, count, "iges B-rep vertex-list points")?;
         for index in 0..count {
             let start = 2 + index * 3;
             let values = [
@@ -371,7 +402,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "edge-list count is not positive"));
             continue;
         };
-        let mut edges = Vec::with_capacity(count);
+        let mut edges = reserve_vec(ctx, count, "iges B-rep edge-list edges")?;
         for item in 0..count {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
@@ -431,7 +462,7 @@ pub(super) fn project(
             continue;
         };
         let mut index = 2;
-        let mut uses = Vec::with_capacity(count);
+        let mut uses = reserve_vec(ctx, count, "iges B-rep loop uses")?;
         for _ in 0..count {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
@@ -449,7 +480,7 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let mut pcurves = Vec::with_capacity(pcurve_count);
+            let mut pcurves = reserve_vec(ctx, pcurve_count, "iges B-rep use pcurves")?;
             for pcurve_index in 0..pcurve_count {
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
@@ -605,7 +636,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "shell face count is not positive"));
             continue;
         };
-        let mut face_uses = Vec::with_capacity(count);
+        let mut face_uses = reserve_vec(ctx, count, "iges B-rep shell face uses")?;
         for index in 0..count {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
@@ -719,7 +750,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(message) => {
@@ -1054,6 +1085,9 @@ pub(super) fn project(
                                     ));
                                     valid = false;
                                     break;
+                                }
+                                Err(SourceEdgeSelectionError::ResourceLimit(limit)) => {
+                                    return Err(limit.into());
                                 }
                             };
                             let id = crate::ids::edge(&stem.child(edge_key.0).slot(edge_key.1 + 1));

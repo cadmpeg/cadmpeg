@@ -3,7 +3,10 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -21,6 +24,59 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .charge_collection_items(2, "iges B-rep surface evaluation")
+        .unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection limit refusal");
+    };
+    let result = super::surface_point_or_refusal(Err(EvaluationFailure::ResourceLimit(limit)));
+    assert!(matches!(
+        result,
+        Err(super::super::composite::CompositeCurveError::Budget(
+            CodecError::ResourceLimit(actual)
+        )) if actual == limit && actual.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn brep_counted_vectors_refuse_before_nested_allocation() {
+    for operation in [
+        "iges B-rep resolved pcurves",
+        "iges B-rep mapped pcurves",
+        "iges B-rep vertex-list points",
+        "iges B-rep edge-list edges",
+        "iges B-rep loop uses",
+        "iges B-rep use pcurves",
+        "iges B-rep shell face uses",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::decode_resource::reserve_vec::<u8>(&ctx, 2, operation);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 0
+                    && limit.additional == 2
+                    && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let admitted =
+        crate::decode_resource::reserve_vec::<u8>(&ctx, 2, "iges B-rep use pcurves").unwrap();
+    assert!(admitted.capacity() >= 2);
+}
 
 #[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
@@ -160,7 +216,8 @@ fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
             !decoded,
             "{end_x}"
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -206,7 +263,8 @@ fn decode_builds_a_vertex_only_pole_loop() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -295,7 +353,8 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -425,7 +484,8 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -501,7 +561,8 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -544,6 +605,7 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

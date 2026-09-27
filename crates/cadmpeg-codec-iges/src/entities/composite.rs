@@ -3,12 +3,14 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
+use crate::decode_resource::reserve_admitted_vec;
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
@@ -423,8 +425,16 @@ fn euclidean_control_points(
             )?;
         }
     }
-    let mut control_points = Vec::with_capacity(homogeneous.len());
-    let mut weights = rational.then(|| Vec::with_capacity(homogeneous.len()));
+    let mut control_points =
+        reserve_admitted_vec(homogeneous.len(), "iges composite Euclidean control points")?;
+    let mut weights = if rational {
+        Some(reserve_admitted_vec(
+            homogeneous.len(),
+            "iges composite Euclidean weights",
+        )?)
+    } else {
+        None
+    };
     for [weight, x, y, z] in homogeneous {
         let Some(weight) = PositiveReal::new(weight) else {
             return Ok(None);
@@ -468,7 +478,9 @@ fn elevate_bezier_homogeneous(
             "iges composite Bezier source copy",
         )?;
     }
-    let mut elevated = control_points.to_vec();
+    let mut elevated =
+        reserve_admitted_vec(control_points.len(), "iges composite Bezier source copy")?;
+    elevated.extend_from_slice(control_points);
     let mut degree = source_degree;
     while degree < target_degree {
         let Some(next_degree) = degree.checked_add(1) else {
@@ -480,7 +492,7 @@ fn elevate_bezier_homogeneous(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(next_count as u64, "iges composite Bezier elevated net")?;
         }
-        let mut next = Vec::with_capacity(next_count);
+        let mut next = reserve_admitted_vec(next_count, "iges composite Bezier elevated net")?;
         next.push(elevated[0]);
         for index in 1..=degree {
             let alpha = index as f64 / next_degree as f64;
@@ -1419,7 +1431,7 @@ fn concatenate_nurbs<T>(
         ctx.charge_collection_items(children.len() as u64, "iges composite segment slots")?;
     }
     let mut segments = ConcatenatedSegments {
-        preceding: Vec::with_capacity(children.len()),
+        preceding: reserve_admitted_vec(children.len(), "iges composite segment slots")?,
         last,
     };
     for child in children {
@@ -1479,8 +1491,9 @@ fn concatenate_nurbs<T>(
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t)
-            .map_err(|_| CompositeCurveError::EndpointEvaluation { t })
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t))
+            .map_err(CodecError::from)?
+            .ok_or(CompositeCurveError::EndpointEvaluation { t })
     };
     endpoint(0.0)?;
     endpoint(cursor)?;
@@ -1560,7 +1573,13 @@ fn bounded_nurbs_for_id(
         return Ok(None);
     };
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
-        let mut children = Vec::with_capacity(segments.len());
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                u64_from_index(segments.len()),
+                "iges composite nested children",
+            )?;
+        }
+        let mut children = reserve_admitted_vec(segments.len(), "iges composite nested children")?;
         for segment in segments {
             let Some(child) =
                 bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx, index)?
@@ -2181,7 +2200,14 @@ fn project_with_type_130_policy(
             ));
             continue;
         };
-        let mut children = Vec::with_capacity(curve_ids.len());
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(
+                u64_from_index(curve_ids.len()),
+                "iges composite projected children",
+            )?;
+        }
+        let mut children =
+            reserve_admitted_vec(curve_ids.len(), "iges composite projected children")?;
         let mut child_refusal = None;
         for curve_id in &curve_ids {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
@@ -2266,7 +2292,8 @@ fn project_with_type_130_policy(
             continue;
         };
         let cursor = segments.end();
-        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0) else {
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0))?
+        else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
@@ -2284,7 +2311,8 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor) else {
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor))?
+        else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,

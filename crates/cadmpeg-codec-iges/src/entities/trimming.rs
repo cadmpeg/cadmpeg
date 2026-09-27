@@ -8,6 +8,7 @@ use super::geometry::{
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
+use crate::decode_resource::reserve_vec;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -15,6 +16,7 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
@@ -63,6 +65,7 @@ enum BoundaryEdgeSelectionError {
     InvalidRange,
     Ambiguous,
     PcurveDisagreement,
+    Resource(CodecError),
 }
 
 fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
@@ -1409,27 +1412,33 @@ fn pcurves_agree(
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
-) -> bool {
-    let mapped = pcurves
-        .iter()
-        .map(|(geometry, range)| {
-            let start = cadmpeg_ir::eval::pcurve_uv(geometry, range[0])
-                .ok()
-                .and_then(|uv| {
-                    cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v).ok()
-                })?;
-            let end = cadmpeg_ir::eval::pcurve_uv(geometry, range[1])
-                .ok()
-                .and_then(|uv| {
-                    cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v).ok()
-                })?;
-            Some((start.get(), end.get()))
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(mapped) = mapped else {
-        return false;
-    };
-    mapped
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let mut mapped = reserve_vec(ctx, pcurves.len(), "iges trimmed mapped pcurves")?;
+    for (geometry, range) in pcurves {
+        let Some(start_uv) = finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(geometry, range[0]))?
+        else {
+            return Ok(false);
+        };
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+            index, surface_id, start_uv.u, start_uv.v,
+        ))?
+        else {
+            return Ok(false);
+        };
+        let Some(end_uv) = finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(geometry, range[1]))?
+        else {
+            return Ok(false);
+        };
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point_by_id(
+            index, surface_id, end_uv.u, end_uv.v,
+        ))?
+        else {
+            return Ok(false);
+        };
+        mapped.push((start.get(), end.get()));
+    }
+    Ok(mapped
         .first()
         .is_some_and(|(start, _)| close(*start, expected_start, tolerance))
         && mapped
@@ -1437,7 +1446,7 @@ fn pcurves_agree(
             .is_some_and(|(_, end)| close(*end, expected_end, tolerance))
         && mapped
             .windows(2)
-            .all(|pair| close(pair[0].1, pair[1].0, tolerance))
+            .all(|pair| close(pair[0].1, pair[1].0, tolerance)))
 }
 
 fn edge_range_matches_curve(
@@ -1446,27 +1455,33 @@ fn edge_range_matches_curve(
     start: Point3,
     end: Point3,
     tolerance: f64,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(curve_id) = edge.curve() else {
-        return false;
+        return Ok(false);
     };
     let Some(curve) = carrier_index.curves(curve_id.as_str()) else {
-        return false;
+        return Ok(false);
     };
     let Some(range) = edge.param_range() else {
-        return false;
+        return Ok(false);
     };
     if !range.iter().all(|parameter| parameter.is_finite()) {
-        return false;
+        return Ok(false);
     }
     let geometry = &curve.geometry;
-    let Ok(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
-        return false;
+    let Some(evaluated_start) =
+        finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[0]))?
+    else {
+        return Ok(false);
     };
-    let Ok(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
-        return false;
+    let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::curve_point(geometry, range[1]))?
+    else {
+        return Ok(false);
     };
-    close(evaluated_start.get(), start, tolerance) && close(evaluated_end.get(), end, tolerance)
+    Ok(
+        close(evaluated_start.get(), start, tolerance)
+            && close(evaluated_end.get(), end, tolerance),
+    )
 }
 
 fn select_boundary_edge(
@@ -1477,18 +1492,26 @@ fn select_boundary_edge(
     sense: Sense,
     tolerance: f64,
     parameter_curves_authoritative: bool,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(Edge, FinitePoint3, FinitePoint3, bool), BoundaryEdgeSelectionError> {
     let mut candidates_with_endpoints = 0;
-    let candidates = candidates
-        .iter()
-        .filter_map(|edge| {
-            let start = point_position(carrier_index, &edge.start)?;
-            let end = point_position(carrier_index, &edge.end)?;
-            candidates_with_endpoints += 1;
-            edge_range_matches_curve(edge, carrier_index, start.get(), end.get(), tolerance)
-                .then_some((edge, start, end))
-        })
-        .collect::<Vec<_>>();
+    let mut matched = reserve_vec(ctx, candidates.len(), "iges trimmed edge candidates")
+        .map_err(BoundaryEdgeSelectionError::Resource)?;
+    for edge in candidates {
+        let Some(start) = point_position(carrier_index, &edge.start) else {
+            continue;
+        };
+        let Some(end) = point_position(carrier_index, &edge.end) else {
+            continue;
+        };
+        candidates_with_endpoints += 1;
+        if edge_range_matches_curve(edge, carrier_index, start.get(), end.get(), tolerance)
+            .map_err(|limit| BoundaryEdgeSelectionError::Resource(limit.into()))?
+        {
+            matched.push((edge, start, end));
+        }
+    }
+    let candidates = matched;
     if candidates.is_empty() {
         return Err(if candidates_with_endpoints == 0 {
             BoundaryEdgeSelectionError::MissingEndpoints
@@ -1505,24 +1528,28 @@ fn select_boundary_edge(
         };
     }
 
-    let agreeing = candidates
-        .iter()
-        .filter(|(_, start, end)| {
-            let (expected_start, expected_end) = if sense == Sense::Forward {
-                (*start, *end)
-            } else {
-                (*end, *start)
-            };
-            pcurves_agree(
-                carrier_index,
-                surface_id,
-                pcurves,
-                expected_start.get(),
-                expected_end.get(),
-                tolerance,
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut agreeing = reserve_vec(ctx, candidates.len(), "iges trimmed agreeing edges")
+        .map_err(BoundaryEdgeSelectionError::Resource)?;
+    for candidate @ (_, start, end) in &candidates {
+        let (expected_start, expected_end) = if sense == Sense::Forward {
+            (*start, *end)
+        } else {
+            (*end, *start)
+        };
+        if pcurves_agree(
+            carrier_index,
+            surface_id,
+            pcurves,
+            expected_start.get(),
+            expected_end.get(),
+            tolerance,
+            ctx,
+        )
+        .map_err(BoundaryEdgeSelectionError::Resource)?
+        {
+            agreeing.push(candidate);
+        }
+    }
     match agreeing.as_slice() {
         [(edge, start, end)] => Ok(((*edge).clone(), *start, *end, true)),
         [] if !parameter_curves_authoritative && candidates.len() == 1 => {
@@ -1545,7 +1572,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
     let records = parameters
@@ -2010,7 +2037,7 @@ pub(super) fn project(
                             factor,
                         },
                         Some(carrier_agreement_tolerance),
-                        ctx,
+                        Some(ctx),
                         Some(composite_index.get_or_insert_with(|| CompositeIndex::from_ir(ir))),
                     ) {
                         Ok(Some(resolved)) => {
@@ -2096,6 +2123,7 @@ pub(super) fn project(
                     segment.sense,
                     carrier_agreement_tolerance,
                     segment.parameter_curves_authoritative,
+                    ctx,
                 ) {
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
@@ -2130,6 +2158,7 @@ pub(super) fn project(
                         valid = false;
                         break;
                     }
+                    Err(BoundaryEdgeSelectionError::Resource(error)) => return Err(error),
                 };
                 if !pcurves_agree {
                     pcurves.clear();
