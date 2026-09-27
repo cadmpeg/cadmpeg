@@ -5,6 +5,7 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod surface_styles;
+mod string_limits;
 
 /// A style whose override walk does not terminate states no depth. Its
 /// position is stated as absence and sorts after every stated depth; the
@@ -58,7 +59,9 @@ ENDSEC;END-ISO-10303-21;",
         &mut Vec::new(),
         &mut BTreeSet::new(),
         0,
+        None,
     )
+    .expect("colour search fits local resources")
     .expect("surface color");
     let ColorResolution::Candidate(color) = color else {
         panic!("expected one surface color");
