@@ -832,7 +832,7 @@ impl<'a> DecodeContext<'a> {
                     self.archive(),
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
-                        association: Some(self.source_association(identity)),
+                        association: Some(self.source_association(identity)?),
                         id: format!("rhino:object:tessellation#{key}"),
                         scale,
                         userdata: &object.userdata,
@@ -1175,7 +1175,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let feature_id = FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
             key.clone(),
@@ -1425,7 +1425,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
         let feature_id = FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "detail", "feature"),
@@ -1755,7 +1755,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
         let model_id = construction
             .model_curve
@@ -1948,8 +1948,9 @@ impl<'a> DecodeContext<'a> {
     fn source_association(
         &self,
         identity: &crate::objects::SourceIdentity,
-    ) -> SourceObjectAssociation {
+    ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
         source_association(
+            self.expand.ctx(),
             identity,
             self.instance_selection
                 .as_ref()
@@ -2387,7 +2388,7 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        surface.source_object = Some(self.source_association(identity));
+        surface.source_object = Some(self.source_association(identity)?);
         let id = surface.id.to_string();
         let result = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
@@ -2869,7 +2870,7 @@ impl<'a> DecodeContext<'a> {
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(false);
         };
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let Some(unknown) = self
             .unknowns
             .get(source_order)
@@ -3214,7 +3215,7 @@ impl<'a> DecodeContext<'a> {
         if extrusion.boundaries.is_empty() {
             return Ok(false);
         }
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
@@ -3353,7 +3354,7 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
             key,
         );
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let validation = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.surfaces.push(Surface {
                 id: id.clone(),
@@ -3429,7 +3430,7 @@ impl<'a> DecodeContext<'a> {
         );
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
-        tessellation.source_object = Some(self.source_association(identity));
+        tessellation.source_object = Some(self.source_association(identity)?);
         self.ir.model.tessellations.push(tessellation);
         set_exactness(
             &mut self.annotations,
@@ -3522,7 +3523,7 @@ impl<'a> DecodeContext<'a> {
             self.scan_unbound_unit_warning(source_order, "Brep");
             return Ok(());
         };
-        let association = self.source_association(identity);
+        let association = self.source_association(identity)?;
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
@@ -6303,25 +6304,61 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
 }
 
 fn source_association(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identity: &crate::objects::SourceIdentity,
     instance_path: &[String],
     parent_color: Option<Color>,
     parent_visible: Option<bool>,
-) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    let object_id = crate::wire::admitted_format(
+        ctx,
+        format_args!("{}", identity.object_id),
+        "Rhino source association object ID",
+    )?;
+    let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
+    let name = (!identity.name.is_empty())
+        .then(|| {
+            crate::wire::copy_retained_string(ctx, &identity.name, "Rhino source association name")
+        })
+        .transpose()?;
+    let layer = identity
+        .layer
+        .as_ref()
+        .map(|layer| match layer.id {
+            Some(id) => crate::wire::admitted_format(
+                ctx,
+                format_args!("{id}"),
+                "Rhino source association layer ID",
+            ),
+            None => crate::wire::copy_retained_string(
+                ctx,
+                &layer.name,
+                "Rhino source association layer name",
+            ),
+        })
+        .transpose()?;
+    let mut admitted_path = crate::wire::admitted_collection(
+        ctx,
+        instance_path.len(),
+        "Rhino source association instance path",
+    )?;
+    for segment in instance_path {
+        admitted_path.push(crate::wire::copy_retained_string(
+            ctx,
+            segment,
+            "Rhino source association instance ID",
+        )?);
+    }
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: identity.object_id.to_nonempty(),
-        name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+        object_id,
+        name,
         color: identity.effective_color.map(color).or(parent_color),
         visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
-        layer: identity.layer.as_ref().and_then(|layer| {
-            layer
-                .id
-                .map(|id| id.to_string())
-                .or_else(|| Some(layer.name.clone()))
-        }),
-        instance_path: instance_path.to_vec(),
-    }
+        layer,
+        instance_path: admitted_path,
+    })
 }
 
 fn color(value: [u8; 4]) -> Color {
