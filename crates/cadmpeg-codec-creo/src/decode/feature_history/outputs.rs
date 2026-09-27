@@ -352,7 +352,7 @@ pub(super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
     output_kind.map(|kind| kind == BodyKind::Solid)
 }
 
-struct CommaList<'a, T>(&'a [T]);
+pub(super) struct CommaList<'a, T>(pub(super) &'a [T]);
 
 impl<T: std::fmt::Display> std::fmt::Display for CommaList<'_, T> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
