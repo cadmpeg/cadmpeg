@@ -968,6 +968,7 @@ pub(crate) fn object_node_id(offset: usize) -> String {
 pub(crate) fn checked_object_node_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     offset: usize,
+    operation: &'static str,
 ) -> Result<String, CodecError> {
     const PREFIX: &str = "creo:legacy_ascii:object#";
     let mut remaining = offset;
@@ -977,7 +978,7 @@ pub(crate) fn checked_object_node_id(
         digits += 1;
     }
     let mut id = String::new();
-    ctx.try_reserve_retained_text(&mut id, PREFIX.len() + digits, "creo legacy object index IDs")?;
+    ctx.try_reserve_retained_text(&mut id, PREFIX.len() + digits, operation)?;
     id.push_str(PREFIX);
     std::fmt::Write::write_fmt(&mut id, format_args!("{offset}"))
         .map_err(|_| CodecError::Malformed(String::new()))?;

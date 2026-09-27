@@ -703,7 +703,7 @@ fn object_id_index<'a>(
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
     let mut index = BTreeMap::new();
     for object in objects {
-        let id = legacy::checked_object_node_id(ctx, object.offset)?;
+        let id = legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
         match index.entry(id) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "creo legacy object index nodes")?;
