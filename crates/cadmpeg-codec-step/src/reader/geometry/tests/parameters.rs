@@ -22,6 +22,152 @@ use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
+fn parameter_inference_point_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::ids::PointId;
+    use cadmpeg_ir::topology::Point;
+
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::from(crate::ids::data(crate::ids::kind!("point"), 1)),
+        FinitePoint3::ZERO,
+        None,
+    ));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty input fits the policy");
+    assert!(matches!(
+        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_parameter_inference_points"
+    ));
+}
+
+fn parameter_inference_ir(with_edge: bool) -> CadIr {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
+
+    let mut ir = CadIr::empty();
+    for (number, x) in [(1, 0.0), (2, 1.0)] {
+        ir.model.points.push(Point::new(
+            PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), number)),
+            point: PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
+            tolerance: None,
+        });
+    }
+    if with_edge {
+        let curve = CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 3));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("finite line"),
+            )),
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId::from(crate::ids::data(crate::ids::kind!("edge"), 4)),
+            carrier: EdgeCarrier::unbounded(Some(curve)),
+            start: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
+            end: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            tolerance: None,
+        });
+    }
+    ir
+}
+
+fn assert_parameter_inference_refusal(
+    with_edge: bool,
+    collection_limit: u64,
+    retained_limit: Option<u64>,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let mut ir = parameter_inference_ir(with_edge);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty input fits the policy");
+    assert!(matches!(
+        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == dimension && refusal.operation == operation
+    ));
+}
+
+#[test]
+fn parameter_inference_vertex_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        false,
+        2,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_vertices",
+    );
+}
+
+#[test]
+fn parameter_inference_candidate_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        4,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_candidates",
+    );
+}
+
+#[test]
+fn parameter_inference_range_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        5,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_ranges",
+    );
+}
+
+#[test]
+fn parameter_inference_edge_curve_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        6,
+        Some(0),
+        ResourceDimension::RetainedBytes,
+        "step_parameter_inference_edge_curve",
+    );
+}
+
+#[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], true),
