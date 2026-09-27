@@ -675,7 +675,9 @@ pub(super) fn nullable_embedded_pcurve(ctx: &cadmpeg_core::decode::DecodeContext
 }
 
 fn g2_side(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> Option<Result<EmbeddedG2Side, cadmpeg_core::CodecError>> {
-    let label = cur.take_str()?.to_string();
+    let label = propagate_resource!(crate::decode_alloc::copy_string(
+        ctx, cur.take_str()?, "ASM G2 side label",
+    ));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -691,14 +693,16 @@ fn g2_side(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> 
     }))
 }
 
-fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
+fn bridge_token(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> Option<Result<cadmpeg_ir::geometry::LoftBridgeToken, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     match cur.peek()? {
-        Token::True | Token::False => Some(LoftBridgeToken::Boolean(cur.take_bool()?)),
-        Token::Long(_) => Some(LoftBridgeToken::Integer(cur.take_long()?)),
-        Token::Double(_) => Some(LoftBridgeToken::Double(cur.take_f64()?)),
-        Token::Enum(_) => Some(LoftBridgeToken::Enum(cur.take_enum()?)),
-        Token::Str(_) => Some(LoftBridgeToken::Text(cur.take_str()?.to_string())),
+        Token::True | Token::False => Some(Ok(LoftBridgeToken::Boolean(cur.take_bool()?))),
+        Token::Long(_) => Some(Ok(LoftBridgeToken::Integer(cur.take_long()?))),
+        Token::Double(_) => Some(Ok(LoftBridgeToken::Double(cur.take_f64()?))),
+        Token::Enum(_) => Some(Ok(LoftBridgeToken::Enum(cur.take_enum()?))),
+        Token::Str(_) => Some(crate::decode_alloc::copy_string(
+            ctx, cur.take_str()?, "ASM loft bridge text",
+        ).map(LoftBridgeToken::Text)),
         _ => None,
     }
 }
@@ -816,10 +820,15 @@ fn g2_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         }
         let tolerance =
             cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
-        let extension = (!matches!(cur.peek(), Some(token)
-            if matches!(token, Token::Str(_)) || token.is_payload_ident()))
-        .then(|| bridge_token(&mut cur))
-        .flatten();
+        let extension = if !matches!(cur.peek(), Some(token)
+            if matches!(token, Token::Str(_)) || token.is_payload_ident()) {
+            match bridge_token(ctx, &mut cur) {
+                Some(token) => Some(propagate_resource!(token)),
+                None => None,
+            }
+        } else {
+            None
+        };
         let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value();
         EmbeddedG2FirstShape::None {
             coefficients,
@@ -2175,12 +2184,11 @@ fn loft_spl_sur(
             )),
             Token::Str(_) => {
                 let value = cur.take_str()?;
-                propagate_resource!(ctx.charge_retained(
-                    u64::try_from(value.len()).unwrap_or(u64::MAX),
-                    "ASM loft bridge text",
+                let value = propagate_resource!(crate::decode_alloc::copy_string(
+                    ctx, value, "ASM loft bridge text",
                 ));
                 propagate_resource!(crate::decode_alloc::push_vec(
-                    ctx, &mut bridge, LoftBridgeToken::Text(value.to_string()),
+                    ctx, &mut bridge, LoftBridgeToken::Text(value),
                     "ASM loft bridge token",
                 ));
             }
@@ -2645,8 +2653,8 @@ fn law_expression_resolving(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         }
         _ => {}
     }
-    let operator = cur.take_str()?.to_string();
-    match operator.as_str() {
+    let operator = cur.take_str()?;
+    match operator {
         "null_law" => Some(Ok(EmbeddedLawExpression::Null)),
         "TRANS" => {
             if matches!(cur.peek(), Some(Token::Vector3(_))) {
@@ -2716,7 +2724,7 @@ fn law_expression_resolving(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
             }))
         }
         _ => {
-            let arity = match operator.as_str() {
+            let arity = match operator {
                 "COS" | "SIN" | "TAN" | "COT" | "SEC" | "CSC" | "COSH" | "SINH" | "TANH"
                 | "COTH" | "SECH" | "CSCH" | "ARCCOS" | "ARCSIN" | "ARCTAN" | "ARCOT"
                 | "ARCSEC" | "ARCCSC" | "ARCCOSH" | "ARCSINH" | "ARCTANH" | "ARCOTH"
@@ -2734,6 +2742,9 @@ fn law_expression_resolving(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
             for _ in 0..arity {
                 operands.push(propagate_resource!(law_expression_resolving(ctx, cur, depth + 1, resolver)?));
             }
+            let operator = propagate_resource!(crate::decode_alloc::copy_string(
+                ctx, operator, "ASM law operator",
+            ));
             Some(Ok(EmbeddedLawExpression::Algebraic { operator, operands }))
         }
     }
@@ -2748,7 +2759,9 @@ fn law_formula_resolving(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
-    let name = cur.take_str()?.to_string();
+    let name = propagate_resource!(crate::decode_alloc::copy_string(
+        ctx, cur.take_str()?, "ASM law formula name",
+    ));
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
     }
@@ -4574,22 +4587,18 @@ fn t_spline_subtransform(
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
-            propagate_resource!(ctx.charge_retained(
-                u64::try_from(program_text.len()).unwrap_or(u64::MAX),
-                "ASM t spline program",
+            let program = propagate_resource!(crate::decode_alloc::copy_string(
+                ctx, program_text, "ASM t spline program",
             ));
-            let program = program_text.to_string();
             let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
                 Some(cur.take_bool()?)
             };
             let values_text = cur.take_str()?;
-            propagate_resource!(ctx.charge_retained(
-                u64::try_from(values_text.len()).unwrap_or(u64::MAX),
-                "ASM t spline values",
+            let values = propagate_resource!(crate::decode_alloc::copy_string(
+                ctx, values_text, "ASM t spline values",
             ));
-            let values = values_text.to_string();
             Some(Ok(EmbeddedTSplineSubtransform::Inline {
                 program,
                 separator,
@@ -4712,7 +4721,7 @@ fn procedural_resolving_refs(
 
 #[cfg(test)]
 mod reference_allocation_tests {
-    use super::{copy_revision_discontinuities, procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
+    use super::{bridge_token, copy_revision_discontinuities, g2_side, law_expression, law_formula, procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
     use crate::nurbs::toks::{Cur, SubtypeTable};
     use crate::sab::{Record, Token};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -4780,6 +4789,61 @@ mod reference_allocation_tests {
         let tokens = [Token::Ident("t_spl_subtrans_object".into()), Token::Str("x".into()), Token::Str("y".into())];
         let error = t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
         assert_refusal(error, ResourceDimension::RetainedBytes, "ASM t spline program");
+    }
+
+    #[test]
+    fn g2_side_label_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("side".into())];
+        let error = g2_side(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM G2 side label");
+    }
+
+    #[test]
+    fn loft_bridge_text_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("bridge".into())];
+        let error = bridge_token(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM loft bridge text");
+    }
+
+    #[test]
+    fn law_name_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("named".into())];
+        let error = law_formula(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM law formula name");
+    }
+
+    #[test]
+    fn law_operator_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("ABS".into()), Token::Double(1.0)];
+        let error = law_expression(&ctx, &mut Cur::at(&tokens, 0), 0).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM law operator");
+    }
+
+    #[test]
+    fn t_spline_values_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Ident("t_spl_subtrans_object".into()), Token::Str("x".into()), Token::Str("y".into())];
+        let error = t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM t spline values");
     }
 }
 
