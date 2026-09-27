@@ -1952,4 +1952,5 @@ fn incidence_selection_validates_only_its_affected_faces() {
         .expect("service resource budget"));
 }
 
+mod allocation_limits;
 mod components;

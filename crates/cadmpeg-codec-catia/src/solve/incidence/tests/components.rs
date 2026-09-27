@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 #[test]
 fn incidence_components_join_only_through_shared_face_vertices() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[1, 3], [2, 3]],
@@ -21,7 +22,14 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     ];
     let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
     assert_eq!(
-        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None),
+        crate::solve::incidence::incidence_choice_components(
+            &ctx,
+            &choices,
+            &edge_faces,
+            None,
+            None
+        )
+        .expect("service resource budget"),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -99,11 +107,13 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
 
 #[test]
 fn partial_incidence_constraint_joins_every_component_it_can_couple() {
+    catia_test_context!(ctx);
     let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
     let active = [true, false, false, true, false, false];
 
     assert_eq!(
-        crate::solve::incidence::join_incidence_components_by_coupling(components, &active),
+        crate::solve::incidence::join_incidence_components_by_coupling(&ctx, components, &active)
+            .expect("service resource budget"),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
 }
@@ -320,6 +330,7 @@ fn incidence_components_reject_prerequisite_cycles() {
 
 #[test]
 fn incidence_components_keep_fixed_face_boundaries_independent() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[1, 2], [1, 3]],
@@ -340,11 +351,13 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
     ])];
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
+            &ctx,
             &choices,
             &edge_faces,
             Some(&fixed),
             None,
-        ),
+        )
+        .expect("service resource budget"),
         vec![vec![0, 1], vec![2, 3]]
     );
 
@@ -358,17 +371,20 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
     ])];
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
+            &ctx,
             &choices,
             &edge_faces,
             Some(&alternatives),
             None,
-        ),
+        )
+        .expect("service resource budget"),
         vec![vec![0, 1, 2, 3]]
     );
 }
 
 #[test]
 fn incidence_components_include_overlapping_quotient_domains() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[3, 4], [3, 5]],
@@ -390,11 +406,13 @@ fn incidence_components_include_overlapping_quotient_domains() {
 
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
+            &ctx,
             &choices,
             &edge_faces,
             None,
             Some(&quotient)
-        ),
+        )
+        .expect("service resource budget"),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -1639,9 +1657,16 @@ fn incidence_components_reuse_independent_solution_domains() {
 
 #[test]
 fn incidence_components_include_fixed_incidence_chains() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0], [0, 1]], vec![[2, 2], [2, 3]], vec![[0, 2]]];
-    let components =
-        crate::solve::incidence::incidence_choice_components(&choices, &[[0, 0]; 3], None, None);
+    let components = crate::solve::incidence::incidence_choice_components(
+        &ctx,
+        &choices,
+        &[[0, 0]; 3],
+        None,
+        None,
+    )
+    .expect("service resource budget");
 
     assert_eq!(components, vec![vec![0, 1]]);
 }

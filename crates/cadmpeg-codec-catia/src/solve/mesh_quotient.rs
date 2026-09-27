@@ -1191,6 +1191,10 @@ impl MeshQuotient {
         self.union.find(node)
     }
 
+    pub(crate) fn root(&self, node: usize) -> usize {
+        self.union.root(node)
+    }
+
     pub(crate) fn domains(&self) -> &[Arc<HashSet<usize>>] {
         &self.domains
     }
