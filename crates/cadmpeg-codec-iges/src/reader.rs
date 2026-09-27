@@ -244,19 +244,35 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         })
     }
 
-    fn admission_losses(&self) -> Vec<LossNote> {
+    fn admission_losses(&mut self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = Vec::new();
-        losses.extend(crate::dialect::dialect_loss(&self.global));
-        losses.extend(self.global_losses.iter().cloned());
+        if let Some(loss) = crate::dialect::dialect_loss(&self.global, ctx)? {
+            reserve_vec_growth(ctx, &mut losses, 1, "iges admission loss slots")?;
+            losses.push(loss);
+        }
+        reserve_vec_growth(
+            ctx,
+            &mut losses,
+            self.global_losses.len(),
+            "iges admission loss slots",
+        )?;
+        losses.extend(std::mem::take(&mut self.global_losses));
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
-                losses.push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
+                reserve_vec_growth(ctx, &mut losses, 1, "iges admission loss slots")?;
+                let message = format_retained(ctx, format_args!(
                     "IGES 4.0 requires the Terminate Section to be the last physical line; retained {post_terminate_count} trailing record(s) as source data"
-                )));
+                ), "iges admission framing loss message")?;
+                let code = IgesLossCode::GlobalNoncanonicalFraming;
+                ctx.charge_retained(
+                    4 + code.code().len() as u64,
+                    "iges admission framing loss kind",
+                )?;
+                losses.push(code.note(message));
             }
         }
-        losses
+        Ok(losses)
     }
 
     fn record_losses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
@@ -279,11 +295,16 @@ pub(crate) fn inspect(
     representation: Representation,
     source_size: usize,
 ) -> Result<ContainerSummary, CodecError> {
-    let parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
+    let mut parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(representation, &parse.global);
-    let mut losses = parse.admission_losses();
+    let mut losses = parse.admission_losses(ctx)?;
     let record_losses = parse.record_losses(ctx)?;
-    reserve_vec_growth(ctx, &mut losses, record_losses.len(), "iges combined record losses")?;
+    reserve_vec_growth(
+        ctx,
+        &mut losses,
+        record_losses.len(),
+        "iges combined record losses",
+    )?;
     losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
@@ -446,7 +467,7 @@ fn decode_with_occurrence_limits(
     // identity checks require the same canonical arena order as the result.
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
-    let mut losses = parse.admission_losses();
+    let mut losses = parse.admission_losses(ctx)?;
     if invalid_resolution
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
@@ -466,7 +487,12 @@ fn decode_with_occurrence_limits(
     )?;
     losses.extend(graph_losses);
     let record_losses = parse.record_losses(ctx)?;
-    reserve_vec_growth(ctx, &mut losses, record_losses.len(), "iges combined record losses")?;
+    reserve_vec_growth(
+        ctx,
+        &mut losses,
+        record_losses.len(),
+        "iges combined record losses",
+    )?;
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         losses.push(occurrence_loss(
