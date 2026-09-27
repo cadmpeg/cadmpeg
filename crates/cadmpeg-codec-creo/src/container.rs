@@ -616,11 +616,14 @@ pub(crate) fn looks_like_creo(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
 
-fn line_at(data: &[u8], start: usize) -> String {
+fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String, CodecError> {
     let end = find(data, b"\n", start).unwrap_or(data.len());
-    String::from_utf8_lossy(&data[start..end])
-        .trim()
-        .to_string()
+    let mut line = crate::text::copy_lossy_text(ctx, &data[start..end], "creo version line")?;
+    let leading = line.len() - line.trim_start().len();
+    let trimmed_len = line.trim().len();
+    line.drain(..leading);
+    line.truncate(trimmed_len);
+    Ok(line)
 }
 
 /// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
@@ -2627,7 +2630,7 @@ pub(crate) fn scan_bytes<'a>(
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
-    let version_line = line_at(&data, 0);
+    let version_line = line_at(ctx, &data, 0)?;
     let mut model_name = cmnm_model_name(ctx, &data)
         .transpose()?
         .map(|(name, offset)| ModelName { name, offset });

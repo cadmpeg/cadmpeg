@@ -1089,6 +1089,40 @@ fn claimed_definition_owner_refuses_before_btree_insertion() {
 }
 
 #[test]
+fn version_line_refuses_before_lossy_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b" \t#UGC:2 P \xff \t\n";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("version-line input is admitted");
+    let error = super::line_at(&ctx, data, 0).expect_err("lossy line needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo version line"));
+}
+
+#[test]
+fn version_line_preserves_lossy_unicode_trim_under_service_policy() {
+    let data = b" \t#UGC:2 P \xff \t\n";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("version-line input is admitted");
+    assert_eq!(
+        super::line_at(&ctx, data, 0).expect("lossy line admitted"),
+        "#UGC:2 P �"
+    );
+    assert_eq!(
+        super::line_at(&ctx, b" \t\n", 0).expect("blank line admitted"),
+        ""
+    );
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
