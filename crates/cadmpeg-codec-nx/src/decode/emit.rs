@@ -1490,10 +1490,22 @@ pub(super) fn source_meta(
     dialects: &DialectLayers,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    insert_source_attribute(ctx, &mut attributes, "file_size", scan.container.physical_size)?;
-    insert_source_attribute(ctx, &mut attributes, "directory_entries", scan.container.entries.len())?;
     insert_source_attribute(
-        ctx, &mut attributes, "header_entry_count",
+        ctx,
+        &mut attributes,
+        "file_size",
+        scan.container.physical_size,
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "directory_entries",
+        scan.container.entries.len(),
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "header_entry_count",
         scan.container.entry_count(crate::container::Region::Header),
     )?;
     if let crate::container::ContainerLayout::Modern {
@@ -1504,33 +1516,77 @@ pub(super) fn source_meta(
     {
         insert_source_attribute(ctx, &mut attributes, "footer_offset", footer_offset)?;
         insert_source_attribute(
-            ctx, &mut attributes, "footer_entry_count",
+            ctx,
+            &mut attributes,
+            "footer_entry_count",
             scan.container.entry_count(crate::container::Region::Footer),
         )?;
         insert_source_attribute(
-            ctx, &mut attributes, "footer_fingerprint",
+            ctx,
+            &mut attributes,
+            "footer_fingerprint",
             format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
         )?;
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if control_count != 0 {
-        insert_source_attribute(ctx, &mut attributes, "offset_store_control_count", control_count)?;
-        insert_source_attribute(ctx, &mut attributes, "classified_offset_store_control_count", classified_control_count)?;
-        insert_source_attribute(ctx, &mut attributes, "unclassified_offset_store_control_count", control_count - classified_control_count)?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "offset_store_control_count",
+            control_count,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "classified_offset_store_control_count",
+            classified_control_count,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "unclassified_offset_store_control_count",
+            control_count - classified_control_count,
+        )?;
     }
-    insert_source_attribute(ctx, &mut attributes, "partition_streams", scan.count(StreamKind::Partition))?;
-    insert_source_attribute(ctx, &mut attributes, "deltas_streams", scan.count(StreamKind::Deltas))?;
-    insert_source_attribute(ctx, &mut attributes, "plain_streams", scan.count(StreamKind::Plain))?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "partition_streams",
+        scan.count(StreamKind::Partition),
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "deltas_streams",
+        scan.count(StreamKind::Deltas),
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "plain_streams",
+        scan.count(StreamKind::Plain),
+    )?;
     for (index, path) in scan
         .container
         .external_reference_paths()
         .into_iter()
         .enumerate()
     {
-        insert_source_attribute(ctx, &mut attributes, format_args!("external_reference.{index}"), path)?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("external_reference.{index}"),
+            path,
+        )?;
     }
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
-        insert_source_attribute(ctx, &mut attributes, "rmfastload_active_object_count", table.object_ids.as_slice().len())?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "rmfastload_active_object_count",
+            table.object_ids.as_slice().len(),
+        )?;
     }
     let mut preview_count = 0usize;
     for entry in scan
@@ -1551,16 +1607,46 @@ pub(super) fn source_meta(
         let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
             continue;
         };
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_width"), width)?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_height"), height)?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_precision"), precision)?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_components"), components)?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_byte_len"), payload.len())?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_width"),
+            width,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_height"),
+            height,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_precision"),
+            precision,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_components"),
+            components,
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_byte_len"),
+            payload.len(),
+        )?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(payload.len()),
             "hash NX source preview",
         )?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("jpeg_preview_{preview_count}_sha256"), HexDigest(sha256(payload)))?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("jpeg_preview_{preview_count}_sha256"),
+            HexDigest(sha256(payload)),
+        )?;
         preview_count += 1;
     }
     insert_source_attribute(ctx, &mut attributes, "jpeg_preview_count", preview_count)?;
@@ -1572,36 +1658,96 @@ pub(super) fn source_meta(
     {
         let census = crate::deltas::census::walk(&stream.inflated);
         if census.transmit_header.is_some() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.transmit_headers"), "1")?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.transmit_headers"),
+                "1",
+            )?;
         }
-        insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.grammar"), "typed_status_framed_records")?;
-        insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.bytes_decoded"), census.bytes_decoded())?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("deltas.{index}.grammar"),
+            "typed_status_framed_records",
+        )?;
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("deltas.{index}.bytes_decoded"),
+            census.bytes_decoded(),
+        )?;
         if !census.body_revisions.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.body_revisions"), census.body_revisions.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.body_revisions"),
+                census.body_revisions.len(),
+            )?;
         }
         if !census.term_use_numeric_tails.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.term_use_numeric_tails"), census.term_use_numeric_tails.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.term_use_numeric_tails"),
+                census.term_use_numeric_tails.len(),
+            )?;
         }
         if !census.tagged_reference_lanes.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.tagged_reference_lanes"), census.tagged_reference_lanes.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.tagged_reference_lanes"),
+                census.tagged_reference_lanes.len(),
+            )?;
         }
         if !census.reference_type_maps.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_type_maps"), census.reference_type_maps.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.reference_type_maps"),
+                census.reference_type_maps.len(),
+            )?;
         }
         if !census.reference_state_packets.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_state_packets"), census.reference_state_packets.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.reference_state_packets"),
+                census.reference_state_packets.len(),
+            )?;
         }
         if !census.reference_marker_packets.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.reference_marker_packets"), census.reference_marker_packets.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.reference_marker_packets"),
+                census.reference_marker_packets.len(),
+            )?;
         }
         if !census.inline_schema_declarations.is_empty() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.inline_schema_declarations"), census.inline_schema_declarations.len())?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.inline_schema_declarations"),
+                census.inline_schema_declarations.len(),
+            )?;
         }
         for (name, count) in census.full_counts() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.full.{name}"), count)?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.full.{name}"),
+                count,
+            )?;
         }
         for (name, count) in census.tombstone_counts() {
-            insert_source_attribute(ctx, &mut attributes, format_args!("deltas.{index}.tombstone.{name}"), count)?;
+            insert_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("deltas.{index}.tombstone.{name}"),
+                count,
+            )?;
         }
     }
     ctx.charge_collection_items(
@@ -1640,14 +1786,12 @@ fn render_retained_text(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut count = CountBytes(0);
-    write!(&mut count, "{value}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    write!(&mut count, "{value}").map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
     let mut text = String::new();
     text.try_reserve_exact(count.0)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    write!(&mut text, "{value}")
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut text, "{value}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(text)
 }
 
@@ -1663,17 +1807,24 @@ fn insert_source_attribute(
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
     write!(&mut value_len, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
-    let text_len = key_len.0.checked_add(value_len.0)
+    let text_len = key_len
+        .0
+        .checked_add(value_len.0)
         .ok_or_else(|| ctx.refuse_codec_limit("nx source attribute text", 0, u64::MAX))?;
     ctx.charge_collection_items(1, "nx source attributes")?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text_len), "nx source attribute text")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(text_len),
+        "nx source attribute text",
+    )?;
     let mut key_text = String::new();
-    key_text.try_reserve_exact(key_len.0)
+    key_text
+        .try_reserve_exact(key_len.0)
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     write!(&mut key_text, "{key}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     let mut value_text = String::new();
-    value_text.try_reserve_exact(value_len.0)
+    value_text
+        .try_reserve_exact(value_len.0)
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
     write!(&mut value_text, "{value}")
         .map_err(|_| ctx.refuse_codec_limit("nx source attribute text", 0, 1))?;
@@ -1772,7 +1923,10 @@ mod tests {
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
         let wire = serde_json::to_value(&unknown).unwrap();
-        assert_eq!(wire["retention"]["sha256"], cadmpeg_ir::hash::sha256_hex(&stream.inflated));
+        assert_eq!(
+            wire["retention"]["sha256"],
+            cadmpeg_ir::hash::sha256_hex(&stream.inflated)
+        );
     }
 
     #[test]
@@ -1818,7 +1972,8 @@ mod tests {
         assert_eq!(expected.attributes["file_size"], "0");
         let mut limited_policy = DecodePolicy::service();
         limited_policy.limits.max_collection_items = expected.attributes.len() as u64;
-        let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         assert!(matches!(
             source_meta(&limited_ctx, &scan, &dialects),
             Err(CodecError::ResourceLimit(limit))

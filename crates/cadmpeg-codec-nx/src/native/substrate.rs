@@ -708,9 +708,8 @@ mod tests {
         )]);
         let scan_arena = DecodeArena::new();
         let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) =
-            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-                .expect("bounded segment stream fixture");
+        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
+            .expect("bounded segment stream fixture");
         let scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
         let error = with_collection_limit(0, |ctx| super::paired_delta_streams(ctx, &scan))
             .expect_err("linked delta candidate needs one collection item");
@@ -730,9 +729,8 @@ mod tests {
         )]);
         let scan_arena = DecodeArena::new();
         let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) =
-            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-                .expect("bounded segment stream fixture");
+        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
+            .expect("bounded segment stream fixture");
         let scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -757,9 +755,8 @@ mod tests {
         )]);
         let scan_arena = DecodeArena::new();
         let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) =
-            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-                .expect("bounded segment stream fixture");
+        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
+            .expect("bounded segment stream fixture");
         let mut scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
         scan.streams.push(crate::parasolid::Stream {
             file_offset: 0,
