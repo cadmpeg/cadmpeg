@@ -474,24 +474,23 @@ fn symmetry_plane(name: &str, values: [FiniteReal; 12]) -> Result<SubdPlaneFrame
 }
 
 fn remap_symmetry_pairs(
+    ctx: &DecodeContext<'_>,
     name: &str,
     map: &BTreeMap<usize, usize>,
     ir_indices: &[Option<u32>],
     element: &str,
 ) -> Result<Vec<[u32; 2]>, CodecError> {
-    map.iter()
-        .map(|(&source, &target)| {
-            let source =
-                ir_indices.get(source).copied().flatten().ok_or_else(|| {
-                    malformed(name, format!("{element} symmetry source is deleted"))
-                })?;
-            let target =
-                ir_indices.get(target).copied().flatten().ok_or_else(|| {
-                    malformed(name, format!("{element} symmetry target is deleted"))
-                })?;
-            Ok([source, target])
-        })
-        .collect()
+    let mut remapped = Vec::new();
+    for (&source, &target) in map {
+        let source = ir_indices.get(source).copied().flatten().ok_or_else(|| {
+            malformed(name, format!("{element} symmetry source is deleted"))
+        })?;
+        let target = ir_indices.get(target).copied().flatten().ok_or_else(|| {
+            malformed(name, format!("{element} symmetry target is deleted"))
+        })?;
+        push_charged(ctx, &mut remapped, [source, target], "remap T-spline symmetry pairs")?;
+    }
+    Ok(remapped)
 }
 
 fn direction_offset(direction: SubdGripDirection) -> usize {
@@ -504,6 +503,7 @@ fn direction_offset(direction: SubdGripDirection) -> usize {
 }
 
 fn build_fan(
+    ctx: &DecodeContext<'_>,
     name: &str,
     vertex: usize,
     root: usize,
@@ -523,7 +523,7 @@ fn build_fan(
     let mut seen = BTreeSet::new();
     let mut current = root_id;
     loop {
-        if !seen.insert(current) {
+        if seen.contains(&current) {
             if current == root_id {
                 break;
             }
@@ -532,6 +532,8 @@ fn build_fan(
                 "vertex half-edge fan repeats before its root",
             ));
         }
+        ctx.charge_collection_items(1, "index T-spline fan half-edges")?;
+        seen.insert(current);
         let half = &half_edges[current.index()];
         if half.vertex != vertex {
             return Err(malformed(
@@ -548,10 +550,10 @@ fn build_fan(
                 "vertex half-edge fan names an invalid face",
             ));
         }
-        fan.push(FanSlot::Slot {
+        push_charged(ctx, &mut fan, FanSlot::Slot {
             half_edge: current.index(),
             face: half.face,
-        });
+        }, "collect T-spline fan slots")?;
 
         let next = &half_edges[half.next.index()];
         let mate = &half_edges[next.mate.index()];
@@ -570,22 +572,25 @@ fn build_fan(
         }
     }
 
-    let gap_positions = fan
-        .iter()
-        .enumerate()
-        .filter_map(|(index, slot)| match slot {
-            FanSlot::Slot { face: None, .. } => Some(index),
-            FanSlot::Phantom | FanSlot::Slot { face: Some(_), .. } => None,
-        })
-        .collect::<Vec<_>>();
-    if gap_positions.len() > 1 {
-        return Err(malformed(
-            name,
-            "vertex half-edge fan has multiple boundary gaps",
-        ));
+    let mut gap = None;
+    for (index, slot) in fan.iter().enumerate() {
+        if matches!(slot, FanSlot::Slot { face: None, .. }) {
+            if gap.replace(index).is_some() {
+                return Err(malformed(
+                    name,
+                    "vertex half-edge fan has multiple boundary gaps",
+                ));
+            }
+        }
     }
-    if let Some(gap) = gap_positions.first().copied() {
-        let phantom_count = 4usize.saturating_sub(fan.len());
+    if let Some(gap) = gap {
+        let phantom_count = if fan.len() < 4 { 4 - fan.len() } else { 0 };
+        let count = u64::try_from(phantom_count)
+            .map_err(|_| ctx.refuse_codec_limit("complete T-spline fan gaps", 0, u64::MAX))?;
+        ctx.charge_collection_items(count, "complete T-spline fan gaps")?;
+        fan.try_reserve(phantom_count).map_err(|_| {
+            ctx.refuse_codec_limit("complete T-spline fan gaps", 0, count)
+        })?;
         for _ in 0..phantom_count {
             fan.insert(gap + 1, FanSlot::Phantom);
         }
@@ -594,6 +599,7 @@ fn build_fan(
 }
 
 fn grip_block(
+    ctx: &DecodeContext<'_>,
     name: &str,
     grip_points: &[Option<GripPoint>],
     indices: &[Option<usize>],
@@ -607,25 +613,23 @@ fn grip_block(
         .get(*cursor..end)
         .ok_or_else(|| malformed(name, "derived-grip run is shorter than its declared arity"))?;
     *cursor = end;
-    values
-        .iter()
-        .map(|index| {
-            index
-                .map(|index| {
-                    let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
-                        malformed(name, "derived-grip entry names a deleted grip")
-                    })?;
-                    SubdSecondaryGrip::from_parts(
-                        u32::try_from(index)
-                            .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
-                        point.point,
-                        point.weight,
-                    )
-                    .map_err(|error| malformed(name, error))
-                })
-                .transpose()
-        })
-        .collect()
+    let mut grips = Vec::new();
+    for &index in values {
+        let grip = index.map(|index| {
+            let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
+                malformed(name, "derived-grip entry names a deleted grip")
+            })?;
+            SubdSecondaryGrip::from_parts(
+                u32::try_from(index)
+                    .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
+                point.point,
+                point.weight,
+            )
+            .map_err(|error| malformed(name, error))
+        }).transpose()?;
+        push_charged(ctx, &mut grips, grip, "materialize T-spline grip block")?;
+    }
+    Ok(grips)
 }
 
 struct SecondaryLayoutContext<'a> {
@@ -692,7 +696,7 @@ fn build_secondary_layouts(
             .copied()
             .flatten()
             .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
-        let fan = build_fan(name, vertex, root, half_edges, face_live)?;
+        let fan = build_fan(ctx, name, vertex, root, half_edges, face_live)?;
         if connectivity.spoke_lengths.len() != fan.len() {
             return Err(malformed(
                 name,
@@ -739,6 +743,7 @@ fn build_secondary_layouts(
                 None => None,
             };
             let spokes = grip_block(
+                ctx,
                 name,
                 grip_points,
                 &connectivity.grip_indices,
@@ -746,6 +751,7 @@ fn build_secondary_layouts(
                 spoke_count,
             )?;
             let sectors = grip_block(
+                ctx,
                 name,
                 grip_points,
                 &connectivity.grip_indices,
@@ -1404,7 +1410,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .copied()
                 .flatten()
                 .ok_or_else(|| malformed(name, "live vertex has no root direction"))?;
-            build_fan(name, vertex, root, &half_edges, &face_live)?;
+            build_fan(ctx, name, vertex, root, &half_edges, &face_live)?;
         }
     }
 
@@ -1419,9 +1425,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             let (kind, face_pairs, edge_pairs, vertex_pairs) = match &block.kind {
                 SymmetryKind::Correspondence { face, edge, vertex } => (
                     SubdSymmetryKind::Correspondence {},
-                    remap_symmetry_pairs(name, face, &face_ir, "face")?,
-                    remap_symmetry_pairs(name, edge, &edge_ir, "edge")?,
-                    remap_symmetry_pairs(name, vertex, &vertex_ir, "vertex")?,
+                    remap_symmetry_pairs(ctx, name, face, &face_ir, "face")?,
+                    remap_symmetry_pairs(ctx, name, edge, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(ctx, name, vertex, &vertex_ir, "vertex")?,
                 ),
                 SymmetryKind::Radial {
                     segments,
@@ -1728,6 +1734,69 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
         super::parse(&ctx, "synthetic.tsm", source.as_bytes()).unwrap_err()
+    }
+
+    fn fan_limit(items: u64) -> cadmpeg_core::CodecError {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let half_edges = [super::HalfEdge {
+            next: super::HalfEdgeId(0),
+            previous: super::HalfEdgeId(0),
+            mate: super::HalfEdgeId(0),
+            vertex: 0,
+            face: None,
+        }];
+        super::build_fan(&ctx, "synthetic.tsm", 0, 0, &half_edges, &[])
+            .err()
+            .expect("fan must refuse the configured limit")
+    }
+
+    #[test]
+    fn tsm_fan_seen_index_refuses_collection_limit() {
+        let error = fan_limit(0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index T-spline fan half-edges"));
+    }
+
+    #[test]
+    fn tsm_fan_slots_refuse_collection_limit() {
+        let error = fan_limit(1);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect T-spline fan slots"));
+    }
+
+    #[test]
+    fn tsm_fan_phantoms_refuse_collection_limit() {
+        let error = fan_limit(2);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "complete T-spline fan gaps"));
+    }
+
+    #[test]
+    fn tsm_grip_block_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::grip_block(&ctx, "synthetic.tsm", &[], &[None], &mut 0, 1)
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "materialize T-spline grip block"));
+    }
+
+    #[test]
+    fn tsm_symmetry_pair_remap_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let map = std::collections::BTreeMap::from([(0, 1)]);
+        let error = super::remap_symmetry_pairs(&ctx, "synthetic.tsm", &map, &[Some(0), Some(1)], "face")
+            .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "remap T-spline symmetry pairs"));
     }
 
     macro_rules! tsm_parse_collection_limit_test {
