@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Views, drawings, and view-dependent presentation relationships.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{resolve_transform, ProjectionOutcome};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
+};
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -161,21 +164,53 @@ fn conflicting_drawing_property_forms(
     else {
         return false;
     };
-    let values = groups
+    let mut values = groups
         .properties()
         .iter()
         .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .filter(|sequence| {
             directory
                 .get(sequence)
                 .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
         })
         .filter_map(|sequence| records.get(&sequence))
-        .filter_map(|record| drawing_property_value(form, record))
-        .collect::<Vec<_>>();
-    values.len() > 1 && values.windows(2).any(|pair| pair[0] != pair[1])
+        .filter_map(|record| drawing_property_value(form, record));
+    let Some(first) = values.next() else {
+        return false;
+    };
+    values.any(|value| value != first)
+}
+
+fn push_drawing_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, losses, 1, "iges drawing loss slots")?;
+    let message = format_retained(ctx, message, "iges drawing loss message")?;
+    ctx.charge_retained(4 + code.code().len() as u64, "iges drawing loss kind")?;
+    losses.push(code.note(message).with_provenance(entry.admitted_loss_provenance(ctx)?));
+    Ok(())
+}
+
+fn push_drawing_entity_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    entry: &DirectoryEntry,
+    reason: &str,
+) -> Result<(), CodecError> {
+    push_drawing_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
 }
 
 pub(super) fn project(
@@ -184,16 +219,28 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges drawing parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges drawing directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -202,7 +249,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let valid = if entry.form == 16 {
@@ -215,12 +262,9 @@ pub(super) fn project(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         };
         if valid {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
         } else {
-            losses.push(entity_loss(
-                entry,
-                "drawing size or unit property fields are invalid",
-            ));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "drawing size or unit property fields are invalid")?;
         }
     }
 
@@ -229,7 +273,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         for form in [15, 16, 17] {
@@ -240,13 +284,13 @@ pub(super) fn project(
                 &records,
                 trailing_pointer_analysis,
             ) {
-                losses.push(
-                    IgesLossCode::DrawingPropertyAmbiguous
-                        .note(format!(
-                            "IGES drawing has conflicting valid Type 406 Form {form} properties"
-                        ))
-                        .with_provenance(entry.loss_provenance()),
-                );
+                push_drawing_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    IgesLossCode::DrawingPropertyAmbiguous,
+                    format_args!("IGES drawing has conflicting valid Type 406 Form {form} properties"),
+                )?;
             }
         }
         let view_count = record.count(1);
@@ -286,12 +330,9 @@ pub(super) fn project(
         });
         if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
         {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
         } else {
-            losses.push(entity_loss(
-                entry,
-                "drawing view placements or drawing-space annotations are invalid",
-            ));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "drawing view placements or drawing-space annotations are invalid")?;
         }
     }
 
@@ -300,7 +341,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let view_number_valid = record.integer_or(1, 0).is_some();
@@ -324,7 +365,7 @@ pub(super) fn project(
                         global.length_factor_mm(),
                         global.real_precision(),
                         &mut BTreeSet::new(),
-                        ctx,
+                        Some(ctx),
                     ) {
                         Ok(_) => true,
                         Err(error) => {
@@ -386,12 +427,9 @@ pub(super) fn project(
             && scale_valid
             && form_valid
         {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
         } else {
-            losses.push(entity_loss(
-                entry,
-                "view number, projection, transform, scale, or clipping fields are invalid",
-            ));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "view number, projection, transform, scale, or clipping fields are invalid")?;
         }
     }
 
@@ -400,15 +438,16 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
         let mut last_view = None;
         let mut closed_views = BTreeSet::new();
         let mut last_breakpoint: Option<FiniteReal> = None;
-        let blocks_valid = count.is_some_and(|count| {
-            (0..count).all(|index| {
+        let blocks_valid = if let Some(count) = count {
+            let mut valid = true;
+            for index in 0..count {
                 let start = 2 + index * 6;
                 let view = record
                     .integer(start)
@@ -420,7 +459,12 @@ pub(super) fn project(
                     });
                 if view != last_view {
                     if let Some(previous) = last_view {
-                        closed_views.insert(previous);
+                        insert_optional_btree_set(
+                            Some(ctx),
+                            &mut closed_views,
+                            previous,
+                            "iges drawing closed views",
+                        )?;
                     }
                     last_breakpoint = None;
                 }
@@ -469,21 +513,25 @@ pub(super) fn project(
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 5).is_some_and(|value| value >= 0),
                 };
-                view_order_valid
+                if !(view_order_valid
                     && breakpoint_order_valid
                     && display_valid
                     && color_valid
                     && font_valid
-                    && weight_valid
-            })
-        });
-        if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
-            decoded.insert(entry.sequence);
+                    && weight_valid)
+                {
+                    valid = false;
+                    break;
+                }
+            }
+            valid
         } else {
-            losses.push(entity_loss(
-                entry,
-                "segmented-view blocks, grouping, breakpoints, or display fields are invalid",
-            ));
+            false
+        };
+        if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+        } else {
+            push_drawing_entity_loss(ctx, &mut losses, entry, "segmented-view blocks, grouping, breakpoints, or display fields are invalid")?;
         }
     }
 
@@ -492,7 +540,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
@@ -569,12 +617,9 @@ pub(super) fn project(
             && views_valid
             && entities_valid
         {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
         } else {
-            losses.push(entity_loss(
-                entry,
-                "view-visibility blocks, display overrides, entities, or back pointers are invalid",
-            ));
+            push_drawing_entity_loss(ctx, &mut losses, entry, "view-visibility blocks, display overrides, entities, or back pointers are invalid")?;
         }
     }
 

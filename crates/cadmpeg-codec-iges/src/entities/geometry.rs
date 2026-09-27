@@ -2393,7 +2393,7 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        Some(ctx),
+        ctx,
     )?
     .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
