@@ -30,6 +30,7 @@ pub(super) mod block_reference;
 pub(super) mod body_scalar_triple;
 mod borrowed_wires;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;
+mod body_reference_wire;
 mod body_write_wire;
 mod common_frame_wire;
 mod datum_plane_wire;
@@ -2974,11 +2975,8 @@ enum FeatureOperationBodyReferences {
 }
 
 /// Counted reference lane following an operation body scalar clause.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyReferenceLaneWire",
-    into = "FeatureOperationBodyReferenceLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyReferenceLaneWire")]
 pub(super) struct FeatureOperationBodyReferenceLane {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3012,6 +3010,7 @@ struct FeatureOperationBodyReferenceLaneWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyReferenceLane> for FeatureOperationBodyReferenceLaneWire {
     fn from(value: FeatureOperationBodyReferenceLane) -> Self {
         let mut object_indices = Vec::new();
