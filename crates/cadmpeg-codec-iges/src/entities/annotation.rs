@@ -60,26 +60,31 @@ fn sectioned_area_pattern_plane(
 
 fn sectioned_area_curves_coplanar(
     ir: &CadIr,
-    sequences: &[u32],
+    sequences: impl Iterator<Item = u32>,
     pattern_plane: (Point3, Vector3),
     resolution: f64,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     if !resolution.is_finite() || resolution < 0.0 {
-        return false;
+        return Ok(false);
     }
     let index = ModelIndex::new(ir);
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
-    sequences.iter().all(|sequence| {
-        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(*sequence));
+    for sequence in sequences {
+        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
         let Some(curve) = index.curves(curve_id.as_str()) else {
-            return false;
+            return Ok(false);
         };
-        if !active.insert(curve_id.clone()) {
-            return false;
+        if active.contains(&curve_id) {
+            return Ok(false);
         }
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(curve_id.as_str().len()), "iges section active curve id")?;
+        }
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut active, curve_id.clone(), "iges section active curves")?;
         let Some(geometry) = curve.geometry.solved() else {
-            return false;
+            return Ok(false);
         };
         let valid = curve_geometry_coplanar(
             geometry,
@@ -88,10 +93,14 @@ fn sectioned_area_curves_coplanar(
             pattern_plane,
             resolution,
             &mut active,
-        );
+            ctx,
+        )?;
         active.remove(&curve_id);
-        valid
-    })
+        if !valid {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Maps a directory entry's type and form to its annotation kind, or `None`
@@ -500,20 +509,21 @@ fn dimension_enclosure_type_allowed(
 
 fn dimension_children_valid(
     parent: &DirectoryEntry,
-    children: &[u32],
+    mut children: impl Iterator<Item = u32> + Clone,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     let Some(first_transform) = children
-        .first()
-        .and_then(|sequence| entries.get(sequence))
+        .clone()
+        .next()
+        .and_then(|sequence| entries.get(&sequence))
         .map(|entry| entry.transform)
     else {
         return false;
     };
     (parent.transform == 0 || first_transform == 0)
-        && children.iter().all(|sequence| {
+        && children.all(|sequence| {
             entries
-                .get(sequence)
+                .get(&sequence)
                 .is_some_and(|entry| entry.transform == first_transform)
         })
 }
@@ -547,7 +557,6 @@ fn dimension_valid(
     let note = pointer(record, 1, entries);
     let note_valid = note
         .is_some_and(|sequence| general_note_child_valid(sequence, entries, records, global_table));
-    let mut children = note.into_iter().collect::<Vec<_>>();
     let fields_valid = match (entry.entity_type, entry.form) {
         (202, 0) => {
             let witnesses = [record.integer(2), record.integer(3)];
@@ -578,8 +587,6 @@ fn dimension_valid(
                     )
                 })
             });
-            children.extend((2..=3).filter_map(|index| pointer(record, index, entries)));
-            children.extend(leaders.into_iter().flatten());
             exact_parameter_count(record, 9)
                 && witnesses_valid
                 && (4..=5).all(|index| finite(record, index))
@@ -634,7 +641,6 @@ fn dimension_valid(
                 }),
                 None => false,
             });
-            children.extend((2..=7).filter_map(|index| pointer(record, index, entries)));
             exact_parameter_count(record, 8) && curves_valid && leaders_valid && witnesses_valid
         }
         (206, 0) => {
@@ -663,8 +669,6 @@ fn dimension_valid(
                 }),
                 None => false,
             };
-            children.extend(first);
-            children.extend(second);
             exact_parameter_count(record, 6)
                 && leaders_valid
                 && (4..=5).all(|index| finite(record, index))
@@ -698,8 +702,6 @@ fn dimension_valid(
                 }),
                 None => false,
             });
-            children.extend(leaders.into_iter().flatten());
-            children.extend((4..=5).filter_map(|index| pointer(record, index, entries)));
             exact_parameter_count(record, 6) && leaders_valid && witnesses_valid
         }
         (218, 0) => {
@@ -721,7 +723,6 @@ fn dimension_valid(
                     global_table,
                 )
             });
-            children.extend(ordinate);
             exact_parameter_count(record, 3) && valid
         }
         (218, 1) => {
@@ -746,8 +747,6 @@ fn dimension_valid(
                     global_table,
                 )
             });
-            children.extend(witness);
-            children.extend(leader);
             exact_parameter_count(record, 4) && valid
         }
         (220, 0) => {
@@ -778,8 +777,6 @@ fn dimension_valid(
                 }),
                 None => false,
             };
-            children.extend(leader);
-            children.extend(enclosure);
             exact_parameter_count(record, 4) && leader_valid && enclosure_valid
         }
         (222, 0..=1) => {
@@ -814,8 +811,6 @@ fn dimension_valid(
                     }),
                     None => false,
                 };
-            children.extend(first);
-            children.extend(second);
             exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 })
                 && first_valid
                 && center_valid
@@ -823,7 +818,19 @@ fn dimension_valid(
         }
         _ => false,
     };
-    note_valid && fields_valid && dimension_children_valid(entry, &children, entries)
+    let child_indexes: &[usize] = match (entry.entity_type, entry.form) {
+        (202, 0) => &[2, 3, 7, 8],
+        (204, 0) => &[2, 3, 4, 5, 6, 7],
+        (206, 0) | (218, 1) | (220, 0) => &[2, 3],
+        (216, 0..=2) => &[2, 3, 4, 5],
+        (218, 0) | (222, 0) => &[2],
+        (222, 1) => &[2, 5],
+        _ => &[],
+    };
+    let children = note.into_iter().chain(
+        child_indexes.iter().filter_map(|index| pointer(record, *index, entries)),
+    );
+    note_valid && fields_valid && dimension_children_valid(entry, children, entries)
 }
 
 fn flag_or_label_valid(
@@ -962,9 +969,10 @@ fn sectioned_area_valid(
     transform: Transform,
     length_factor: f64,
     resolution: f64,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     if !matches!(form, 0 | 1) {
-        return false;
+        return Ok(false);
     }
     let boundary_sequence = match record.integer(1) {
         Some(0) if form == 1 => Some(None),
@@ -980,32 +988,27 @@ fn sectioned_area_valid(
         })
     });
     let Some(island_count) = record.count(8) else {
-        return false;
+        return Ok(false);
     };
     if form == 1 && island_count == 0 {
-        return false;
+        return Ok(false);
     }
-    let island_sequences = (0..island_count)
-        .map(|offset| pointer(record, 9 + offset, entries))
-        .collect::<Option<Vec<_>>>();
-    let islands_valid = island_sequences.as_ref().is_some_and(|islands| {
-        islands.iter().all(|sequence| {
-            entries
-                .get(sequence)
-                .is_some_and(|entry| section_boundary_type(entry))
+    let islands_valid = (0..island_count).all(|offset| {
+        pointer(record, 9 + offset, entries).is_some_and(|sequence| {
+            entries.get(&sequence).is_some_and(|entry| section_boundary_type(entry))
         })
     });
     let definition_sequences = boundary_sequence
         .into_iter()
         .flatten()
-        .chain(island_sequences.iter().flatten().copied())
-        .collect::<Vec<_>>();
-    let coplanarity_valid = matches!(global_table, GlobalTable::V4_0)
-        || sectioned_area_pattern_plane(record, transform, length_factor).is_some_and(
-            |pattern_plane| {
-                sectioned_area_curves_coplanar(ir, &definition_sequences, pattern_plane, resolution)
-            },
-        );
+        .chain((0..island_count).filter_map(|offset| pointer(record, 9 + offset, entries)));
+    let coplanarity_valid = if matches!(global_table, GlobalTable::V4_0) {
+        true
+    } else if let Some(pattern_plane) = sectioned_area_pattern_plane(record, transform, length_factor) {
+        sectioned_area_curves_coplanar(ir, definition_sequences, pattern_plane, resolution, ctx)?
+    } else {
+        false
+    };
     let pattern = record
         .integer(2)
         .filter(|value| fill_pattern_valid_for_global_table(*value, global_table));
@@ -1022,11 +1025,11 @@ fn sectioned_area_valid(
                 && finite_or_omitted(record, 7)
         }
     });
-    boundary_valid
+    Ok(boundary_valid
         && pattern_parameters_valid
         && islands_valid
         && coplanarity_valid
-        && exact_parameter_count(record, 9 + island_count)
+        && exact_parameter_count(record, 9 + island_count))
 }
 
 pub(super) fn project(
@@ -1122,7 +1125,7 @@ pub(super) fn project(
                                 global.global_table(),
                             ),
                             AnnotationKind::SectionedArea => {
-                                resolved_transform.is_some_and(|transform| {
+                                if let Some(transform) = resolved_transform {
                                     sectioned_area_valid(
                                         ir,
                                         record,
@@ -1132,8 +1135,11 @@ pub(super) fn project(
                                         transform,
                                         global.length_factor_mm(),
                                         global.minimum_resolution_mm(),
-                                    )
-                                })
+                                        ctx,
+                                    )?
+                                } else {
+                                    false
+                                }
                             }
                         },
                 )

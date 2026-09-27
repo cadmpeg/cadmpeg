@@ -3,6 +3,7 @@
 
 use crate::directory::UseFlag;
 use std::io::Cursor;
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
@@ -17,6 +18,67 @@ use super::{
     source_object,
     validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
+
+#[test]
+fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve, CurveGeometry};
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::index::ModelIndex;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::CadIr;
+
+    let child_id = CurveId::mint("iges:model:curve#D1").unwrap();
+    let child = Curve {
+        id: child_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+        )),
+        source_object: None,
+    };
+    let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
+        curve: child_id,
+        same_sense: true,
+        transition: CompositeCurveTransition::Continuous,
+    }]).unwrap();
+    let composite = SolvedCurveGeometry::Composite { segments, self_intersect: None };
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(child);
+    let index = ModelIndex::new(&ir);
+    let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
+
+    for (dimension, cap, operation) in [
+        (ResourceDimension::CollectionItems, 0, "iges coplanar active curves"),
+        (ResourceDimension::RetainedBytes, 0, "iges coplanar active curve id"),
+        (ResourceDimension::WorkUnits, 0, "iges coplanar composite segments"),
+        (ResourceDimension::RecursionDepth, 1, "iges coplanar curve recursion"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            _ => panic!("unsupported test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::curve_geometry_coplanar(
+            &composite, &index, Transform::identity(), plane, 0.001,
+            &mut BTreeSet::new(), Some(&ctx),
+        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::curve_geometry_coplanar(
+        &composite, &index, Transform::identity(), plane, 0.001,
+        &mut BTreeSet::new(), Some(&ctx),
+    ).unwrap());
+}
 
 #[test]
 fn source_object_fields_refuse_retained_limits_before_copy() {

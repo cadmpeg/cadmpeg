@@ -913,23 +913,24 @@ fn linear_boundary_geometry(
         return Ok(None);
     };
     let model_plane = (origin, *normal);
-    if items.iter().any(|item| {
+    for item in items {
         let Some(curve) = index.curves(item.model_curve.as_str()) else {
-            return true;
+            return Ok(None);
         };
         let Some(geometry) = curve.geometry.solved() else {
-            return true;
+            return Ok(None);
         };
-        !super::geometry::curve_geometry_coplanar(
+        if !super::geometry::curve_geometry_coplanar(
             geometry,
             index,
             cadmpeg_ir::transform::Transform::identity(),
             model_plane,
             resolution,
             &mut BTreeSet::new(),
-        )
-    }) {
-        return Ok(None);
+            Some(ctx),
+        )? {
+            return Ok(None);
+        }
     }
     let Some(model_coordinates) = plane_coordinates(&model_points, model_plane, ctx)? else {
         return Ok(None);

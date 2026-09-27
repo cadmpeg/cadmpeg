@@ -1718,7 +1718,8 @@ fn plane_boundary_edge(
         plane,
         resolution,
         &mut BTreeSet::new(),
-    ) {
+        Some(ctx),
+    )? {
         return Err(PlaneBoundaryError::NotCoplanar);
     }
     let start =
