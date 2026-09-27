@@ -4,6 +4,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
@@ -20,8 +21,11 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
     let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let attributes = super::attributes(&scan, &mut annotations);
+    let attributes = super::attributes(&ctx, &scan, &mut annotations).unwrap();
 
     assert!(attributes
         .iter()
@@ -283,7 +287,15 @@ fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribu
     let mut source = outer_header();
     source.extend(make_block(0x43, "SWObjects", payload));
     let scan = container::scan_bytes(&source);
-    super::attributes(&scan, &mut cadmpeg_ir::annotations::Annotations::default())
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    super::attributes(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+    )
+    .unwrap()
 }
 
 #[test]
