@@ -83,7 +83,7 @@ pub(crate) fn histories(
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
                 .enumerate()
-                .map(|(ordinal, node)| {
+                .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
                     let id = format!(
                         "sldprt:history:configuration#{}",
                         history_record_key(source, ordinal)
@@ -107,7 +107,12 @@ pub(crate) fn histories(
                                 (attribute.name().to_string(), attribute.value().to_string())
                             }),
                     );
-                    Configuration {
+                    ctx.reserve_collection_vec(
+                        &mut configurations,
+                        1,
+                        "collect SLDPRT history configurations",
+                    )?;
+                    configurations.push(Configuration {
                         id,
                         parent: parent.clone(),
                         ordinal: ordinal as u32,
@@ -120,36 +125,37 @@ pub(crate) fn histories(
                             .filter(|value| !value.is_empty())
                             .map(str::to_string),
                         properties,
-                    }
-                })
-                .collect();
-            let feature_nodes = root
-                .descendants()
-                .filter(|node| {
+                    });
+                    Ok::<_, CodecError>(configurations)
+                })?;
+            let feature_nodes = || {
+                root.descendants().filter(|node| {
                     node.is_element()
                         && !matches!(
                             node.tag_name().name(),
                             "Keywords" | "Configuration" | "Dimension"
                         )
                 })
-                .collect::<Vec<_>>();
-            let feature_ids = feature_nodes
-                .iter()
+            };
+            let feature_ids = feature_nodes()
                 .enumerate()
-                .map(|(ordinal, node)| {
-                    (
+                .try_fold(HashMap::new(), |mut ids, (ordinal, node)| {
+                    ctx.charge_collection_items(1, "index SLDPRT history feature IDs")?;
+                    ids.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("index SLDPRT history feature IDs", u64::MAX - 1, u64::MAX)
+                    })?;
+                    ids.insert(
                         node.range().start,
                         format!(
                             "sldprt:history:feature#{}",
                             history_record_key(source, ordinal)
                         ),
-                    )
-                })
-                .collect::<HashMap<_, _>>();
-            let features = feature_nodes
-                .into_iter()
+                    );
+                    Ok::<_, CodecError>(ids)
+                })?;
+            let features = feature_nodes()
                 .enumerate()
-                .map(|(ordinal, node)| {
+                .try_fold(Vec::new(), |mut features, (ordinal, node)| {
                     let id = feature_ids[&node.range().start].clone();
                     crate::annotations::note(
                         annotations,
@@ -170,7 +176,42 @@ pub(crate) fn histories(
                                 (attribute.name().to_string(), attribute.value().to_string())
                             }),
                     );
-                    Feature {
+                    ctx.reserve_collection_vec(
+                        &mut features,
+                        1,
+                        "collect SLDPRT history features",
+                    )?;
+                    let content = node
+                        .children()
+                        .filter_map(|child| {
+                            if child.is_text() {
+                                let value = child.text()?.trim();
+                                return (!value.is_empty())
+                                    .then(|| FeatureContent::Text(value.into()));
+                            }
+                            if !child.is_element() {
+                                return None;
+                            }
+                            if child.tag_name().name() == "Dimension" {
+                                return child
+                                    .attribute("Name")
+                                    .map(|name| FeatureContent::Dimension(name.into()));
+                            }
+                            feature_ids
+                                .get(&child.range().start)
+                                .cloned()
+                                .map(FeatureContent::Feature)
+                        })
+                        .try_fold(Vec::new(), |mut content, item| {
+                            ctx.reserve_collection_vec(
+                                &mut content,
+                                1,
+                                "collect SLDPRT feature content",
+                            )?;
+                            content.push(item);
+                            Ok::<_, CodecError>(content)
+                        })?;
+                    features.push(Feature {
                         id,
                         parent: parent.clone(),
                         xml_tag: node.tag_name().name().into(),
@@ -235,67 +276,46 @@ pub(crate) fn histories(
                         text: (!node.children().any(|child| child.is_element()))
                             .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
                             .filter(|value| !value.is_empty()),
-                        content: node
-                            .children()
-                            .filter_map(|child| {
-                                if child.is_text() {
-                                    let value = child.text()?.trim();
-                                    return (!value.is_empty())
-                                        .then(|| FeatureContent::Text(value.into()));
-                                }
-                                if !child.is_element() {
-                                    return None;
-                                }
-                                if child.tag_name().name() == "Dimension" {
-                                    return child
-                                        .attribute("Name")
-                                        .map(|name| FeatureContent::Dimension(name.into()));
-                                }
-                                feature_ids
-                                    .get(&child.range().start)
-                                    .cloned()
-                                    .map(FeatureContent::Feature)
-                            })
-                            .collect(),
-                    }
-                })
-                .collect::<Vec<_>>();
-            let configuration_ids = root
-                .children()
-                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
-                .enumerate()
-                .map(|(ordinal, node)| {
-                    (
-                        node.range().start,
-                        format!(
-                            "sldprt:history:configuration#{}",
-                            history_record_key(source, ordinal)
-                        ),
-                    )
-                })
-                .collect::<HashMap<_, _>>();
+                        content,
+                    });
+                    Ok::<_, CodecError>(features)
+                })?;
+            let mut configuration_ordinal = 0;
             let content = root
                 .children()
-                .filter_map(|child| {
-                    if child.is_text() {
-                        let value = child.text()?.trim();
-                        return (!value.is_empty()).then(|| HistoryContent::Text(value.into()));
+                .try_fold(Vec::new(), |mut content, child| {
+                    let item = (|| {
+                        if child.is_text() {
+                            let value = child.text()?.trim();
+                            return (!value.is_empty())
+                                .then(|| HistoryContent::Text(value.into()));
+                        }
+                        if !child.is_element() {
+                            return None;
+                        }
+                        if child.tag_name().name() == "Configuration" {
+                            let id = format!(
+                                "sldprt:history:configuration#{}",
+                                history_record_key(source, configuration_ordinal)
+                            );
+                            configuration_ordinal += 1;
+                            return Some(HistoryContent::Configuration(id));
+                        }
+                        feature_ids
+                            .get(&child.range().start)
+                            .cloned()
+                            .map(HistoryContent::Feature)
+                    })();
+                    if let Some(item) = item {
+                        ctx.reserve_collection_vec(
+                            &mut content,
+                            1,
+                            "collect SLDPRT history content",
+                        )?;
+                        content.push(item);
                     }
-                    if !child.is_element() {
-                        return None;
-                    }
-                    configuration_ids
-                        .get(&child.range().start)
-                        .cloned()
-                        .map(HistoryContent::Configuration)
-                        .or_else(|| {
-                            feature_ids
-                                .get(&child.range().start)
-                                .cloned()
-                                .map(HistoryContent::Feature)
-                        })
-                })
-                .collect();
+                    Ok::<_, CodecError>(content)
+                })?;
             let id = parent;
             crate::annotations::note(
                 annotations,
