@@ -826,7 +826,10 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         transition: None,
     };
 
-    bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_snapshot_revision_ids(&ctx, std::slice::from_mut(&mut state)).unwrap();
 
     assert_eq!(
         state
