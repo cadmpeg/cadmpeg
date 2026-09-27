@@ -7,7 +7,7 @@ use crate::loss::Diagnostics;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -955,9 +955,10 @@ pub(crate) fn parse(
     let (faces, _) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
     let (render_meshes, analysis_meshes) = if minor >= 1 {
-        let (render, _) = read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        let (render, _) =
+            read_mesh_sides(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?;
         let (analysis, _) =
-            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+            read_mesh_sides(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?;
         (render, analysis)
     } else {
         (Vec::new(), Vec::new())
@@ -2184,6 +2185,7 @@ fn read_faces(
 }
 
 fn read_mesh_sides(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -2193,13 +2195,14 @@ fn read_mesh_sides(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
-        let mut result = Vec::with_capacity(face_count);
+        let mut result = ctx.alloc_filled(face_count, None, "Rhino Brep mesh cache slots")?;
         let mut children = Vec::new();
-        for _ in 0..face_count {
+        for slot in &mut result {
             let present = child.bool()?;
             let mesh = if present {
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
+                ctx.charge_collection_items(1, "Rhino Brep mesh cache child ranges")?;
                 children.push(object.range());
                 let class =
                     parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings);
@@ -2233,30 +2236,22 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            result.push(mesh);
+            *slot = mesh;
         }
         finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
         Ok(result) => Ok(result),
+        Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
+            let degraded = ctx.alloc_filled(face_count, None, "Rhino Brep degraded mesh slots")?;
             reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push_coded(
                 crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
                 format!("Brep mesh cache degraded: {error}"),
             );
-            Ok((
-                alloc_filled(face_count, None, "Rhino Brep degraded mesh slots").map_err(
-                    |allocation| {
-                        GeometryError::malformed(
-                            chunk.range().start,
-                            format!("Brep degraded mesh allocation refused: {allocation}"),
-                        )
-                    },
-                )?,
-                chunk.range(),
-            ))
+            Ok((degraded, chunk.range()))
         }
     }
 }
@@ -2993,6 +2988,17 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("test input fits service profile");
         super::parse(&ctx, bytes, range, archive, writer_version, userdata)
+    }
+
+    fn with_test_context<R>(
+        bytes: &[u8],
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("test input fits service profile");
+        f(&ctx)
     }
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
@@ -3823,11 +3829,106 @@ mod tests {
         let bytes = anonymous(&[1]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("degraded cache");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("degraded cache");
         assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn degraded_mesh_slots_refuse_collection_limit_without_warning() {
+        let bytes = anonymous(&[1]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one degraded mesh slot exceeds the remaining collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep degraded mesh slots"
+        ));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parsed_mesh_slots_refuse_collection_limit_without_warning() {
+        let bytes = anonymous(&[0]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one parsed mesh slot exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep mesh cache slots"
+        ));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn mesh_child_ranges_refuse_collection_limit_without_warning() {
+        let presence = [1_u8];
+        let wrapper = mesh_class_wrapper_with_userdata();
+        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one child range exceeds the remaining collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep mesh cache child ranges"
+        ));
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -3850,8 +3951,17 @@ mod tests {
         let bytes = anonymous(&[0]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("empty cache slot");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
         assert!(slots[0].is_none());
         assert!(warnings.is_empty());
@@ -3865,8 +3975,17 @@ mod tests {
         let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("mesh cache with userdata");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
         assert!(slots[0].is_some(), "warnings: {warnings:?}");
         assert_eq!(slots[0].as_ref().unwrap().userdata.len(), 1);

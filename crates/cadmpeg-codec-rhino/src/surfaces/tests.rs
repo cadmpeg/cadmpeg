@@ -284,6 +284,60 @@ fn sum_surface_temporary_lanes_refuse_materialized_limit_before_reserve() {
 }
 
 #[test]
+fn sum_surface_first_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two first-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface first weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
+fn sum_surface_second_weights_refuse_collection_limit() {
+    let first = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 1.0]),
+        [0.0, 1.0],
+    );
+    let second = test_curve(
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 17;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
+        .expect_err("two second-profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino sum-surface second weights",
+    );
+    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
+}
+
+#[test]
 fn sum_surface_grid_refuses_retained_limit_before_copy() {
     let first = test_curve(
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -354,6 +408,48 @@ fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
         [0.0, 1.0],
         false,
         0
+    )
+    .is_ok());
+}
+
+#[test]
+fn revolution_profile_weights_refuse_collection_limit() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 26;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input fits service profile");
+    let error = super::revolution_nurbs(
+        &ctx,
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        super::RevolutionIntervals {
+            angle: [0.0, std::f64::consts::FRAC_PI_2],
+            parameter: [0.0, 1.0],
+        },
+        false,
+        0,
+    )
+    .expect_err("two profile weights exceed the remaining item allowance");
+    assert_resource(
+        &error,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino revolution profile weights",
+    );
+    assert!(revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::FRAC_PI_2],
+        [0.0, 1.0],
+        false,
+        0,
     )
     .is_ok());
 }

@@ -4,7 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -472,7 +472,7 @@ fn read_revolution(
         axis_delta.z / axis_length,
     );
     let child = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
-    let profile = exact_nurbs(&child, version_offset)?;
+    let profile = exact_nurbs(ctx, &child, version_offset)?;
     let geometry = revolution_nurbs(
         ctx,
         &profile,
@@ -529,8 +529,8 @@ fn read_sum(
     bbox(reader)?;
     let first = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let second = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
-    let first_nurbs = exact_nurbs(&first, version_offset)?;
-    let second_nurbs = exact_nurbs(&second, version_offset)?;
+    let first_nurbs = exact_nurbs(ctx, &first, version_offset)?;
+    let second_nurbs = exact_nurbs(ctx, &second, version_offset)?;
     let geometry = sum_nurbs(ctx, &first_nurbs, &second_nurbs, basepoint, version_offset)?;
     reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
@@ -650,7 +650,7 @@ fn revolution_nurbs(
     let profile_points = profile.control_points();
     let profile_weights = match profile.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
+        None => ctx.alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
     };
     let mut control_points = Vec::new();
     control_points
@@ -780,11 +780,11 @@ fn sum_nurbs(
     let second_points = second.control_points();
     let first_weights = match first.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights")?,
+        None => ctx.alloc_filled(u_count, 1.0, "Rhino sum-surface first weights")?,
     };
     let second_weights = match second.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
+        None => ctx.alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
     };
     let mut control_points = Vec::new();
     control_points

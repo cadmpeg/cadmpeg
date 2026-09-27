@@ -933,7 +933,7 @@ fn legacy_curve(
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
     let segments = legacy_curve_segments(ctx, workspace, data, range, scale)?;
-    crate::curves::join_nurbs_segments(segments, offset)
+    crate::curves::join_nurbs_segments(ctx, segments, offset)
         .map(|joined| joined.curve)
         .map_err(geometry_error)
 }

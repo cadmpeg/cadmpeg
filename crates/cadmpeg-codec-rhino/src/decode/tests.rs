@@ -2,12 +2,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices,
-    face_sense, hatch_plane_transform, region_shell_groups, region_shell_groups_without_records,
-    scaled_tolerance, seal_for_test, set_exactness, stage_brep, stage_extrusion_caps,
-    transform_decoded_curve, transform_surface, with_expand, with_expand_bytes, BrepDraft,
-    BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary, DecodeContext,
-    ReportBuckets,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
+    edge_param_range, edge_vertices, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -46,6 +46,18 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
         crate::loss::Diagnostics::new(),
     )
+}
+
+fn with_collection_limit<R>(
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    f(&ctx)
 }
 
 /// Brep staging judges values the model already holds, so a refusal there names
@@ -118,15 +130,18 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
         ),
     };
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
-    transform_decoded_curve(
-        &mut curve,
-        hatch_plane_transform(
-            &plane,
-            crate::test_support::millimeter_scale(10.0),
-            "rhino hatch record #test",
+    with_expand_bytes(&[], |expand| {
+        transform_decoded_curve(
+            expand.ctx(),
+            &mut curve,
+            hatch_plane_transform(
+                &plane,
+                crate::test_support::millimeter_scale(10.0),
+                "rhino hatch record #test",
+            )
+            .expect("a finite plane states a transform"),
         )
-        .expect("a finite plane states a transform"),
-    )
+    })
     .expect("required invariant");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
@@ -158,7 +173,10 @@ fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
     ])
     .expect("finite affine transform");
     let mut decoded = line();
-    transform_decoded_curve(&mut decoded, transform).expect("transformed line");
+    with_expand_bytes(&[], |expand| {
+        transform_decoded_curve(expand.ctx(), &mut decoded, transform)
+    })
+    .expect("transformed line");
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(transformed_line)) =
         decoded.reported_geometry()
     else {
@@ -191,10 +209,13 @@ fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
         [0.0, 0.0, 0.0, 0.0],
     ])
     .expect("finite collapsed transform");
-    assert_eq!(
-        transform_decoded_curve(&mut collapsed, zero_linear),
-        Err("instance line transform collapsed its direction".to_string())
-    );
+    assert!(matches!(
+        with_expand_bytes(&[], |expand| {
+            transform_decoded_curve(expand.ctx(), &mut collapsed, zero_linear)
+        }),
+        Err(ReferenceFailure::Semantic(message))
+            if message == "instance line transform collapsed its direction"
+    ));
 }
 
 #[test]
@@ -831,8 +852,10 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
 
 #[test]
 fn disconnected_incidence_produces_deterministic_shell_groups() {
-    let grouping =
-        region_shell_groups_without_records(&[1, 0, 1, 0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups_without_records(expand.ctx(), &[1, 0, 1, 0])
+            .expect("shell-group allocation")
+    });
     assert!(grouping.fallback);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
     assert_eq!(
@@ -851,6 +874,95 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
             .collect::<Vec<_>>(),
         vec![vec![1, 3], vec![0, 2]]
     );
+}
+
+#[test]
+fn shell_group_slots_refuse_collection_limit_before_allocation() {
+    let Err(error) = with_collection_limit(3, |ctx| {
+        region_shell_groups_without_records(ctx, &[1, 0, 1, 0])
+    }) else {
+        panic!("four face-group slots exceed the limit of three");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep incidence face groups"
+    ));
+}
+
+#[test]
+fn brep_free_vertex_flags_refuse_collection_limit() {
+    let resolved = crate::brep::ResolvedBrep {
+        vertices: vec![crate::brep::ResolvedVertex {
+            edges: Vec::new(),
+            tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid tolerance"),
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    };
+    let error = with_collection_limit(0, |ctx| brep_free_vertex_indices(ctx, &resolved))
+        .expect_err("one attachment flag exceeds zero collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep free-vertex attachment flags"
+    ));
+    assert_eq!(
+        with_expand_bytes(&[], |expand| brep_free_vertex_indices(
+            expand.ctx(),
+            &resolved
+        ))
+        .expect("service profile admits one flag"),
+        vec![0]
+    );
+}
+
+#[test]
+fn brep_fallback_face_groups_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one fallback face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep fallback face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
+}
+
+#[test]
+fn brep_region_face_groups_refuse_collection_limit() {
+    let raw = region_raw(
+        vec![crate::brep::RawBrepFaceSide {
+            index: 0,
+            region: 0,
+            face: 0,
+            direction: 1,
+            source_range: 0..0,
+        }],
+        vec![region(1)],
+    );
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one region face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep region face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
 }
 
 #[test]
@@ -955,8 +1067,10 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
         ],
         vec![region(0), region(1)],
     );
-    let grouping =
-        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &region_resolved(&raw), &[0])
+            .expect("shell-group allocation")
+    });
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
     assert_eq!(
@@ -998,8 +1112,10 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
         ],
         vec![region(0), region(1), region(1)],
     );
-    let grouping =
-        region_shell_groups(&raw, &region_resolved(&raw), &[0]).expect("shell-group allocation");
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &region_resolved(&raw), &[0])
+            .expect("shell-group allocation")
+    });
     assert!(grouping.fallback);
     assert_eq!(
         grouping
@@ -1035,7 +1151,11 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
         end_parameter: finite_parameter(40.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
+    let merged = with_expand_bytes(&[], |expand| {
+        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
+    })
+    .expect("merge")
+    .curve;
     assert_eq!(
         merged.knots().as_slice(),
         vec![10.0, 10.0, 20.0, 40.0, 40.0]
@@ -1066,7 +1186,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
         end_parameter: finite_parameter(9.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(outer, 0)
+    let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
         .expect("nested merge")
         .curve;
     assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
@@ -1097,9 +1217,11 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         end_parameter: finite_parameter(2.0),
         warnings: Diagnostics::new(),
     };
-    let merged = c2_curve_to_nurbs_join(compound, 0)
-        .expect("degree elevation")
-        .curve;
+    let merged = with_expand_bytes(&[], |expand| {
+        c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
+    })
+    .expect("degree elevation")
+    .curve;
     assert_eq!(merged.degree(), 2);
     assert_eq!(merged.control_points().len(), 5);
     assert_eq!(
