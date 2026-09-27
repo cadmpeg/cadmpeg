@@ -5,6 +5,45 @@ use super::DesignEntitySelectionOperand;
 use crate::records::topology::test_support::rejects_changed_fields;
 use serde_json::json;
 
+fn loft_carrier_for_borrowed_wire(trailing: bool) -> super::DesignLoftLegacyBodyCarrier {
+    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":[0,0],"flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
+    let fields = if trailing {
+        ",\"trailing_scope_record_index\":12,\"trailing_scope_reference_offset\":88"
+    } else {
+        ""
+    };
+    let suffix = r#","paired_class_tag":"262","paired_byte_offset":98}"#;
+    let mut record: super::DesignLoftLegacyBodyCarrier =
+        serde_json::from_str(&format!("{prefix}{fields}{suffix}")).unwrap();
+    record.id = "f3d:native:loft-legacy-body-carrier#0".into();
+    record
+}
+
+#[test]
+fn loft_legacy_body_carrier_borrowed_wire_matches_owned_wire_bytes() {
+    for record in [
+        loft_carrier_for_borrowed_wire(false),
+        loft_carrier_for_borrowed_wire(true),
+    ] {
+        let owned = super::DesignLoftLegacyBodyCarrierSerde::from(record.clone());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn loft_legacy_body_carrier_native_retained_limit_refuses_before_clone() {
+    let record = loft_carrier_for_borrowed_wire(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_loft_legacy_body_carriers",
+        || super::LOFT_LEGACY_BODY_CARRIER_CLONE_COUNT.with(|count| count.set(0)),
+        || super::LOFT_LEGACY_BODY_CARRIER_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() {
     let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":[0,0],"flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
