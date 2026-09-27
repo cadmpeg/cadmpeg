@@ -74,6 +74,40 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
 }
 
 #[test]
+fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
+    for companion in [None, Some(1)] {
+        let mut input = draft(100);
+        input.companion_record_index = companion;
+        let frame = Frame::try_new(input).unwrap();
+        let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
+        assert_eq!(
+            serde_json::to_vec(&frame).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn annotation_frame_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a Frame,
+    }
+    let frame = Frame::try_new(draft(100)).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:annotation-frame#0",
+        value: &frame,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::DIMENSION_ANNOTATION_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_ANNOTATION_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     let frame = Frame::try_new(draft(100)).unwrap();
     let wire = serde_json::to_value(&frame).unwrap();
