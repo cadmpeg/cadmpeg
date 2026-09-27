@@ -998,8 +998,10 @@ fn expanded_sections(
         let Some(expanded) = crate::compress::decode(ctx, payload, expected_length)? else {
             continue;
         };
+        let name = ctx.copy_retained_text(section.section.name(), "creo expanded section names")?;
+        ctx.try_reserve_items(&mut expanded_sections, 1, "creo expanded sections")?;
         expanded_sections.push(ExpandedSection {
-            name: section.section.name().to_string(),
+            name,
             source_offset,
             compressed_length: payload.len(),
             data: expanded,
