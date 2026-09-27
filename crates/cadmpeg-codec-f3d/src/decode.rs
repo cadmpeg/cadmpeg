@@ -2290,6 +2290,7 @@ impl<'a> F3dDecodeSession<'a> {
                 )));
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+            ctx,
             scan,
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
@@ -2405,24 +2406,25 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.lost_edge_references =
             crate::design::decode::sketch::decode_lost_edge_references(scan)?;
         self.native.design_material_assignments =
-            crate::materials::decode_design_assignments(scan)?;
-        self.native.design_types = crate::design::decode::meta::decode_types(scan)?;
+            crate::materials::decode_design_assignments(ctx, scan)?;
+        self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
         self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
         self.native.design_entity_headers =
-            crate::design::decode::sketch::decode_entity_headers(scan)?;
+            crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
             scan,
             &self.native.design_entity_headers,
         )?;
         self.native.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
+            ctx,
             scan,
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
-        self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
-        self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
+        self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(ctx, scan)?;
+        self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(ctx, scan)?;
         self.native.sketch_curve_identities =
-            crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
+            crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
         self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
             &self.native.design_entity_headers,
@@ -2470,6 +2472,7 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_presentation_frames =
             crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
@@ -2506,6 +2509,7 @@ impl<'a> F3dDecodeSession<'a> {
         if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
+                    ctx,
                     scan,
                     None,
                     &self.native.body_native_keys,
@@ -3180,9 +3184,9 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(scan)?;
+    let model_blob_names = crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
-        crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
+        crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
@@ -3193,7 +3197,7 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(scan)?;
+        let all_body_visibility = crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
@@ -3349,7 +3353,7 @@ fn project_mesh_bodies(
 ) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
-    let decoded = crate::design::decode::mesh::decode_mesh_bodies(scan)?;
+    let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
@@ -4427,7 +4431,7 @@ fn extend_related_design_records(
     native.design_feature_timelines =
         crate::design::decode::meta::decode_feature_timelines(ctx, scan)?;
     native.design_component_naming_spaces =
-        crate::design::decode::meta::decode_component_naming_spaces(scan)?;
+        crate::design::decode::meta::decode_component_naming_spaces(ctx, scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     native.design_decal_images =
@@ -4900,6 +4904,7 @@ fn extend_related_design_records(
         &native.design_face_operands,
     );
     native.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_entity_headers,

@@ -414,15 +414,21 @@ impl<'a> ContainerScan<'a> {
     /// The parse of one `MetaStream` entry, computed at most once per scan.
     pub(crate) fn parsed_metastream(
         &self,
+        ctx: &DecodeContext<'_>,
         name: &str,
     ) -> Result<std::rc::Rc<crate::metastream::MetaStream>, CodecError> {
         if let Some(cached) = self.metastream_cache.borrow().get(name) {
             return Ok(std::rc::Rc::clone(cached));
         }
-        let parsed = std::rc::Rc::new(crate::metastream::parse(self.entry_bytes(name)?, name)?);
-        self.metastream_cache
-            .borrow_mut()
-            .insert(name.to_owned(), std::rc::Rc::clone(&parsed));
+        let parsed = crate::metastream::parse(ctx, self.entry_bytes(name)?, name)?;
+        ctx.charge_collection_items(1, "cache F3D MetaStream")?;
+        let mut cache = self.metastream_cache.borrow_mut();
+        cache
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("cache F3D MetaStream", 0, 1))?;
+        let key = copy_string_charged(ctx, name, "cache F3D MetaStream name")?;
+        let parsed = std::rc::Rc::new(parsed);
+        cache.insert(key, std::rc::Rc::clone(&parsed));
         Ok(parsed)
     }
 
@@ -977,6 +983,59 @@ mod tests {
             }
         }
         panic!("text BREP framing did not refuse a collection limit");
+    }
+
+    #[test]
+    fn container_metastream_cache_refuses_collection_limit() {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        let name = "FusionAssetName[Active]/Design1/MetaStream.dat";
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&crate::test_support::streams_test::design_metastream(&[])).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = super::scan(&ctx, root).unwrap();
+        let mut limited_policy = DecodePolicy::service();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let error = match scan.parsed_metastream(&limited, name) {
+            Ok(_) => panic!("MetaStream cache entry must refuse"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "cache F3D MetaStream"));
+    }
+
+    #[test]
+    fn container_metastream_cache_name_refuses_retained_limit() {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        let name = "FusionAssetName[Active]/Design1/MetaStream.dat";
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&crate::test_support::streams_test::design_metastream(&[])).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = super::scan(&ctx, root).unwrap();
+        let mut limited_policy = DecodePolicy::service();
+        limited_policy.limits.max_retained_bytes = (
+            "Design".len()
+                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
+                + "FusionDesignSegmentType".len()
+                + "Fusion".len()
+        ) as u64;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+        let error = match scan.parsed_metastream(&limited, name) {
+            Ok(_) => panic!("MetaStream cache name must refuse"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "cache F3D MetaStream name"));
     }
 
     #[test]

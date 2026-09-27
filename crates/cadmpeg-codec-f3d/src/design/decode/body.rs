@@ -820,7 +820,10 @@ fn selected_body_map_records(
 
 /// Return the typed model-blob set selected independently in each Design
 /// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
-pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+pub(crate) fn design_model_blob_names(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<String>, CodecError> {
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_design_stream = false;
@@ -832,7 +835,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
         saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -993,6 +996,7 @@ fn is_brep_blob_basename(value: &str) -> bool {
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
 /// named blob's body-selector namespace.
 pub(crate) fn decode_design_body_bindings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
@@ -1006,7 +1010,7 @@ pub(crate) fn decode_design_body_bindings(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -1087,6 +1091,7 @@ pub(crate) struct DecodedBodyVisibility {
 }
 
 pub(crate) fn decode_all_body_visibility(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
@@ -1097,7 +1102,7 @@ pub(crate) fn decode_all_body_visibility(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };

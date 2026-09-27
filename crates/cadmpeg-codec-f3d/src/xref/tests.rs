@@ -122,7 +122,10 @@ fn one_typed_placement_metastream() -> crate::metastream::MetaStream {
         &[(super::OCCURRENCE_PLACEMENT_TYPE_GUID, "", 2, "Component", &[10])],
         &[(10, 0)],
     );
-    crate::metastream::parse(&bytes, "typed-placement-test").unwrap()
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    crate::metastream::parse(&ctx, &bytes, "typed-placement-test").unwrap()
 }
 
 #[test]

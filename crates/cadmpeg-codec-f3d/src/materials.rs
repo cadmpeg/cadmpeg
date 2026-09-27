@@ -602,7 +602,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         )));
     }
     out.dedup_by(|a, b| a.id == b.id);
-    let assignments = decode_design_assignments(scan)?;
+    let assignments = decode_design_assignments(ctx, scan)?;
     let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
@@ -648,7 +648,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         &object_types,
         body_bindings,
     )?;
-    let body_overrides = decode_body_appearance_overrides(scan, body_bindings)?;
+    let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
         if bindings
             .iter()
@@ -681,7 +681,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
             )?,
         });
     }
-    let face_assignments = decode_face_appearance_assignments(scan)?;
+    let face_assignments = decode_face_appearance_assignments(ctx, scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
     Ok(DecodedMaterials {
@@ -851,6 +851,7 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
 }
 
 pub(crate) fn decode_design_assignments(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignMaterialAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -861,7 +862,7 @@ pub(crate) fn decode_design_assignments(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -928,6 +929,7 @@ struct BodyAppearanceOverride {
 /// Design `BulkStream` and join them through the exact BREP body-map pair
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn decode_body_appearance_overrides(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     body_bindings: &[DesignBodyBinding],
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
@@ -939,7 +941,7 @@ fn decode_body_appearance_overrides(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
@@ -1022,6 +1024,7 @@ pub(crate) struct FaceAppearanceAssignment {
 /// primary-index frame
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 fn decode_face_appearance_assignments(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<FaceAppearanceAssignment>, CodecError> {
     let mut out = Vec::new();
@@ -1032,7 +1035,7 @@ fn decode_face_appearance_assignments(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(ctx, scan, &entry.name)?
         else {
             continue;
         };
