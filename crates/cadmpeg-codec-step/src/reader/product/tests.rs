@@ -267,14 +267,18 @@ fn shape_binding_bodies_refuse_collection_limit() {
     shape_binding_collection_refuses("step_shape_binding_bodies");
 }
 
-fn mapped_body_placement_collection_refuses(operation: &str) {
-    let source = String::from_utf8_lossy(include_bytes!(
+fn mapped_body_placement_source() -> String {
+    String::from_utf8_lossy(include_bytes!(
         "../../../tests/fixtures/ap214_sheet.p21"
     ))
     .replace(
         "ENDSEC;\nEND-ISO-10303-21;",
         "#70=CARTESIAN_POINT('',(20.,0.,0.));\n#71=CARTESIAN_POINT('',(40.,0.,0.));\n#72=AXIS2_PLACEMENT_3D('',#70,#9,#10);\n#73=AXIS2_PLACEMENT_3D('',#71,#9,#10);\n#74=REPRESENTATION_MAP(#27,#32);\n#75=MAPPED_ITEM('first',#74,#72);\n#76=MAPPED_ITEM('second',#74,#73);\nENDSEC;\nEND-ISO-10303-21;",
-    );
+    )
+}
+
+fn mapped_body_placement_collection_refuses(operation: &str) {
+    let source = mapped_body_placement_source();
     product_collection_refuses_source(source.as_bytes(), operation);
 }
 
@@ -364,25 +368,20 @@ fn product_string_text_refuses_retained_limit() {
     assert!(refused, "no retained limit refused a product string");
 }
 
-fn product_copy_refuses_retained_limit(operation: &str) {
+fn product_retained_refuses_source(source: &[u8], operation: &str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
-        "PRODUCT('P','Part name',''",
-        "PRODUCT('P','Part name','Summary'",
-    );
-    let (exchange, diagnostics) = crate::parse::parse(source.as_bytes())
-        .expect("valid product exchange");
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid product exchange");
     let refused = (0..=4096).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits retained policy");
         matches!(
             crate::reader::decode_exchange(
-                source.as_bytes(),
+                source,
                 exchange.clone(),
                 &diagnostics,
                 &ctx,
@@ -394,6 +393,14 @@ fn product_copy_refuses_retained_limit(operation: &str) {
         )
     });
     assert!(refused, "no retained limit refused {operation}");
+}
+
+fn product_copy_refuses_retained_limit(operation: &str) {
+    let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
+        "PRODUCT('P','Part name',''",
+        "PRODUCT('P','Part name','Summary'",
+    );
+    product_retained_refuses_source(source.as_bytes(), operation);
 }
 
 #[test]
