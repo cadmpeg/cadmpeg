@@ -2543,7 +2543,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
-        Some(ctx),
+        ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
@@ -2600,7 +2600,7 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::resolved_features::holes::project_hole_topology_axes(
-        Some(ctx),
+        ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,
@@ -3585,7 +3585,7 @@ fn build_metadata_ir(
         &sketch_lanes,
     );
     crate::resolved_features::holes::project_profiled_hole_constructions(
-        Some(ctx),
+        ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
@@ -3634,7 +3634,7 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::resolved_features::holes::project_hole_topology_axes(
-        Some(ctx),
+        ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,
