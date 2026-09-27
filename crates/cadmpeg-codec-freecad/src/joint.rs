@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{malformed, sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string};
+use crate::resource::{collection_allocation_failed, collection_vec, materialized_bytes, reserve_vec_items, retained_string};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
@@ -144,173 +144,164 @@ pub(crate) fn transfer(
 }
 
 pub(crate) fn transfer_neutral(
+    ctx: &DecodeContext<'_>,
     records: &[JointRecord],
     occurrences: &[Occurrence],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
-    let occurrence_by_native = occurrences
-        .iter()
-        .filter_map(|occurrence| {
-            let native = occurrence.native_ref.as_deref()?;
-            Some((native, &occurrence.id))
-        })
-        .collect::<HashMap<_, _>>();
-    records
-        .iter()
-        .filter_map(|record| {
-            let parameters = record.parameters();
-            let bool_value = |name: &str| parameters.bool_value(name);
-            let scalar = |name: &str| parameters.scalar_value(name);
-            let enabled_limits =
-                |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
-                    let scaled_bound = |value: FiniteReal| {
-                        if scale == 1.0 {
-                            Ok(value)
-                        } else {
-                            FiniteReal::new(value.get() * scale).ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "joint limits minimum/maximum must be finite and ordered"
-                                        .into(),
-                                )
-                            })
-                        }
-                    };
-                    let minimum = bool_value(enable_min)
-                        .is_some_and(|enabled| enabled)
-                        .then(|| scalar(minimum))
-                        .flatten()
-                        .map(scaled_bound)
-                        .transpose()?;
-                    let maximum = bool_value(enable_max)
-                        .is_some_and(|enabled| enabled)
-                        .then(|| scalar(maximum))
-                        .flatten()
-                        .map(scaled_bound)
-                        .transpose()?;
-                    if minimum.is_none() && maximum.is_none() {
-                        Ok(None)
+    let count = occurrences.iter().filter(|occurrence| occurrence.native_ref.is_some()).count();
+    let mut occurrence_by_native = HashMap::new();
+    ctx.charge_collection_items(count as u64, "fcstd joint occurrence index")?;
+    occurrence_by_native.try_reserve(count)
+        .map_err(|_| collection_allocation_failed(ctx, count as u64, "fcstd joint occurrence index"))?;
+    for occurrence in occurrences {
+        if let Some(native) = occurrence.native_ref.as_deref() {
+            occurrence_by_native.insert(native, &occurrence.id);
+        }
+    }
+    let mut output = Vec::new();
+    for record in records {
+        let parameters = record.parameters();
+        let bool_value = |name: &str| parameters.bool_value(name);
+        let scalar = |name: &str| parameters.scalar_value(name);
+        let enabled_limits =
+            |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
+                let scaled_bound = |value: FiniteReal| {
+                    if scale == 1.0 {
+                        Ok(value)
                     } else {
-                        JointLimits::from_parts(minimum, maximum)
-                            .map(Some)
-                            .ok_or_else(|| {
-                                CodecError::Malformed(
-                                    "joint limits minimum/maximum must be finite and ordered"
-                                        .into(),
-                                )
-                            })
+                        FiniteReal::new(value.get() * scale).ok_or_else(|| {
+                            CodecError::Malformed(
+                                "joint limits minimum/maximum must be finite and ordered".into(),
+                            )
+                        })
                     }
                 };
-            let operand = |reference: &LinkTarget| {
-                let object = reference.object()?.to_owned();
-                let subelements = reference
-                    .subelements()
-                    .iter()
-                    .filter(|name| !name.is_empty())
-                    .cloned()
-                    .collect();
-                if let Some(document) = reference.document() {
-                    return Some(JointOperand::external(
-                        crate::product::external_document_reference(
-                            document.as_str(),
-                            document.attribute(),
-                        ),
-                        object,
-                        subelements,
-                    ));
+                let minimum = bool_value(enable_min)
+                    .is_some_and(|enabled| enabled)
+                    .then(|| scalar(minimum))
+                    .flatten()
+                    .map(scaled_bound)
+                    .transpose()?;
+                let maximum = bool_value(enable_max)
+                    .is_some_and(|enabled| enabled)
+                    .then(|| scalar(maximum))
+                    .flatten()
+                    .map(scaled_bound)
+                    .transpose()?;
+                if minimum.is_none() && maximum.is_none() {
+                    Ok(None)
+                } else {
+                    JointLimits::from_parts(minimum, maximum)
+                        .map(Some)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(
+                                "joint limits minimum/maximum must be finite and ordered".into(),
+                            )
+                        })
                 }
-                Some(
-                    match occurrence_by_native.get(object.as_str()).copied().cloned() {
-                        Some(occurrence) => {
-                            JointOperand::occurrence(occurrence, object, subelements)
-                        }
-                        None => JointOperand::root(object, subelements),
-                    },
-                )
             };
-            let key = match crate::native::model_key(&record.object, "constraint") {
-                Ok(key) => key,
-                Err(error) => return Some(Err(CodecError::malformed(error))),
+        let operand = |reference: &LinkTarget| -> Result<Option<JointOperand>, CodecError> {
+            let Some(name) = reference.object() else {
+                return Ok(None);
             };
-            let id = JointId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "joint"),
-                key,
-            );
-            let angle = scalar("Angle").map(|value| value.get().to_radians());
-            let distance = scalar("Distance");
-            let distance2 = scalar("Distance2");
-            let angular_limits = enabled_limits(
-                "AngleMin",
-                "AngleMax",
-                "EnableAngleMin",
-                "EnableAngleMax",
-                std::f64::consts::PI / 180.0,
-            );
-            let linear_limits = enabled_limits(
-                "LengthMin",
-                "LengthMax",
-                "EnableLengthMin",
-                "EnableLengthMax",
-                1.0,
-            );
-            let (angular_limits, linear_limits) = match (angular_limits, linear_limits) {
-                (Ok(angular), Ok(linear)) => (angular, linear),
-                (Err(error), _) | (_, Err(error)) => return Some(Err(error)),
-            };
-            let mut joint = match &record.body {
-                JointBody::Grounded {
-                    reference,
-                    placement,
-                } => AssemblyJoint::grounded(
+            let object = retained_string(ctx, name, "fcstd joint operand object")?;
+            let mut subelements = collection_vec(ctx, reference.subelements().len(), "fcstd joint operand subelements")?;
+            for name in reference.subelements().iter().filter(|name| !name.is_empty()) {
+                subelements.push(retained_string(ctx, name, "fcstd joint operand subelement")?);
+            }
+            if let Some(document) = reference.document() {
+                let document = crate::product::external_document_reference_charged(
+                    ctx, document.as_str(), document.attribute(),
+                )?;
+                return Ok(Some(JointOperand::external(document, object, subelements)));
+            }
+            Ok(Some(match occurrence_by_native.get(name).copied() {
+                Some(occurrence) => {
+                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(retained_string(
+                        ctx, occurrence.as_str(), "fcstd joint occurrence identity",
+                    )?).map_err(CodecError::malformed)?;
+                    JointOperand::occurrence(identity, object, subelements)
+                }
+                None => JointOperand::root(object, subelements),
+            }))
+        };
+        let key = crate::native::model_key(&record.object, "constraint")
+            .map_err(CodecError::malformed)?;
+        let id = JointId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "joint"),
+            key,
+        );
+        let angle = scalar("Angle").map(|value| value.get().to_radians());
+        let distance = scalar("Distance");
+        let distance2 = scalar("Distance2");
+        let angular_limits = enabled_limits(
+            "AngleMin", "AngleMax", "EnableAngleMin", "EnableAngleMax",
+            std::f64::consts::PI / 180.0,
+        )?;
+        let linear_limits = enabled_limits(
+            "LengthMin", "LengthMax", "EnableLengthMin", "EnableLengthMax", 1.0,
+        )?;
+        let mut joint = match &record.body {
+            JointBody::Grounded { reference, placement } => {
+                let Some(reference) = reference.as_ref() else {
+                    continue;
+                };
+                let Some(operand) = operand(reference)? else {
+                    continue;
+                };
+                AssemblyJoint::grounded(
                     id,
                     JointConnector {
-                        operand: operand(reference.as_ref()?)?,
+                        operand,
                         frame: placement.transform(),
                         detached: bool_value("Detach1").is_some_and(|value| value),
                     },
                     None,
-                ),
-                JointBody::Pair {
+                )
+            }
+            JointBody::Pair { kind, connectors: [first, second] } => {
+                let kind = joint_kind(ctx, kind, angle, distance, distance2, angular_limits, linear_limits)?;
+                let Some(first_reference) = first.reference.as_ref() else {
+                    continue;
+                };
+                let Some(first_operand) = operand(first_reference)? else {
+                    continue;
+                };
+                let Some(second_reference) = second.reference.as_ref() else {
+                    continue;
+                };
+                let Some(second_operand) = operand(second_reference)? else {
+                    continue;
+                };
+                AssemblyJoint::paired(
+                    id,
                     kind,
-                    connectors: [first, second],
-                } => {
-                    let kind = joint_kind(
-                        kind,
-                        angle,
-                        distance,
-                        distance2,
-                        angular_limits,
-                        linear_limits,
-                    );
-                    let kind = match kind {
-                        Ok(kind) => kind,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    AssemblyJoint::paired(
-                        id,
-                        kind,
-                        [
-                            JointConnector {
-                                operand: operand(first.reference.as_ref()?)?,
-                                frame: first.placement.transform(),
-                                detached: bool_value("Detach1").is_some_and(|value| value),
-                            },
-                            JointConnector {
-                                operand: operand(second.reference.as_ref()?)?,
-                                frame: second.placement.transform(),
-                                detached: bool_value("Detach2").is_some_and(|value| value),
-                            },
-                        ],
-                        Some([first.offset.transform(), second.offset.transform()]),
-                    )
-                }
-            };
-            joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
-            joint.native_ref = Some(record.id.clone());
-            Some(Ok(joint))
-        })
-        .collect()
+                    [
+                        JointConnector {
+                            operand: first_operand,
+                            frame: first.placement.transform(),
+                            detached: bool_value("Detach1").is_some_and(|value| value),
+                        },
+                        JointConnector {
+                            operand: second_operand,
+                            frame: second.placement.transform(),
+                            detached: bool_value("Detach2").is_some_and(|value| value),
+                        },
+                    ],
+                    Some([first.offset.transform(), second.offset.transform()]),
+                )
+            }
+        };
+        joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
+        joint.native_ref = Some(retained_string(ctx, &record.id, "fcstd joint native reference")?);
+        reserve_vec_items(ctx, &mut output, 1, "fcstd neutral joints")?;
+        output.push(joint);
+    }
+    Ok(output)
 }
 
 fn joint_kind(
+    ctx: &DecodeContext<'_>,
     kind: &PairedJointFamily,
     angle: Option<f64>,
     distance: Option<FiniteReal>,
@@ -323,7 +314,12 @@ fn joint_kind(
             .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
     };
     let angle = angle.map(finite_angle).transpose()?;
-    Ok(match kind.as_str().to_ascii_lowercase().as_str() {
+    let (mut lower, _reservation) = materialized_bytes(ctx, kind.as_str().len(), "fcstd joint kind matching")?;
+    lower.extend_from_slice(kind.as_str().as_bytes());
+    lower.make_ascii_lowercase();
+    let lower = std::str::from_utf8(&lower)
+        .map_err(|_| CodecError::Malformed("joint kind lost UTF-8 encoding".into()))?;
+    Ok(match lower {
         "fixed" => PairedJointKind::Fixed {
             angle,
             translation_offset: None,
@@ -364,7 +360,7 @@ fn joint_kind(
             distance2,
         },
         _ => PairedJointKind::Native {
-            name: kind.as_str().to_owned(),
+            name: retained_string(ctx, kind.as_str(), "fcstd native joint kind")?,
             angle,
             translation_offset: None,
             distance,
@@ -628,6 +624,10 @@ pub(crate) mod tests {
 
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
         for family in [
             "Fixed",
             "Revolute",
@@ -646,6 +646,7 @@ pub(crate) mod tests {
             assert!(
                 !matches!(
                     joint_kind(
+                        &ctx,
                         &super::PairedJointFamily::new(family.into()).unwrap(),
                         None,
                         None,
@@ -659,6 +660,19 @@ pub(crate) mod tests {
                 "{family} must not fall through to a native joint family"
             );
         }
+    }
+
+    #[test]
+    fn neutral_joint_kind_refuses_at_materialized_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let kind = super::PairedJointFamily::new("Fixed".into()).expect("valid joint family");
+        assert!(matches!(joint_kind(&ctx, &kind, None, None, None, None, None),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "fcstd joint kind matching"));
     }
 
     #[test]

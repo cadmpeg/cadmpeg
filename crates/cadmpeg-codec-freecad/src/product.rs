@@ -603,16 +603,17 @@ fn copy_on_change_policy(value: &NativeCopyOnChangePolicy) -> CopyOnChangePolicy
     }
 }
 
-pub(crate) fn external_document_reference(
+pub(crate) fn external_document_reference_charged(
+    ctx: &DecodeContext<'_>,
     value: &str,
     attribute: Option<&str>,
-) -> ExternalDocument {
-    let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
-    if is_path {
+) -> Result<ExternalDocument, CodecError> {
+    let value = crate::resource::retained_string(ctx, value, "fcstd external document reference")?;
+    Ok(if attribute.is_some_and(|name| name.eq_ignore_ascii_case("file")) {
         ExternalDocument::path(value)
     } else {
         ExternalDocument::document_id(value)
-    }
+    })
 }
 
 pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
