@@ -9,7 +9,7 @@ use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
@@ -24,7 +24,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -5113,9 +5113,25 @@ fn stage_curve_tree(
 }
 
 struct DecodedPcurves {
-    ids: BTreeMap<usize, cadmpeg_ir::ids::PcurveId>,
+    ids: HashMap<usize, cadmpeg_ir::ids::PcurveId>,
     values: Vec<Pcurve>,
     warnings: Diagnostics,
+}
+
+fn clone_pcurve_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    nurbs: &NurbsCurve,
+    operation: &'static str,
+) -> Result<NurbsCurve, crate::curves::GeometryError> {
+    let items = nurbs
+        .knots()
+        .len()
+        .checked_add(nurbs.pole_count())
+        .ok_or_else(|| crate::curves::GeometryError::unpositioned("C2 curve size overflow"))?;
+    ctx.charge_collection_items(u64_from_index(items), operation)?;
+    nurbs
+        .try_clone()
+        .map_err(|_| crate::curves::collection_allocation_failed(operation, items))
 }
 
 fn decode_pcurves(
@@ -5127,9 +5143,8 @@ fn decode_pcurves(
     key: &str,
     surfaces: &BTreeMap<usize, StagedBrepSurface>,
 ) -> Result<DecodedPcurves, crate::curves::GeometryError> {
-    let mut ids = BTreeMap::new();
+    let mut ids = HashMap::new();
     let mut values = Vec::new();
-    let mut decoded_slots = BTreeMap::<usize, Option<NurbsCurve>>::new();
     let mut warnings = Diagnostics::new();
     let key = match IdentityKey::try_new(key.to_owned()) {
         Ok(key) => key,
@@ -5142,6 +5157,7 @@ fn decode_pcurves(
             });
         }
     };
+    let mut decoded_slots = HashMap::<usize, Option<NurbsCurve>>::new();
     for (index, trim) in raw.trims.iter().enumerate() {
         if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
             continue;
@@ -5152,7 +5168,7 @@ fn decode_pcurves(
         };
         let nurbs = if let Some(nurbs) = decoded_slots.get(&trim_curve) {
             let Some(nurbs) = nurbs else { continue };
-            nurbs.clone()
+            clone_pcurve_nurbs(ctx, nurbs, "Rhino Brep reused C2 curve")?
         } else {
             let decoded = (|| -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
                 let child = raw
@@ -5185,7 +5201,16 @@ fn decode_pcurves(
                             .warnings
                             .map_messages(|message| format!("trim {index}: {message}")),
                     );
-                    decoded_slots.insert(trim_curve, Some(joined.curve.clone()));
+                    let cached =
+                        clone_pcurve_nurbs(ctx, &joined.curve, "Rhino Brep cached C2 curve")?;
+                    ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
+                    decoded_slots.try_reserve(1).map_err(|_| {
+                        crate::curves::collection_allocation_failed(
+                            "Rhino Brep decoded C2 slots",
+                            1,
+                        )
+                    })?;
+                    decoded_slots.insert(trim_curve, Some(cached));
                     joined.curve
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
@@ -5194,6 +5219,13 @@ fn decode_pcurves(
                         crate::loss::RhinoLossCode::TrimPcurveDropped,
                         format!("trim {index} C2 omitted: {error}"),
                     );
+                    ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
+                    decoded_slots.try_reserve(1).map_err(|_| {
+                        crate::curves::collection_allocation_failed(
+                            "Rhino Brep decoded C2 slots",
+                            1,
+                        )
+                    })?;
                     decoded_slots.insert(trim_curve, None);
                     continue;
                 }
@@ -5205,35 +5237,74 @@ fn decode_pcurves(
             .and_then(|loop_record| resolved.faces.get(loop_record.face))
             .and_then(|face| surfaces.get(&face.surface))
             .and_then(|surface| surface.plane_parameterization);
-        let control_points = nurbs
-            .control_points()
-            .into_iter()
-            .map(|point| {
-                let point = Point2::new(point.x, point.y);
-                plane_parameterization.map_or(point, |map| map.map_point(point))
-            })
-            .collect::<Vec<Point2>>();
+        let map_point = |point: FinitePoint3| {
+            let point = point.get();
+            let point = Point2::new(point.x, point.y);
+            FinitePoint2::new(plane_parameterization.map_or(point, |map| map.map_point(point)))
+        };
+        let mut invalid_point = false;
+        let poles = match nurbs.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                let mut mapped =
+                    crate::curves::charged_vec(ctx, points.len(), "Rhino Brep pcurve poles")?;
+                for point in points {
+                    let Some(point) = map_point(*point) else {
+                        invalid_point = true;
+                        break;
+                    };
+                    mapped.push(point);
+                }
+                PcurveNurbsPoles::Polynomial { points: mapped }
+            }
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                let mut mapped =
+                    crate::curves::charged_vec(ctx, points.len(), "Rhino Brep pcurve poles")?;
+                for pole in points {
+                    let Some(point) = map_point(pole.point) else {
+                        invalid_point = true;
+                        break;
+                    };
+                    mapped.push(WeightedPole2 {
+                        point,
+                        weight: pole.weight,
+                    });
+                }
+                PcurveNurbsPoles::Rational { points: mapped }
+            }
+        };
+        if invalid_point {
+            warnings.push(format!(
+                "trim {index} C2 has an invalid NURBS shape: control_points contains a non-finite point"
+            ));
+            continue;
+        }
         let id = cadmpeg_ir::ids::PcurveId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "pcurve"),
             key.clone()
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        let nurbs = match PcurveNurbs::from_checked_lanes(
-            nurbs.degree(),
-            nurbs.knots().clone(),
-            control_points,
-            nurbs.weights(),
-            nurbs.periodic(),
-        ) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                warnings.push(format!(
-                    "trim {index} C2 has an invalid NURBS shape: {error}"
-                ));
-                continue;
-            }
-        };
+        ctx.charge_collection_items(
+            u64_from_index(nurbs.knots().len()),
+            "Rhino Brep pcurve knots",
+        )?;
+        let knots = nurbs.knots().try_clone().map_err(|_| {
+            crate::curves::collection_allocation_failed(
+                "Rhino Brep pcurve knots",
+                nurbs.knots().len(),
+            )
+        })?;
+        let nurbs =
+            match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    warnings.push(format!(
+                        "trim {index} C2 has an invalid NURBS shape: {error}"
+                    ));
+                    continue;
+                }
+            };
+        crate::curves::reserve_collection(ctx, &mut values, 1, "Rhino Brep pcurves")?;
         values.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
@@ -5243,6 +5314,9 @@ fn decode_pcurves(
                 trim_refs.tolerances[0].fit(),
             ),
         });
+        ctx.charge_collection_items(1, "Rhino Brep pcurve IDs")?;
+        ids.try_reserve(1)
+            .map_err(|_| crate::curves::collection_allocation_failed("Rhino Brep pcurve IDs", 1))?;
         ids.insert(index, id);
     }
     Ok(DecodedPcurves {

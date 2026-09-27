@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::decode_pcurves;
 use super::{
     append_record_links, brep_free_vertex_indices, face_components, line_nurbs, region, region_raw,
     region_resolved, region_shell_groups, region_shell_groups_without_records,
@@ -658,6 +659,12 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         .try_into()
         .expect("valid identity");
     let expected = [
+        "Rhino Brep pcurve IDs",
+        "Rhino Brep decoded C2 slots",
+        "Rhino Brep cached C2 curve",
+        "Rhino Brep pcurve poles",
+        "Rhino Brep pcurve knots",
+        "Rhino Brep pcurves",
         "Rhino staged Brep vertex IDs",
         "Rhino staged Brep points",
         "Rhino staged Brep vertices",
@@ -822,4 +829,59 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "rhino_mesh_buffer"
     ));
+}
+
+#[test]
+fn reused_brep_c2_curve_refuses_before_the_second_copy() {
+    let (data, mut raw) = source_shaped_plane_brep();
+    raw.trims[1].curve = Some(0);
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate Brep with a shared C2 slot");
+    let success = with_expand_bytes(&data, |expand| {
+        decode_pcurves(
+            expand.ctx(),
+            &data,
+            ArchiveVersion::V5,
+            brep.raw(),
+            brep.resolved(),
+            "plane",
+            &std::collections::BTreeMap::new(),
+        )
+    })
+    .expect("shared C2 slot decodes under the service profile");
+    assert_eq!(success.values.len(), 3);
+    let mut witnessed = false;
+    for limit in 0..512_u64 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("source bytes fit the root limit");
+        match decode_pcurves(
+            &ctx,
+            &data,
+            ArchiveVersion::V5,
+            brep.raw(),
+            brep.resolved(),
+            "plane",
+            &std::collections::BTreeMap::new(),
+        ) {
+            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                refusal,
+            ))) if refusal.operation == "Rhino Brep reused C2 curve"
+                && limit == refusal.used + refusal.additional - 1 =>
+            {
+                witnessed = true;
+                break;
+            }
+            Ok(_) => break,
+            _ => {}
+        }
+    }
+    assert!(
+        witnessed,
+        "reused C2 curve copy must refuse below its item count"
+    );
 }
