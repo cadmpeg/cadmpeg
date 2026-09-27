@@ -52,8 +52,6 @@ pub(crate) const ACTDATUM_SURFACE: IdentityNamespace =
 
 pub(crate) const MODEL_FEATURE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "feature");
-pub(crate) const MODEL_FEATURE_RESULT_TOPOLOGY: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "model", "feature-result-topology");
 pub(crate) const MODEL_OCCURRENCE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "occurrence");
 pub(crate) const MODEL_PRODUCT_DEFINITION: IdentityNamespace =

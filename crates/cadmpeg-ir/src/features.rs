@@ -1971,11 +1971,27 @@ impl FeatureResultTopology {
             edges,
             vertices,
         };
-        let members = NonEmptyMembers::try_from(Vec::<SelectionMember>::from(members))?;
+        if members.bodies.is_empty()
+            && members.faces.is_empty()
+            && members.edges.is_empty()
+            && members.vertices.is_empty()
+        {
+            return Err(BodySelectionError::Empty.into());
+        }
+        for (error, values) in [
+            (FeatureResultMemberError::RepeatedBody, &members.bodies),
+            (FeatureResultMemberError::RepeatedFace, &members.faces),
+            (FeatureResultMemberError::RepeatedEdge, &members.edges),
+            (FeatureResultMemberError::RepeatedVertex, &members.vertices),
+        ] {
+            if values.iter().enumerate().any(|(index, value)| values[..index].contains(value)) {
+                return Err(error);
+            }
+        }
         Ok(Self {
             id,
             output_of,
-            members: FeatureResultMembers::try_from(members)?,
+            members,
             native_ref,
         })
     }

@@ -26,6 +26,136 @@ fn one_result_surface() -> (
     (vec![table], vec![row])
 }
 
+fn one_result_edge() -> Vec<crate::curve::CurveTopologyRow> {
+    vec![crate::curve::CurveTopologyRow {
+        id: 77,
+        type_byte: 8,
+        feature_id: 17,
+        directions: [1, 0xf6],
+        faces: [std::num::NonZeroU32::new(201), std::num::NonZeroU32::new(202)],
+        next_edges: [77, 77],
+        offset: 0,
+    }]
+}
+
+fn topology_limit_error(
+    face: bool,
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (tables, rows) = if face { one_result_surface() } else { (Vec::new(), Vec::new()) };
+    let curve_rows = if face { Vec::new() } else { one_result_edge() };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::feature_result_topology(&ctx, &tables, &rows, &curve_rows, 17)
+        .expect_err("one result member exceeds the resource limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn feature_result_face_local_id_refuses_retained_limit() {
+    topology_limit_error(true, None, Some(0), "creo feature result face local IDs");
+}
+
+#[test]
+fn feature_result_face_members_refuse_collection_limit() {
+    topology_limit_error(true, Some(2), None, "creo feature result face members");
+}
+
+#[test]
+fn feature_result_edge_local_id_refuses_retained_limit() {
+    topology_limit_error(false, None, Some(0), "creo feature result edge local IDs");
+}
+
+#[test]
+fn feature_result_edge_members_refuse_collection_limit() {
+    topology_limit_error(false, Some(2), None, "creo feature result edge members");
+}
+
+#[test]
+fn feature_result_topology_id_refuses_retained_limit() {
+    topology_limit_error(true, None, Some("surface#201".len() as u64),
+        "creo feature result topology ID");
+}
+
+#[test]
+fn feature_result_owner_id_refuses_retained_limit() {
+    topology_limit_error(true, None,
+        Some(("surface#201".len() + "creo:model:feature-result-topology#17".len()) as u64),
+        "creo feature result owner ID");
+}
+
+#[test]
+fn feature_result_distinctness_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (mut tables, mut rows) = one_result_surface();
+    tables[0].entries.push(crate::feature::entity::dummy_table_entry(202));
+    tables[0].mark_surface_id(202);
+    rows.push(crate::surface::SurfaceRow { id: 202, ..rows[0].clone() });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::feature_result_topology(&ctx, &tables, &rows, &[], 17)
+        .expect_err("two distinctness comparisons exceed zero work units");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo feature result member distinctness"), "{error:?}");
+}
+
+#[test]
+fn feature_result_topology_arena_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureId, FeatureOperation,
+    };
+
+    let (tables, rows) = one_result_surface();
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.entity_tables = tables;
+    scan.surfaces.rows = rows;
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("creo:model:feature#17").expect("fixture identity"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        )),
+        native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::emit_feature_result_topologies(&ctx, &scan, &mut ir)
+        .expect_err("one topology arena row exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo model feature result topologies"), "{error:?}");
+    assert!(ir.model.feature_result_topologies.is_empty());
+}
+
 fn result_surface_limit_error(
     limit: u64,
     by_feature: bool,

@@ -22,6 +22,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::text::NonBlankString;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-9;
@@ -495,25 +496,54 @@ pub(in super::super) fn feature_result_topology(
     curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
 ) -> Result<Option<FeatureResultTopology>, CodecError> {
-    let faces = feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|surface_id| cadmpeg_core::nonblank_literal!("surface#{surface_id}"))
-        .collect::<Vec<_>>();
-    let edges = feature_result_edge_ids(ctx, curve_rows, feature_id)?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|curve_id| cadmpeg_core::nonblank_literal!("curve#{curve_id}"))
-        .collect::<Vec<_>>();
+    let mut faces = Vec::new();
+    for surface_id in feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?
+        .unwrap_or_default() {
+        let text = ctx.format_retained(
+            format_args!("surface#{surface_id}"),
+            "creo feature result face local IDs",
+        )?;
+        let id = NonBlankString::new(text)
+            .ok_or_else(|| CodecError::Malformed("constructed face local ID is blank".into()))?;
+        ctx.try_reserve_items(&mut faces, 1, "creo feature result face members")?;
+        faces.push(id);
+    }
+    let mut edges = Vec::new();
+    for curve_id in feature_result_edge_ids(ctx, curve_rows, feature_id)?
+        .unwrap_or_default() {
+        let text = ctx.format_retained(
+            format_args!("curve#{curve_id}"),
+            "creo feature result edge local IDs",
+        )?;
+        let id = NonBlankString::new(text)
+            .ok_or_else(|| CodecError::Malformed("constructed edge local ID is blank".into()))?;
+        ctx.try_reserve_items(&mut edges, 1, "creo feature result edge members")?;
+        edges.push(id);
+    }
     if faces.is_empty() && edges.is_empty() {
         return Ok(None);
     }
+    for values in [&faces, &edges] {
+        for (index, _) in values.iter().enumerate() {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(index),
+                "creo feature result member distinctness",
+            )?;
+        }
+    }
+    let id = FeatureResultTopologyId::mint(ctx.format_retained(
+        format_args!("creo:model:feature-result-topology#{feature_id}"),
+        "creo feature result topology ID",
+    )?)
+    .map_err(|_| CodecError::Malformed("constructed result topology ID is invalid".into()))?;
+    let output_of = IrFeatureId::mint(ctx.format_retained(
+        format_args!("creo:model:feature#{feature_id}"),
+        "creo feature result owner ID",
+    )?)
+    .map_err(|_| CodecError::Malformed("constructed result owner ID is invalid".into()))?;
     Ok(FeatureResultTopology::new(
-        FeatureResultTopologyId::compose(
-            &crate::identity::MODEL_FEATURE_RESULT_TOPOLOGY,
-            feature_id,
-        ),
-        IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id),
+        id,
+        output_of,
         Vec::new(),
         faces,
         edges,
@@ -567,6 +597,11 @@ pub(in super::super) fn emit_feature_result_topologies(
         )? else {
             continue;
         };
+        ctx.try_reserve_items(
+            &mut ir.model.feature_result_topologies,
+            1,
+            "creo model feature result topologies",
+        )?;
         ctx.charge_entities(1, "admit Creo model feature_result_topologies")?;
         ir.model.feature_result_topologies.push(state);
         emitted += 1;
