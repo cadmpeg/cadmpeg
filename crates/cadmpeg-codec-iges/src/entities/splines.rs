@@ -4,12 +4,14 @@
 use super::geometry::{
     entity_loss, resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome,
 };
+use crate::decode_resource::{collect_optional_vec, reserve_vec};
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
@@ -162,12 +164,21 @@ fn add_edge(
     nurbs: NurbsCurve,
     parameter_range: [FiniteReal; 2],
     sequences: &mut super::geometry::SourceSequences,
-) -> Option<EdgeId> {
-    let parameter_range =
-        IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])?;
+) -> Result<Option<EdgeId>, CodecError> {
+    let Some(parameter_range) =
+        IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])
+    else {
+        return Ok(None);
+    };
     let [lower, upper] = parameter_range.endpoints();
-    let start = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, lower).ok()?;
-    let end = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, upper).ok()?;
+    let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, lower))?
+    else {
+        return Ok(None);
+    };
+    let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, upper))?
+    else {
+        return Ok(None);
+    };
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
     sequences.record_point(&start_point, &stem);
@@ -197,7 +208,10 @@ fn add_edge(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-        source_object: Some(source_object(entry).ok()?),
+        source_object: Some(match source_object(entry) {
+            Ok(source) => source,
+            Err(_) => return Ok(None),
+        }),
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
@@ -206,7 +220,7 @@ fn add_edge(
         end: end_vertex,
         tolerance: None,
     });
-    Some(edge)
+    Ok(Some(edge))
 }
 
 pub(super) fn project(
@@ -214,7 +228,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
@@ -279,9 +293,11 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "breakpoint count overflows"));
             continue;
         };
-        let Some(breakpoints) = (5..5 + breakpoint_count)
-            .map(|index| record.number(index).and_then(FiniteReal::new))
-            .collect::<Option<Vec<_>>>()
+        let Some(breakpoints) = collect_optional_vec(
+            ctx,
+            (5..5 + breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve breakpoints",
+        )?
         else {
             losses.push(entity_loss(
                 entry,
@@ -304,9 +320,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "coefficient count overflows"));
             continue;
         };
-        let Some(coefficients) = (coefficient_start..coefficient_start + coefficient_count)
-            .map(|index| record.number(index).and_then(FiniteReal::new))
-            .collect::<Option<Vec<_>>>()
+        let Some(coefficients) = collect_optional_vec(
+            ctx,
+            (coefficient_start..coefficient_start + coefficient_count)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve coefficients",
+        )?
         else {
             losses.push(entity_loss(
                 entry,
@@ -321,7 +340,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -329,7 +348,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        let mut control_points = Vec::with_capacity(segment_count * 3 + 1);
+        let control_count = segment_count * 3 + 1;
+        let mut control_points = reserve_vec(ctx, control_count, "iges spline curve controls")?;
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
@@ -493,15 +513,17 @@ pub(super) fn project(
                     }
                 }
             }
-            let Some(bezier) = (0..4)
-                .map(|index| {
+            let Some(bezier) = collect_optional_vec(
+                ctx,
+                (0..4).map(|index| {
                     transform.apply_point(Point3::new(
                         x[index] * factor,
                         y[index] * factor,
                         z[index] * factor,
                     ))
-                })
-                .collect::<Option<Vec<_>>>()
+                }),
+                "iges spline curve Bezier controls",
+            )?
             else {
                 continuous = false;
                 break;
@@ -521,9 +543,12 @@ pub(super) fn project(
             continue;
         }
         let tail_start = coefficient_start + coefficient_count;
-        let Some(tail) = (tail_start..tail_start + 12)
-            .map(|index| record.number(index).and_then(FiniteReal::new))
-            .collect::<Option<Vec<_>>>()
+        let Some(tail) = collect_optional_vec(
+            ctx,
+            (tail_start..tail_start + 12)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline curve terminal derivatives",
+        )?
         else {
             losses.push(entity_loss(entry, "terminal derivative block is missing"));
             continue;
@@ -587,7 +612,8 @@ pub(super) fn project(
             nurbs,
             [breakpoints[0], breakpoints[segment_count]],
             sequences,
-        ) else {
+        )?
+        else {
             losses.push(entity_loss(
                 entry,
                 "converted spline endpoints cannot be evaluated",
@@ -705,9 +731,11 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "v-breakpoint count overflows"));
             continue;
         };
-        let Some(u_breakpoints) = (5..5 + u_breakpoint_count)
-            .map(|index| record.number(index).and_then(FiniteReal::new))
-            .collect::<Option<Vec<_>>>()
+        let Some(u_breakpoints) = collect_optional_vec(
+            ctx,
+            (5..5 + u_breakpoint_count).map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline surface u breakpoints",
+        )?
         else {
             losses.push(entity_loss(
                 entry,
@@ -716,9 +744,12 @@ pub(super) fn project(
             continue;
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
-        let Some(v_breakpoints) = (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
-            .map(|index| record.number(index).and_then(FiniteReal::new))
-            .collect::<Option<Vec<_>>>()
+        let Some(v_breakpoints) = collect_optional_vec(
+            ctx,
+            (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
+                .map(|index| record.number(index).and_then(FiniteReal::new)),
+            "iges spline surface v breakpoints",
+        )?
         else {
             losses.push(entity_loss(
                 entry,
@@ -746,7 +777,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         ) {
             Ok(transform) => transform,
             Err(message) => {
@@ -786,10 +817,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let mut grid = ctx.map_or_else(
-            || alloc_filled(pole_count, None, "iges spline surface control grid"),
-            |ctx| ctx.alloc_filled(pole_count, None, "iges spline surface control grid"),
-        )?;
+        let mut grid = ctx.alloc_filled(pole_count, None, "iges spline surface control grid")?;
         let mut valid = true;
         'patches: for u_patch in 0..u_segments {
             for v_patch in 0..v_segments {
@@ -807,9 +835,12 @@ pub(super) fn project(
                     valid = false;
                     break 'patches;
                 };
-                let Some(values) = (block_start..block_start + 48)
-                    .map(|index| record.number(index).and_then(FiniteReal::new))
-                    .collect::<Option<Vec<_>>>()
+                let Some(values) = collect_optional_vec(
+                    ctx,
+                    (block_start..block_start + 48)
+                        .map(|index| record.number(index).and_then(FiniteReal::new)),
+                    "iges spline surface patch coefficients",
+                )?
                 else {
                     valid = false;
                     break 'patches;
@@ -853,7 +884,12 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(control_points) = grid.into_iter().collect::<Option<Vec<_>>>() else {
+        let Some(control_points) = collect_optional_vec(
+            ctx,
+            grid.into_iter(),
+            "iges spline surface completed controls",
+        )?
+        else {
             losses.push(entity_loss(
                 entry,
                 "spline-surface patch grid is incomplete",
