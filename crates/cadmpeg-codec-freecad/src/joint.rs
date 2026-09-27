@@ -132,12 +132,13 @@ pub(crate) fn transfer(
         reserve_vec_items(ctx, &mut output, 1, "fcstd joint records")?;
         output.push(
             JointRecord::try_new(
+                ctx,
                 crate::native::native_id_charged(ctx, "joint", &object.name)?,
                 retained_string(ctx, &object.id, "fcstd joint object")?,
                 body,
                 parameters,
             )
-            .map_err(CodecError::Malformed)?,
+            ?,
         );
     }
     Ok(output)
@@ -887,7 +888,11 @@ pub(crate) mod tests {
 
     #[test]
     fn joint_model_identity_refuses_at_retained_limit() {
+        let admission_arena = cadmpeg_core::decode::DecodeArena::new();
+        let admission_policy = cadmpeg_core::decode::DecodePolicy::service();
+        let admission_ctx = diagnostic_context(&admission_arena, &admission_policy);
         let record = crate::native::joint::JointRecord::try_new(
+            &admission_ctx,
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             crate::native::joint::JointBody::Grounded {
