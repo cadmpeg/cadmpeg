@@ -4235,10 +4235,27 @@ where
                     face,
                     "catia_incidence_component_faces",
                 )?;
-                let mut points = coordinate_domains
-                    .filter(|_| choices[edge].is_empty())
-                    .and_then(|domains| domains.edge_candidate_points(edge))
-                    .unwrap_or_else(|| choices[edge].iter().flatten().copied().collect());
+                let candidate_points = if let Some(domains) =
+                    coordinate_domains.filter(|_| choices[edge].is_empty())
+                {
+                    domains.edge_candidate_points(ctx, edge)?
+                } else {
+                    None
+                };
+                let mut points = if let Some(points) = candidate_points {
+                    points
+                } else {
+                    let mut points = Vec::new();
+                    for point in choices[edge].iter().flatten().copied() {
+                        crate::resource::push(
+                            ctx,
+                            &mut points,
+                            point,
+                            "catia_incidence_candidate_points",
+                        )?;
+                    }
+                    points
+                };
                 points.sort_unstable();
                 points.dedup();
                 for point in points {

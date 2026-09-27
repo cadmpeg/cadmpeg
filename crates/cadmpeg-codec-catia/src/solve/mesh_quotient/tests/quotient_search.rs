@@ -368,7 +368,30 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
         .expect("implicit coordinate domains");
 
     assert!(domains.edge_candidates()[0].is_empty());
-    assert_eq!(domains.edge_candidate_points(0), Some(vec![0, 1]));
+    assert_eq!(
+        domains
+            .edge_candidate_points(&ctx, 0)
+            .expect("service resource budget"),
+        Some(vec![0, 1])
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            domains.edge_candidate_points(ctx, 0)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected implicit edge points"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_edge_points_left",
+        "catia_coordinate_edge_points_right",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
     assert_eq!(
         domains
             .implicit_edge_candidates(0, Some(0))

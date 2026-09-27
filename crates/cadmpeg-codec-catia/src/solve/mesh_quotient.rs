@@ -703,22 +703,48 @@ impl MeshCoordinateRootDomains {
                 && self.domains[right].binary_search(&pair[0]).is_ok())
     }
 
-    pub(super) fn edge_candidate_points(&self, edge: usize) -> Option<Vec<usize>> {
-        let candidates = self.edge_candidates.get(edge)?;
+    pub(super) fn edge_candidate_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge: usize,
+    ) -> Result<Option<Vec<usize>>, CodecError> {
+        let Some(candidates) = self.edge_candidates.get(edge) else {
+            return Ok(None);
+        };
         if !candidates.is_empty() {
-            let mut points = candidates.iter().flatten().copied().collect::<Vec<_>>();
+            let mut points = Vec::new();
+            for point in candidates.iter().flatten().copied() {
+                crate::resource::push(
+                    ctx,
+                    &mut points,
+                    point,
+                    "catia_coordinate_edge_candidate_points",
+                )?;
+            }
             points.sort_unstable();
             points.dedup();
-            return Some(points);
+            return Ok(Some(points));
         }
-        let &[left, right] = self.edges.get(edge)?;
-        let mut points = self.domains[left].clone();
+        let Some(&[left, right]) = self.edges.get(edge) else {
+            return Ok(None);
+        };
+        let mut points = crate::resource::copy_slice(
+            ctx,
+            &self.domains[left],
+            "catia_coordinate_edge_points_left",
+        )?;
         if right != left {
+            crate::resource::reserve_vec(
+                ctx,
+                &mut points,
+                self.domains[right].len(),
+                "catia_coordinate_edge_points_right",
+            )?;
             points.extend_from_slice(&self.domains[right]);
             points.sort_unstable();
             points.dedup();
         }
-        Some(points)
+        Ok(Some(points))
     }
 
     pub(super) fn implicit_edge_candidates(
@@ -13776,9 +13802,9 @@ fn coordinate_root_copies_charge_retained_and_nested_collections() {
 
     let selected =
         |ctx: &DecodeContext<'_>| domains.refine_edge_candidate_arc(ctx, 0, [0, 1], None);
-    assert!(crate::test_support::with_service_context(selected)
+    let selected_domains = crate::test_support::with_service_context(selected)
         .expect("service resource budget")
-        .is_some());
+        .expect("selected coordinate domains");
     let mut selected_refusals = HashSet::new();
     for cap in 0..256 {
         match crate::test_support::with_collection_limit(cap, selected) {
@@ -13801,6 +13827,20 @@ fn coordinate_root_copies_charge_retained_and_nested_collections() {
             "no refusal at {operation}"
         );
     }
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            selected_domains.edge_candidate_points(ctx, 0)
+        })
+        .expect("service resource budget"),
+        Some(vec![0, 1])
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| {
+            selected_domains.edge_candidate_points(ctx, 0)
+        }),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_coordinate_edge_candidate_points"
+    ));
 
     let changed = |ctx: &DecodeContext<'_>| domains.refine_candidates(ctx, &[vec![[0, 1]]], None);
     assert!(crate::test_support::with_service_context(changed)
