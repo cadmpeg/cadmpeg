@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
+use crate::decode_resource::{format_retained, insert_optional_btree_map};
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
@@ -20,36 +22,83 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(
+    ctx: &DecodeContext<'_>,
     global: &global::ResolvedGlobal,
     representation: Representation,
     primary: cadmpeg_core::dialect::DialectMatch,
-) -> SourceMeta {
+) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("representation"),
-        representation.as_str().into(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("parameter_delimiter"),
-        char::from(global.parameter_delimiter).to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("record_delimiter"),
-        char::from(global.record_delimiter).to_string(),
-    );
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "representation",
+        format_retained(
+            ctx,
+            format_args!("{}", representation.as_str()),
+            "iges source representation",
+        )?,
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "parameter_delimiter",
+        format_retained(
+            ctx,
+            format_args!("{}", char::from(global.parameter_delimiter)),
+            "iges source parameter delimiter",
+        )?,
+    )?;
+    insert_source_attribute(
+        ctx,
+        &mut attributes,
+        "record_delimiter",
+        format_retained(
+            ctx,
+            format_args!("{}", char::from(global.record_delimiter)),
+            "iges source record delimiter",
+        )?,
+    )?;
     if let Some(value) = global.units_name() {
-        attributes.insert(cadmpeg_core::nonblank_literal!("native_units"), value);
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "native_units",
+            format_retained(ctx, format_args!("{value}"), "iges source native units")?,
+        )?;
     }
     if let Some(value) = global.sender_product() {
-        attributes.insert(cadmpeg_core::nonblank_literal!("sender_product"), value);
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "sender_product",
+            format_retained(ctx, format_args!("{value}"), "iges source sender product")?,
+        )?;
     }
     if let Some(value) = global.native_file_name() {
-        attributes.insert(cadmpeg_core::nonblank_literal!("native_file_name"), value);
+        insert_source_attribute(
+            ctx,
+            &mut attributes,
+            "native_file_name",
+            format_retained(ctx, format_args!("{value}"), "iges source native file name")?,
+        )?;
     }
-    SourceMeta::classified(
+    Ok(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
-    )
+    ))
+}
+
+fn insert_source_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    let key = format_retained(ctx, format_args!("{key}"), "iges source attribute key")?;
+    let key = NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
+    insert_optional_btree_map(Some(ctx), attributes, key, value, "iges source attributes")?;
+    Ok(())
 }
 
 fn occurrence_loss(
@@ -317,7 +366,7 @@ fn decode_with_occurrence_limits(
     )?;
 
     let primary = crate::dialect::classify(representation, &parse.global);
-    let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
+    let mut ir = CadIr::decoded(source_meta(ctx, &parse.global, representation, primary)?);
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
