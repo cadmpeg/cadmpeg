@@ -901,6 +901,22 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 }
 
 #[test]
+fn native_fixed_owner_packets_refuse_collection_limit() {
+    let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::consolidated_owner_packets(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_fixed_owner_packets"));
+    let packets = crate::test_support::with_service_context(|ctx| {
+        super::super::consolidated_owner_packets(ctx, &bytes, &records)
+    })
+    .expect("service context admits the fixed owner packet");
+    assert_eq!(packets.len(), 1);
+}
+
+#[test]
 fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
     let native = crate::native::CatiaNative::decode(&b2_adjacent_face_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {

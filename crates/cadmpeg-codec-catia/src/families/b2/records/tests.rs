@@ -289,6 +289,29 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
 }
 
 #[test]
+fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
+    let bytes = b2_all_compact_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::resource::collect_vec(
+            ctx,
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            "catia_a5_owner_packets",
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let packets = crate::test_support::with_service_context(|ctx| {
+        crate::resource::collect_vec(
+            ctx,
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
+            "catia_a5_owner_packets",
+        )
+    })
+    .expect("service context admits the fixed owner packet");
+    assert_eq!(packets.len(), 1);
+}
+
+#[test]
 fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
     let valid = b2_owner_packet_stream();
     let tail = valid.len() - 62;
@@ -342,7 +365,8 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
             std::iter::once(owner_pos..bytes.len()),
         ],
     );
-    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records);
+    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+        .collect::<Vec<_>>();
     let [packet] = packets.as_slice() else {
         panic!("one source-scoped owner packet")
     };

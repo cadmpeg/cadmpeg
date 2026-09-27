@@ -877,28 +877,25 @@ pub(crate) fn b2_counted_owners_from_records(
 #[cfg(test)]
 fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     let records = consolidated_records(data);
-    b2_owner_packets_from_records(data, &records)
+    b2_owner_packets_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_owner_packets_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2OwnerPacket> {
+pub(crate) fn b2_owner_packets_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2OwnerPacket> + 'a {
     b2_owner_frames(records)
-        .into_iter()
         .filter_map(|(frame, source_index)| {
-            let candidates = [
+            let mut candidates = [
                 B2OwnerReferenceEncoding::TaggedU16Strong,
                 B2OwnerReferenceEncoding::WidthCodedStrong,
                 B2OwnerReferenceEncoding::AllCompact,
             ]
             .into_iter()
-            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding))
-            .collect::<Vec<_>>();
-            let [packet] = candidates.try_into().ok()?;
-            Some(packet)
+            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding));
+            let packet = candidates.next()?;
+            candidates.next().is_none().then_some(packet)
         })
-        .collect()
 }
 
 /// Resolve backward-distance identities in fixed-nine owner packets within
@@ -1277,7 +1274,9 @@ fn b2_fixed_owner_packet(
     })
 }
 
-fn b2_owner_frames(records: &[ConsolidatedRecord]) -> Vec<(ConsolidatedFrame, usize)> {
+fn b2_owner_frames(
+    records: &[ConsolidatedRecord],
+) -> impl Iterator<Item = (ConsolidatedFrame, usize)> + '_ {
     records
         .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x62)
@@ -1292,7 +1291,6 @@ fn b2_owner_frames(records: &[ConsolidatedRecord]) -> Vec<(ConsolidatedFrame, us
                 record.source_index,
             ))
         })
-        .collect()
 }
 
 fn compact_owner_identity(data: &[u8], at: &mut usize) -> Option<(u32, B2OwnerIdentityEncoding)> {

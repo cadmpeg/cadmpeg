@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+use std::fmt::Write;
 
 use cadmpeg_core::decode::{
     DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
@@ -174,6 +175,61 @@ pub(crate) fn copy_id<T>(
         .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
     text.push_str(value);
     construct(text).map_err(CodecError::malformed)
+}
+
+pub(crate) fn format_usize_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    value: usize,
+    minimum_digits: usize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut number = value;
+    let mut digits = 1usize;
+    while number >= 10 {
+        number /= 10;
+        digits += 1;
+    }
+    let length = prefix.len().checked_add(digits.max(minimum_digits))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let bytes = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut id = String::new();
+    id.try_reserve(length)
+        .map_err(|_| allocation_failed(0, id.capacity(), length, operation))?;
+    id.push_str(prefix);
+    write!(&mut id, "{value:0minimum_digits$}")
+        .map_err(CodecError::malformed)?;
+    Ok(id)
+}
+
+#[cfg(test)]
+mod id_format_tests {
+    #[test]
+    fn native_owner_id_format_refuses_retained_limit() {
+        let limited = crate::test_support::with_retained_limit(39, |ctx| {
+            super::format_usize_id(
+                ctx,
+                "catia:consolidated:owner-packet#",
+                7,
+                10,
+                "catia_native_owner_packet_id",
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        let id = crate::test_support::with_service_context(|ctx| {
+            super::format_usize_id(
+                ctx,
+                "catia:consolidated:owner-packet#",
+                7,
+                10,
+                "catia_native_owner_packet_id",
+            )
+        })
+        .expect("service retained budget");
+        assert_eq!(id, "catia:consolidated:owner-packet#0000000007");
+    }
 }
 
 pub(crate) fn copy_retained_rows<T: Clone>(

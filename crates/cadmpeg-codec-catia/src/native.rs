@@ -8066,9 +8066,10 @@ fn zero_entity_records(
 }
 
 fn consolidated_owner_packets(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedOwnerPacket> {
+) -> Result<Vec<CatiaConsolidatedOwnerPacket>, CodecError> {
     let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
         .into_iter()
         .map(|chart| {
@@ -8199,12 +8200,21 @@ fn consolidated_owner_packets(
                 }),
             )
             .collect::<HashMap<_, _>>();
-    let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records);
-    let fixed_positions = fixed
-        .iter()
-        .map(|packet| (packet.source_index, packet.pos))
-        .collect::<HashSet<_>>();
-    let mut packets = fixed
+    let fixed = crate::resource::collect_vec(
+        ctx,
+        crate::families::b2::records::b2_owner_packets_from_records(bytes, records),
+        "catia_native_fixed_owner_packets",
+    )?;
+    let mut fixed_positions = HashSet::new();
+    for packet in &fixed {
+        crate::resource::insert_set(
+            ctx,
+            &mut fixed_positions,
+            (packet.source_index, packet.pos),
+            "catia_native_fixed_owner_positions",
+        )?;
+    }
+    let mut packets = crate::resource::collect_vec(ctx, fixed
         .into_iter()
         .map(|packet| {
             (
@@ -8257,12 +8267,11 @@ fn consolidated_owner_packets(
                     )
                 }),
         )
-        .collect::<Vec<_>>();
+        , "catia_native_owner_packet_rows")?;
     packets.sort_by_key(|(pos, source_index, _, _)| (*pos, *source_index));
-    packets
-        .into_iter()
-        .map(
-            |(pos, source_index, header_token, mut payload)| {
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut output, packets.len(), "catia_native_owner_packet_output")?;
+    for (pos, source_index, header_token, mut payload) in packets {
                 if let CatiaOwnerPacketPayload::FixedNine {
                     identity_targets: stored_targets,
                     owner_chart,
@@ -8276,8 +8285,8 @@ fn consolidated_owner_packets(
                     *owner_chart = owner_charts.get(&(source_index, pos)).cloned();
                     *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
                 }
-                CatiaConsolidatedOwnerPacket {
-                id: format!("catia:consolidated:owner-packet#{pos:010}"),
+                output.push(CatiaConsolidatedOwnerPacket {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", pos, 10, "catia_native_owner_packet_id")?,
                 byte_offset: pos as u64,
                 source_index,
                 header_token,
@@ -8302,10 +8311,9 @@ fn consolidated_owner_packets(
                             terminal: face_node.terminal,
                         })
                     }),
-            }
-            },
-        )
-        .collect()
+            });
+    }
+    Ok(output)
 }
 
 fn consolidated_edge_runs(
@@ -9125,7 +9133,7 @@ impl CatiaNative {
             consolidated_cylinder_groups(bytes, consolidated_records);
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
-            consolidated_owner_packets(bytes, consolidated_records);
+            consolidated_owner_packets(ctx, bytes, consolidated_records)?;
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
