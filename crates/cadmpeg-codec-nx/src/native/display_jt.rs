@@ -7,6 +7,7 @@ mod version;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
@@ -73,8 +74,9 @@ fn inflate_display_jt(
 }
 
 /// Outer index of the embedded JT display-model stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DisplayJtIndexWire", into = "DisplayJtIndexWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DisplayJtIndexWire")]
 pub(super) struct DisplayJtIndex {
     /// Globally unique index identity.
     pub(super) id: String,
@@ -84,6 +86,24 @@ pub(super) struct DisplayJtIndex {
     rows: NonEmpty<DisplayJtIndexRow>,
     /// Absolute source offset of the `DisplayJT` payload.
     pub(super) source_offset: u64,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static JT_INDEX_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DisplayJtIndex {
+    fn clone(&self) -> Self {
+        JT_INDEX_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            version: self.version,
+            rows: self.rows.clone(),
+            source_offset: self.source_offset,
+        }
+    }
 }
 
 impl DisplayJtIndex {
@@ -114,7 +134,42 @@ impl DisplayJtIndex {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+struct DisplayJtIndexRows<'a>(&'a NonEmpty<DisplayJtIndexRow>);
+
+impl Serialize for DisplayJtIndexRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for row in self.0.iter() {
+            rows.serialize_element(row)?;
+        }
+        rows.end()
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtIndexRef<'a> {
+    id: &'a str,
+    version: u32,
+    declared_count: usize,
+    rows: DisplayJtIndexRows<'a>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtIndex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtIndexRef {
+            id: &self.id,
+            version: self.version,
+            declared_count: self.declared_count(),
+            rows: DisplayJtIndexRows(&self.rows),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtIndexWire {
     id: String,
     version: u32,
@@ -123,6 +178,7 @@ struct DisplayJtIndexWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtIndex> for DisplayJtIndexWire {
     fn from(value: DisplayJtIndex) -> Self {
         let declared_count = value.declared_count();
@@ -163,8 +219,9 @@ pub(in crate::native) struct DisplayJtIndexRow {
 }
 
 /// One bounded embedded JT document and its table of contents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DisplayJtDocumentWire", into = "DisplayJtDocumentWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DisplayJtDocumentWire")]
 pub(in crate::native) struct DisplayJtDocument {
     /// Globally unique document identity.
     pub(super) id: String,
@@ -184,7 +241,64 @@ pub(in crate::native) struct DisplayJtDocument {
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg(test)]
+std::thread_local! {
+    static JT_DOCUMENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DisplayJtDocument {
+    fn clone(&self) -> Self {
+        JT_DOCUMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            index_row: self.index_row.clone(),
+            version: self.version.clone(),
+            toc_offset: self.toc_offset,
+            lsg_segment_id: self.lsg_segment_id,
+            toc_entries: self.toc_entries.clone(),
+            physical_byte_len: self.physical_byte_len,
+            source_offset: self.source_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtDocumentRef<'a> {
+    id: &'a str,
+    index_row: &'a str,
+    version_field: &'a str,
+    format_major: u16,
+    format_minor: u16,
+    byte_order: u8,
+    toc_offset: u32,
+    lsg_segment_id: &'a [u8; 16],
+    toc_entries: &'a [DisplayJtTocEntry],
+    physical_byte_len: u64,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtDocument {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtDocumentRef {
+            id: &self.id,
+            index_row: &self.index_row,
+            version_field: self.version.as_str(),
+            format_major: self.version.major(),
+            format_minor: self.version.minor(),
+            byte_order: 0,
+            toc_offset: self.toc_offset,
+            lsg_segment_id: &self.lsg_segment_id,
+            toc_entries: &self.toc_entries,
+            physical_byte_len: self.physical_byte_len,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtDocumentWire {
     id: String,
     index_row: String,
@@ -199,6 +313,7 @@ struct DisplayJtDocumentWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtDocument> for DisplayJtDocumentWire {
     fn from(value: DisplayJtDocument) -> Self {
         let format_major = value.version.major();
@@ -4946,6 +5061,10 @@ mod tests {
         let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
         assert_eq!(index.declared_count(), 1);
         assert_eq!(serde_json::to_string(&index).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&index).unwrap(),
+            serde_json::to_vec(&super::DisplayJtIndexWire::from(index.clone())).unwrap()
+        );
         for (invalid, field) in [
             (
                 wire.replace("\"declared_count\":1", "\"declared_count\":7"),
@@ -4964,6 +5083,18 @@ mod tests {
     }
 
     #[test]
+    fn index_native_limit_refuses_before_clone() {
+        let wire = r#"{"id":"nx:jt:index#1","version":9,"declared_count":1,"rows":[{"id":"nx:jt:row#1","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
+        let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
+        super::JT_INDEX_CLONE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &index,
+            serde_json::from_str::<serde_json::Value>(wire).unwrap(),
+        );
+        super::JT_INDEX_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
     fn document_wire_derives_version_numbers_and_rejects_disagreement() {
         let mut wire = serde_json::json!({
             "id": "document", "index_row": "row",
@@ -4973,12 +5104,31 @@ mod tests {
             "physical_byte_len": 105, "source_offset": 0
         });
         let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(document).unwrap(), wire);
+        assert_eq!(serde_json::to_value(&document).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&document).unwrap(),
+            serde_json::to_vec(&super::DisplayJtDocumentWire::from(document.clone())).unwrap()
+        );
         let mut invalid = wire.clone();
         invalid["byte_order"] = serde_json::json!(1);
         assert!(serde_json::from_value::<super::DisplayJtDocument>(invalid).is_err());
         wire["format_minor"] = serde_json::json!(6);
         assert!(serde_json::from_value::<super::DisplayJtDocument>(wire).is_err());
+    }
+
+    #[test]
+    fn document_native_limit_refuses_before_clone() {
+        let wire = serde_json::json!({
+            "id": "nx:jt:document#1", "index_row": "nx:jt:row#1",
+            "version_field": format!("{:<80}", "Version +0009.005"),
+            "format_major": 9, "format_minor": 5, "byte_order": 0,
+            "toc_offset": 105, "lsg_segment_id": vec![0; 16], "toc_entries": [],
+            "physical_byte_len": 105, "source_offset": 0
+        });
+        let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
+        super::JT_DOCUMENT_CLONE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&document, wire);
+        super::JT_DOCUMENT_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     #[test]
