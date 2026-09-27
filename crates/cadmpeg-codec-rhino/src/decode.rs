@@ -2963,7 +2963,7 @@ impl<'a> DecodeContext<'a> {
                 self.report.phase_warnings.append_prefixed_admitted(
                     self.expand.ctx(),
                     warnings,
-                    &identity.source_id,
+                    format_args!("{}", identity.source_id),
                 )?;
                 let Some(entity_count) = points
                     .len()
@@ -3063,10 +3063,10 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, body_id.as_str())?;
             }
             crate::curves::DecodedGeometry::Curve { curve } => {
-                let warnings = curve_warnings(&curve);
-                self.report.phase_warnings.append_prefixed_admitted(
+                append_curve_warnings(
                     self.expand.ctx(),
-                    warnings,
+                    &mut self.report.phase_warnings,
+                    &curve,
                     &identity.source_id,
                 )?;
                 let session = self.expand.ctx();
@@ -3454,7 +3454,7 @@ impl<'a> DecodeContext<'a> {
         self.report.phase_warnings.append_prefixed_admitted(
             self.expand.ctx(),
             mesh.warnings,
-            &identity.source_id,
+            format_args!("{}", identity.source_id),
         )?;
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
@@ -4182,46 +4182,62 @@ impl BrepDraft {
     /// Records the loss for one unreadable Brep display-mesh cache slot.
     fn mesh_cache_slot_dropped(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         kind: &str,
         index: usize,
         error: &impl std::fmt::Display,
-    ) {
-        self.warnings.push_coded(
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.warnings.push_coded_admitted(
+            ctx,
             RhinoLossCode::BrepMeshCacheDegraded,
-            format!("invalid {kind} mesh cache slot {index}: {error}"),
-        );
+            format_args!("invalid {kind} mesh cache slot {index}: {error}"),
+        )
     }
 
-    fn free_carrier_fallback(mut self, cause: impl Into<String>) -> Self {
+    fn free_carrier_fallback(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        cause: impl std::fmt::Display,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         self.kind = BrepTransferKind::FreeCarrierFallback;
-        let emitted: BTreeSet<String> = self
+        let mut emitted = BTreeSet::new();
+        for id in self
             .draft
             .model()
             .curves
             .iter()
-            .map(|value| value.id.to_string())
+            .map(|value| value.id.as_str())
             .chain(
                 self.draft
                     .model()
                     .surfaces
                     .iter()
-                    .map(|value| value.id.to_string()),
+                    .map(|value| value.id.as_str()),
             )
             .chain(
                 self.draft
                     .model()
                     .tessellations
                     .iter()
-                    .map(|value| value.id.to_string()),
+                    .map(|value| value.id.as_str()),
             )
             .chain(
                 self.draft
                     .model()
                     .procedural_curves
                     .iter()
-                    .map(|value| value.id.to_string()),
+                    .map(|value| value.id.as_str()),
             )
-            .collect();
+        {
+            if !emitted.contains(id) {
+                ctx.charge_collection_items(1, "Rhino Brep emitted fallback IDs")?;
+                emitted.insert(crate::wire::copy_retained_string(
+                    ctx,
+                    id,
+                    "Rhino Brep emitted fallback ID text",
+                )?);
+            }
+        }
         self.links.retain(|id| emitted.contains(id));
         self.draft.retain_exactness(|id| emitted.contains(id));
         let model = self.draft.model_mut();
@@ -4235,11 +4251,12 @@ impl BrepDraft {
         model.vertices.clear();
         model.points.clear();
         model.pcurves.clear();
-        self.warnings.push_coded(
+        self.warnings.push_coded_admitted(
+            ctx,
             RhinoLossCode::TopologyBrepFallback,
-            format!("Brep topology fallback: {}", cause.into()),
-        );
-        self
+            format_args!("Brep topology fallback: {cause}"),
+        )?;
+        Ok(self)
     }
 }
 
@@ -4285,8 +4302,10 @@ fn stage_brep_carriers(
                 },
                 mesh_budget,
             ) {
-                Ok(mesh) => {
-                    staged.warnings.extend(mesh.warnings.clone());
+                Ok(mut mesh) => {
+                    staged
+                        .warnings
+                        .append_admitted(expand.ctx(), &mut mesh.warnings)?;
                     staged.draft.exactness(
                         mesh.tessellation.id.to_string(),
                         if mesh.scaled {
@@ -4303,7 +4322,7 @@ fn stage_brep_carriers(
                         .push(mesh.tessellation);
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
-                Err(error) => staged.mesh_cache_slot_dropped(kind, index, &error),
+                Err(error) => staged.mesh_cache_slot_dropped(expand.ctx(), kind, index, &error)?,
             }
         }
     }
@@ -4324,10 +4343,12 @@ fn stage_brep_carriers(
         );
         match decoded {
             Ok(crate::curves::DecodedGeometry::Curve { curve }) => {
-                staged.warnings.extend(
-                    curve_warnings(&curve)
-                        .map_messages(|message| format!("C3 slot {index}: {message}")),
-                );
+                append_curve_warnings(
+                    expand.ctx(),
+                    &mut staged.warnings,
+                    &curve,
+                    format_args!("C3 slot {index}"),
+                )?;
                 let id = match stage_curve_tree(
                     expand.ctx(),
                     &mut staged,
@@ -4340,7 +4361,7 @@ fn stage_brep_carriers(
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
-                        child_cause = Some(format!("C3 slot {index}: {error}"));
+                        child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
                         continue;
                     }
                 };
@@ -4348,11 +4369,11 @@ fn stage_brep_carriers(
                 c3.insert(index, id);
             }
             Ok(_) => {
-                child_cause = Some(format!("C3 slot {index} is not a curve"));
+                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index} is not a curve"), "Rhino Brep fallback cause")?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(format!("C3 slot {index}: {error}"));
+                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("C3 slot {index}: {error}"), "Rhino Brep fallback cause")?);
             }
         }
     }
@@ -4379,7 +4400,7 @@ fn stage_brep_carriers(
                 let surface_key = match IdentityKey::try_new(key.to_owned()) {
                     Ok(key) => key,
                     Err(error) => {
-                        child_cause = Some(format!("surface slot {index}: {error}"));
+                        child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
                         continue;
                     }
                 };
@@ -4451,15 +4472,15 @@ fn stage_brep_carriers(
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    child_cause = Some(format!("surface slot {index}: {error}"));
+                    child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
                 }
             },
             Ok(_) => {
-                child_cause = Some(format!("surface slot {index} is not a surface"));
+                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index} is not a surface"), "Rhino Brep fallback cause")?);
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                child_cause = Some(format!("surface slot {index}: {error}"));
+                child_cause = Some(crate::wire::admitted_format(expand.ctx(), format_args!("surface slot {index}: {error}"), "Rhino Brep fallback cause")?);
             }
         }
     }
@@ -4475,11 +4496,9 @@ fn stage_invalid_brep(
     input: BrepCarrierInput<'_>,
     semantic_error: &crate::curves::GeometryError,
 ) -> Result<BrepDraft, crate::curves::GeometryError> {
+    let ctx = input.expand.ctx();
     let carriers = stage_brep_carriers(input)?;
-    Ok(finish_brep_fallback(
-        carriers.staged,
-        semantic_error.to_string(),
-    ))
+    finish_brep_fallback(ctx, carriers.staged, semantic_error)
 }
 
 fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::GeometryError> {
@@ -4516,14 +4535,14 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         scale,
         mesh_budget,
     })?;
-    if let Some(cause) = child_cause {
-        return Ok(finish_brep_fallback(staged, cause));
-    }
     let ctx = expand.ctx();
+    if let Some(cause) = child_cause {
+        return finish_brep_fallback(ctx, staged, cause);
+    }
     let DecodedPcurves {
         ids: c2,
         values: pcurves,
-        warnings: pcurve_warnings,
+        warnings: mut pcurve_warnings,
     } = decode_pcurves(
         expand.ctx(),
         data,
@@ -4533,7 +4552,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         key.as_str(),
         &surfaces,
     )?;
-    staged.warnings.extend(pcurve_warnings);
+    staged
+        .warnings
+        .append_admitted(ctx, &mut pcurve_warnings)?;
     staged.draft.model_mut().pcurves = pcurves;
     let body_id = cadmpeg_ir::ids::BodyId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -4612,10 +4633,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     let grouping = region_shell_groups(expand.ctx(), raw, resolved, &components)?;
     let free_vertex_indices = brep_free_vertex_indices(expand.ctx(), resolved)?;
     if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
-        return Ok(finish_brep_fallback(
+        return finish_brep_fallback(
+            ctx,
             staged,
             "Brep free vertices have no unique shell membership",
-        ));
+        );
     }
     let mut free_vertex_ids = crate::curves::charged_vec(
         ctx,
@@ -4631,10 +4653,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         )
     }));
     if grouping.fallback {
-        staged.warnings.push(
-            "Brep 3.3 region topology was not representable; incidence-derived shells used"
-                .to_string(),
-        );
+        staged.warnings.push_admitted(
+            ctx,
+            format_args!(
+                "Brep 3.3 region topology was not representable; incidence-derived shells used"
+            ),
+        )?;
     }
     let mut face_ids =
         crate::curves::charged_vec(ctx, raw.faces.len(), "Rhino staged Brep face IDs")?;
@@ -4987,24 +5011,34 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     Ok(staged)
 }
 
-fn finish_brep_fallback(mut staged: BrepDraft, cause: impl Into<String>) -> BrepDraft {
-    staged.links.extend(
-        staged
-            .draft
-            .model()
-            .curves
-            .iter()
-            .map(|curve| curve.id.to_string())
-            .chain(
-                staged
-                    .draft
-                    .model()
-                    .surfaces
-                    .iter()
-                    .map(|surface| surface.id.to_string()),
-            ),
-    );
-    staged.free_carrier_fallback(cause)
+fn finish_brep_fallback(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut staged: BrepDraft,
+    cause: impl std::fmt::Display,
+) -> Result<BrepDraft, crate::curves::GeometryError> {
+    for id in staged
+        .draft
+        .model()
+        .curves
+        .iter()
+        .map(|curve| curve.id.as_str())
+        .chain(
+            staged
+                .draft
+                .model()
+                .surfaces
+                .iter()
+                .map(|surface| surface.id.as_str()),
+        )
+    {
+        crate::wire::reserve_collection(ctx, &mut staged.links, 1, "Rhino Brep fallback links")?;
+        staged.links.push(crate::wire::copy_retained_string(
+            ctx,
+            id,
+            "Rhino Brep fallback link text",
+        )?);
+    }
+    Ok(staged.free_carrier_fallback(ctx, cause)?)
 }
 
 /// Projects one embedded Brep into a self-contained semantic topology value.
@@ -5407,10 +5441,17 @@ fn decode_pcurves(
     let mut ids = HashMap::new();
     let mut values = Vec::new();
     let mut warnings = Diagnostics::new();
-    let key = match IdentityKey::try_new(key.to_owned()) {
+    let key = match IdentityKey::try_new(crate::wire::copy_retained_string(
+        ctx,
+        key,
+        "Rhino Brep pcurve source key",
+    )?) {
         Ok(key) => key,
         Err(error) => {
-            warnings.push(format!("Brep pcurve identity key is invalid: {error}"));
+            warnings.push_admitted(
+                ctx,
+                format_args!("Brep pcurve identity key is invalid: {error}"),
+            )?;
             return Ok(DecodedPcurves {
                 ids,
                 values,
@@ -5457,11 +5498,11 @@ fn decode_pcurves(
             })();
             match decoded {
                 Ok(joined) => {
-                    warnings.extend(
-                        joined
-                            .warnings
-                            .map_messages(|message| format!("trim {index}: {message}")),
-                    );
+                    warnings.append_prefixed_admitted(
+                        ctx,
+                        joined.warnings,
+                        format_args!("trim {index}"),
+                    )?;
                     let cached =
                         clone_pcurve_nurbs(ctx, &joined.curve, "Rhino Brep cached C2 curve")?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
@@ -5476,10 +5517,11 @@ fn decode_pcurves(
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    warnings.push_coded(
+                    warnings.push_coded_admitted(
+                        ctx,
                         crate::loss::RhinoLossCode::TrimPcurveDropped,
-                        format!("trim {index} C2 omitted: {error}"),
-                    );
+                        format_args!("trim {index} C2 omitted: {error}"),
+                    )?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
                         crate::curves::collection_allocation_failed(
@@ -5534,9 +5576,10 @@ fn decode_pcurves(
             }
         };
         if invalid_point {
-            warnings.push(format!(
-                "trim {index} C2 has an invalid NURBS shape: control_points contains a non-finite point"
-            ));
+            warnings.push_admitted(
+                ctx,
+                format_args!("trim {index} C2 has an invalid NURBS shape: control_points contains a non-finite point"),
+            )?;
             continue;
         }
         let id = cadmpeg_ir::ids::PcurveId::compose(
@@ -5559,9 +5602,10 @@ fn decode_pcurves(
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    warnings.push(format!(
-                        "trim {index} C2 has an invalid NURBS shape: {error}"
-                    ));
+                    warnings.push_admitted(
+                        ctx,
+                        format_args!("trim {index} C2 has an invalid NURBS shape: {error}"),
+                    )?;
                     continue;
                 }
             };
@@ -5623,8 +5667,8 @@ fn c2_curve_to_nurbs_join(
                         "C2 polycurve segment domain is invalid",
                     ));
                 }
-                let joined = c2_curve_to_nurbs_join(ctx, child, offset)?;
-                warnings.extend(joined.warnings);
+                let mut joined = c2_curve_to_nurbs_join(ctx, child, offset)?;
+                warnings.append_admitted(ctx, &mut joined.warnings)?;
                 segments.push(crate::curves::remap_nurbs_domain(
                     ctx,
                     joined.curve,
@@ -5633,7 +5677,7 @@ fn c2_curve_to_nurbs_join(
                 )?);
             }
             let mut joined = crate::curves::join_nurbs_segments(ctx, segments, offset)?;
-            warnings.append(&mut joined.warnings);
+            warnings.append_admitted(ctx, &mut joined.warnings)?;
             joined.warnings = warnings;
             Ok(joined)
         }
@@ -5890,14 +5934,26 @@ fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {
     value
 }
 
-fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Diagnostics {
-    let mut warnings = curve.warnings().clone();
+fn append_curve_warnings<P: std::fmt::Display + Copy>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    destination: &mut Diagnostics,
+    curve: &crate::curves::DecodedCurve,
+    prefix: P,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _nested = ctx.enter_nested("Rhino curve warning tree")?;
+    for warning in curve.warnings() {
+        destination.push_coded_admitted(
+            ctx,
+            warning.code,
+            format_args!("{prefix}: {}", warning.message),
+        )?;
+    }
     if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
         for (_, child) in children {
-            warnings.extend(curve_warnings(child));
+            append_curve_warnings(ctx, destination, child, prefix)?;
         }
     }
-    warnings
+    Ok(())
 }
 
 struct CurveCommitSource<'a> {

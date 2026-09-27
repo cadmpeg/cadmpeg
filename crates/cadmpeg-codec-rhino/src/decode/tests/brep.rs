@@ -48,7 +48,9 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
     });
-    staged = staged.free_carrier_fallback("C2 failure");
+    staged = staged
+        .free_carrier_fallback(&cadmpeg_test_support::service_decode_context(), "C2 failure")
+        .expect("service profile admits fallback IDs and warning");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
     assert!(staged.draft.model().bodies.is_empty());
     assert_eq!(
@@ -56,6 +58,28 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         vec![curve_id.to_string(), surface_id.to_string()]
     );
     assert!(staged.warnings.iter().any(|warning| warning.contains("C2")));
+}
+
+#[test]
+fn brep_fallback_set_refuses_collection_limit_before_insertion() {
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#fallback"
+        .try_into()
+        .expect("valid identity");
+    let mut staged = BrepDraft::default();
+    staged.draft.model_mut().curves.push(Curve {
+        id: curve_id,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let error = with_collection_limit(0, |ctx| {
+        staged.free_carrier_fallback(ctx, "invalid topology")
+    })
+    .expect_err("emitted fallback ID requires one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino Brep emitted fallback IDs"
+    ));
 }
 
 #[test]
