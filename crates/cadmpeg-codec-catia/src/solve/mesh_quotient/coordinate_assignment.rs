@@ -189,7 +189,7 @@ fn partial_compact_assignment_viable(
                 "catia_deferred_compatible_rows",
             )?;
             for (row, component) in compatible.iter_mut().zip(&closed_components) {
-                let incidence = incidence_cycles(component, &edge_points);
+                let incidence = incidence_cycles(ctx, component, &edge_points)?;
                 let Some([incidence]) = incidence.as_deref() else {
                     return Ok(false);
                 };

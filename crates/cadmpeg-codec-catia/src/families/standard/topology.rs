@@ -647,7 +647,7 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     }
     let mut faces = Vec::with_capacity(face_count);
     for incident in face_edges {
-        let Some(cycles) = incidence_cycles(&incident, edge_points) else {
+        let Some(cycles) = incidence_cycles(ctx, &incident, edge_points)? else {
             return Ok(None);
         };
         faces.push(FaceTopology {
@@ -1114,10 +1114,13 @@ pub(crate) fn solve_boundary_orientation_constraints(
     Ok(Some(result))
 }
 
+type IncidenceCycle = NonEmptyMembers<(usize, bool)>;
+
 pub(crate) fn incidence_cycles(
+    ctx: &DecodeContext<'_>,
     incident: &[usize],
     edge_points: &[[usize; 2]],
-) -> Option<Vec<NonEmptyMembers<(usize, bool)>>> {
+) -> Result<Option<Vec<IncidenceCycle>>, CodecError> {
     #[derive(Clone, Copy)]
     struct AdjacentEdge {
         edge: usize,
@@ -1126,65 +1129,128 @@ pub(crate) fn incidence_cycles(
     }
 
     if incident.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut vertex_indices = HashMap::<usize, usize>::new();
     let mut at_vertex = Vec::<Vec<AdjacentEdge>>::new();
-    let mut unseen = BTreeMap::new();
+    let mut unseen = Vec::<(usize, [usize; 2])>::new();
     let mut seen_edges = HashSet::new();
     let mut cycles = Vec::new();
     for &edge in incident {
-        if !seen_edges.insert(edge) {
-            return None;
+        if !crate::resource::insert_set(ctx, &mut seen_edges, edge, "catia_incidence_seen_edges")? {
+            return Ok(None);
         }
-        let [start, end] = *edge_points.get(edge)?;
+        let Some(&[start, end]) = edge_points.get(edge) else {
+            return Ok(None);
+        };
         if start == end {
-            cycles.push(NonEmptyMembers::one((edge, false)));
+            let mut members = Vec::new();
+            crate::resource::push(
+                ctx,
+                &mut members,
+                (edge, false),
+                "catia_incidence_cycle_members",
+            )?;
+            let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
+            crate::resource::push(ctx, &mut cycles, members, "catia_incidence_cycles")?;
             continue;
         }
-        let [start, end] = [start, end].map(|vertex| {
-            *vertex_indices.entry(vertex).or_insert_with(|| {
-                let index = at_vertex.len();
-                at_vertex.push(Vec::new());
+        let mut endpoints = [0; 2];
+        for (slot, vertex) in [start, end].into_iter().enumerate() {
+            let index = if let Some(&index) = vertex_indices.get(&vertex) {
                 index
-            })
-        });
-        at_vertex[start].push(AdjacentEdge {
-            edge,
-            vertex: end,
-            reversed: false,
-        });
-        at_vertex[end].push(AdjacentEdge {
-            edge,
-            vertex: start,
-            reversed: true,
-        });
-        unseen.insert(edge, [start, end]);
+            } else {
+                let index = at_vertex.len();
+                crate::resource::insert_map(
+                    ctx,
+                    &mut vertex_indices,
+                    vertex,
+                    index,
+                    "catia_incidence_vertex_indices",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    &mut at_vertex,
+                    Vec::new(),
+                    "catia_incidence_vertex_rows",
+                )?;
+                index
+            };
+            endpoints[slot] = index;
+        }
+        let [start, end] = endpoints;
+        crate::resource::push(
+            ctx,
+            &mut at_vertex[start],
+            AdjacentEdge {
+                edge,
+                vertex: end,
+                reversed: false,
+            },
+            "catia_incidence_vertex_edges",
+        )?;
+        crate::resource::push(
+            ctx,
+            &mut at_vertex[end],
+            AdjacentEdge {
+                edge,
+                vertex: start,
+                reversed: true,
+            },
+            "catia_incidence_vertex_edges",
+        )?;
+        crate::resource::push(
+            ctx,
+            &mut unseen,
+            (edge, [start, end]),
+            "catia_incidence_unseen_edges",
+        )?;
     }
-    let at_vertex = at_vertex
-        .into_iter()
-        .map(|edges| <[AdjacentEdge; 2]>::try_from(edges).ok())
-        .collect::<Option<Vec<_>>>()?;
-    while let Some((first, [start_vertex, mut vertex])) = unseen.pop_first() {
-        let mut cycle = NonEmptyMembers::one((first, false));
+    if at_vertex.iter().any(|edges| edges.len() != 2) {
+        return Ok(None);
+    }
+    unseen.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.0));
+    while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
+        let mut members = Vec::new();
+        crate::resource::push(
+            ctx,
+            &mut members,
+            (first, false),
+            "catia_incidence_cycle_members",
+        )?;
         let mut previous_edge = first;
         while vertex != start_vertex {
             // Every vertex has two distinct incident edges. The edge other
             // than the one just traversed continues this closed component.
-            let [left, right] = at_vertex[vertex];
+            let [left, right] = at_vertex[vertex].as_slice() else {
+                return Ok(None);
+            };
             let next = if left.edge == previous_edge {
                 right
             } else {
                 left
             };
-            unseen.remove(&next.edge);
+            let scan_len = u64::try_from(unseen.len()).map_err(|_| {
+                ctx.refuse_codec_limit("catia_incidence_unseen_scan", u64::MAX, u64::MAX)
+            })?;
+            ctx.charge_work(scan_len, "catia_incidence_unseen_scan")?;
+            let Some(index) = unseen.iter().position(|(edge, _)| *edge == next.edge) else {
+                return Ok(None);
+            };
+            unseen.remove(index);
             vertex = next.vertex;
             previous_edge = next.edge;
-            cycle.push((next.edge, next.reversed));
+            crate::resource::push(
+                ctx,
+                &mut members,
+                (next.edge, next.reversed),
+                "catia_incidence_cycle_members",
+            )?;
         }
-        cycles.push(cycle);
+        let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
+        crate::resource::push(ctx, &mut cycles, members, "catia_incidence_cycles")?;
     }
-    Some(cycles)
+    Ok(Some(cycles))
 }
 
 /// Parses the FBB-only spine. Its edge rows and trim handles use one selected

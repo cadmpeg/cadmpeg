@@ -630,8 +630,80 @@ fn mesh_selection_reconstruction_refuses_nested_collection_limits() {
 
 #[test]
 fn incidence_cycles_rejects_duplicate_and_out_of_range_edges() {
-    assert!(incidence_cycles(&[0, 0], &[[0, 0]]).is_none());
-    assert!(incidence_cycles(&[1], &[[0, 0]]).is_none());
+    crate::test_support::with_service_context(|ctx| {
+        assert!(incidence_cycles(ctx, &[0, 0], &[[0, 0]])
+            .expect("service resource budget")
+            .is_none());
+        assert!(incidence_cycles(ctx, &[1], &[[0, 0]])
+            .expect("service resource budget")
+            .is_none());
+    });
+}
+
+#[test]
+fn incidence_cycles_refuse_before_invalid_edges_and_nested_growth() {
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let points = [[0, 1], [1, 0]];
+    assert!(crate::test_support::with_service_context(|ctx| {
+        incidence_cycles(ctx, &[0, 1], &points)
+    })
+    .expect("service resource budget")
+    .is_some());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        incidence_cycles(ctx, &[0, 0], &points)
+    })
+    .expect("service resource budget")
+    .is_none());
+    let invalid = crate::test_support::with_collection_limit(0, |ctx| {
+        incidence_cycles(ctx, &[0, 0], &points)
+    });
+    assert!(matches!(
+        invalid,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_incidence_seen_edges"
+    ));
+
+    let mut refused = HashSet::new();
+    for cap in 0..20 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            incidence_cycles(ctx, &[0, 1], &points)
+        });
+        if let Err(CodecError::ResourceLimit(limit)) = result {
+            refused.insert(limit.operation);
+        }
+    }
+    for operation in [
+        "catia_incidence_seen_edges",
+        "catia_incidence_vertex_indices",
+        "catia_incidence_vertex_rows",
+        "catia_incidence_vertex_edges",
+        "catia_incidence_unseen_edges",
+        "catia_incidence_cycle_members",
+        "catia_incidence_cycles",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "catia_incidence_unseen_scan"
+    ));
 }
 
 #[test]
