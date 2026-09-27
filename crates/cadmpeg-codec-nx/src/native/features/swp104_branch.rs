@@ -7,6 +7,8 @@ use crate::om::{
 };
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
+
+mod borrowed_wires;
 #[derive(Serialize, Deserialize)]
 struct ReferenceWire {
     ordinal: u32,
@@ -22,11 +24,8 @@ struct ReferenceWire {
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSwp104LeadingBranchWire",
-    into = "FeatureSwp104LeadingBranchWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureSwp104LeadingBranchWire")]
 pub(in crate::native) struct FeatureSwp104LeadingBranch {
     /// Globally unique leading-branch identity.
     id: String,
@@ -127,6 +126,7 @@ struct FeatureSwp104LeadingBranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
     fn from(value: FeatureSwp104LeadingBranch) -> Self {
         let byte_len = value.byte_len();
