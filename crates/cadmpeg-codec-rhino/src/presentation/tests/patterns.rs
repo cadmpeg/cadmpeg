@@ -246,7 +246,7 @@ fn hatch_pattern_collection_refusal(
     let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
         .expect("hatch record chunk");
     let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
-    let range = crate::presentation::class_data(&bytes, &record, archive, HATCH_PATTERN)
+    let range = crate::presentation::class_data(&cadmpeg_test_support::service_decode_context(), &bytes, &record, archive, HATCH_PATTERN)
         .expect("hatch class data");
     with_collection_limit(&bytes, limit, |ctx| {
         parse_hatch_pattern(
@@ -274,7 +274,7 @@ fn hatch_pattern_retained_refusal(
     let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
         .expect("hatch record chunk");
     let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
-    let range = crate::presentation::class_data(&bytes, &record, archive, HATCH_PATTERN)
+    let range = crate::presentation::class_data(&cadmpeg_test_support::service_decode_context(), &bytes, &record, archive, HATCH_PATTERN)
         .expect("hatch class data");
     with_retained_limit(&bytes, limit, |ctx| {
         parse_hatch_pattern(

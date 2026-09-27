@@ -313,6 +313,7 @@ pub(crate) fn annotation(
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
             let mut warnings = Diagnostics::new();
             parse_class_wrapper(
+                ctx,
                 data,
                 overrides.position()..wrapper.next_offset(),
                 archive,

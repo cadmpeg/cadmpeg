@@ -265,6 +265,7 @@ pub(crate) fn decode(
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
         let class = parse_class_wrapper(
+            expand.ctx(),
             data,
             start..wrapper.next_offset(),
             archive,

@@ -1089,7 +1089,7 @@ fn scan_viewport_userdata(
                     ));
                 }
                 let mut warnings = Diagnostics::new();
-                let parsed = parse_userdata(data, &child, archive, &mut warnings);
+                let parsed = parse_userdata(ctx, data, &child, archive, &mut warnings);
                 for warning in warnings {
                     let code = warning
                         .code
