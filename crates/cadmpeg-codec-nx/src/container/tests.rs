@@ -544,6 +544,40 @@ fn external_reference_string_table_is_end_anchored() {
 }
 
 #[test]
+fn external_reference_paths_refuse_collection_limit() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = Container {
+        data: payload.as_slice().into(),
+        physical_size: payload.len() as u64,
+        layout: ContainerLayout::LegacyCfb { version: 0 },
+        entries: vec![DirEntry {
+            name: "/Root/ExternalReferences".into(),
+            region: Region::Header,
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: payload.len() as u64,
+            },
+        }],
+        fastload_table: None,
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    let error = container
+        .external_reference_paths(&ctx)
+        .expect_err("one path exceeds zero collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx external reference paths"
+    ));
+}
+
+#[test]
 fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     let mut payload = b"EXTREFSTREAM".to_vec();
     payload.extend_from_slice(&3u32.to_le_bytes());
