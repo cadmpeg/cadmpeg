@@ -498,9 +498,10 @@ pub(crate) fn scan<'a>(
     // keeps the report from re-deriving an identity the parse already settled.
     let root_document_members = root_f3d_members(&inflated_entries);
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
-        let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
+        let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset_folder = manifest::resolve_design_folder(
+            ctx,
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
