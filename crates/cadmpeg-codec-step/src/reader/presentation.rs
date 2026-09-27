@@ -271,22 +271,8 @@ pub(super) fn decode(
             }
         }
         if !context_style_ids.is_empty() {
-            let contexts = context_style_ids
-                .iter()
-                .map(|context_style_id| {
-                    let context = exchange
-                        .records()
-                        .get(context_style_id)
-                        .and_then(presentation_style_context)
-                        .and_then(ValueExt::reference)
-                        .map_or_else(|| "unresolved".to_string(), |id| format!("#{id}"));
-                    format!("#{context_style_id} in {context}")
-                })
-                .collect::<Vec<_>>();
-            push_presentation_vec(&mut losses, StepLossCode::ContextDependentStyleUnresolved.note(format!(
-                "STYLED_ITEM #{style_id} has context-dependent style assignments {}; no presentation context is selected by the neutral model; those source branches remain opaque",
-                contexts.join(", ")
-            )), ctx, "step_presentation_losses")?;
+            let message = context_style_message(style_id, &context_style_ids, exchange, ctx)?;
+            push_presentation_vec(&mut losses, StepLossCode::ContextDependentStyleUnresolved.note(message), ctx, "step_presentation_losses")?;
             continue;
         }
         let color =
@@ -491,7 +477,7 @@ pub(super) fn decode(
             let Some(existing) = colors.iter_mut().find(|existing| {
                 existing.r() == color.r() && existing.g() == color.g() && existing.b() == color.b()
             }) else {
-                colors.push(*color);
+                push_presentation_vec(&mut colors, *color, ctx, "step_presentation_distinct_colors")?;
                 continue;
             };
             if color.a() < existing.a() {
@@ -513,15 +499,8 @@ pub(super) fn decode(
                 _ => {}
             }
         } else {
-            let style_ids = candidates
-                .iter()
-                .map(|(style_id, _)| format!("#{style_id}"))
-                .collect::<Vec<_>>();
-            push_presentation_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
-                "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
-                style_ids.join(", "),
-                target,
-            )), ctx, "step_presentation_losses")?;
+            let message = scalar_conflict_message(&candidates, &target, ctx)?;
+            push_presentation_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(message), ctx, "step_presentation_losses")?;
         }
     }
     Ok(StageOutcome {
@@ -1160,6 +1139,78 @@ fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
         .iter()
         .find(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT")
         .and_then(|partial| partial.parameters.last())
+}
+
+struct ContextStyleDetails<'a> {
+    ids: &'a BTreeSet<u64>,
+    exchange: &'a Exchange,
+}
+
+impl std::fmt::Display for ContextStyleDetails<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, context_style_id) in self.ids.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            let context = self.exchange
+                .records()
+                .get(context_style_id)
+                .and_then(presentation_style_context)
+                .and_then(ValueExt::reference);
+            match context {
+                Some(context) => write!(formatter, "#{context_style_id} in #{context}")?,
+                None => write!(formatter, "#{context_style_id} in unresolved")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+fn context_style_message(
+    style_id: u64,
+    ids: &BTreeSet<u64>,
+    exchange: &Exchange,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<String, CodecError> {
+    let details = ContextStyleDetails { ids, exchange };
+    Ok(match ctx {
+        Some(ctx) => crate::decode_alloc::charged_format(
+            ctx,
+            "step_presentation_context_style_text",
+            format_args!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"),
+        )?,
+        None => format!("STYLED_ITEM #{style_id} has context-dependent style assignments {details}; no presentation context is selected by the neutral model; those source branches remain opaque"),
+    })
+}
+
+struct ScalarStyleIds<'a>(&'a [(u64, Color)]);
+
+impl std::fmt::Display for ScalarStyleIds<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (style_id, _)) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "#{style_id}")?;
+        }
+        Ok(())
+    }
+}
+
+fn scalar_conflict_message(
+    candidates: &[(u64, Color)],
+    target: &AppearanceTarget,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<String, CodecError> {
+    let style_ids = ScalarStyleIds(candidates);
+    Ok(match ctx {
+        Some(ctx) => crate::decode_alloc::charged_format(
+            ctx,
+            "step_presentation_scalar_conflict_text",
+            format_args!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"),
+        )?,
+        None => format!("independent styled items {style_ids} assign conflicting scalar colors to {target:?}; scalar color omitted and appearance bindings retain every assignment"),
+    })
 }
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {

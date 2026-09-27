@@ -617,3 +617,51 @@ fn presentation_scalar_color_groups_refuse_collection_limit() {
 fn presentation_scalar_color_members_refuse_collection_limit() {
     scalar_candidate_refuses("step_presentation_scalar_color_members", false);
 }
+
+#[test]
+fn presentation_distinct_colors_refuse_collection_limit() {
+    vector_refuses("step_presentation_distinct_colors");
+}
+
+#[test]
+fn presentation_context_style_text_refuses_retained_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PRESENTATION_STYLE_BY_CONTEXT(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("context style exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits policy");
+    assert!(matches!(
+        super::super::context_style_message(3, &BTreeSet::from([1]), &exchange, Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_presentation_context_style_text"
+    ));
+    assert!(super::super::context_style_message(3, &BTreeSet::from([1]), &exchange, None)
+        .expect("local context text")
+        .contains("#1 in #2"));
+}
+
+#[test]
+fn presentation_scalar_conflict_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let target = cadmpeg_ir::appearance::AppearanceTarget::Body(
+        cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID"),
+    );
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
+    let candidates = [(2, color), (3, color)];
+    assert!(matches!(
+        super::super::scalar_conflict_message(&candidates, &target, Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_presentation_scalar_conflict_text"
+    ));
+    assert!(super::super::scalar_conflict_message(&candidates, &target, None)
+        .expect("local conflict text")
+        .contains("#2, #3"));
+}
