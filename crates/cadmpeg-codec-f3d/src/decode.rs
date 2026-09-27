@@ -2798,7 +2798,7 @@ impl<'a> F3dDecodeSession<'a> {
 
     fn decode_products(&mut self, path: SessionPath) -> Result<FinalizePath, CodecError> {
         let scan = self.scan;
-        let act = crate::act::decode(scan)?;
+        let act = crate::act::decode(self.ctx, scan)?;
         let non_root_act_component_links = act.non_root_component_links;
         self.native.act_entities = act.entities;
         self.native.act_guids = act.guids;

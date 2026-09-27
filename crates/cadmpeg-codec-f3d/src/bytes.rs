@@ -12,7 +12,8 @@
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 /// Read a signed little-endian integer with a four- or eight-byte width.
@@ -113,6 +114,82 @@ pub(crate) fn lp_utf16_bounded(
         return None;
     }
     utf16le_at(bytes, at.checked_add(4)?, count)
+}
+
+/// Decode a length-prefixed UTF-16 string while admitting its retained UTF-8 bytes.
+pub(crate) fn lp_utf16_bounded_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(count_u32) = View::u32_le_at(bytes, at) else {
+        return Ok(None);
+    };
+    let Ok(count) = usize::try_from(count_u32) else {
+        return Ok(None);
+    };
+    if !bounds.contains(&count) {
+        return Ok(None);
+    }
+    let Some(start) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(end) = count.checked_mul(2).and_then(|length| start.checked_add(length)) else {
+        return Ok(None);
+    };
+    let Some(raw) = bytes.get(start..end) else {
+        return Ok(None);
+    };
+    let units = || {
+        let mut view = View::over_retained(raw);
+        std::iter::from_fn(move || view.u16_le())
+    };
+    ctx.charge_work(u64::from(count_u32) * 2, "decode F3D UTF-16 string")?;
+    let mut utf8_len = 0usize;
+    for decoded in char::decode_utf16(units()) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        utf8_len = utf8_len.checked_add(character.len_utf8()).ok_or_else(|| {
+            ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX)
+        })?;
+    }
+    let utf8_len_u64 = u64::try_from(utf8_len)
+        .map_err(|_| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
+    ctx.charge_retained(utf8_len_u64, "retain F3D UTF-16 string")?;
+    let mut value = String::new();
+    value
+        .try_reserve(utf8_len)
+        .map_err(|_| ctx.refuse_codec_limit("retain F3D UTF-16 string", 0, utf8_len_u64))?;
+    for decoded in char::decode_utf16(units()) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        value.push(character);
+    }
+    Ok(Some((value, end)))
+}
+
+#[cfg(test)]
+mod charged_string_tests {
+    use super::lp_utf16_bounded_charged;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn bounded_utf16_string_refuses_retained_limit() {
+        let bytes = [2, 0, 0, 0, b'A', 0, b'B', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = lp_utf16_bounded_charged(&ctx, &bytes, 0, 0..=1024).unwrap_err();
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D UTF-16 string"
+        ));
+    }
 }
 
 /// Take a u32-length-prefixed strict-UTF-8 string, advancing `at` past it on
