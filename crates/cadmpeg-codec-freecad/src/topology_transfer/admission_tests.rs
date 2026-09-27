@@ -2,12 +2,15 @@
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
 use super::{copy_shape_for_transfer, Builder};
-use crate::brep::{ShapePayload, ShapePayloadRecord, Tables, TextEdgeRepresentation, TextTShape, TextTShapeGeometry, TextTShapes};
+use crate::brep::{ShapePayload, ShapePayloadRecord, Tables, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::ids::EdgeId;
+use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 #[test]
@@ -317,4 +320,96 @@ fn emitted_surface_identity_refuses_at_retained_limit() {
 #[test]
 fn emitted_surfaces_refuse_at_collection_limit() {
     assert_empty_builder_collection_refusal("FreeCAD emitted surfaces", |builder| builder.located_surface(&mut CadIr::empty(), 1, placed_transform()).map(|_| ()));
+}
+
+fn assert_standalone_polygon_refusal(
+    retained_limit: Option<u64>,
+    collection_limit: Option<u64>,
+    operation: &str,
+) {
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#Payload".to_owned(),
+        property: "Property".to_owned(),
+        entry: "Entry".to_owned(),
+        payload: ShapePayload::Empty,
+    };
+    let tshapes = TextTShapes::default();
+    let polygons = [TextPolygon3d {
+        deflection: NonNegativeReal::ZERO,
+        nodes: vec![FinitePoint3::ZERO,
+            FinitePoint3::from_coordinates(FiniteReal::ONE, FiniteReal::ZERO, FiniteReal::ZERO)],
+        parameters: Some(vec![FiniteReal::ZERO, FiniteReal::ONE]),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    if let Some(limit) = collection_limit {
+        policy.limits.max_collection_items = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut builder = Builder::new(&ctx, &payload, Tables {
+        locations: &[], curve2ds: &[], curves: &[], surfaces: &[],
+        polygons3d: &polygons, polygons_on_triangulations: &[],
+        tshapes: &tshapes, triangulations: &[], roots: &[],
+    }, cadmpeg_core::text::NonBlankString::new("Object".to_owned()).unwrap()).unwrap();
+    let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
+    let result = builder.polygon_curve(
+        &mut CadIr::empty(), &edge, 0,
+        &TextEdgeRepresentation::Polygon3d { polygon: 1, location: 0 },
+        Transform::identity(),
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(ref limit)) if limit.operation == operation),
+        "expected {operation} refusal, got {result:?}");
+}
+
+#[test]
+fn standalone_polygon_nodes_refuse_at_collection_limit() {
+    assert_standalone_polygon_refusal(None, Some(1), "FreeCAD standalone polygon nodes");
+}
+
+#[test]
+fn standalone_polygon_parameters_refuse_at_collection_limit() {
+    assert_standalone_polygon_refusal(None, Some(3), "FreeCAD standalone polygon parameters");
+}
+
+#[test]
+fn polygon_curve_identity_refuses_at_retained_limit() {
+    const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
+    assert_standalone_polygon_refusal(Some(ID.len() as u64 - 1), None, "FreeCAD polygon curve identity");
+}
+
+#[test]
+fn polygon_curve_record_identity_refuses_at_retained_limit() {
+    const ID: &str = "fcstd:model:edge#Payload:1:polygon:1";
+    assert_standalone_polygon_refusal(Some(2 * ID.len() as u64 - 1), None, "FreeCAD polygon curve record identity");
+}
+
+#[test]
+fn secondary_polygon_curve_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD secondary polygon curve identity", |builder| {
+        let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
+        builder.polygon_curve_id(&edge, 0, true).map(|_| ())
+    });
+}
+
+#[test]
+fn polygon_curve_id_spelling_is_preserved() {
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#Payload".to_owned(),
+        property: "Property".to_owned(),
+        entry: "Entry".to_owned(),
+        payload: ShapePayload::Empty,
+    };
+    let tshapes = TextTShapes::default();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let builder = empty_builder(&ctx, &payload, &tshapes).unwrap();
+    let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
+    assert_eq!(builder.polygon_curve_id(&edge, 0, false).unwrap().as_str(),
+        "fcstd:model:edge#Payload:1:polygon:1");
+    assert_eq!(builder.polygon_curve_id(&edge, 0, true).unwrap().as_str(),
+        "fcstd:model:edge#Payload:1:polygon:1:secondary");
 }
