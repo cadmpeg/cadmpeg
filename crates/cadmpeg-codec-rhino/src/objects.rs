@@ -1980,7 +1980,7 @@ pub(crate) fn parse_object_record(
         history,
         unknown_trailer,
         checksum_warnings: {
-            global_warnings.extend(warnings.iter().cloned());
+            global_warnings.extend_cloned_admitted(ctx, &warnings)?;
             warnings
         },
         warnings: Diagnostics::new(),

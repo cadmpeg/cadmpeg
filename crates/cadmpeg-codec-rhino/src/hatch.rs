@@ -264,7 +264,7 @@ pub(crate) fn decode(
         if let Err(error) = loops.push(HatchLoop { kind, curve }) {
             return Err(refused(body.position(), &error));
         }
-        warnings.extend(loop_warnings);
+        warnings.append_admitted(expand.ctx(), &mut loop_warnings)?;
     }
     let basepoint = if minor >= 2 {
         let offset = body.position();
