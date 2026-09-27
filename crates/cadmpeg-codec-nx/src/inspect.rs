@@ -157,7 +157,7 @@ pub(super) fn summarize(
                     )?;
                 }
             } else if stream.kind() == parasolid::StreamKind::Deltas {
-                let census = deltas::census::walk(&stream.inflated);
+                let census = deltas::census::walk(ctx, &stream.inflated)?;
                 if census.transmit_header.is_some() {
                     insert_summary_attribute(
                         ctx,

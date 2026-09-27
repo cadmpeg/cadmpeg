@@ -1656,7 +1656,7 @@ pub(super) fn source_meta(
         .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
-        let census = crate::deltas::census::walk(&stream.inflated);
+        let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
         if census.transmit_header.is_some() {
             insert_source_attribute(
                 ctx,
