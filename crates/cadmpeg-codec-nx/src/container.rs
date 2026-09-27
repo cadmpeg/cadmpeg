@@ -1327,10 +1327,20 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     let footer_items = u64::try_from(footer_entries.len())
         .map_err(|_| CodecError::NotImplemented("FOOTER item count exceeds u64".into()))?;
-    entries
-        .try_reserve_exact(footer_entries.len())
-        .map_err(|_| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
-    entries.extend(footer_entries);
+    let footer_bytes = footer_entries
+        .len()
+        .checked_mul(std::mem::size_of::<DirEntry>())
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
+    {
+        let _footer_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(footer_bytes),
+            "join NX directory regions",
+        )?;
+        entries
+            .try_reserve_exact(footer_entries.len())
+            .map_err(|_| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
+        entries.extend(footer_entries);
+    }
     if header_end > fo {
         return Err(CodecError::Malformed(
             "HEADER directory overlaps the FOOTER region".to_string(),
@@ -1409,6 +1419,7 @@ pub(crate) fn scan_legacy<'a>(
     let mut stream_spans = BTreeMap::new();
     let mut logical_offset = 0_u64;
     for entry in snapshot.entries() {
+        ctx.charge_work(1, "scan legacy NX directory")?;
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
@@ -1423,7 +1434,20 @@ pub(crate) fn scan_legacy<'a>(
         logical_offset = logical_offset
             .checked_add(byte_len)
             .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
+        ctx.charge_collection_items(1, "legacy NX stream spans")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&(stream.id(), span))),
+            "legacy NX stream spans",
+        )?;
         stream_spans.insert(stream.id(), span);
+        ctx.charge_collection_items(1, "legacy NX stream views")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&view)),
+            "legacy NX stream views",
+        )?;
+        stream_views.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("legacy NX stream views", 0, 1)
+        })?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
@@ -1435,7 +1459,10 @@ pub(crate) fn scan_legacy<'a>(
             .checked_add(entry.path().len())
             .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
             .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
-        ctx.charge_retained(retained as u64, "retain legacy NX directory entry")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(retained),
+            "retain legacy NX directory entry",
+        )?;
         let body = match entry {
             CompoundEntry::Stream(stream) => stream_spans
                 .get(&stream.id())
@@ -1444,8 +1471,25 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
+        entries.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1)
+        })?;
+        let name_len = "/Root/"
+            .len()
+            .checked_add(entry.path().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
+        let mut name = String::new();
+        name.try_reserve_exact(name_len).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "retain legacy NX directory entry",
+                0,
+                cadmpeg_core::decode::u64_from_index(name_len),
+            )
+        })?;
+        name.push_str("/Root/");
+        name.push_str(entry.path());
         entries.push(DirEntry {
-            name: format!("/Root/{}", entry.path()),
+            name,
             region: Region::Header,
             body,
         });
@@ -1561,8 +1605,22 @@ fn try_entry(
             "directory entry {ordinal} extends beyond its bounded region"
         )));
     }
-    ctx.charge_retained(name_len as u64, "retain NX directory name")?;
-    let name = String::from_utf8_lossy(raw).into_owned();
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(name_len),
+        "retain NX directory name",
+    )?;
+    let Ok(value) = std::str::from_utf8(raw) else {
+        return Ok(None);
+    };
+    let mut name = String::new();
+    name.try_reserve_exact(name_len).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "retain NX directory name",
+            0,
+            cadmpeg_core::decode::u64_from_index(name_len),
+        )
+    })?;
+    name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (
         View::u64_le_at(data, payload),
