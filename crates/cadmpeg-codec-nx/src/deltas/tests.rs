@@ -1933,6 +1933,7 @@ fn merged_result_preserves_tombstone_accounting() {
     }
 }
 mod reference_and_tombstone_packets;
+mod merge_limits;
 
 #[test]
 fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
