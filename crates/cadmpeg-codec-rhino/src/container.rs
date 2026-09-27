@@ -17,9 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
-    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
-    parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    admitted_vec, checked_count_bytes, checksum_children_through_class_end, chunk_at,
+    direct_checksum_ranges, parse_header, validate_eof, verify_checksum, verify_checksum_ranges,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE,
+    TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -398,8 +399,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let children = match plugin_list_checksum_children(data, &chunk, archive) {
+        let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -849,6 +851,7 @@ fn list_checksum_children(
 /// The plugin-list CRC covers the prefix and any direct suffix bytes, but not
 /// these complete anonymous child chunks.
 fn plugin_list_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -866,7 +869,7 @@ fn plugin_list_checksum_children(
         TABLE_RECORD_CAP,
         count_offset,
     )?;
-    let mut children = Vec::with_capacity(child_count);
+    let mut children = admitted_vec(ctx, child_count, "Rhino plugin-list child ranges")?;
     for _ in 0..child_count {
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
