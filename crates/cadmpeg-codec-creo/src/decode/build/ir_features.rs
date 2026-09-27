@@ -170,7 +170,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref: None,
         };
-        source_carriers.admit_feature(ir, feature)?;
+        source_carriers.admit_feature(ctx, ir, feature)?;
     }
     let row_feature_ids = ordered_row_feature_ids(ctx, &scan.features.rows)?;
     let mut geometry_generator_feature_count = 0;
@@ -225,7 +225,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref: None,
         };
-        source_carriers.admit_feature(ir, feature)?;
+        source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
         geometry_generator_feature_count += 1;
     }
@@ -441,7 +441,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref,
         };
-        source_carriers.admit_feature(ir, feature)?;
+        source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for feature_id in row_feature_ids {
@@ -543,7 +543,7 @@ pub(super) fn emit_model_features(
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
         };
-        source_carriers.admit_feature(ir, feature)?;
+        source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for (child, parent) in regeneration_edges {

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
@@ -74,6 +75,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_feature(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut feature: Feature,
     ) -> Result<(), CodecError> {
@@ -83,6 +85,7 @@ impl SourceUnitCarriers {
                 .map_err(Self::unrepresentable_length)?;
             feature.evaluation.set_definition(definition);
         }
+        ctx.try_reserve_items(&mut ir.model.features, 1, "creo model features")?;
         ir.model.features.push(feature);
         Ok(())
     }
@@ -102,6 +105,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_parameter(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut parameter: DesignParameter,
     ) -> Result<(), CodecError> {
@@ -111,6 +115,7 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_length(length, scale)
                 .map_err(Self::unrepresentable_length)?;
         }
+        ctx.try_reserve_items(&mut ir.model.parameters, 1, "creo model parameters")?;
         ir.model.parameters.push(parameter);
         Ok(())
     }
@@ -479,6 +484,7 @@ impl SourceUnitCarriers {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
@@ -506,6 +512,40 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    #[test]
+    fn feature_admission_refuses_before_model_vector_growth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = CadIr::empty();
+        let error = SourceUnitCarriers::default()
+            .admit_feature(&ctx, &mut ir, source_feature(FeatureDefinition::Operation(
+                FeatureOperation::StoredGeometry {},
+            )))
+            .expect_err("one feature needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model features"));
+        assert!(ir.model.features.is_empty());
+    }
+
+    #[test]
+    fn parameter_admission_refuses_before_model_vector_growth() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = CadIr::empty();
+        let error = SourceUnitCarriers::default()
+            .admit_parameter(&ctx, &mut ir, source_length_parameter(2.0))
+            .expect_err("one parameter needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model parameters"));
+        assert!(ir.model.parameters.is_empty());
+    }
 
     fn source_feature(definition: FeatureDefinition) -> Feature {
         Feature {
@@ -685,8 +725,9 @@ mod tests {
     fn datum_offset_distance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_feature(
+                ctx,
                 &mut ir,
                 source_feature(FeatureDefinition::Operation(
                     FeatureOperation::DatumOffsetPlane {
@@ -694,7 +735,7 @@ mod tests {
                         distance: cadmpeg_ir::scalar::Length::new(2.0).expect("finite distance"),
                     },
                 )),
-            )
+            ))
             .expect("feature admission");
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -708,8 +749,9 @@ mod tests {
     fn post_process_fuzzy_tolerance_is_in_millimeters_at_feature_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_feature(
+                ctx,
                 &mut ir,
                 source_feature(FeatureDefinition::PostProcess {
                     operation: FeatureOperation::StoredGeometry {},
@@ -719,7 +761,7 @@ mod tests {
                             .expect("positive source tolerance"),
                     ),
                 }),
-            )
+            ))
             .expect("feature admission");
         let FeatureDefinition::PostProcess {
             fuzzy_tolerance: FuzzyTolerance::Explicit(tolerance),
@@ -735,8 +777,9 @@ mod tests {
     fn feature_length_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_feature(
+                ctx,
                 &mut ir,
                 source_feature(FeatureDefinition::Operation(
                     FeatureOperation::DatumOffsetPlane {
@@ -745,7 +788,7 @@ mod tests {
                             .expect("finite source distance"),
                     },
                 )),
-            )
+            ))
             .expect_err("millimeter distance cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.features.is_empty());
@@ -755,8 +798,8 @@ mod tests {
     fn parameter_length_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_parameter(&mut ir, source_length_parameter(f64::MAX))
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_parameter(ctx, &mut ir, source_length_parameter(f64::MAX)))
             .expect_err("millimeter parameter cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.parameters.is_empty());
