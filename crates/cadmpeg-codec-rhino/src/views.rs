@@ -1555,7 +1555,11 @@ fn parse_named_cplanes(
         }
         reserve_admitted_vec(ctx, &mut values, 1, "Rhino named construction planes")?;
         values.push(NamedConstructionPlane {
-            id: format!("rhino:document:construction_plane#{index:04}"),
+            id: crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:document:construction_plane#{index:04}"),
+                "Rhino named construction plane ID",
+            )?,
             source_offset: chunk.header_start as u64,
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
@@ -1886,6 +1890,38 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("service profile admits the named construction plane");
+        assert_eq!(values.len(), 1);
+    }
+
+    #[test]
+    fn named_construction_plane_id_refuses_retained_limit() {
+        let archive = ArchiveVersion::V5;
+        let mut bytes = 1_i32.to_le_bytes().to_vec();
+        bytes.extend(crc_chunk(
+            archive,
+            super::VIEW_CPLANE,
+            &construction_plane(),
+        ));
+        let record = Record::long(NAMED_CPLANES, 0..bytes.len(), 0..bytes.len());
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            super::parse_named_cplanes(
+                ctx,
+                &bytes,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("construction plane ID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino named construction plane ID");
+        let values = super::parse_named_cplanes(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("service profile admits the construction plane ID");
         assert_eq!(values.len(), 1);
     }
 
