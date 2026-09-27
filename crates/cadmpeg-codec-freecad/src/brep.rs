@@ -28,7 +28,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
-use crate::resource::{collection_vec, optional_collection_vec};
+use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2319,6 +2319,7 @@ pub(crate) fn parse_payloads(
             let (facts, version) = parse_text(ctx, &entry.data)?;
             ShapePayload::Text { facts, version }
         };
+        reserve_vec_items(ctx, &mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
             property: property.id.clone(),
@@ -2750,6 +2751,7 @@ fn parse_binary_prefix(
                     transform = powered
                         .compose(transform)
                         .map_err(location_transform_error)?;
+                    reserve_vec_items(cursor.ctx, &mut factors, 1, "FreeCAD binary location factors")?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power: i64::from(power),
@@ -3056,6 +3058,7 @@ fn parse_binary_tshape(
                         )));
                     }
                 };
+                reserve_vec_items(cursor.ctx, &mut representations, 1, "FreeCAD binary vertex representations")?;
                 representations.push(representation);
             }
             TextTShapeGeometry::Vertex {
@@ -3080,6 +3083,7 @@ fn parse_binary_tshape(
                         "binary edge representation-count limit exceeded".into(),
                     ));
                 }
+                reserve_vec_items(cursor.ctx, &mut representations, 1, "FreeCAD binary edge representations")?;
                 representations.push(parse_binary_edge_representation(
                     cursor,
                     version,
@@ -3169,6 +3173,7 @@ fn parse_binary_tshape(
                 "binary TShape {index} references non-prior child {shape}"
             )));
         }
+        reserve_vec_items(cursor.ctx, &mut children, 1, "FreeCAD binary shape children")?;
         children.push(TextShapeUse {
             shape,
             orientation: binary_orientation(i32::from(orientation))?,
@@ -4023,6 +4028,7 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
                     "{label} expanded knot-count limit exceeded"
                 )));
             }
+            reserve_vec_items(self.ctx, &mut knots, multiplicity, "FreeCAD binary expanded knots")?;
             knots.extend(std::iter::repeat_n(knot, multiplicity));
         }
         Ok(knots)
@@ -4092,6 +4098,7 @@ fn parse_locations(
                     transform = powered
                         .compose(transform)
                         .map_err(location_transform_error)?;
+                    reserve_vec_items(cursor.ctx, &mut factors, 1, "FreeCAD text location factors")?;
                     factors.push(LocationFactor {
                         location: referenced,
                         power,
@@ -4530,6 +4537,7 @@ fn parse_tshapes(
                     child.shape
                 )));
             }
+            reserve_vec_items(cursor.ctx, &mut children, 1, "FreeCAD text shape children")?;
             children.push(child);
         }
         shapes.push(TextTShape {
@@ -4544,6 +4552,7 @@ fn parse_tshapes(
             cursor.next("root shape terminator")?;
             break;
         }
+        reserve_vec_items(cursor.ctx, &mut roots, 1, "FreeCAD text shape roots")?;
         roots.push(parse_shape_use(&mut cursor, count, section_counts)?);
     }
     if !cursor.is_empty() {
@@ -4638,6 +4647,7 @@ fn parse_vertex_geometry(
                 )));
             }
         };
+        reserve_vec_items(cursor.ctx, &mut representations, 1, "FreeCAD text vertex representations")?;
         representations.push(representation);
     }
     Ok(TextTShapeGeometry::Vertex {
@@ -4667,6 +4677,7 @@ fn parse_edge_geometry(
                 "edge representation-count limit exceeded".into(),
             ));
         }
+        reserve_vec_items(cursor.ctx, &mut representations, 1, "FreeCAD text edge representations")?;
         representations.push(parse_edge_representation(
             kind,
             cursor,
@@ -5202,6 +5213,7 @@ fn parse_knots(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("expanded {label} knot limit exceeded"))
             })?;
+        reserve_vec_items(cursor.ctx, &mut knots, multiplicity, "FreeCAD text expanded knots")?;
         knots.resize(expanded, knot);
     }
     Ok(knots)
@@ -6377,6 +6389,40 @@ pub(crate) mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD carrier census families"
         ));
+    }
+
+    #[test]
+    fn shape_payload_record_refuses_on_collection_limit() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["empty.brp".into()],
+                dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text(
+                "<Property><Part file=\"empty.brp\"/></Property>".into(),
+                0,
+            )
+            .expect("valid test XML"),
+        };
+        let entry = EntryRecord {
+            id: crate::native::native_id("entry", "empty.brp"),
+            name: "empty.brp".into(),
+            role: cadmpeg_core::container::ContainerRole::Brep,
+            referenced_by: vec![property.id.clone()],
+            data: Vec::new(),
+        };
+        let result = with_collection_limit(&[], 0, |ctx| parse_payloads(ctx, &[property], &[entry]));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD shape payload records"));
     }
 
     fn test_parse_text(bytes: &[u8]) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {

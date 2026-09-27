@@ -40,6 +40,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
+use crate::resource::{collection_vec, reserve_vec_items};
 use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
@@ -133,7 +134,9 @@ pub(crate) fn transfer(
             builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir)?;
+        reserve_vec_items(ctx, &mut occurrences, builder.occurrences.len(), "FreeCAD topology occurrences")?;
         occurrences.extend(builder.occurrences);
+        reserve_vec_items(ctx, losses, builder.losses.len(), "FreeCAD topology losses")?;
         losses.extend(builder.losses);
     }
     close_radial_rings(&mut ir.model.coedges);
@@ -258,6 +261,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let Some(source_index) = self.source_indices.get(&(kind, key)).copied() else {
             return Ok(());
         };
+        reserve_vec_items(self.ctx, &mut self.occurrences, 1, "FreeCAD topology occurrences")?;
         self.occurrences.push(TopologyOccurrence {
             property: self.payload.property.clone(),
             indexed_name: indexed_name(kind),
@@ -299,6 +303,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let primary_read = match pcurve_geometry(&self.tables.curve2ds[primary - 1]) {
                     Ok(geometry) => geometry,
                     Err(error) => {
+                        reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                         self.losses
                             .push(FreecadLossCode::PcurveNotTransferred.note(format!(
                                 "payload {} curve2ds index {primary} could not enter neutral geometry: {error}",
@@ -310,6 +315,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let Some(primary_geometry) = primary_read
                     .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
+                    reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                     self.losses
                         .push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {primary} could not enter neutral geometry",
@@ -319,6 +325,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 };
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
+                reserve_vec_items(self.ctx, &mut ir.model.pcurves, 1, "FreeCAD pcurves records")?;
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
@@ -329,6 +336,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     {
                         Ok(geometry) => geometry,
                         Err(error) => {
+                            reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                             self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                                     "payload {} curve2ds index {secondary} could not enter neutral geometry: {error}", self.payload.id
                                 )));
@@ -338,6 +346,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     let Some(secondary_geometry) = secondary_read.and_then(|geometry| {
                         transformed_pcurve_geometry(geometry, parameter_affine)
                     }) else {
+                        reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                         self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
                         )));
@@ -347,6 +356,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         &secondary_geometry,
                         Some(parameter_range),
                     );
+                    reserve_vec_items(self.ctx, &mut ir.model.pcurves, 1, "FreeCAD pcurves records")?;
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
@@ -369,6 +379,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             if self.emitted_triangulations.contains(&index) {
                 continue;
             }
+            reserve_vec_items(self.ctx, &mut ir.model.tessellations, 1, "FreeCAD tessellations records")?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
@@ -496,6 +507,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
+        reserve_vec_items(self.ctx, &mut ir.model.bodies, 1, "FreeCAD bodies records")?;
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind,
@@ -563,19 +575,24 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Shell)
             {
-                shells.extend(self.append_shell(ctx, ir, &region_id, child, transform, reversed)?);
+                let added = self.append_shell(ctx, ir, &region_id, child, transform, reversed)?;
+                reserve_vec_items(ctx, &mut shells, added.len(), "FreeCAD region shells")?;
+                shells.extend(added);
             }
         } else {
-            shells.extend(self.append_shell_shape(
+            let added = self.append_shell_shape(
                 ctx,
                 ir,
                 &region_id,
                 shape_index,
                 transform,
                 reversed,
-            )?);
+            )?;
+            reserve_vec_items(ctx, &mut shells, added.len(), "FreeCAD region shells")?;
+            shells.extend(added);
         }
         if !shells.is_empty() {
+            reserve_vec_items(self.ctx, &mut ir.model.regions, 1, "FreeCAD regions records")?;
             ir.model.regions.push(Region {
                 id: region_id.clone(),
                 body: body.clone(),
@@ -589,6 +606,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     region_id.as_str().to_owned(),
                 )?;
             }
+        reserve_vec_items(ctx, output, 1, "FreeCAD body regions")?;
             output.push(region_id);
         }
         Ok(())
@@ -672,6 +690,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         faces.push(face);
                     }
                 }
+                reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
                         component_id.clone(),
@@ -704,13 +723,16 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 if let Some(face) =
                     self.append_face(ir, &shell_id, &shape_use, transform, reversed)?
                 {
+                    reserve_vec_items(self.ctx, &mut faces, 1, "FreeCAD shell faces")?;
                     faces.push(face);
                 }
             }
             TextShapeKind::Wire => {
                 for child in &shape.children {
                     if self.shape(child.shape)?.kind() == TextShapeKind::Edge {
-                        wire_edges.push(self.ensure_edge(ir, child, transform)?);
+                        let edge = self.ensure_edge(ir, child, transform)?;
+                        reserve_vec_items(self.ctx, &mut wire_edges, 1, "FreeCAD wire edges")?;
+                        wire_edges.push(edge);
                     }
                 }
             }
@@ -724,7 +746,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     },
                     location: 0.into(),
                 };
-                wire_edges.push(self.ensure_edge(ir, &edge_use, transform)?);
+                let edge = self.ensure_edge(ir, &edge_use, transform)?;
+                reserve_vec_items(self.ctx, &mut wire_edges, 1, "FreeCAD wire edges")?;
+                wire_edges.push(edge);
             }
             TextShapeKind::Vertex => {
                 let vertex_use = TextShapeUse {
@@ -733,6 +757,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
+                reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
                 ir.model.shells.push(
                     Shell::new(
                         shell_id.clone(),
@@ -747,6 +772,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
             _ => {}
         }
+        reserve_vec_items(self.ctx, &mut ir.model.shells, 1, "FreeCAD shells records")?;
         ir.model.shells.push(
             Shell::new(
                 shell_id.clone(),
@@ -904,6 +930,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .map_err(CodecError::malformed)?,
             );
             if self.emitted_surfaces.insert(id.clone()) {
+                reserve_vec_items(self.ctx, &mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
@@ -942,6 +969,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .collect::<Result<Vec<_>, CodecError>>()
                 })
                 .transpose()?;
+            reserve_vec_items(self.ctx, &mut ir.model.tessellations, 1, "FreeCAD tessellations records")?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
                     crate::native::model_id(
@@ -1024,6 +1052,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let pcurve =
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id = coedge_ids[index].clone();
+                reserve_vec_items(self.ctx, &mut ir.model.coedges, 1, "FreeCAD coedges records")?;
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
@@ -1046,6 +1075,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         .collect::<Result<Vec<_>, CodecError>>()?,
                 });
             }
+            reserve_vec_items(self.ctx, &mut ir.model.loops, 1, "FreeCAD loops records")?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
@@ -1067,8 +1097,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 wire_transform,
                 loop_id.as_str().to_owned(),
             )?;
+            reserve_vec_items(self.ctx, &mut loops, 1, "FreeCAD face loops")?;
             loops.push(loop_id);
         }
+        reserve_vec_items(self.ctx, &mut ir.model.faces, 1, "FreeCAD faces records")?;
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell.clone(),
@@ -1175,6 +1207,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_or(param_range, |curve| {
                 normalize_occt_curve_range(curve.geometry.solved()?, param_range)
             });
+        reserve_vec_items(self.ctx, &mut ir.model.edges, 1, "FreeCAD edges records")?;
         ir.model.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
@@ -1240,6 +1273,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .colon(cadmpeg_ir::identity_key!("polygon"))
                 .colon(ordinal + 1),
         );
+        reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1259,6 +1293,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 mut samples,
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
+            reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
                 id: CurveId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
@@ -1373,6 +1408,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 vertex_use.shape
             )));
         };
+        reserve_vec_items(self.ctx, &mut ir.model.points, 1, "FreeCAD points records")?;
         ir.model.points.push(Point::new(
             point_id.clone(),
             position,
@@ -1386,6 +1422,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 instance_path: Vec::new(),
             }),
         ));
+        reserve_vec_items(self.ctx, &mut ir.model.vertices, 1, "FreeCAD vertices records")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -1433,6 +1470,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     CodecError::malformed(format_args!("missing curve table entry {source}"))
                 })?
                 .clone();
+            reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: transform_curve(&base.geometry, transform)?,
@@ -1478,6 +1516,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 ir.model.procedural_surfaces.iter().any(|surface| {
                     ir.model.procedural_surface_owner(&surface.id) == Some(&base_id)
                 });
+            reserve_vec_items(self.ctx, &mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: transform_surface(&base.geometry, transform)?,
@@ -1557,6 +1596,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let read = match pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) {
             Ok(geometry) => geometry,
             Err(error) => {
+                reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
                 self.losses
                     .push(FreecadLossCode::PcurveNotTransferred.note(format!(
                         "payload {} curve2ds index {curve_index} could not enter neutral geometry: {error}",
@@ -1566,6 +1606,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             }
         };
         let Some(geometry) = read else {
+            reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
             self.losses
                 .push(FreecadLossCode::PcurveNotTransferred.note(format!(
                     "payload {} curve2ds index {curve_index} could not enter neutral geometry",
@@ -1674,19 +1715,23 @@ fn connected_components(
         }
         assigned[seed] = true;
         let mut component = Vec::new();
-        let mut stack = vec![seed];
+        let mut stack = collection_vec(ctx, 1, "FreeCAD connected-component stack")?;
+        stack.push(seed);
         while let Some(current) = stack.pop() {
+            reserve_vec_items(ctx, &mut component, 1, "FreeCAD connected-component members")?;
             component.push(current);
             for candidate in 0..connectivity.len() {
                 if !assigned[candidate]
                     && !connectivity[current].is_disjoint(&connectivity[candidate])
                 {
                     assigned[candidate] = true;
+                    reserve_vec_items(ctx, &mut stack, 1, "FreeCAD connected-component stack")?;
                     stack.push(candidate);
                 }
             }
         }
         component.sort_unstable();
+        reserve_vec_items(ctx, &mut components, 1, "FreeCAD connected components")?;
         components.push(component);
     }
     Ok(components)
