@@ -1360,11 +1360,12 @@ pub(crate) fn read_uuid_list(
 }
 
 pub(crate) fn parse_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Vec<AttributeUserdataDescriptor> {
+) -> Result<Vec<AttributeUserdataDescriptor>, FramingError> {
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
@@ -1386,6 +1387,12 @@ pub(crate) fn parse_attribute_userdata(
                 "unknown attribute userdata chunk {:#x} at {}",
                 item.typecode, item.header_start
             ));
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut result,
+                1,
+                "Rhino attribute userdata descriptors",
+            )?;
             result.push(AttributeUserdataDescriptor::Unknown {
                 range: item.range(),
             });
@@ -1399,16 +1406,30 @@ pub(crate) fn parse_attribute_userdata(
                     save_context,
                     payload_range,
                     ..
-                })) => result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
-                    range,
-                    class_uuid,
-                    item_uuid,
-                    application_uuid,
-                    writer_version: save_context
-                        .map(|value| i64::from(value.writer_version as u32)),
-                    payload_range,
-                })),
+                })) => {
+                    crate::chunks::reserve_admitted_vec(
+                        ctx,
+                        &mut result,
+                        1,
+                        "Rhino attribute userdata descriptors",
+                    )?;
+                    result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
+                        range,
+                        class_uuid,
+                        item_uuid,
+                        application_uuid,
+                        writer_version: save_context
+                            .map(|value| i64::from(value.writer_version as u32)),
+                        payload_range,
+                    }));
+                }
                 Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {
+                    crate::chunks::reserve_admitted_vec(
+                        ctx,
+                        &mut result,
+                        1,
+                        "Rhino attribute userdata descriptors",
+                    )?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
                 Err(error) => warnings.push(format!(
@@ -1419,7 +1440,7 @@ pub(crate) fn parse_attribute_userdata(
         }
         offset = item.next_offset();
     }
-    result
+    Ok(result)
 }
 
 /// Applies the recognized carriers owned by one object-attributes stream.
@@ -1820,7 +1841,8 @@ pub(crate) fn parse_object_record(
     }
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
-        .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
+        .map(|range| parse_attribute_userdata(ctx, bytes, range.clone(), archive, &mut warnings))
+        .transpose()?
         .unwrap_or_default();
     if let AttributeState::Parsed(attributes) = &mut attributes {
         apply_attribute_userdata(

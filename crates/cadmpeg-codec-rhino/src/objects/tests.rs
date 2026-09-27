@@ -74,6 +74,49 @@ fn assert_attribute_resource(error: &crate::chunks::FramingError, operation: &st
     );
 }
 
+fn attribute_userdata_refusal(bytes: &[u8]) -> crate::chunks::FramingError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    crate::objects::parse_attribute_userdata(
+        &ctx,
+        bytes,
+        0..bytes.len(),
+        ArchiveVersion::V4,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("attribute userdata descriptor exceeds collection limit")
+}
+
+#[test]
+fn unknown_attribute_userdata_refuses_collection_limit() {
+    let bytes = long_chunk(ArchiveVersion::V4, 0x0002_0001, &[]);
+    assert_attribute_resource(
+        &attribute_userdata_refusal(&bytes),
+        "Rhino attribute userdata descriptors",
+    );
+}
+
+#[test]
+fn known_attribute_userdata_refuses_collection_limit() {
+    let bytes = class_userdata_v1_with_direct_payload(ArchiveVersion::V4, [1; 16], &[]);
+    assert_attribute_resource(
+        &attribute_userdata_refusal(&bytes),
+        "Rhino attribute userdata descriptors",
+    );
+}
+
+#[test]
+fn future_attribute_userdata_refuses_collection_limit() {
+    let bytes = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &[0x30]);
+    assert_attribute_resource(
+        &attribute_userdata_refusal(&bytes),
+        "Rhino attribute userdata descriptors",
+    );
+}
+
 #[test]
 fn fixed_object_name_and_url_refuse_retained_limit() {
     let bytes = fixed_attributes(0, 0, None);
@@ -832,11 +875,13 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     malformed.extend(valid);
     let mut warnings = Diagnostics::new();
     let descriptors = crate::objects::parse_attribute_userdata(
+        &cadmpeg_test_support::service_decode_context(),
         &malformed,
         0..malformed.len(),
         ArchiveVersion::V4,
         &mut warnings,
-    );
+    )
+    .expect("valid userdata descriptor remains after malformed child");
     assert_eq!(descriptors.len(), 1);
     assert!(descriptors[0].known().is_some());
     assert!(descriptors[0].known().unwrap().range.start > 0);
