@@ -88,6 +88,37 @@ fn legacy_declaration_name_refuses_before_retained_copy() {
             && resource.operation == "creo legacy declaration names"));
 }
 
+fn assert_parent_lookup_refusal(limit: u64, operation: &'static str) {
+    let data = b"@root 1 0\n@child 2 0\n0 1 ->\n1 2 ->\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::parent_object_offsets(&ctx, &persistence.scopes)
+        .expect_err("the next lookup node exceeds the limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn legacy_declaration_lookup_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(0, "creo legacy declaration lookup nodes");
+}
+
+#[test]
+fn legacy_active_object_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(2, "creo legacy active object nodes");
+}
+
+#[test]
+fn legacy_parent_offset_refuses_before_btree_node() {
+    assert_parent_lookup_refusal(3, "creo legacy parent offset nodes");
+}
+
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
