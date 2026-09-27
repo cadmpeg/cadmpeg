@@ -1357,7 +1357,8 @@ mod tests {
 
     fn model_point_ir(position: Point3) -> Result<CadIr, CodecError> {
         let mut ir = CadIr::empty();
-        crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4))).admit_point(
+        crate::decode::with_test_decode_ctx(|ctx| crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4))).admit_point(
+            ctx,
             &mut ir,
             cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint("test:model:entity#point")
@@ -1365,7 +1366,7 @@ mod tests {
                 cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point fixture"),
                 None,
             ),
-        )?;
+        ))?;
         Ok(ir)
     }
 

@@ -97,10 +97,10 @@ pub(super) fn add_extrusion_pcurve(
     };
     match admission {
         PcurveAdmission::Pending(source_carriers, source_surface) => {
-            source_carriers.admit_pcurve_with_source_surface(ir, pcurve, source_surface)?;
+            source_carriers.admit_pcurve_with_source_surface(ctx, ir, pcurve, source_surface)?;
         }
         PcurveAdmission::Existing(source_carriers, surface_id) => {
-            source_carriers.admit_pcurve(ir, pcurve, surface_id)?;
+            source_carriers.admit_pcurve(ctx, ir, pcurve, surface_id)?;
         }
     }
     Ok(id)
