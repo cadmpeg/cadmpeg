@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Required operation-reference indices with their exact token encoding.
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Encoding {
     Direct(u8),
@@ -271,7 +270,7 @@ mod tests {
 
     fn assert_borrowed_token<T: serde::Serialize>(
         token: &T,
-        old_wire: ReferenceIndexWire,
+        old_wire: &ReferenceIndexWire,
         id: &'static str,
     ) {
         #[derive(serde::Serialize)]
@@ -303,7 +302,7 @@ mod tests {
             let token = ReferenceIndexToken::from_wire(value, raw).unwrap();
             assert_borrowed_token(
                 &token,
-                ReferenceIndexWire::from(token),
+                &ReferenceIndexWire::from(token),
                 "nx:test:reference-index#1",
             );
         }
@@ -315,7 +314,7 @@ mod tests {
             let token = FeatureReferenceToken::from_wire(value, raw).unwrap();
             assert_borrowed_token(
                 &token,
-                ReferenceIndexWire::from(token),
+                &ReferenceIndexWire::from(token),
                 "nx:test:feature-reference#1",
             );
         }
@@ -331,7 +330,7 @@ mod tests {
             let token = PayloadIndexToken::from_wire(value, raw).unwrap();
             assert_borrowed_token(
                 &token,
-                ReferenceIndexWire::from(token),
+                &ReferenceIndexWire::from(token),
                 "nx:test:payload-reference#1",
             );
         }
