@@ -2357,7 +2357,7 @@ fn build_geometry_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
+    let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     project_design_history(
         ctx,
         &mut ir,
@@ -3483,7 +3483,7 @@ fn build_metadata_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
+    let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,

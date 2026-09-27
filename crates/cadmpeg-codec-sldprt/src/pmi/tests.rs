@@ -18,8 +18,70 @@ use cadmpeg_ir::{
 
 use super::{
     apply_to_parameters, dimension_subtype, enrich_history_parameters, exact_count,
-    neutral_parameter_is_count, parse_payload, patch_payload, patch_slots,
+    neutral_parameter_is_count, patch_payload, patch_slots,
 };
+
+fn parse_payload(payload: &[u8], losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) -> Vec<PmiDimension> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("PMI test input fits service policy");
+    super::parse_payload(&ctx, payload, losses).expect("PMI test input fits service policy")
+}
+
+fn pmi_limit_refusal(
+    policy: cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::decode::ResourceLimit {
+    let payload = pmi_semantic_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("PMI test input fits the root limit");
+    let error = super::parse_payload(&ctx, &payload, &mut Vec::new())
+        .expect_err("PMI parser must refuse the selected limit");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    limit
+}
+
+#[test]
+fn pmi_payload_reports_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = pmi_semantic_payload().len() as u64 - 1;
+    let limit = pmi_limit_refusal(policy);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "scan SLDPRT PMI candidates");
+}
+
+#[test]
+fn pmi_payload_reports_scoped_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 35;
+    let limit = pmi_limit_refusal(policy);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "normalize SLDPRT PMI candidate GUID");
+}
+
+#[test]
+fn pmi_payload_reports_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 35;
+    let limit = pmi_limit_refusal(policy);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain SLDPRT PMI candidate GUID");
+}
+
+#[test]
+fn pmi_payload_reports_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let limit = pmi_limit_refusal(policy);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "collect SLDPRT PMI dimensions");
+}
 
 #[test]
 fn exact_count_refuses_the_i64_boundary_before_a_saturating_cast() {
