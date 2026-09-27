@@ -231,3 +231,125 @@ fn choice_field_record_refuses_before_vec_growth() {
         "creo choice fields",
     );
 }
+
+fn named_datum_row() -> FeatureRow {
+    FeatureRow {
+        feature_id: 7,
+        root_schema_class: None,
+        stream_offset: 10,
+        body: b"\xe0\x00dtm_id_tab\0\xf2\xf8\x01\xf7\x57\xfb\xe2\
+            \xe0\x01dtm_id\0\x2a\xe0\x01dim_id\0\xf6"
+            .to_vec()
+            .try_into()
+            .expect("two-byte datum row"),
+        body_offset: 100,
+        offset: 98,
+    }
+}
+
+#[test]
+fn named_datum_ids_refuse_before_vec_growth() {
+    let row = named_datum_row();
+    item(
+        run(&row.body, 0, u64::MAX, |ctx| {
+            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("named datum id needs one item"),
+        "creo named datum ids",
+    );
+}
+
+#[test]
+fn feature_geometry_table_refuses_before_vec_growth() {
+    let row = named_datum_row();
+    item(
+        run(&row.body, 1, u64::MAX, |ctx| {
+            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("geometry table needs one result item"),
+        "creo feature geometry tables",
+    );
+}
+
+#[test]
+fn datum_class_stream_refuses_before_btree_insertion() {
+    let row = named_datum_row();
+    assert_eq!(
+        run(&row.body, u64::MAX, u64::MAX, |ctx| {
+            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
+        })
+        .expect("named datum table admitted")
+        .len(),
+        1
+    );
+    item(
+        run(&row.body, 2, u64::MAX, |ctx| {
+            super::super::geometry_tables(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("datum stream class needs one node"),
+        "creo datum class by stream",
+    );
+}
+
+#[test]
+fn positional_datum_ids_refuse_before_counted_vec_reserve() {
+    let body = [
+        0x00, 0xf8, 0x02, 0xf7, 0x57, 0xfb, 0xe2, 0xf7, 0x58, 0x80, 0x91, 0xf6, 0xf1, 0xf7, 0x57,
+        0xe2, 0x80, 0x92, 0xf6, 0xe3,
+    ];
+    item(
+        run(&body, 1, u64::MAX, |ctx| {
+            super::super::positional_datum_geometry_table_at(ctx, &body, 1, 87)
+                .transpose()
+                .map(|decoded| decoded.map(|(_, ids)| ids))
+        })
+        .expect_err("two positional ids need two items"),
+        "creo positional datum ids",
+    );
+}
+
+fn affected_row() -> FeatureRow {
+    FeatureRow {
+        feature_id: 7,
+        root_schema_class: None,
+        stream_offset: 0,
+        body: b"\xe0\x01geoms_affected\0\xf8\x01\x2a"
+            .to_vec()
+            .try_into()
+            .expect("two-byte affected row"),
+        body_offset: 100,
+        offset: 98,
+    }
+}
+
+#[test]
+fn affected_ids_refuse_before_counted_vec_reserve() {
+    let row = affected_row();
+    item(
+        run(&row.body, 0, u64::MAX, |ctx| {
+            super::super::affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("one affected id needs one item"),
+        "creo affected ids",
+    );
+}
+
+#[test]
+fn affected_id_record_refuses_before_vec_growth() {
+    let row = affected_row();
+    assert_eq!(
+        run(&row.body, 2, u64::MAX, |ctx| {
+            super::super::affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect("one affected-id record admitted")
+        .len(),
+        1
+    );
+    item(
+        run(&row.body, 1, u64::MAX, |ctx| {
+            super::super::affected_ids(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("affected-id record needs another item"),
+        "creo affected-id records",
+    );
+}

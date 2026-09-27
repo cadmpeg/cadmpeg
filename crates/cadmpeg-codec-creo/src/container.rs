@@ -2113,6 +2113,40 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
     definitions
 }
 
+fn feature_geometry_tables(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+    depdb_rows: &[FeatureRow],
+) -> Result<Vec<FeatureGeometryTable>, CodecError> {
+    let mut tables = feature::rows::geometry_tables(ctx, rows)?;
+    let depdb_tables = feature::rows::geometry_tables(ctx, depdb_rows)?;
+    ctx.try_reserve_items(
+        &mut tables,
+        depdb_tables.len(),
+        "creo feature geometry table aggregation",
+    )?;
+    tables.extend(depdb_tables);
+    tables.sort_by_key(|table| table.offset);
+    Ok(tables)
+}
+
+fn feature_affected_ids(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+    depdb_rows: &[FeatureRow],
+) -> Result<Vec<FeatureAffectedIds>, CodecError> {
+    let mut records = feature::rows::affected_ids(ctx, rows)?;
+    let depdb_records = feature::rows::affected_ids(ctx, depdb_rows)?;
+    ctx.try_reserve_items(
+        &mut records,
+        depdb_records.len(),
+        "creo affected-id aggregation",
+    )?;
+    records.extend(depdb_records);
+    records.sort_by_key(|record| record.offset);
+    Ok(records)
+}
+
 fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
@@ -2626,14 +2660,10 @@ pub(crate) fn scan_bytes<'a>(
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
     let feature_choice_fields = feature::rows::choice_fields(ctx, &feature_choices)?;
     let depdb_recipe_rows = depdb_recipe_rows(ctx, &sections)?;
-    let mut feature_geometry_tables = feature::rows::geometry_tables(&feature_rows);
-    feature_geometry_tables.extend(feature::rows::geometry_tables(&depdb_recipe_rows));
-    feature_geometry_tables.sort_by_key(|table| table.offset);
+    let feature_geometry_tables = feature_geometry_tables(ctx, &feature_rows, &depdb_recipe_rows)?;
     let feature_loop_history_entries =
         feature::rows::loop_history_entries(&feature_rows, &feature_geometry_tables);
-    let mut feature_affected_ids = feature::rows::affected_ids(&feature_rows);
-    feature_affected_ids.extend(feature::rows::affected_ids(&depdb_recipe_rows));
-    feature_affected_ids.sort_by_key(|record| record.offset);
+    let feature_affected_ids = feature_affected_ids(ctx, &feature_rows, &depdb_recipe_rows)?;
     let feature_replay_affected_ids = feature::rows::replay_affected_ids(&feature_rows);
     let surface_merge_replay_affected_ids =
         feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
