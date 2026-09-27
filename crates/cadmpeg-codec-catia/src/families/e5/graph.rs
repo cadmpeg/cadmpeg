@@ -74,10 +74,8 @@ pub(super) enum E5CurveSupportKind {
 }
 
 impl E5CurveSupportKind {
-    // This conversion consumes the input carrier at the typed construction boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    fn from_parts(intersection: bool, pcurves: Vec<u32>) -> Option<Self> {
-        match (intersection, pcurves.as_slice()) {
+    fn from_parts(intersection: bool, pcurves: &[u32]) -> Option<Self> {
+        match (intersection, pcurves) {
             (false, &[pcurve]) => Some(Self::Boundary(pcurve)),
             (true, &[left, right]) => Some(Self::Intersection([left, right])),
             _ => None,
@@ -487,14 +485,22 @@ pub(crate) fn parse_topology(
         for record in &records {
             match record.class {
                 0x0e => {
-                    let value = parse_bounds(record)?;
+                    let value = match parse_bounds(ctx, record) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_bounds") {
                         return Some(Err(error));
                     }
                     bounds.insert(record.id, value);
                 }
                 0xc0 | 0xc1 => {
-                    let value = parse_curve_support(record)?;
+                    let value = match parse_curve_support(ctx, record) {
+                        Ok(Some(value)) => value,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if let Err(error) = ctx.charge_collection_items(1, "catia_e5_curve_supports") {
                         return Some(Err(error));
                     }
@@ -593,10 +599,12 @@ pub(crate) fn parse_topology(
                         return None;
                     }
                     let support = curve_supports.get(&edge.support)?;
-                    if support.pcurves().iter().any(|reference| {
-                        !curve_support_reference_closes(*reference, &pcurves, &curve_supports)
-                    }) {
-                        return None;
+                    for reference in support.pcurves() {
+                        match curve_support_reference_closes(ctx, *reference, &pcurves, &curve_supports) {
+                            Ok(true) => {}
+                            Ok(false) => return None,
+                            Err(error) => return Some(Err(error)),
+                        }
                     }
                     if let Err(error) = crate::resource::insert_set(ctx, &mut reachable_edges, *edge_id, "catia_e5_reachable_edges") {
                         return Some(Err(error));
@@ -733,15 +741,17 @@ fn is_surface_carrier_class(class: u8) -> bool {
 /// Checks that a curve-support side resolves to a direct p-curve or to a
 /// finite, acyclic chain of intersection-support wrappers.
 fn curve_support_reference_closes(
+    ctx: &DecodeContext<'_>,
     reference: u32,
     pcurves: &BTreeMap<u32, E5Pcurve>,
     supports: &BTreeMap<u32, E5CurveSupport>,
-) -> bool {
+) -> Result<bool, CodecError> {
     if pcurves.contains_key(&reference) {
-        return true;
+        return Ok(true);
     }
     let mut visiting = HashSet::new();
-    let mut stack = vec![(reference, false)];
+    let mut stack = Vec::new();
+    crate::resource::push(ctx, &mut stack, (reference, false), "catia_e5_support_stack")?;
     while let Some((reference, leaving)) = stack.pop() {
         if pcurves.contains_key(&reference) {
             continue;
@@ -750,16 +760,16 @@ fn curve_support_reference_closes(
             .get(&reference)
             .filter(|support| support.is_intersection())
         else {
-            return false;
+            return Ok(false);
         };
         if leaving {
             visiting.remove(&reference);
             continue;
         }
-        if !visiting.insert(reference) {
-            return false;
+        if !crate::resource::insert_set(ctx, &mut visiting, reference, "catia_e5_support_visiting")? {
+            return Ok(false);
         }
-        stack.push((reference, true));
+        crate::resource::push(ctx, &mut stack, (reference, true), "catia_e5_support_stack")?;
         for child in support.pcurves().iter().rev() {
             if pcurves.contains_key(child) {
                 continue;
@@ -769,12 +779,12 @@ fn curve_support_reference_closes(
                 .is_some_and(E5CurveSupport::is_intersection)
                 || visiting.contains(child)
             {
-                return false;
+                return Ok(false);
             }
-            stack.push((*child, false));
+            crate::resource::push(ctx, &mut stack, (*child, false), "catia_e5_support_stack")?;
         }
     }
-    true
+    Ok(true)
 }
 
 fn bound_representation_parameter(
@@ -791,53 +801,69 @@ fn bound_representation_parameter(
     entries.next().is_none().then_some(parameter)
 }
 
-fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
-    let (pcurves, mut position) = wire::tokens::counted_refs(record.payload, false)?;
+fn parse_curve_support(
+    ctx: &DecodeContext<'_>,
+    record: &Record<'_>,
+) -> Result<Option<E5CurveSupport>, CodecError> {
     let expected = if record.class == 0xc0 { 1 } else { 2 };
-    if pcurves.len() != expected || record.payload.get(position) != Some(&0x81) {
-        return None;
+    if record.payload.first() != Some(&(0x80 + expected)) {
+        return Ok(None);
+    }
+    let mut position = 1;
+    let mut pcurves = [0u32; 2];
+    for pcurve in pcurves.iter_mut().take(usize::from(expected)) {
+        let Some(reference) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
+        *pcurve = reference;
+    }
+    if record.payload.get(position) != Some(&0x81) {
+        return Ok(None);
     }
     position += 1;
-    let mode = *record.payload.get(position)?;
+    let Some(&mode) = record.payload.get(position) else { return Ok(None); };
     position += 1;
     if record.payload.get(position) != Some(&0x00) {
-        return None;
+        return Ok(None);
     }
     position += 1;
     let mut view = View::over_retained(record.payload);
-    view.seek(position)?;
-    let range = [finite_f64_le(&mut view)?, finite_f64_le(&mut view)?];
+    if view.seek(position).is_none() { return Ok(None); }
+    let Some(range) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))() else { return Ok(None); };
     position = view.position();
-    Some(E5CurveSupport {
-        kind: E5CurveSupportKind::from_parts(record.class == 0xc1, pcurves)?,
+    let Some(kind) = E5CurveSupportKind::from_parts(record.class == 0xc1, &pcurves[..usize::from(expected)]) else { return Ok(None); };
+    let tail = crate::resource::copy_retained_slice(ctx, &record.payload[position..], "catia_e5_curve_support_tail")?;
+    Ok(Some(E5CurveSupport {
+        kind,
         mode,
         range,
-        tail: record.payload[position..].to_vec(),
-    })
+        tail,
+    }))
 }
 
-fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
-    let (representations, mut position) = wire::tokens::counted_refs(record.payload, false)?;
-    if record.payload.get(position)
-        != Some(&(0x80u8.checked_add(u8::try_from(representations.len()).ok()?)?))
-    {
-        return None;
+fn parse_bounds(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5Bounds>, CodecError> {
+    let Some(count) = record.payload.first().and_then(|lead| lead.checked_sub(0x80)).map(usize::from) else { return Ok(None); };
+    let mut position = 1;
+    let mut representations = Vec::new();
+    for _ in 0..count {
+        let Some(reference) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
+        crate::resource::push(ctx, &mut representations, reference, "catia_e5_bound_references")?;
+    }
+    let Some(expected_head) = u8::try_from(count).ok().and_then(|count| 0x80u8.checked_add(count)) else { return Ok(None); };
+    if record.payload.get(position) != Some(&expected_head) {
+        return Ok(None);
     }
     position += 1;
     let mut view = View::over_retained(record.payload);
-    view.seek(position)?;
-    let mut entries = Vec::with_capacity(representations.len());
+    if view.seek(position).is_none() { return Ok(None); }
+    let mut entries = Vec::new();
     for representation in representations {
-        let parameter = view.f64_le()?;
-        let code = view.u32_le()?;
-        let parameter = FiniteReal::new(parameter)?;
-        entries.push(E5BoundEntry {
+        let Some((parameter, code)) = (|| Some((FiniteReal::new(view.f64_le()?)?, view.u32_le()?)))() else { return Ok(None); };
+        crate::resource::push(ctx, &mut entries, E5BoundEntry {
             representation,
             parameter,
             code,
-        });
+        }, "catia_e5_bound_entries")?;
     }
-    view.is_empty().then_some(E5Bounds { entries })
+    Ok(view.is_empty().then_some(E5Bounds { entries }))
 }
 
 fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
@@ -1810,7 +1836,30 @@ mod tests {
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
-        assert!(!curve_support_reference_closes(1, &pcurves, &supports));
+        assert!(!crate::test_support::with_service_context(|ctx| curve_support_reference_closes(ctx, 1, &pcurves, &supports)).expect("service resource budget"));
+    }
+
+    #[test]
+    fn e5_support_walk_refuses_before_stack_and_set_growth() {
+        let pcurves = BTreeMap::from([(3, E5Pcurve::Line {
+            surface: 10,
+            origin: finite_pair([0.0, 0.0]),
+            direction: finite_pair([1.0, 0.0]),
+            range: finite_pair([0.0, 1.0]),
+        })]);
+        let supports = BTreeMap::from([(1, E5CurveSupport {
+            kind: E5CurveSupportKind::Intersection([3, 3]),
+            mode: 0,
+            range: finite_pair([0.0, 1.0]),
+            tail: Vec::new(),
+        })]);
+        assert!(crate::test_support::with_service_context(|ctx| curve_support_reference_closes(ctx, 1, &pcurves, &supports)).expect("service resource budget"));
+        for (cap, operation) in [(0, "catia_e5_support_stack"), (1, "catia_e5_support_visiting")] {
+            assert!(matches!(
+                crate::test_support::with_collection_limit(cap, |ctx| curve_support_reference_closes(ctx, 1, &pcurves, &supports)),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+            ));
+        }
     }
 
     #[test]
@@ -2314,6 +2363,8 @@ mod tests {
             "catia_e5_topology_edges",
             "catia_e5_topology_pcurves",
             "catia_e5_topology_bounds",
+            "catia_e5_bound_references",
+            "catia_e5_bound_entries",
             "catia_e5_curve_supports",
             "catia_e5_raw_loops",
             "catia_e5_raw_faces",
@@ -2336,6 +2387,27 @@ mod tests {
         ] {
             assert!(operations.contains(operation), "no refusal at {operation}");
         }
+    }
+
+    #[test]
+    fn e5_curve_support_tail_refuses_before_copy() {
+        let mut payload = vec![0x81, 0x81, 0x81, 0, 0];
+        payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload.push(0xaa);
+        let record = Record { class: 0xc0, id: 1, payload: &payload };
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| super::parse_curve_support(ctx, &record))
+                .expect("service resource budget")
+                .expect("valid curve support")
+                .tail,
+            [0xaa]
+        );
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, |ctx| super::parse_curve_support(ctx, &record)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_e5_curve_support_tail"
+        ));
     }
 
     #[test]
