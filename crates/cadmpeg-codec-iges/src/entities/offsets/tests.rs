@@ -70,6 +70,8 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
     for operation in ["iges function-offset controls", "iges function-offset knots"] {
         assert_offset_collection_refusal(&function, operation);
     }
+    let placed = placed_uniform_offset_line_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
+    assert_offset_collection_refusal(&placed, "iges offset source curve slots");
 }
 
 #[test]
