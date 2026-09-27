@@ -959,6 +959,48 @@ fn legacy_persistence_scopes_refuse_before_counted_vec_growth() {
 }
 
 #[test]
+fn feature_row_definition_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let row = feature_row_for_aggregate(b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0");
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&row.body, &arena, &policy)
+            .expect("feature row is admitted");
+        super::feature_row_definitions(&ctx, std::slice::from_ref(&row))
+    };
+    assert_eq!(run(1).expect("one definition admitted").len(), 1);
+    let error = run(0).expect_err("one definition needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo feature row definitions"));
+}
+
+#[test]
+fn section_owner_range_refuses_before_counted_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let row = feature_row_for_aggregate(b"xx");
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&row.body, &arena, &policy)
+            .expect("feature row is admitted");
+        super::section_owner_ranges(&ctx, &[], std::slice::from_ref(&row))
+    };
+    assert_eq!(run(1).expect("one owner range admitted"), vec![(100, 102)]);
+    let error = run(0).expect_err("one owner range needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo section owner ranges"));
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
