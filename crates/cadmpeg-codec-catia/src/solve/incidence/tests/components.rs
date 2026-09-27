@@ -1534,10 +1534,16 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 
 #[test]
 fn incidence_components_reuse_independent_solution_domains() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use std::ops::ControlFlow;
 
     const COMPONENT_COUNT: usize = 15;
-    catia_test_context!(ctx);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 10_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let choices = (0..COMPONENT_COUNT)
         .map(|component| {
             let first = component * 2;
@@ -1564,12 +1570,29 @@ fn incidence_components_reuse_independent_solution_domains() {
             Ok(ControlFlow::Continue(()))
         },
     )
-    .expect("service resource budget");
+    .expect("collection budget admits all independent solutions");
 
     assert_eq!(
         outcome,
         crate::solve::incidence::IncidenceSolve::Solved(1 << COMPONENT_COUNT)
     );
+
+    catia_test_context!(service_ctx);
+    let error = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &service_ctx,
+        &choices,
+        &edge_faces,
+        COMPONENT_COUNT,
+        COMPONENT_COUNT * 2,
+        None,
+        None,
+        None,
+        &|_| Ok(true),
+        &mut |_| Ok(ControlFlow::Continue(())),
+    )
+    .expect_err("repeated input-sized collections exceed the service cap");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
     assert_eq!(visited, 1 << COMPONENT_COUNT);
 }
 

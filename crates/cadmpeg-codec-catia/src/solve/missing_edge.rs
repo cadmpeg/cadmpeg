@@ -659,11 +659,14 @@ fn repeated_edge_face_handle_candidates_from_sets(
         if faces[0] != faces[1] || row.handles.len() < 2 {
             continue;
         }
-        let handle_count = u64::try_from(row.handles.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia repeated edge unique handles", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_collection_items(handle_count, "catia repeated edge unique handles")?;
-        let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
+        let mut unique_handles = HashSet::new();
+        crate::resource::reserve_set(
+            ctx,
+            &mut unique_handles,
+            row.handles.len(),
+            "catia repeated edge unique handles",
+        )?;
+        unique_handles.extend(row.handles.iter().copied());
         let mut matching = Vec::new();
         for (face, handles) in face_handles.iter().enumerate() {
             if face == faces[0] {
@@ -679,8 +682,12 @@ fn repeated_edge_face_handle_candidates_from_sets(
                 shared == unique_handles.len()
             };
             if qualifies {
-                charge_collection_items(ctx, 1, "catia repeated edge matching faces")?;
-                matching.push(face);
+                crate::resource::push(
+                    ctx,
+                    &mut matching,
+                    face,
+                    "catia repeated edge matching faces",
+                )?;
             }
         }
         if unique_handles.len() >= 4 && matching.len() != 1 {
@@ -1379,8 +1386,7 @@ pub(super) fn resolve_edge_faces_from_runs(
             return Ok(None);
         };
         if !faces.contains(&run.face) {
-            charge_collection_items(ctx, 1, "catia edge run occurrence faces")?;
-            faces.push(run.face);
+            crate::resource::push(ctx, faces, run.face, "catia edge run occurrence faces")?;
         }
     }
     charge_collection_items(ctx, serialized.len(), "catia resolved edge faces")?;
@@ -1615,16 +1621,20 @@ fn mesh_face_coverage(
     }) {
         return Ok(None);
     }
-    let mut occurrences_by_cycle = cycles
-        .iter()
-        .map(|face_cycles| {
-            ctx.alloc_filled(
-                face_cycles.len(),
-                Vec::<MeshEdgeRun>::new(),
-                "catia_mesh_cycle_occurrences",
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut occurrences_by_cycle = Vec::new();
+    for face_cycles in cycles {
+        let rows = ctx.alloc_filled(
+            face_cycles.len(),
+            Vec::<MeshEdgeRun>::new(),
+            "catia_mesh_cycle_occurrences",
+        )?;
+        crate::resource::push(
+            ctx,
+            &mut occurrences_by_cycle,
+            rows,
+            "catia_mesh_occurrence_faces",
+        )?;
+    }
     let mut present_edges_by_face = ctx.alloc_filled(
         cycles.len(),
         HashSet::<usize>::new(),
@@ -1638,8 +1648,18 @@ fn mesh_face_coverage(
             let Some(cycle_occurrences) = face_cycles.get_mut(occurrence.cycle) else {
                 return Ok(None);
             };
-            cycle_occurrences.push(occurrence);
-            present_edges_by_face[occurrence.face].insert(occurrence.edge);
+            crate::resource::push(
+                ctx,
+                cycle_occurrences,
+                occurrence,
+                "catia_mesh_cycle_occurrence_entries",
+            )?;
+            crate::resource::insert_set(
+                ctx,
+                &mut present_edges_by_face[occurrence.face],
+                occurrence.edge,
+                "catia_mesh_present_face_edges",
+            )?;
         }
     }
     let mut edges_by_face =
@@ -1650,12 +1670,22 @@ fn mesh_face_coverage(
                 return Ok(None);
             }
         }
-        edges_by_face[faces[0]].push(edge);
+        crate::resource::push(
+            ctx,
+            &mut edges_by_face[faces[0]],
+            edge,
+            "catia_mesh_face_edge_entries",
+        )?;
         if faces[1] != faces[0] {
-            edges_by_face[faces[1]].push(edge);
+            crate::resource::push(
+                ctx,
+                &mut edges_by_face[faces[1]],
+                edge,
+                "catia_mesh_face_edge_entries",
+            )?;
         }
     }
-    let mut coverage = Vec::with_capacity(cycles.len());
+    let mut coverage = Vec::new();
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
@@ -1672,11 +1702,16 @@ fn mesh_face_coverage(
                 }
             }
             if covered.iter().all(|value| !*value) {
-                gaps.push(MeshBoundaryGap {
-                    cycle: cycle_index,
-                    start: 0,
-                    length: cycle.len(),
-                });
+                crate::resource::push(
+                    ctx,
+                    &mut gaps,
+                    MeshBoundaryGap {
+                        cycle: cycle_index,
+                        start: 0,
+                        length: cycle.len(),
+                    },
+                    "catia_mesh_coverage_gaps",
+                )?;
             } else {
                 for start in (0..covered.len()).filter(|&index| {
                     !covered[index] && covered[(index + covered.len() - 1) % covered.len()]
@@ -1684,24 +1719,42 @@ fn mesh_face_coverage(
                     let length = (0..covered.len())
                         .take_while(|offset| !covered[(start + offset) % covered.len()])
                         .count();
-                    gaps.push(MeshBoundaryGap {
-                        cycle: cycle_index,
-                        start,
-                        length,
-                    });
+                    crate::resource::push(
+                        ctx,
+                        &mut gaps,
+                        MeshBoundaryGap {
+                            cycle: cycle_index,
+                            start,
+                            length,
+                        },
+                        "catia_mesh_coverage_gaps",
+                    )?;
                 }
             }
         }
-        let missing_edges = edges_by_face[face]
+        let mut missing_edges = Vec::new();
+        for edge in edges_by_face[face]
             .iter()
             .copied()
             .filter(|edge| !present_edges_by_face[face].contains(edge))
-            .collect();
-        coverage.push(MeshFaceCoverage {
-            face,
-            gaps,
-            missing_edges,
-        });
+        {
+            crate::resource::push(
+                ctx,
+                &mut missing_edges,
+                edge,
+                "catia_mesh_coverage_missing_edges",
+            )?;
+        }
+        crate::resource::push(
+            ctx,
+            &mut coverage,
+            MeshFaceCoverage {
+                face,
+                gaps,
+                missing_edges,
+            },
+            "catia_mesh_coverage_faces",
+        )?;
     }
     Ok(Some(coverage))
 }
@@ -2751,26 +2804,36 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                             let fixed_direction = edge_candidates.is_none()
                                 || context.analysis.edge_rows[run.edge].boundary_layout
                                     == EdgeBoundaryLayout::CompleteBoundaryRun;
-                            boundaries[run.cycle].push((
-                                MeshBoundaryEdgeCandidate {
-                                    edge: run.edge,
-                                    start: run.start,
-                                    end: run.end(cycle_lengths[face][run.cycle]),
-                                    reversed: fixed_direction.then_some(run.reversed),
-                                },
-                                run.segment_count,
-                            ));
+                            crate::resource::push(
+                                ctx,
+                                &mut boundaries[run.cycle],
+                                (
+                                    MeshBoundaryEdgeCandidate {
+                                        edge: run.edge,
+                                        start: run.start,
+                                        end: run.end(cycle_lengths[face][run.cycle]),
+                                        reversed: fixed_direction.then_some(run.reversed),
+                                    },
+                                    run.segment_count,
+                                ),
+                                "catia_mesh_ordered_boundary_entries",
+                            )?;
                         }
                         for placement in assignment {
-                            boundaries[placement.cycle].push((
-                                MeshBoundaryEdgeCandidate {
-                                    edge: placement.edge,
-                                    start: placement.start,
-                                    end: placement.end(cycle_lengths[face][placement.cycle]),
-                                    reversed: None,
-                                },
-                                placement.segment_count,
-                            ));
+                            crate::resource::push(
+                                ctx,
+                                &mut boundaries[placement.cycle],
+                                (
+                                    MeshBoundaryEdgeCandidate {
+                                        edge: placement.edge,
+                                        start: placement.start,
+                                        end: placement.end(cycle_lengths[face][placement.cycle]),
+                                        reversed: None,
+                                    },
+                                    placement.segment_count,
+                                ),
+                                "catia_mesh_ordered_boundary_entries",
+                            )?;
                         }
                         let mut completed = Vec::new();
                         for (cycle, mut uses) in boundaries.into_iter().enumerate() {
@@ -2790,11 +2853,30 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                             if coverage.iter().any(|count| *count != 1) {
                                 return Ok(None);
                             }
-                            completed.push(uses.into_iter().map(|(edge, _)| edge).collect());
+                            let mut boundary = Vec::new();
+                            for (edge, _) in uses {
+                                crate::resource::push(
+                                    ctx,
+                                    &mut boundary,
+                                    edge,
+                                    "catia_mesh_completed_boundary_entries",
+                                )?;
+                            }
+                            crate::resource::push(
+                                ctx,
+                                &mut completed,
+                                boundary,
+                                "catia_mesh_completed_boundaries",
+                            )?;
                         }
-                        ordered.push(MeshFaceBoundaryAssignment {
-                            boundaries: completed,
-                        });
+                        crate::resource::push(
+                            ctx,
+                            &mut ordered,
+                            MeshFaceBoundaryAssignment {
+                                boundaries: completed,
+                            },
+                            "catia_mesh_ordered_assignments",
+                        )?;
                     }
                     Ok(Some(MeshFaceBoundaryDomain::Ordered(ordered)))
                 }
@@ -3434,7 +3516,15 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     let mut bound_counts =
         ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts")?;
     for face in assignments {
-        let mut placements = face.into_iter().flatten().collect::<Vec<_>>();
+        let mut placements = Vec::new();
+        for placement in face.into_iter().flatten() {
+            crate::resource::push(
+                ctx,
+                &mut placements,
+                placement,
+                "catia_placement_candidates",
+            )?;
+        }
         placements.sort_unstable_by_key(|candidate| candidate.placement);
         placements.dedup_by_key(|candidate| candidate.placement);
         for candidate in placements {
@@ -3444,7 +3534,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
                 bound_counts[edge] += 1;
                 for pair in pairs {
                     if !domains[edge].contains(&pair) {
-                        domains[edge].push(pair);
+                        crate::resource::push(
+                            ctx,
+                            &mut domains[edge],
+                            pair,
+                            "catia_placement_endpoint_pairs",
+                        )?;
                     }
                 }
             }

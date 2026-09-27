@@ -121,6 +121,28 @@ fn standard_face_edges_propagate_collection_refusal() {
 }
 
 #[test]
+fn standard_face_edge_entries_refuse_collection_limit() {
+    use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
+
+    let operation = standard_collection_limit_operation(2, |ctx| {
+        reconstruct_incidence(
+            ctx,
+            vec![EdgeRow {
+                kind: 0,
+                handles: vec![7, 7],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            }],
+            vec![[1.0, 0.0, 0.0]],
+            &[[0, 1]],
+            &[[0, 0]],
+            2,
+        )?;
+        Ok(())
+    });
+    assert_eq!(operation, "catia_standard_face_edge_entries");
+}
+
+#[test]
 fn standard_boundary_constraints_propagate_collection_refusal() {
     let operation = standard_collection_limit_operation(0, |ctx| {
         solve_boundary_orientation_constraints(

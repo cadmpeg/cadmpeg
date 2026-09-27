@@ -2700,9 +2700,19 @@ impl MeshQuotient {
         let mut root_edges =
             ctx.alloc_filled(roots.len(), Vec::new(), "catia point assignment root edges")?;
         for (edge_index, edge) in edge_roots.iter().enumerate() {
-            root_edges[edge[0]].push(edge_index);
+            crate::resource::push(
+                ctx,
+                &mut root_edges[edge[0]],
+                edge_index,
+                "catia_point_root_edge_entries",
+            )?;
             if edge[1] != edge[0] {
-                root_edges[edge[1]].push(edge_index);
+                crate::resource::push(
+                    ctx,
+                    &mut root_edges[edge[1]],
+                    edge_index,
+                    "catia_point_root_edge_entries",
+                )?;
             }
         }
         let edge_neighbors = edge_candidates
@@ -11400,15 +11410,16 @@ mod direct_matching_tests {
         .is_none());
 
         let singleton_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-        let run = |ctx: &DecodeContext<'_>| {
-            let quotient = initial_mesh_quotient(ctx, &singleton_candidates, 3, &port_identities)
+        let singleton_quotient =
+            initial_mesh_quotient(&ctx, &singleton_candidates, 3, &port_identities)
                 .expect("service resource budget")
                 .expect("three singleton edge pairs form a triangle quotient");
+        let run = |ctx: &DecodeContext<'_>| {
             let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             resolve_mesh_selection_from_quotient(
                 ctx,
                 topology.clone(),
-                quotient,
+                singleton_quotient.clone(),
                 &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
                 &singleton_candidates,
                 &port_identities,

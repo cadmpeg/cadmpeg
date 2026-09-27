@@ -7,7 +7,7 @@ use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };
 
-fn mesh_coverage_limit_operation(max_collection_items: u64) -> &'static str {
+fn mesh_coverage_limit_operation(max_collection_items: u64) -> Option<&'static str> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -16,49 +16,142 @@ fn mesh_coverage_limit_operation(max_collection_items: u64) -> &'static str {
     policy.limits.max_collection_items = max_collection_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let error = crate::solve::missing_edge::standard_mesh_face_coverage(
+    let result = crate::solve::missing_edge::standard_mesh_face_coverage(
         &ctx,
         &standard_quad_topology_stream(),
         &[[0, 0]; 4],
-    )
-    .expect_err("mesh coverage allocation exceeds the collection limit");
-    match error {
-        CodecError::ResourceLimit(limit)
+    );
+    match result {
+        Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems =>
         {
-            limit.operation
+            Some(limit.operation)
         }
+        Ok(_) => None,
         other => panic!("expected collection resource limit, got {other:?}"),
     }
 }
 
+fn mesh_coverage_limit_operations() -> &'static std::collections::HashSet<&'static str> {
+    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut operations = std::collections::HashSet::new();
+        for limit in 0..=1024 {
+            if let Some(operation) = mesh_coverage_limit_operation(limit) {
+                operations.insert(operation);
+            }
+        }
+        operations
+    })
+}
+
 #[test]
 fn mesh_cycle_occurrences_propagate_collection_refusal() {
-    assert_eq!(
-        mesh_coverage_limit_operation(0),
-        "catia_mesh_cycle_occurrences"
-    );
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_occurrences"));
 }
 
 #[test]
 fn mesh_face_edges_propagate_collection_refusal() {
-    assert_eq!(mesh_coverage_limit_operation(1), "catia_mesh_face_edges");
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_face_edges"));
 }
 
 #[test]
 fn mesh_edges_by_face_propagate_collection_refusal() {
-    assert_eq!(mesh_coverage_limit_operation(2), "catia_mesh_edges_by_face");
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_edges_by_face"));
 }
 
 #[test]
 fn mesh_cycle_coverage_propagates_collection_refusal() {
-    assert_eq!(
-        mesh_coverage_limit_operation(3),
-        "catia_mesh_cycle_coverage"
-    );
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_coverage"));
 }
 
-fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> &'static str {
+#[test]
+fn mesh_occurrence_face_rows_refuse_collection_limit() {
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_occurrence_faces"));
+}
+
+#[test]
+fn mesh_cycle_occurrence_entries_refuse_collection_limit() {
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_cycle_occurrence_entries"));
+}
+
+#[test]
+fn mesh_present_face_edges_refuse_collection_limit() {
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_present_face_edges"));
+}
+
+#[test]
+fn mesh_face_edge_entries_refuse_collection_limit() {
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_face_edge_entries"));
+}
+
+#[test]
+fn mesh_coverage_faces_refuse_collection_limit() {
+    assert!(mesh_coverage_limit_operations().contains("catia_mesh_coverage_faces"));
+}
+
+fn one_gap_topology_stream() -> Vec<u8> {
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 2;
+    bytes.drain(first_row + 4..first_row + 6);
+    bytes
+}
+
+fn mesh_gap_coverage_limit_operation(max_collection_items: u64) -> Option<&'static str> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    match crate::solve::missing_edge::standard_mesh_face_coverage(
+        &ctx,
+        &one_gap_topology_stream(),
+        &[[0, 0]; 4],
+    ) {
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            Some(limit.operation)
+        }
+        Ok(_) => None,
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+fn mesh_gap_coverage_limit_operations() -> &'static std::collections::HashSet<&'static str> {
+    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut operations = std::collections::HashSet::new();
+        for limit in 0..=1024 {
+            if let Some(operation) = mesh_gap_coverage_limit_operation(limit) {
+                operations.insert(operation);
+            }
+        }
+        operations
+    })
+}
+
+#[test]
+fn mesh_coverage_gaps_refuse_collection_limit() {
+    assert!(mesh_gap_coverage_limit_operations().contains("catia_mesh_coverage_gaps"));
+}
+
+#[test]
+fn mesh_coverage_missing_edges_refuse_collection_limit() {
+    assert!(mesh_gap_coverage_limit_operations().contains("catia_mesh_coverage_missing_edges"));
+}
+
+fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> Option<&'static str> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -73,37 +166,67 @@ fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> &'static s
     policy.limits.max_collection_items = max_collection_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let error = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
+    let result = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
         &ctx, &context, None, false,
-    )
-    .expect_err("mesh boundary domain allocation exceeds the collection limit");
-    match error {
-        CodecError::ResourceLimit(limit)
+    );
+    match result {
+        Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems =>
         {
-            limit.operation
+            Some(limit.operation)
         }
+        Ok(_) => None,
         other => panic!("expected collection resource limit, got {other:?}"),
     }
 }
 
+fn mesh_boundary_domain_limit_operations() -> &'static std::collections::HashSet<&'static str> {
+    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut operations = std::collections::HashSet::new();
+        for limit in 0..=1024 {
+            if let Some(operation) = mesh_boundary_domain_limit_operation(limit) {
+                operations.insert(operation);
+            }
+        }
+        operations
+    })
+}
+
 #[test]
 fn mesh_ordered_boundaries_propagate_collection_refusal() {
-    assert_eq!(
-        mesh_boundary_domain_limit_operation(0),
-        "catia_mesh_ordered_boundaries"
-    );
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_boundaries"));
 }
 
 #[test]
 fn mesh_boundary_coverage_propagates_collection_refusal() {
-    assert_eq!(
-        mesh_boundary_domain_limit_operation(1),
-        "catia_mesh_boundary_coverage"
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_boundary_coverage"));
+}
+
+#[test]
+fn mesh_ordered_boundary_entries_refuse_collection_limit() {
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_boundary_entries"));
+}
+
+#[test]
+fn mesh_completed_boundary_entries_refuse_collection_limit() {
+    assert!(
+        mesh_boundary_domain_limit_operations().contains("catia_mesh_completed_boundary_entries")
     );
 }
 
-fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str {
+#[test]
+fn mesh_completed_boundaries_refuse_collection_limit() {
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_completed_boundaries"));
+}
+
+#[test]
+fn mesh_ordered_assignments_refuse_collection_limit() {
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_assignments"));
+}
+
+fn placement_endpoint_limit_operation(max_collection_items: u64) -> Option<&'static str> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -113,26 +236,36 @@ fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let bytes = standard_quad_topology_stream();
-    let error = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
+    let result = crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
         &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
-    )
-    .expect_err("placement endpoint allocation exceeds the collection limit");
-    match error {
-        CodecError::ResourceLimit(limit)
+    );
+    match result {
+        Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems =>
         {
-            limit.operation
+            Some(limit.operation)
         }
+        Ok(_) => None,
         other => panic!("expected collection resource limit, got {other:?}"),
     }
 }
 
-// The placement solver first materializes one mesh face, one cycle, and
-// one eight-segment coverage mask for this fixture.
-const PLACEMENT_PREPARATION_ITEMS: u64 = 1 + 1 + 1 + 8;
+fn placement_endpoint_limit_operations() -> &'static std::collections::HashSet<&'static str> {
+    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut operations = std::collections::HashSet::new();
+        for limit in 0..=1024 {
+            if let Some(operation) = placement_endpoint_limit_operation(limit) {
+                operations.insert(operation);
+            }
+        }
+        operations
+    })
+}
 
 fn boundary_support_limit_operation(max_collection_items: u64) -> &'static str {
     use cadmpeg_core::decode::{
@@ -194,26 +327,67 @@ fn boundary_support_backward_marks_propagate_collection_refusal() {
 
 #[test]
 fn placement_endpoint_domains_propagate_collection_refusal() {
-    assert_eq!(
-        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS),
-        "catia_placement_endpoint_domains"
-    );
+    assert!(placement_endpoint_limit_operations().contains("catia_placement_endpoint_domains"));
 }
 
 #[test]
 fn placement_endpoint_counts_propagate_collection_refusal() {
-    assert_eq!(
-        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS + 4),
-        "catia_placement_counts"
-    );
+    assert!(placement_endpoint_limit_operations().contains("catia_placement_counts"));
 }
 
 #[test]
 fn placement_endpoint_bound_counts_propagate_collection_refusal() {
-    assert_eq!(
-        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS + 8),
-        "catia_placement_bound_counts"
-    );
+    assert!(placement_endpoint_limit_operations().contains("catia_placement_bound_counts"));
+}
+
+fn placement_missing_edge_limit_operation(max_collection_items: u64) -> Option<&'static str> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = one_gap_topology_stream();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    match crate::solve::missing_edge::standard_mesh_placement_endpoint_pairs(
+        &ctx,
+        &bytes,
+        &[[0, 0]; 4],
+        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
+    ) {
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            Some(limit.operation)
+        }
+        Ok(_) => None,
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+fn placement_missing_edge_limit_operations() -> &'static std::collections::HashSet<&'static str> {
+    static OPERATIONS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut operations = std::collections::HashSet::new();
+        for limit in 0..=1024 {
+            if let Some(operation) = placement_missing_edge_limit_operation(limit) {
+                operations.insert(operation);
+            }
+        }
+        operations
+    })
+}
+
+#[test]
+fn placement_candidates_refuse_collection_limit() {
+    assert!(placement_missing_edge_limit_operations().contains("catia_placement_candidates"));
+}
+
+#[test]
+fn placement_endpoint_pairs_refuse_collection_limit() {
+    assert!(placement_missing_edge_limit_operations().contains("catia_placement_endpoint_pairs"));
 }
 
 #[test]

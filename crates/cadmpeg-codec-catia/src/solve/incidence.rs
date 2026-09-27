@@ -216,8 +216,12 @@ fn prune_incidence_choices_with_explicit_support(
     let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia_incidence_face_edges")?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in unique_faces(faces) {
-            charge_collection_items(ctx, 1, "catia incidence face edge lists")?;
-            face_edges[face].push(edge);
+            crate::resource::push(
+                ctx,
+                &mut face_edges[face],
+                edge,
+                "catia incidence face edge lists",
+            )?;
         }
     }
     let mut fixed = ctx.alloc_filled(choices.len(), false, "catia_incidence_fixed_edges")?;
@@ -956,12 +960,13 @@ impl FaceFactorGraph {
                 }
                 let word_count = domains[right].len().div_ceil(u64::BITS as usize);
                 let (present, matching) = &right_indexes[right];
-                charge_collection_items(
+                let mut supports = Vec::new();
+                crate::resource::reserve_vec(
                     ctx,
+                    &mut supports,
                     domains[left].len(),
                     "catia face factor support rows",
                 )?;
-                let mut supports = Vec::with_capacity(domains[left].len());
                 for candidate in &domains[left] {
                     if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
                         return Ok(None);
@@ -980,21 +985,36 @@ impl FaceFactorGraph {
                     supports.push(compatible);
                 }
                 let arc = arcs.len();
-                charge_collection_items(ctx, 1, "catia face factor arcs")?;
-                arcs.push(FaceFactorArc {
-                    left,
-                    right,
-                    supports,
-                });
-                charge_collection_items(ctx, 1, "catia face factor incoming arcs")?;
-                incoming[right].push(arc);
+                crate::resource::push(
+                    ctx,
+                    &mut arcs,
+                    FaceFactorArc {
+                        left,
+                        right,
+                        supports,
+                    },
+                    "catia face factor arcs",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    &mut incoming[right],
+                    arc,
+                    "catia face factor incoming arcs",
+                )?;
             }
         }
-        charge_collection_items(ctx, domains.len(), "catia face factor domain lengths")?;
+        let mut domain_lengths = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut domain_lengths,
+            domains.len(),
+            "catia face factor domain lengths",
+        )?;
+        domain_lengths.extend(domains.iter().map(Vec::len));
         Ok(Some(Self {
             arcs,
             incoming,
-            domain_lengths: domains.iter().map(Vec::len).collect(),
+            domain_lengths,
         }))
     }
 
@@ -1199,10 +1219,18 @@ fn prune_face_configuration_support(
     for left in 0..domains.len() {
         for right in 0..domains.len() {
             if left != right && !edge_sets[left].is_disjoint(&edge_sets[right]) {
-                charge_collection_items(ctx, 1, "catia face configuration neighbors")?;
-                neighbors[left].push(right);
-                charge_collection_items(ctx, 1, "catia face configuration queue")?;
-                queue.push_back((left, right));
+                crate::resource::push(
+                    ctx,
+                    &mut neighbors[left],
+                    right,
+                    "catia face configuration neighbors",
+                )?;
+                crate::resource::push_back(
+                    ctx,
+                    &mut queue,
+                    (left, right),
+                    "catia face configuration queue",
+                )?;
             }
         }
     }
@@ -1661,18 +1689,24 @@ fn prepare_face_configuration_domains(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia face factor indexed edges", u64::MAX, u64::MAX)
             })?;
-        charge_collection_items(ctx, indexed_edges, "catia face factor indexed edges")?;
-        let mut edges = configurations[factor]
-            .iter()
-            .flatten()
-            .map(|(edge, _)| *edge)
-            .collect::<Vec<_>>();
+        let mut edges = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut edges,
+            indexed_edges,
+            "catia face factor indexed edges",
+        )?;
+        edges.extend(
+            configurations[factor]
+                .iter()
+                .flatten()
+                .map(|(edge, _)| *edge),
+        );
         edges.sort_unstable();
         edges.dedup();
         for edge in edges {
             if let Some(factors) = factors_by_edge.get_mut(edge) {
-                charge_collection_items(ctx, 1, "catia face factors by edge entries")?;
-                factors.push(factor);
+                crate::resource::push(ctx, factors, factor, "catia face factors by edge entries")?;
             }
         }
     }
@@ -4062,7 +4096,12 @@ where
                 if rank > 0 && face == faces[0] {
                     continue;
                 }
-                component_faces.insert(face);
+                crate::resource::insert_set(
+                    ctx,
+                    &mut component_faces,
+                    face,
+                    "catia_incidence_component_faces",
+                )?;
                 let mut points = coordinate_domains
                     .filter(|_| choices[edge].is_empty())
                     .and_then(|domains| domains.edge_candidate_points(edge))
@@ -4070,11 +4109,29 @@ where
                 points.sort_unstable();
                 points.dedup();
                 for point in points {
-                    constraints.insert((face, point));
-                    point_support_edges[face]
-                        .entry(point)
-                        .or_default()
-                        .push(edge);
+                    crate::resource::insert_set(
+                        ctx,
+                        &mut constraints,
+                        (face, point),
+                        "catia_incidence_point_constraints",
+                    )?;
+                    if !point_support_edges[face].contains_key(&point) {
+                        crate::resource::insert_map(
+                            ctx,
+                            &mut point_support_edges[face],
+                            point,
+                            Vec::new(),
+                            "catia_incidence_point_support_keys",
+                        )?;
+                    }
+                    if let Some(support) = point_support_edges[face].get_mut(&point) {
+                        crate::resource::push(
+                            ctx,
+                            support,
+                            edge,
+                            "catia_incidence_point_support_entries",
+                        )?;
+                    }
                 }
             }
         }
@@ -4516,7 +4573,12 @@ where
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {
                 if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
-                    face_edges[face].push(edge);
+                    crate::resource::push(
+                        ctx,
+                        &mut face_edges[face],
+                        edge,
+                        "catia_incidence_face_edge_entries",
+                    )?;
                 }
             }
         }
