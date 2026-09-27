@@ -186,6 +186,49 @@ fn history_archived_token_copy_refuses_collection_limit() {
         if limit.operation == "copy F3D archived record tokens"));
 }
 
+#[test]
+fn history_record_name_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::historical_record_archive(
+        &ctx,
+        &[],
+        &[archive_record()],
+        Default::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D historical record text"));
+}
+
+#[test]
+fn history_token_text_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let record = cadmpeg_asm::sab::Record {
+        name: String::new(),
+        tokens: vec![cadmpeg_asm::sab::Token::Str("x".into())].into(),
+        ..archive_record()
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(std::mem::size_of::<cadmpeg_asm::sab::Token>()).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::historical_record_archive(
+        &ctx,
+        &[],
+        &[record],
+        Default::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D historical record text"));
+}
+
 fn table_error(max_items: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::history_records::AsmEntityVersion;
