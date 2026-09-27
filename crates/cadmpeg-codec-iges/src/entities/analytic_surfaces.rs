@@ -561,8 +561,7 @@ pub(super) fn project(
         };
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
-            entry.sequence,
-        );
+            entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),

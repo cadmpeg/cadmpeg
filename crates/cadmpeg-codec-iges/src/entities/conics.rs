@@ -69,9 +69,9 @@ fn add_bounded_curve(
     } = span;
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-    sequences.record_point(&start_point, &stem);
+    sequences.record_point(&start_point, &stem, ctx)?;
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-    sequences.record_point(&end_point, &stem);
+    sequences.record_point(&end_point, &stem, ctx)?;
     let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve = crate::ids::curve(&stem);
@@ -94,7 +94,7 @@ fn add_bounded_curve(
             tolerance,
         },
     ]);
-    sequences.record_curve(&curve, entry.sequence);
+    sequences.record_curve(&curve, entry.sequence, ctx)?;
     reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges conic neutral curves")?;
     ir.model.curves.push(Curve {
         id: curve.clone(),

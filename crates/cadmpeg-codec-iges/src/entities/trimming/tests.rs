@@ -335,6 +335,10 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
 
 #[test]
 fn boundary_vertex_creation_retains_every_source_endpoint() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut candidate = ModelDraft::new();
     let source_endpoints = vec![
         BoundaryVertexSourceEndpoint {
@@ -357,6 +361,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         &source_endpoints,
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
         &mut crate::entities::geometry::SourceSequences::default(),
+        &ctx,
     )
     .unwrap();
 

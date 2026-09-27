@@ -20,6 +20,58 @@ use super::{
 };
 
 #[test]
+fn source_sequence_maps_refuse_nodes_and_copied_keys() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let stem = crate::ids::Stem::directory(1_u32);
+    for (kind, cap, operation) in [
+        ("body", 0, "iges source body sequences"),
+        ("body", 1, "iges source neutral body forms"),
+        ("face", 0, "iges source face sequences"),
+        ("curve", 0, "iges source curve sequences"),
+        ("surface", 0, "iges source surface sequences"),
+        ("point", 0, "iges source point sequences"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut sequences = super::SourceSequences::default();
+        let result = match kind {
+            "body" => sequences.record_body(&crate::ids::body(&stem), 1, &stem, Some(&ctx)),
+            "face" => sequences.record_face(&crate::ids::face(&stem), 1, Some(&ctx)),
+            "curve" => sequences.record_curve(&crate::ids::curve(&stem), 1, Some(&ctx)),
+            "surface" => sequences.record_surface(&crate::ids::surface(&stem), 1, Some(&ctx)),
+            "point" => sequences.record_point(&crate::ids::point(&stem), &stem, Some(&ctx)),
+            _ => panic!("unsupported test kind"),
+        };
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequences = super::SourceSequences::default();
+    let result = sequences.record_point(&crate::ids::point(&stem), &stem, Some(&ctx));
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges source sequence key"));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut sequences = super::SourceSequences::default();
+    let body = crate::ids::body(&stem);
+    let face = crate::ids::face(&stem);
+    let curve = crate::ids::curve(&stem);
+    let surface = crate::ids::surface(&stem);
+    let point = crate::ids::point(&stem);
+    sequences.record_body(&body, 1, &stem, Some(&ctx)).unwrap();
+    sequences.record_face(&face, 1, Some(&ctx)).unwrap();
+    sequences.record_curve(&curve, 1, Some(&ctx)).unwrap();
+    sequences.record_surface(&surface, 1, Some(&ctx)).unwrap();
+    sequences.record_point(&point, &stem, Some(&ctx)).unwrap();
+    assert_eq!((sequences.body(&body), sequences.body_neutral_form(&body), sequences.face(&face), sequences.curve(&curve), sequences.surface(&surface), sequences.point(&point)), (Some(1), Some(1), Some(1), Some(1), Some(1), Some(1)));
+}
+
+#[test]
 fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve, CurveGeometry};

@@ -1247,8 +1247,7 @@ pub(super) fn project(
         })?;
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
-            entry.sequence,
-        );
+            entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1357,7 +1356,7 @@ pub(super) fn project(
             }
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        sequences.record_surface(&surface_id, entry.sequence);
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -1501,7 +1500,7 @@ pub(super) fn project(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
                 );
-                sequences.record_curve(&placed_id, entry.sequence);
+                sequences.record_curve(&placed_id, entry.sequence, ctx)?;
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1518,7 +1517,7 @@ pub(super) fn project(
             let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
             let procedural_id =
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
-            sequences.record_surface(&surface_id, entry.sequence);
+            sequences.record_surface(&surface_id, entry.sequence, ctx)?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1637,7 +1636,7 @@ pub(super) fn project(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedDirectrix),
             );
-            sequences.record_curve(&placed_id, entry.sequence);
+            sequences.record_curve(&placed_id, entry.sequence, ctx)?;
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -1670,7 +1669,7 @@ pub(super) fn project(
                 continue;
             }
         };
-        sequences.record_surface(&surface_id, entry.sequence);
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -1812,7 +1811,7 @@ pub(super) fn project(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedGeneratrix),
                 );
-                sequences.record_curve(&procedural_directrix, entry.sequence);
+                sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1845,7 +1844,7 @@ pub(super) fn project(
             let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
             let procedural_id =
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
-            sequences.record_surface(&surface_id, entry.sequence);
+            sequences.record_surface(&surface_id, entry.sequence, ctx)?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1985,7 +1984,7 @@ pub(super) fn project(
                 continue;
             }
         };
-        sequences.record_surface(&surface_id, entry.sequence);
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -2021,7 +2020,7 @@ pub(super) fn project(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedGeneratrix),
             );
-            sequences.record_curve(&procedural_directrix, entry.sequence);
+            sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -2410,7 +2409,7 @@ pub(super) fn project(
             }
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        sequences.record_surface(&surface_id, entry.sequence);
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -2528,7 +2527,7 @@ pub(super) fn project(
             continue;
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        sequences.record_surface(&surface_id, entry.sequence);
+        sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,

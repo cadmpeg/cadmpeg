@@ -84,6 +84,24 @@ enum BoundaryVertexClusterError {
     NonTransitive,
 }
 
+#[derive(Debug)]
+enum BoundaryVertexCreationError {
+    Cluster(BoundaryVertexClusterError),
+    Resource(CodecError),
+}
+
+impl From<BoundaryVertexClusterError> for BoundaryVertexCreationError {
+    fn from(error: BoundaryVertexClusterError) -> Self {
+        Self::Cluster(error)
+    }
+}
+
+impl From<CodecError> for BoundaryVertexCreationError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct BoundaryVertexCluster {
     representative: FinitePoint3,
@@ -200,7 +218,8 @@ fn create_boundary_vertices(
     source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexCreationError> {
     let positions = source_endpoints
         .iter()
         .map(|endpoint| endpoint.position)
@@ -212,7 +231,7 @@ fn create_boundary_vertices(
     let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
-        sequences.record_point(&point_id, stem);
+        sequences.record_point(&point_id, stem, Some(ctx))?;
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
         candidate.model_mut().points.push(Point::new(
             point_id.clone(),
@@ -1980,11 +1999,11 @@ pub(super) fn project(
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
-        sequences.record_body(&body_id, entry.sequence, &stem);
+        sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
         let region_id = crate::ids::region(&stem);
         let shell_id = crate::ids::shell(&stem);
         let face_id = crate::ids::face(&stem);
-        sequences.record_face(&face_id, entry.sequence);
+        sequences.record_face(&face_id, entry.sequence, Some(ctx))?;
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
         let support_parameter_intervals = surface_parameter_bound_intervals(
@@ -2230,13 +2249,15 @@ pub(super) fn project(
                 &source_endpoints,
                 checked_sewing_tolerance,
                 sequences,
+                ctx,
             ) {
                 Ok(result) => result,
-                Err(BoundaryVertexClusterError::NonTransitive) => {
+                Err(BoundaryVertexCreationError::Cluster(BoundaryVertexClusterError::NonTransitive)) => {
                     super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary endpoint tolerance neighborhoods are non-transitive"))?;
                     valid = false;
                     break;
                 }
+                Err(BoundaryVertexCreationError::Resource(error)) => return Err(error),
             };
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
@@ -2359,7 +2380,7 @@ pub(super) fn project(
             let derived_surface_id = crate::ids::surface(
                 &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
             );
-            sequences.record_surface(&derived_surface_id, entry.sequence);
+            sequences.record_surface(&derived_surface_id, entry.sequence, Some(ctx))?;
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
                 geometry: support_geometry.clone(),

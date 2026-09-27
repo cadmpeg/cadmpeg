@@ -1738,7 +1738,8 @@ fn plane_face_draft(
     boundary_edges: Vec<Edge>,
     resolution: f64,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<ModelDraft, &'static str> {
+    ctx: &DecodeContext<'_>,
+) -> Result<ModelDraft, LegacyPlaneError> {
     let tolerance = if resolution > 0.0 {
         Some(
             cadmpeg_ir::scalar::PositiveReal::new(resolution)
@@ -1748,11 +1749,11 @@ fn plane_face_draft(
         None
     };
     let body_id = crate::ids::body(stem);
-    sequences.record_body(&body_id, source_sequence, stem);
+    sequences.record_body(&body_id, source_sequence, stem, Some(ctx))?;
     let region_id = crate::ids::region(stem);
     let shell_id = crate::ids::shell(stem);
     let face_id = crate::ids::face(stem);
-    sequences.record_face(&face_id, source_sequence);
+    sequences.record_face(&face_id, source_sequence, Some(ctx))?;
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::with_capacity(boundary_edges.len());
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
@@ -1944,6 +1945,7 @@ fn legacy_single_parent_face(
             boundary_edges,
             resolution,
             sequences,
+            ctx,
         )?,
         std::iter::once(parent_sequence).chain(children).collect(),
     )))
@@ -2771,11 +2773,12 @@ pub(super) fn project(
                         vec![edge],
                         global.minimum_resolution_mm(),
                         sequences,
+                        ctx,
                     );
                     match candidate {
                         Ok(candidate) => legacy_face_candidates.push((entry, candidate)),
                         Err(reason) => super::push_optional_entity_loss(
-                            Some(ctx), &mut losses, entry, format_args!("{reason}"),
+                            Some(ctx), &mut losses, entry, format_args!("{}", reason.non_resource()?),
                         )?,
                     }
                 }
