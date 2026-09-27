@@ -234,7 +234,7 @@ fn parse_document(
             }
         }
         let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
-        let id = object_id(&name);
+        let id = object_id(ctx, &name)?;
         let data_node = data_by_name.get(&name);
         let attributes = node
             .attributes()
@@ -308,7 +308,7 @@ fn parse_document(
                     object.name
                 )));
             }
-            *dependency = object_id(dependency);
+            *dependency = object_id(ctx, dependency)?;
         }
     }
 
@@ -440,7 +440,7 @@ fn parse_document(
                     extension_types.try_reserve(1).map_err(|_| crate::resource::collection_allocation_failed(ctx, 1, "FCStd extension type set"))?;
                 }
                 extension_types.insert(copy_xml_text(ctx, &type_name, "FCStd extension type copy")?);
-                let id = extension_id(&object.id, &name, order);
+                let id = extension_id(ctx, &object.id, &name, order)?;
                 charge_items(ctx, 1, "FCStd extension identity lookup")?;
                 if let Some(ctx) = ctx {
                     extension_ids_by_start.try_reserve(1).map_err(|_| crate::resource::collection_allocation_failed(ctx, 1, "FCStd extension identity lookup"))?;
@@ -494,7 +494,7 @@ fn parse_document(
                 };
                 if data_by_name.contains_key(target) {
                     link.set_object(
-                        cadmpeg_core::text::NonBlankString::new(object_id(target)).ok_or_else(
+                        cadmpeg_core::text::NonBlankString::new(object_id(ctx, target)?).ok_or_else(
                             || CodecError::malformed("link object identity must not be empty"),
                         )?,
                     );
@@ -583,7 +583,7 @@ fn parse_properties(
         charge_items(ctx, 1, "FCStd transient property records")?;
         reserve_charged_vec_items(ctx, output, 1, "FCStd transient property records")?;
         output.push(PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
+            id: property_id(ctx, owner, &name)?,
             owner: copy_xml_text(ctx, owner, "FCStd transient property owner")?,
             name,
             family: property_family(&type_name),
@@ -665,7 +665,7 @@ fn parse_properties(
         charge_items(ctx, 1, "FCStd persisted property records")?;
         reserve_charged_vec_items(ctx, output, 1, "FCStd persisted property records")?;
         output.push(PropertyRecord {
-            id: crate::native::native_child_id("property", owner, &name),
+            id: property_id(ctx, owner, &name)?,
             owner: copy_xml_text(ctx, owner, "FCStd persisted property owner")?,
             name,
             family: property_family(&type_name),
@@ -1123,12 +1123,34 @@ fn unique_section<'a, 'input>(
     }
 }
 
-fn object_id(name: &str) -> String {
-    crate::native::native_id("object", name)
+fn object_id(ctx: Option<&DecodeContext<'_>>, name: &str) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::native::native_id_charged(ctx, "object", name),
+        None => Ok(crate::native::native_id("object", name)),
+    }
 }
 
-fn extension_id(owner: &str, name: &str, order: usize) -> String {
-    crate::native::native_child_id("extension", owner, &format!("{order}:{name}"))
+fn property_id(ctx: Option<&DecodeContext<'_>>, owner: &str, name: &str) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::native::native_child_id_charged(ctx, "property", owner, name),
+        None => Ok(crate::native::native_child_id("property", owner, name)),
+    }
+}
+
+fn extension_id(
+    ctx: Option<&DecodeContext<'_>>,
+    owner: &str,
+    name: &str,
+    order: usize,
+) -> Result<String, CodecError> {
+    let order = order.to_string();
+    match ctx {
+        Some(ctx) => {
+            let child = crate::resource::retained_join(ctx, &[&order, name], ":", "FCStd extension identity key")?;
+            crate::native::native_child_id_charged(ctx, "extension", owner, &child)
+        }
+        None => Ok(crate::native::native_child_id("extension", owner, &format!("{order}:{name}"))),
+    }
 }
 
 fn retained_attr(

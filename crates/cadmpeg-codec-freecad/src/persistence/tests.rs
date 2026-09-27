@@ -9,6 +9,47 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+#[test]
+fn persistence_object_identity_refuses_at_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let id_len = crate::native::native_id("object", "Body").len();
+    assert_retained_operation(
+        &parse_with_retained_limit(document, ("Body".len() + "Part::Feature".len() + id_len) as u64 - 1),
+        "FreeCAD native identity",
+    );
+}
+
+#[test]
+fn persistence_property_identity_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let owner = "fcstd:native:object#Body";
+    let expected = crate::native::native_child_id("property", owner, "Shape");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::property_id(Some(&ctx), owner, "Shape"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity"));
+    assert_eq!(super::property_id(None, owner, "Shape").expect("writer ID"), expected);
+}
+
+#[test]
+fn persistence_extension_identity_refuses_at_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let owner = "fcstd:native:object#Body";
+    let child = "2:Proxy";
+    let expected = crate::native::native_child_id("extension", owner, child);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = (child.len() + expected.len()) as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::extension_id(Some(&ctx), owner, "Proxy", 2),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity"));
+    assert_eq!(super::extension_id(None, owner, "Proxy", 2).expect("writer ID"), expected);
+}
+
 fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
     let service_arena = cadmpeg_core::decode::DecodeArena::new();
     let service_policy = cadmpeg_core::decode::DecodePolicy::service();
