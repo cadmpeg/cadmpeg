@@ -832,6 +832,74 @@ fn b2_secondary_face_node_terminal_requires_all_compact_owner() {
 }
 
 #[test]
+fn b2_counted_owner_references_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_references"));
+}
+
+#[test]
+fn b2_counted_owner_encodings_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_encodings"));
+}
+
+#[test]
+fn b2_counted_owner_tail_refuses_retained_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_retained_limit(0, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_tail"));
+}
+
+#[test]
+fn b2_counted_owner_packets_refuse_collection_limit() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_collection_limit(19, |ctx| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_counted_owner_packets"));
+}
+
+#[test]
+fn b2_adjacent_counted_owners_refuse_each_collection_boundary() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refusals = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+                ctx, &bytes, &records,
+            )
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            refusals.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_counted_face_nodes",
+        "catia_b2_counted_owner_index",
+        "catia_b2_adjacent_counted_owners",
+    ] {
+        assert!(refusals.contains(operation), "missing charge for {operation}");
+    }
+}
+
+#[test]
 fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let owners = crate::families::b2::records::b2_counted_owners(&bytes);

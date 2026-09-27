@@ -8070,6 +8070,11 @@ fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedOwnerPacket>, CodecError> {
+    let fixed = crate::resource::collect_vec(
+        ctx,
+        crate::families::b2::records::b2_owner_packets_from_records(bytes, records),
+        "catia_native_fixed_owner_packets",
+    )?;
     let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
         .into_iter()
         .map(|chart| {
@@ -8178,6 +8183,9 @@ fn consolidated_owner_packets(
             )
         })
         .collect::<HashMap<_, _>>();
+    let adjacent_counted = crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+        ctx, bytes, records,
+    )?;
     let face_nodes =
         crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
             .into_iter()
@@ -8188,9 +8196,7 @@ fn consolidated_owner_packets(
                 )
             })
             .chain(
-                crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
-                    bytes, records,
-                )
+                adjacent_counted
                 .into_iter()
                 .map(|linked| {
                     (
@@ -8200,11 +8206,6 @@ fn consolidated_owner_packets(
                 }),
             )
             .collect::<HashMap<_, _>>();
-    let fixed = crate::resource::collect_vec(
-        ctx,
-        crate::families::b2::records::b2_owner_packets_from_records(bytes, records),
-        "catia_native_fixed_owner_packets",
-    )?;
     let mut fixed_positions = HashSet::new();
     for packet in &fixed {
         crate::resource::insert_set(
@@ -8214,6 +8215,9 @@ fn consolidated_owner_packets(
             "catia_native_fixed_owner_positions",
         )?;
     }
+    let counted_owners = crate::families::b2::records::b2_counted_owners_from_records(
+        ctx, bytes, records,
+    )?;
     let mut packets = crate::resource::collect_vec(ctx, fixed
         .into_iter()
         .map(|packet| {
@@ -8252,7 +8256,7 @@ fn consolidated_owner_packets(
             )
         })
         .chain(
-            crate::families::b2::records::b2_counted_owners_from_records(bytes, records)
+            counted_owners
                 .into_iter()
                 .filter(|packet| !fixed_positions.contains(&(packet.source_index, packet.pos)))
                 .map(|packet| {
@@ -8379,10 +8383,11 @@ fn consolidated_edge_runs(
 }
 
 fn consolidated_edge_nodes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
-) -> Vec<CatiaConsolidatedEdgeNode> {
+) -> Result<Vec<CatiaConsolidatedEdgeNode>, CodecError> {
     let circle_ids = circles
         .iter()
         .map(|circle| (circle.byte_offset, circle.id.as_str()))
@@ -8401,8 +8406,8 @@ fn consolidated_edge_nodes(
         .collect::<HashMap<_, _>>();
     let owned_nodes =
         crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-            bytes, records,
-        )
+            ctx, bytes, records,
+        )?
         .into_iter()
         .map(|owned| (owned.node.pos, (owned.owner_pos, owned.allocation_ordinal)))
         .collect::<HashMap<_, _>>();
@@ -8465,7 +8470,7 @@ fn consolidated_edge_nodes(
             )
         })
         .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_edge_nodes_from_records(bytes, records)
+    Ok(crate::families::b2::records::b2_edge_nodes_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
@@ -8500,7 +8505,7 @@ fn consolidated_edge_nodes(
                 class25_descriptor: class25_descriptors.get(&node.pos).cloned(),
             })
         })
-        .collect()
+        .collect())
 }
 
 fn native_consolidated_edge_definition(
@@ -9189,7 +9194,7 @@ impl CatiaNative {
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(ctx, bytes, zero_entity_range, &zero_entity_records)?;
         let consolidated_edge_nodes =
-            consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
+            consolidated_edge_nodes(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_edge_runs = consolidated_edge_runs(
             bytes,
             consolidated_records,

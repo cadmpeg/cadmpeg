@@ -5,7 +5,8 @@
 //! against typed analytic and NURBS charts.
 
 use crate::math::distance;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -891,20 +892,20 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
 
 /// Resolve compact owner references that land exactly on class-`0x5e` frames.
 pub(crate) fn consolidated_owned_edge_nodes_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedOwnedEdgeNode> {
-    let indices = records
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.byte_offset(), index))
-        .collect::<BTreeMap<_, _>>();
-    let nodes = b2_edge_nodes_from_records(data, records)
-        .into_iter()
-        .map(|node| (node.pos, node))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<Vec<ConsolidatedOwnedEdgeNode>, CodecError> {
+    let mut indices = BTreeMap::new();
+    for (index, record) in records.iter().enumerate() {
+        crate::resource::insert_btree_map(ctx, &mut indices, record.byte_offset(), index, "catia_owned_edge_record_indices")?;
+    }
+    let mut nodes = BTreeMap::new();
+    for node in b2_edge_nodes_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut nodes, node.pos, node, "catia_owned_edge_nodes")?;
+    }
     let mut owned = Vec::new();
-    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
+    for relation in b2_adjacent_face_counted_owners_from_records(ctx, data, records)? {
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
@@ -942,14 +943,14 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             {
                 continue;
             }
-            owned.push(ConsolidatedOwnedEdgeNode {
+            crate::resource::push(ctx, &mut owned, ConsolidatedOwnedEdgeNode {
                 owner_pos: relation.owner.pos,
                 allocation_ordinal,
                 node,
-            });
+            }, "catia_owned_edge_results")?;
         }
     }
-    owned
+    Ok(owned)
 }
 
 /// Resolve compact edge endpoint references through the framed allocation walk.
