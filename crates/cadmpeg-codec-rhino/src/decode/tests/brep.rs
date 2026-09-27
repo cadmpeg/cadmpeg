@@ -1,0 +1,638 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use super::{
+    append_record_links, brep_free_vertex_indices, face_components, line_nurbs, region, region_raw,
+    region_resolved, region_shell_groups, region_shell_groups_without_records,
+    source_shaped_plane_brep, stage_brep, with_collection_limit, with_expand_bytes, ArchiveVersion,
+    Body, BodyKind, BrepDraft, BrepTransferInput, BrepTransferKind, CadIr, Curve, CurveGeometry,
+    MillimeterScale, NativeUnknownRecord, PcurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SourceObjectAssociation, Surface, UnknownId,
+};
+
+#[test]
+fn fallback_discards_topology_and_unknown_record_self_link() {
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#x.slot-0"
+        .try_into()
+        .expect("valid identity");
+    let mut staged = BrepDraft {
+        links: vec![
+            curve_id.to_string(),
+            surface_id.to_string(),
+            "rhino:object:body#x".to_string(),
+            "rhino:object:record#x".to_string(),
+        ],
+        ..BrepDraft::default()
+    };
+    staged.draft.model_mut().curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    staged.draft.model_mut().surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: None,
+        }),
+        source_object: None,
+    });
+    staged.draft.model_mut().bodies.push(Body {
+        id: "rhino:object:body#x".try_into().expect("valid identity"),
+        kind: BodyKind::Sheet,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    staged = staged.free_carrier_fallback("C2 failure");
+    assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
+    assert!(staged.draft.model().bodies.is_empty());
+    assert_eq!(
+        staged.links,
+        vec![curve_id.to_string(), surface_id.to_string()]
+    );
+    assert!(staged.warnings.iter().any(|warning| warning.contains("C2")));
+}
+
+#[test]
+fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
+    let unknown: UnknownId = "rhino:object:record#x".try_into().expect("valid identity");
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let mut candidate = CadIr::empty();
+    candidate
+        .set_native_unknowns(
+            "rhino",
+            &[NativeUnknownRecord {
+                id: unknown.clone(),
+                links: Vec::new(),
+            }],
+        )
+        .expect("required invariant");
+    let mut staged = BrepDraft {
+        kind: BrepTransferKind::FreeCarrierFallback,
+        links: vec![unknown.to_string(), curve_id.to_string()],
+        ..BrepDraft::default()
+    };
+    staged.draft.model_mut().curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+        source_object: None,
+    });
+    let links = staged.links.clone();
+    staged
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .expect("commit fallback carrier");
+    append_record_links(&mut candidate, &unknown, &links);
+    assert_eq!(
+        candidate
+            .native_unknowns("rhino")
+            .expect("required invariant")[0]
+            .links
+            .iter()
+            .map(cadmpeg_ir::ids::Identity::as_str)
+            .collect::<Vec<_>>(),
+        vec![curve_id.to_string()]
+    );
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
+    let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
+        .try_into()
+        .expect("valid identity");
+    let curve = Curve {
+        id: curve_id,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+        source_object: None,
+    };
+    let mut live = CadIr::empty();
+    live.model.curves.push(curve.clone());
+    let mut candidate = live.clone();
+    let mut staged = BrepDraft::default();
+    staged.draft.model_mut().curves.push(curve);
+    assert!(staged
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .is_err());
+    assert_eq!(candidate, live);
+    assert_eq!(live.model.curves.len(), 1);
+}
+
+#[test]
+fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
+    let (data, raw) = source_shaped_plane_brep();
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate source-shaped Brep");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
+        name: Some("plane".to_string()),
+        color: None,
+        visible: Some(true),
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: crate::test_support::millimeter_scale(25.4),
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage plane Brep");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    let model = staged.draft.model();
+    assert_eq!(
+        (
+            model.bodies.len(),
+            model.regions.len(),
+            model.shells.len(),
+            model.faces.len(),
+            model.loops.len(),
+            model.coedges.len(),
+            model.edges.len(),
+            model.vertices.len(),
+            model.pcurves.len(),
+            model.curves.len(),
+            model.surfaces.len(),
+        ),
+        (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
+    );
+    assert_eq!(model.points[1].position().get().x, 25.4);
+    assert_eq!(
+        model.vertices[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.254)
+    );
+    assert_eq!(
+        model.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(0.254)
+    );
+    assert_eq!(
+        model.pcurves[0]
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
+    let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
+        panic!("line C2 must be a NURBS pcurve");
+    };
+    // Plane parameters are lengths: the native `u = 1.0` trim endpoint
+    // scales with the document (inches -> millimeters).
+    assert_eq!(nurbs.control_points()[1].u, 25.4);
+    assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
+    let links = staged.links.clone();
+    let mut candidate = CadIr::empty();
+    candidate
+        .set_native_unknowns(
+            "rhino",
+            &[NativeUnknownRecord {
+                id: unknown.clone(),
+                links: Vec::new(),
+            }],
+        )
+        .expect("required invariant");
+    staged
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .expect("commit staged plane B-rep");
+    append_record_links(&mut candidate, &unknown, &links);
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn isolated_brep_vertices_are_owned_by_the_only_shell() {
+    let (data, mut raw) = source_shaped_plane_brep();
+    raw.vertices.push(crate::brep::RawBrepVertex {
+        index: 3,
+        point: crate::settings::CoordinateLane::Admitted(
+            crate::test_support::point3([2.0, 2.0, 0.0]).0,
+        ),
+        edges: Vec::new(),
+        tolerance: 0.0,
+        source_range: 0..0,
+    });
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate Brep");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
+            .expect("nonempty source identity"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#free-vertex"
+        .try_into()
+        .expect("valid identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "free-vertex",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage Brep with an isolated vertex");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    assert_eq!(
+        staged.draft.model().shells[0].free_vertices(),
+        vec!["rhino:object:vertex#free-vertex.slot-3"
+            .try_into()
+            .expect("valid identity")]
+    );
+
+    let mut candidate = CadIr::empty();
+    candidate
+        .set_native_unknowns(
+            "rhino",
+            &[NativeUnknownRecord {
+                id: unknown,
+                links: Vec::new(),
+            }],
+        )
+        .expect("required invariant");
+    staged
+        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .expect("commit Brep with an isolated vertex");
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn failed_trim_pcurve_does_not_discard_brep_topology() {
+    let (mut data, raw) = source_shaped_plane_brep();
+    let pcurve = raw.c2.slots[1].as_ref().expect("C2 slot");
+    data[pcurve.class_data_range.start] = 0;
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("validate source-shaped Brep");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
+            .expect("nonempty source identity"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "plane",
+            association: &association,
+            unknown: &unknown,
+            scale: MillimeterScale::IDENTITY,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage Brep without one pcurve");
+    assert_eq!(staged.kind, BrepTransferKind::FullTopology);
+    assert_eq!(staged.draft.model().pcurves.len(), 2);
+    assert!(staged
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("trim 1 C2 omitted")));
+}
+
+#[test]
+fn disconnected_incidence_produces_deterministic_shell_groups() {
+    let grouping = with_expand_bytes(&[], |expand| {
+        region_shell_groups_without_records(expand.ctx(), &[1, 0, 1, 0])
+            .expect("shell-group allocation")
+    });
+    assert!(grouping.fallback);
+    assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![1, 3], vec![0, 2]]
+    );
+}
+
+#[test]
+fn face_components_refuse_collection_limit_before_parent_allocation() {
+    let resolved = crate::brep::ResolvedBrep {
+        faces: vec![crate::brep::ResolvedFace {
+            surface: 0,
+            loops: Vec::new(),
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    };
+    let error = with_collection_limit(0, |ctx| face_components(ctx, &resolved))
+        .expect_err("one face parent exceeds zero collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep face parents"
+    ));
+    assert_eq!(
+        with_expand_bytes(&[], |expand| face_components(expand.ctx(), &resolved))
+            .expect("service profile admits face components"),
+        vec![0]
+    );
+}
+
+fn connected_face_fixture() -> crate::brep::ResolvedBrep {
+    let tolerance = crate::brep::BrepTolerance::new(0.0).expect("valid tolerance");
+    crate::brep::ResolvedBrep {
+        edges: vec![crate::brep::ResolvedEdge {
+            curve: 0,
+            vertices: [0, 0],
+            trims: vec![0],
+            tolerance,
+        }],
+        trims: vec![crate::brep::ResolvedTrim {
+            curve: None,
+            edge: Some(0),
+            vertices: [0, 0],
+            loop_index: 0,
+            tolerances: [tolerance; 2],
+        }],
+        loops: vec![crate::brep::ResolvedLoop {
+            trims: vec![0],
+            face: 0,
+        }],
+        faces: vec![crate::brep::ResolvedFace {
+            surface: 0,
+            loops: vec![0],
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    }
+}
+
+#[test]
+fn face_components_edge_faces_refuse_collection_limit() {
+    let resolved = connected_face_fixture();
+    let error = with_collection_limit(1, |ctx| face_components(ctx, &resolved))
+        .expect_err("parent and edge-face items exceed one collection item");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep edge faces"
+    ));
+}
+
+#[test]
+fn face_components_roots_refuse_collection_limit() {
+    let resolved = connected_face_fixture();
+    let error = with_collection_limit(2, |ctx| face_components(ctx, &resolved))
+        .expect_err("face root exceeds two collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep face roots"
+    ));
+}
+
+#[test]
+fn face_components_labels_refuse_collection_limit() {
+    let resolved = connected_face_fixture();
+    let error = with_collection_limit(3, |ctx| face_components(ctx, &resolved))
+        .expect_err("face label exceeds three collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep face labels"
+    ));
+}
+
+#[test]
+fn face_components_result_refuses_collection_limit() {
+    let resolved = connected_face_fixture();
+    let error = with_collection_limit(4, |ctx| face_components(ctx, &resolved))
+        .expect_err("component result exceeds four collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep face components"
+    ));
+    assert_eq!(
+        with_expand_bytes(&[], |expand| face_components(expand.ctx(), &resolved))
+            .expect("service profile admits one connected face"),
+        vec![0]
+    );
+}
+
+#[test]
+fn shell_group_slots_refuse_collection_limit_before_allocation() {
+    let Err(error) = with_collection_limit(3, |ctx| {
+        region_shell_groups_without_records(ctx, &[1, 0, 1, 0])
+    }) else {
+        panic!("four face-group slots exceed the limit of three");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep incidence face groups"
+    ));
+}
+
+#[test]
+fn brep_free_vertex_flags_refuse_collection_limit() {
+    let resolved = crate::brep::ResolvedBrep {
+        vertices: vec![crate::brep::ResolvedVertex {
+            edges: Vec::new(),
+            tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid tolerance"),
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    };
+    let error = with_collection_limit(0, |ctx| brep_free_vertex_indices(ctx, &resolved))
+        .expect_err("one attachment flag exceeds zero collection items");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep free-vertex attachment flags"
+    ));
+    assert_eq!(
+        with_expand_bytes(&[], |expand| brep_free_vertex_indices(
+            expand.ctx(),
+            &resolved
+        ))
+        .expect("service profile admits one flag"),
+        vec![0]
+    );
+}
+
+#[test]
+fn brep_free_vertices_refuse_collection_limit() {
+    let resolved = crate::brep::ResolvedBrep {
+        vertices: vec![crate::brep::ResolvedVertex {
+            edges: Vec::new(),
+            tolerance: crate::brep::BrepTolerance::new(0.0).expect("valid tolerance"),
+        }],
+        ..crate::brep::ResolvedBrep::default()
+    };
+    let error = with_collection_limit(1, |ctx| brep_free_vertex_indices(ctx, &resolved))
+        .expect_err("free-vertex output exceeds one collection item after its flag");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep free vertices"
+    ));
+}
+
+#[test]
+fn brep_fallback_face_groups_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one fallback face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep fallback face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
+}
+
+#[test]
+fn brep_shell_group_keys_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(1, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one face group and one group key exceed one collection item");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep shell group keys"
+    ));
+}
+
+#[test]
+fn brep_shell_group_faces_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(2, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one face group, key and face exceed two collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep shell group faces"
+    ));
+}
+
+#[test]
+fn brep_shell_groups_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(4, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one face group, key, face, ordered group and shell exceed four collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep shell groups"
+    ));
+}
+
+#[test]
+fn brep_ordered_shell_groups_refuse_collection_limit() {
+    let raw = region_raw(Vec::new(), Vec::new());
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(3, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("ordered group exceeds three collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep ordered shell groups"
+    ));
+}
+
+#[test]
+fn brep_region_face_groups_refuse_collection_limit() {
+    let raw = region_raw(
+        vec![crate::brep::RawBrepFaceSide {
+            index: 0,
+            region: 0,
+            face: 0,
+            direction: 1,
+            source_range: 0..0,
+        }],
+        vec![region(1)],
+    );
+    let resolved = region_resolved(&raw);
+    let Err(error) =
+        with_collection_limit(0, |ctx| region_shell_groups(ctx, &raw, &resolved, &[0]))
+    else {
+        panic!("one region face group exceeds zero collection items");
+    };
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino Brep region face groups"
+    ));
+    assert!(with_expand_bytes(&[], |expand| {
+        region_shell_groups(expand.ctx(), &raw, &resolved, &[0])
+    })
+    .is_ok());
+}
