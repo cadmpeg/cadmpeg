@@ -2,7 +2,7 @@
 //! Ordered composite-curve projection.
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
-use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
+use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
 use crate::decode_resource::{reserve_admitted_vec, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -209,15 +209,6 @@ pub(super) fn curve_carrier_id(
     Some(crate::ids::curve(&crate::ids::Stem::directory(
         carrier_sequence,
     )))
-}
-
-fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
-    IgesLossCode::CompositeCarrierDegraded
-        .note(format!(
-            "IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained",
-            entry.sequence
-        ))
-        .with_provenance(entry.loss_provenance())
 }
 
 #[derive(Clone)]
@@ -2009,7 +2000,8 @@ fn project_degraded_composite(
     reason: &str,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<(Option<EdgeId>, LossNote), CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<EdgeId>, CodecError> {
     let edge = project_native_composite(
         ir,
         index,
@@ -2019,15 +2011,18 @@ fn project_degraded_composite(
         ctx,
         sequences,
     )?;
-    let loss = if edge.is_some() {
-        degraded_carrier_loss(carrier.entry, reason)
+    if edge.is_some() {
+        super::push_optional_attributed_loss(
+            ctx, losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
+            format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
+        )?;
     } else {
-        entity_loss(
-            carrier.entry,
-            format!("{reason}, and no ordered native composite carrier can be constructed"),
-        )
-    };
-    Ok((edge, loss))
+        super::push_optional_entity_loss(
+            ctx, losses, carrier.entry,
+            format_args!("{reason}, and no ordered native composite carrier can be constructed"),
+        )?;
+    }
+    Ok(edge)
 }
 
 pub(super) fn project(
@@ -2118,10 +2113,7 @@ fn project_with_type_130_policy(
             .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
-            losses.push(entity_loss(
-                entry,
-                "Type 102 Entity Use Flag must be 00 in IGES 4.0",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 Entity Use Flag must be 00 in IGES 4.0"))?;
             continue;
         };
         if !composite_line_font_valid(
@@ -2129,18 +2121,15 @@ fn project_with_type_130_policy(
             entry.status.hierarchy(),
             global.global_table(),
         ) {
-            losses.push(entity_loss(
-                entry,
-                "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01"))?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            losses.push(entity_loss(entry, "child count is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "child count is invalid"))?;
             continue;
         };
         if let Some(observed) = u64::try_from(raw_child_count)
@@ -2158,10 +2147,7 @@ fn project_with_type_130_policy(
             .ok()
             .filter(|count| *count >= minimum_child_count)
         else {
-            losses.push(entity_loss(
-                entry,
-                format!("child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"),
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"))?;
             continue;
         };
         let Some(child_sequences) = (0..child_count)
@@ -2172,7 +2158,7 @@ fn project_with_type_130_policy(
             })
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(entity_loss(entry, "child pointer list is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "child pointer list is invalid"))?;
             continue;
         };
         let is_logical_connector = child_sequences.len() == 2
@@ -2186,17 +2172,11 @@ fn project_with_type_130_policy(
             is_logical_connector,
             global.global_table(),
         ) {
-            losses.push(entity_loss(
-                entry,
-                "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
             continue;
         }
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed composite curves require transformed child-carrier projection",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed composite curves require transformed child-carrier projection"))?;
             continue;
         }
         if child_sequences.iter().any(|sequence| {
@@ -2205,10 +2185,7 @@ fn project_with_type_130_policy(
                     || !child.status.is_physically_dependent()
             })
         }) {
-            losses.push(entity_loss(
-                entry,
-                "composite child is missing, outside the effective specification family, or is not physically dependent",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
             continue;
         }
         let point_context = CompositePointContext {
@@ -2237,10 +2214,7 @@ fn project_with_type_130_policy(
             &curve_carriers,
             &point_context,
         )? {
-            losses.push(entity_loss(
-                entry,
-                "point or connect-point adjacency is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "point or connect-point adjacency is invalid"))?;
             continue;
         }
         let curve_sequences = child_sequences
@@ -2253,10 +2227,7 @@ fn project_with_type_130_policy(
             })
             .collect::<Vec<_>>();
         if curve_sequences.is_empty() {
-            losses.push(entity_loss(
-                entry,
-                "composite has no parameterized curve constituent",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite has no parameterized curve constituent"))?;
             continue;
         }
         let Some(curve_ids) = curve_sequences
@@ -2264,10 +2235,7 @@ fn project_with_type_130_policy(
             .map(|sequence| curve_carriers.get(sequence).cloned())
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(entity_loss(
-                entry,
-                "a Type 142 constituent has no valid model-space curve pointer",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "a Type 142 constituent has no valid model-space curve pointer"))?;
             continue;
         };
         let carrier = CompositeCarrier {
@@ -2299,9 +2267,9 @@ fn project_with_type_130_policy(
             }
         }
         if let Some(reason) = child_refusal {
-            let (edge, loss) =
-                project_degraded_composite(ir, &mut index, carrier, &reason, ctx, sequences)?;
-            losses.push(loss);
+            let edge = project_degraded_composite(
+                ir, &mut index, carrier, &reason, ctx, sequences, &mut losses,
+            )?;
             if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -2313,7 +2281,7 @@ fn project_with_type_130_policy(
             Ok(None) => None,
             Err(error) => {
                 let error = error.non_resource()?;
-                let (edge, loss) = project_degraded_composite(
+                let edge = project_degraded_composite(
                     ir,
                     &mut index,
                     carrier,
@@ -2331,8 +2299,8 @@ fn project_with_type_130_policy(
                     },
                     ctx,
                     sequences,
+                    &mut losses,
                 )?;
-                losses.push(loss);
                 if let Some(edge) = edge {
                     wire_edges.push(edge);
                     decoded.insert(entry.sequence);
@@ -2341,15 +2309,15 @@ fn project_with_type_130_policy(
             }
         };
         let Some(ConcatenatedNurbs { nurbs, segments }) = concatenated else {
-            let (edge, loss) = project_degraded_composite(
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
                 carrier,
                 "child endpoints do not join within the Global minimum resolution",
                 ctx,
                 sequences,
+                &mut losses,
             )?;
-            losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -2360,15 +2328,15 @@ fn project_with_type_130_policy(
         let cursor = segments.end();
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0))?
         else {
-            let (edge, loss) = project_degraded_composite(
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
                 carrier,
                 "its start cannot be evaluated",
                 ctx,
                 sequences,
+                &mut losses,
             )?;
-            losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);
@@ -2378,15 +2346,15 @@ fn project_with_type_130_policy(
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor))?
         else {
-            let (edge, loss) = project_degraded_composite(
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
                 carrier,
                 "its end cannot be evaluated",
                 ctx,
                 sequences,
+                &mut losses,
             )?;
-            losses.push(loss);
             if let Some(edge) = edge {
                 wire_edges.push(edge);
                 decoded.insert(entry.sequence);

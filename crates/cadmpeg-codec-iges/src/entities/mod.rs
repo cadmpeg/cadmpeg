@@ -64,6 +64,22 @@ fn push_optional_entity_loss(
     }
 }
 
+fn push_optional_attributed_loss(
+    ctx: Option<&DecodeContext<'_>>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    match ctx {
+        Some(ctx) => push_attributed_loss(ctx, losses, entry, code, message),
+        None => {
+            losses.push(code.note(format!("{message}")).with_provenance(entry.loss_provenance()));
+            Ok(())
+        }
+    }
+}
+
 fn non_resource_error(error: CodecError) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),

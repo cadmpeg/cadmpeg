@@ -3,7 +3,7 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    declared_unit_vector, resolve_transform, source_object, unit_vector,
     DeclaredInterval, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
@@ -1149,7 +1149,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let coefficients = [
@@ -1159,20 +1159,17 @@ pub(super) fn project(
             record.number(4),
         ];
         let [Some(a), Some(b), Some(c), Some(d)] = coefficients else {
-            losses.push(entity_loss(entry, "plane coefficients are not numeric"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane coefficients are not numeric"))?;
             continue;
         };
         let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d].map(FiniteReal::new) else {
-            losses.push(entity_loss(entry, "plane coefficients are not finite"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane coefficients are not finite"))?;
             continue;
         };
         let finite_coefficients = [a, b, c, d];
         let [a, b, c, d] = finite_coefficients.map(FiniteReal::get);
         let Some(boundary) = record.integer(5) else {
-            losses.push(entity_loss(
-                entry,
-                "plane boundary pointer is not an integer",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane boundary pointer is not an integer"))?;
             continue;
         };
         let boundary_sequence = u32::try_from(boundary)
@@ -1180,20 +1177,17 @@ pub(super) fn project(
             .filter(|sequence| sequence % 2 == 1)
             .filter(|sequence| entries.contains_key(sequence));
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
-            losses.push(entity_loss(
-                entry,
-                "plane form and boundary pointer are inconsistent or the boundary target is missing",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
             continue;
         }
         let local_normal = Vector3::new(a, b, c);
         let normal_squared = a * a + b * b + c * c;
         if !normal_squared.is_finite() || normal_squared <= 0.0 {
-            losses.push(entity_loss(entry, "plane normal is degenerate"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane normal is degenerate"))?;
             continue;
         }
         let Some(local_normal_unit) = UnitVector3::normalized_by_reciprocal(local_normal) else {
-            losses.push(entity_loss(entry, "plane normal cannot be normalized"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane normal cannot be normalized"))?;
             continue;
         };
         let local_u = local_normal_unit.derived_reference();
@@ -1215,7 +1209,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
@@ -1223,26 +1217,20 @@ pub(super) fn project(
             .apply_vector(*local_u.as_raw())
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            losses.push(entity_loss(
-                entry,
-                "plane placement collapses its u direction",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its u direction"))?;
             continue;
         };
         let Some(v_axis) = transform
             .apply_vector(local_v)
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            losses.push(entity_loss(
-                entry,
-                "plane placement collapses its v direction",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its v direction"))?;
             continue;
         };
         let Some(normal) =
             UnitVector3::normalized_by_reciprocal(u_axis.as_raw().cross(*v_axis.as_raw()))
         else {
-            losses.push(entity_loss(entry, "plane placement collapses its normal"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its normal"))?;
             continue;
         };
         let origin = transform
@@ -1270,37 +1258,34 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(first_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "first rail pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "first rail pointer is invalid"))?;
             continue;
         };
         let Some(second_sequence) = record
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "second rail pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "second rail pointer is invalid"))?;
             continue;
         };
         let (Some(direction_flag), Some(developable_flag)) = (record.integer(3), record.integer(4))
         else {
-            losses.push(entity_loss(entry, "ruled-surface flags are not integers"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled-surface flags are not integers"))?;
             continue;
         };
         if !matches!(direction_flag, 0 | 1) || !matches!(developable_flag, 0 | 1) {
-            losses.push(entity_loss(entry, "ruled-surface flags are not 0 or 1"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled-surface flags are not 0 or 1"))?;
             continue;
         }
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed ruled surfaces require transformed child-carrier projection",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed ruled surfaces require transformed child-carrier projection"))?;
             continue;
         }
         let first_id = crate::ids::curve(&crate::ids::Stem::directory(first_sequence));
@@ -1313,18 +1298,12 @@ pub(super) fn project(
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
                 let error = error.non_resource()?;
-                losses.push(entity_loss(
-                    entry,
-                    format!("a rail curve states no NURBS carrier: {error}"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("a rail curve states no NURBS carrier: {error}"))?;
                 continue;
             }
         };
         let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
-            losses.push(entity_loss(
-                entry,
-                "rail curves do not have bounded polynomial or NURBS carriers",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "rail curves do not have bounded polynomial or NURBS carriers"))?;
             continue;
         };
         if entry.form == 0
@@ -1338,10 +1317,7 @@ pub(super) fn project(
                 global,
             )
         {
-            losses.push(entity_loss(
-                entry,
-                "equal-arc-length ruled projection has no exact normalized arc-length carrier",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "equal-arc-length ruled projection has no exact normalized arc-length carrier"))?;
             continue;
         }
         if direction_flag == 1 {
@@ -1366,17 +1342,11 @@ pub(super) fn project(
         let surface = match ruled_surface_carrier(&first, &second, ctx) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
-                losses.push(entity_loss(
-                    entry,
-                    "ruled rails do not have a finite exact NURBS carrier",
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled rails do not have a finite exact NURBS carrier"))?;
                 continue;
             }
             Err(error) => {
-                losses.push(entity_loss(
-                    entry,
-                    format!("ruled rails state no NURBS carrier: {error}"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("ruled rails state no NURBS carrier: {error}"))?;
                 continue;
             }
         };
@@ -1421,18 +1391,18 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(directrix_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "directrix pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix pointer is invalid"))?;
             continue;
         };
         let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
-            losses.push(entity_loss(entry, "directrix entity is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix entity is missing"))?;
             continue;
         };
         if !tabulated_directrix_type_allowed(
@@ -1440,15 +1410,12 @@ pub(super) fn project(
             directrix_entry.form,
             global.global_table(),
         ) {
-            losses.push(entity_loss(
-                entry,
-                "directrix entity is outside the effective specification family",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix entity is outside the effective specification family"))?;
             continue;
         }
         let coordinates = [record.number(2), record.number(3), record.number(4)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            losses.push(entity_loss(entry, "generatrix endpoint is not numeric"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix endpoint is not numeric"))?;
             continue;
         };
         let transform = match resolve_transform(
@@ -1463,25 +1430,19 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
         let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records) else {
-            losses.push(entity_loss(
-                entry,
-                "directrix model-space carrier pointer is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix model-space carrier pointer is invalid"))?;
             continue;
         };
         let directrix_carrier = match bounded_nurbs(ir, &directrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                losses.push(entity_loss(
-                    entry,
-                    format!("the directrix states no NURBS carrier: {error}"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("the directrix states no NURBS carrier: {error}"))?;
                 continue;
             }
         };
@@ -1493,10 +1454,7 @@ pub(super) fn project(
                 &composite_index,
             )?
             else {
-                losses.push(entity_loss(
-                    entry,
-                    "directrix has no bounded polynomial, NURBS, or exact evaluable carrier",
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix has no bounded polynomial, NURBS, or exact evaluable carrier"))?;
                 continue;
             };
             let Some(directrix_solved) = directrix_geometry.solved() else {
@@ -1508,17 +1466,17 @@ pub(super) fn project(
                 carrier_interval[0],
             ))?
             else {
-                losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix start cannot be evaluated"))?;
                 continue;
             };
             let Some(start) = transform.apply_point(start.get()) else {
-                losses.push(entity_loss(entry, "placement produces a non-finite point"));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
                 continue;
             };
             let Some(target) =
                 transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
             else {
-                losses.push(entity_loss(entry, "placement produces a non-finite point"));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
                 continue;
             };
             let Some(direction) =
@@ -1527,10 +1485,7 @@ pub(super) fn project(
                     length.is_finite() && length > 0.0
                 })
             else {
-                losses.push(entity_loss(
-                    entry,
-                    "tabulated direction is zero or non-finite",
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
                 continue;
             };
             let procedural_directrix = if entry.transform == 0 {
@@ -1636,12 +1591,12 @@ pub(super) fn project(
             cached_interval[0],
         ))?
         else {
-            losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix start cannot be evaluated"))?;
             continue;
         };
         let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
         let Some(direction) =
@@ -1650,10 +1605,7 @@ pub(super) fn project(
                 length.is_finite() && length > 0.0
             })
         else {
-            losses.push(entity_loss(
-                entry,
-                "tabulated direction is zero or non-finite",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
             continue;
         };
         let control_points = placed_directrix
@@ -1663,7 +1615,7 @@ pub(super) fn project(
             .flat_map(|point| [point, point.translated(direction.get(), 1.0)])
             .collect::<Vec<_>>();
         let Ok(_) = u32::try_from(placed_directrix.control_points().len()) else {
-            losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix pole count exceeds u32"))?;
             continue;
         };
         let weights: Option<Vec<Vec<NonZeroReal>>> = placed_directrix.weights().map(|weights| {
@@ -1708,10 +1660,7 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                losses.push(entity_loss(
-                    entry,
-                    format!("tabulated-cylinder carrier cardinalities are inconsistent: {error}"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("tabulated-cylinder carrier cardinalities are inconsistent: {error}"))?;
                 continue;
             }
         };
@@ -1762,28 +1711,25 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(axis_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "revolution axis pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis pointer is invalid"))?;
             continue;
         };
         let Some(generatrix_sequence) = record
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(
-                entry,
-                "revolution generatrix pointer is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution generatrix pointer is invalid"))?;
             continue;
         };
         let (Some(start_angle), Some(end_angle)) = (record.number(3), record.number(4)) else {
-            losses.push(entity_loss(entry, "revolution angles are not numeric"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution angles are not numeric"))?;
             continue;
         };
         let Some(AngularBasis {
@@ -1791,10 +1737,7 @@ pub(super) fn project(
             controls: angular_controls,
         }) = angular_basis(start_angle, end_angle)
         else {
-            losses.push(entity_loss(
-                entry,
-                "revolution angular interval is not in (0, 2*pi]",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution angular interval is not in (0, 2*pi]"))?;
             continue;
         };
         let transform = match resolve_transform(
@@ -1809,40 +1752,31 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
         let axis_id = crate::ids::curve(&crate::ids::Stem::directory(axis_sequence));
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
-            losses.push(entity_loss(entry, "revolution axis carrier is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis carrier is missing"))?;
             continue;
         };
         let Some(SolvedCurveGeometry::Line(line_curve)) = axis_curve.geometry.solved() else {
-            losses.push(entity_loss(
-                entry,
-                "revolution axis is not a Line Entity carrier",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis is not a Line Entity carrier"))?;
             continue;
         };
         let admitted_axis = (line_curve.origin(), line_curve.direction());
         let axis_origin = admitted_axis.0.get();
         let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
-            losses.push(entity_loss(
-                entry,
-                "revolution model-space carrier pointer is invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution model-space carrier pointer is invalid"))?;
             continue;
         };
         let generatrix_carrier = match bounded_nurbs(ir, &generatrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                losses.push(entity_loss(
-                    entry,
-                    format!("the generatrix states no NURBS carrier: {error}"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("the generatrix states no NURBS carrier: {error}"))?;
                 continue;
             }
         };
@@ -1854,10 +1788,7 @@ pub(super) fn project(
                 &composite_index,
             )?
             else {
-                losses.push(entity_loss(
-                    entry,
-                    "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier",
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier"))?;
                 continue;
             };
             let Some(directrix_solved) = directrix_geometry.solved() else {
@@ -1868,10 +1799,7 @@ pub(super) fn project(
             let mut procedural_axis = admitted_axis;
             if entry.transform != 0 {
                 let Some(orientation) = similarity_orientation(transform) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "placement cannot preserve the exact revolution parameterization",
-                    ));
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement cannot preserve the exact revolution parameterization"))?;
                     continue;
                 };
                 procedural_directrix = crate::ids::curve(
@@ -1903,10 +1831,7 @@ pub(super) fn project(
                     .and_then(|direction| unit_vector(direction.get()))
                     .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
-                    losses.push(entity_loss(
-                        entry,
-                        "placement collapses the revolution axis",
-                    ));
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement collapses the revolution axis"))?;
                     continue;
                 };
                 procedural_axis = (placed_origin, placed_direction);
@@ -1970,11 +1895,11 @@ pub(super) fn project(
                 source_parameter_interval(geometry, cached_interval)
             });
         let Ok(_) = u32::try_from(generatrix.control_points().len()) else {
-            losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix pole count exceeds u32"))?;
             continue;
         };
         let Ok(v_count) = u32::try_from(angular_controls.len()) else {
-            losses.push(entity_loss(entry, "angular pole count exceeds u32"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "angular pole count exceeds u32"))?;
             continue;
         };
         let Some(surface_pole_count) = generatrix
@@ -2048,12 +1973,9 @@ pub(super) fn project(
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                losses.push(entity_loss(
-                    entry,
-                    format!(
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!(
                         "surface-of-revolution carrier cardinalities are inconsistent: {error}"
-                    ),
-                ));
+                    ))?;
                 continue;
             }
         };
@@ -2109,10 +2031,7 @@ pub(super) fn project(
                 .and_then(|direction| unit_vector(direction.get()))
                 .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
-                losses.push(entity_loss(
-                    entry,
-                    "placement collapses the revolution axis",
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement collapses the revolution axis"))?;
                 continue;
             };
             procedural_axis = (placed_origin, placed_direction);
@@ -2165,37 +2084,28 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
         let [Some(raw_k1), Some(raw_k2)] = indices else {
-            losses.push(entity_loss(
-                entry,
-                "surface upper indices K1 or K2 are invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface upper indices K1 or K2 are invalid"))?;
             continue;
         };
         let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
-            losses.push(entity_loss(
-                entry,
-                "surface upper indices K1 or K2 are invalid",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface upper indices K1 or K2 are invalid"))?;
             continue;
         };
         let [Some(u_degree), Some(v_degree)] =
             degrees.map(|value| value.and_then(|v| u32::try_from(v).ok()))
         else {
-            losses.push(entity_loss(entry, "surface degrees M1 or M2 are invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface degrees M1 or M2 are invalid"))?;
             continue;
         };
         let [u_degree_usize, v_degree_usize] = [u_degree, v_degree].map(|degree| degree as usize);
         if k1 < u_degree_usize || k2 < v_degree_usize {
-            losses.push(entity_loss(
-                entry,
-                "surface pole counts are smaller than their degrees plus one",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole counts are smaller than their degrees plus one"))?;
             continue;
         }
         let requested = u64::try_from(raw_k1)
@@ -2228,22 +2138,19 @@ pub(super) fn project(
             .map(|index| record.integer(index))
             .collect::<Vec<_>>();
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            losses.push(entity_loss(
-                entry,
-                "one or more surface flags are not 0 or 1",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "one or more surface flags are not 0 or 1"))?;
             continue;
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
-            losses.push(entity_loss(entry, "surface pole count overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole count overflows"))?;
             continue;
         };
         let (Ok(_), Ok(v_count_u32)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            losses.push(entity_loss(entry, "surface pole dimensions exceed u32"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole dimensions exceed u32"))?;
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            losses.push(entity_loss(entry, "surface pole grid size overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole grid size overflows"))?;
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
@@ -2257,38 +2164,35 @@ pub(super) fn project(
             .checked_add(u_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            losses.push(entity_loss(entry, "u-knot count overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u-knot count overflows"))?;
             continue;
         };
         let Some(v_knot_count) = v_count
             .checked_add(v_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            losses.push(entity_loss(entry, "v-knot count overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot count overflows"))?;
             continue;
         };
         let u_knot_start = 10_usize;
         let Some(v_knot_start) = u_knot_start.checked_add(u_knot_count) else {
-            losses.push(entity_loss(entry, "v-knot offset overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot offset overflows"))?;
             continue;
         };
         let Some(weight_start) = v_knot_start.checked_add(v_knot_count) else {
-            losses.push(entity_loss(entry, "surface weight offset overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weight offset overflows"))?;
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(pole_count) else {
-            losses.push(entity_loss(entry, "surface pole offset overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole offset overflows"))?;
             continue;
         };
         let Some(pole_value_count) = pole_count.checked_mul(3) else {
-            losses.push(entity_loss(entry, "surface pole value count overflows"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole value count overflows"))?;
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            losses.push(entity_loss(
-                entry,
-                "surface parameter-range offset overflows",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter-range offset overflows"))?;
             continue;
         };
         let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
@@ -2297,31 +2201,22 @@ pub(super) fn project(
                 .collect()
         };
         let Some(finite_u_knots) = collect_numbers(u_knot_start, u_knot_count) else {
-            losses.push(entity_loss(
-                entry,
-                "u-knot vector is truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u-knot vector is truncated or non-finite"))?;
             continue;
         };
         let Some(finite_v_knots) = collect_numbers(v_knot_start, v_knot_count) else {
-            losses.push(entity_loss(
-                entry,
-                "v-knot vector is truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot vector is truncated or non-finite"))?;
             continue;
         };
         let (Ok(u_knots), Ok(v_knots)) = (
             KnotVector::from_finite_lanes(finite_u_knots.clone()),
             KnotVector::from_finite_lanes(finite_v_knots.clone()),
         ) else {
-            losses.push(entity_loss(entry, "surface knot vector is decreasing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface knot vector is decreasing"))?;
             continue;
         };
         let Some(native_weights) = collect_numbers(weight_start, pole_count) else {
-            losses.push(entity_loss(
-                entry,
-                "surface weight vector is truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weight vector is truncated or non-finite"))?;
             continue;
         };
         let Some(native_weights) = native_weights
@@ -2329,10 +2224,7 @@ pub(super) fn project(
             .map(|weight| PositiveReal::try_from(weight).ok())
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(entity_loss(
-                entry,
-                "surface weights are not strictly positive",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weights are not strictly positive"))?;
             continue;
         };
         let precision = global.real_precision();
@@ -2355,25 +2247,19 @@ pub(super) fn project(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            losses.push(entity_loss(entry, "polynomial surface has unequal weights"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "polynomial surface has unequal weights"))?;
             continue;
         }
         if !polynomial && equal_weights {
-            losses.push(entity_loss(
-                entry,
-                "rational surface has equal weights but PROP3 declares rational",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "rational surface has equal weights but PROP3 declares rational"))?;
             continue;
         }
         let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
-            losses.push(entity_loss(
-                entry,
-                "surface poles are truncated or non-finite",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface poles are truncated or non-finite"))?;
             continue;
         };
         let Some(ranges) = collect_numbers(range_start, 4) else {
-            losses.push(entity_loss(entry, "surface parameter ranges are missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter ranges are missing"))?;
             continue;
         };
         let clamp_range = |start_index: usize,
@@ -2405,10 +2291,7 @@ pub(super) fn project(
             [ranges[0], ranges[1]],
             [finite_u_knots[u_degree_usize], finite_u_knots[u_count]],
         ) else {
-            losses.push(entity_loss(
-                entry,
-                "u parameter range is empty or lies outside its knot domain",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u parameter range is empty or lies outside its knot domain"))?;
             continue;
         };
         let Some(v_range) = clamp_range(
@@ -2416,10 +2299,7 @@ pub(super) fn project(
             [ranges[2], ranges[3]],
             [finite_v_knots[v_degree_usize], finite_v_knots[v_count]],
         ) else {
-            losses.push(entity_loss(
-                entry,
-                "v parameter range is empty or lies outside its knot domain",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v parameter range is empty or lies outside its knot domain"))?;
             continue;
         };
         let transform = match resolve_transform(
@@ -2434,7 +2314,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
                 continue;
             }
         };
@@ -2486,10 +2366,7 @@ pub(super) fn project(
             }) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
-                    losses.push(entity_loss(
-                        entry,
-                        format!("spline surface cardinalities are inconsistent: {error}"),
-                    ));
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("spline surface cardinalities are inconsistent: {error}"))?;
                     continue;
                 }
             };
@@ -2518,17 +2395,11 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             )?
             else {
-                losses.push(entity_loss(
-                    entry,
-                    format!("{direction}-closed surface boundary cannot be evaluated"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{direction}-closed surface boundary cannot be evaluated"))?;
                 continue 'surface;
             };
             if actual != declared {
-                losses.push(entity_loss(
-                    entry,
-                    format!("{direction}-closed surface flag disagrees with boundary curves"),
-                ));
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{direction}-closed surface flag disagrees with boundary curves"))?;
                 continue 'surface;
             }
         }
@@ -2568,39 +2439,36 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            losses.push(entity_loss(entry, "offset indicator is not numeric"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not numeric"))?;
             continue;
         };
         let indicator = Vector3::new(x, y, z);
         let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
         else {
-            losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not a unit vector"))?;
             continue;
         };
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
         else {
-            losses.push(entity_loss(entry, "offset distance is zero or non-finite"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset distance is zero or non-finite"))?;
             continue;
         };
         let Some(support_sequence) = record
             .integer(5)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            losses.push(entity_loss(entry, "offset support pointer is invalid"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset support pointer is invalid"))?;
             continue;
         };
         if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed offset surfaces require transformed support projection",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset surfaces require transformed support projection"))?;
             continue;
         }
         let support_id = crate::ids::surface(&crate::ids::Stem::directory(support_sequence));
@@ -2610,30 +2478,21 @@ pub(super) fn project(
             .iter()
             .find(|surface| surface.id == support_id)
         else {
-            losses.push(entity_loss(entry, "offset support surface is missing"));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset support surface is missing"))?;
             continue;
         };
         let distance = distance * factor;
         let Some(normal) = indicator_normal(ir, &support_id)? else {
-            losses.push(entity_loss(
-                entry,
-                "support normal cannot be evaluated at the offset-indicator parameters",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "support normal cannot be evaluated at the offset-indicator parameters"))?;
             continue;
         };
         let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
-            losses.push(entity_loss(
-                entry,
-                "offset indicator is not the support normal at the designated parameters",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not the support normal at the designated parameters"))?;
             continue;
         };
         let signed_distance = distance * orientation;
         let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
-            losses.push(entity_loss(
-                entry,
-                "support surface has no exact analytic offset carrier",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "support surface has no exact analytic offset carrier"))?;
             continue;
         };
         let regular = match &geometry {
@@ -2659,10 +2518,7 @@ pub(super) fn project(
             | SurfaceGeometry::Procedural { .. } => false,
         };
         if !regular {
-            losses.push(entity_loss(
-                entry,
-                "offset collapses or reverses the analytic carrier",
-            ));
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset collapses or reverses the analytic carrier"))?;
             continue;
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));

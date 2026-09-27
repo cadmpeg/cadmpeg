@@ -3,7 +3,7 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::geometry::{
-    entity_loss, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    linear_nurbs_parameters, planar_polyline_has_self_intersection,
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
@@ -1678,24 +1678,18 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 142 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(preference) = record
             .integer(5)
             .filter(|value| matches!(value, 0..=3) && matches!(record.integer(1), Some(0..=3)))
         else {
-            losses.push(entity_loss(
-                entry,
-                "curve-on-surface creation or preference flag is invalid",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "curve-on-surface creation or preference flag is invalid"))?;
             continue;
         };
         let Some(surface) = pointer(record, 2) else {
-            losses.push(entity_loss(
-                entry,
-                "curve-on-surface surface pointer is invalid",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "curve-on-surface surface pointer is invalid"))?;
             continue;
         };
         let pcurve = match record.integer(3) {
@@ -1709,17 +1703,11 @@ pub(super) fn project(
             .integer(3)
             .is_none_or(|value| value != 0 && pcurve.is_none())
         {
-            losses.push(entity_loss(
-                entry,
-                "curve-on-surface parameter curve pointer is invalid",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "curve-on-surface parameter curve pointer is invalid"))?;
             continue;
         }
         let Some(model_curve) = pointer(record, 4) else {
-            losses.push(entity_loss(
-                entry,
-                "curve-on-surface model curve pointer is invalid",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "curve-on-surface model curve pointer is invalid"))?;
             continue;
         };
         if pcurve.is_some_and(|pcurve| {
@@ -1727,10 +1715,7 @@ pub(super) fn project(
                 entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
             })
         }) {
-            losses.push(entity_loss(
-                entry,
-                "parameter curve does not have entity-use flag 05",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter curve does not have entity-use flag 05"))?;
             continue;
         }
         boundaries.insert(
@@ -1752,26 +1737,23 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 141 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let Some(boundary_type) = record.integer(1).filter(|value| matches!(value, 0 | 1)) else {
-            losses.push(entity_loss(
-                entry,
-                "boundary representation type is not 0 or 1",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary representation type is not 0 or 1"))?;
             continue;
         };
         let Some(preference) = record.integer(2).filter(|value| matches!(value, 0..=3)) else {
-            losses.push(entity_loss(entry, "boundary preference flag is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary preference flag is invalid"))?;
             continue;
         };
         let Some(surface) = pointer(record, 3) else {
-            losses.push(entity_loss(entry, "boundary support pointer is invalid"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary support pointer is invalid"))?;
             continue;
         };
         let Some(segment_count) = record.count(4).filter(|count| *count > 0) else {
-            losses.push(entity_loss(entry, "boundary segment count is not positive"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary segment count is not positive"))?;
             continue;
         };
         let mut index = 5;
@@ -1779,10 +1761,7 @@ pub(super) fn project(
         let mut valid = true;
         for _ in 0..segment_count {
             let Some(model_curve) = pointer(record, index) else {
-                losses.push(entity_loss(
-                    entry,
-                    "boundary model-curve pointer is invalid",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model-curve pointer is invalid"))?;
                 valid = false;
                 break;
             };
@@ -1790,23 +1769,20 @@ pub(super) fn project(
                 Some(1) => Sense::Forward,
                 Some(2) => Sense::Reversed,
                 _ => {
-                    losses.push(entity_loss(entry, "boundary segment sense is not 1 or 2"));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary segment sense is not 1 or 2"))?;
                     valid = false;
                     break;
                 }
             };
             let Some(pcurve_count) = record.count(index + 2) else {
-                losses.push(entity_loss(entry, "boundary pcurve count is invalid"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary pcurve count is invalid"))?;
                 valid = false;
                 break;
             };
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                losses.push(entity_loss(
-                    entry,
-                    "boundary pcurve collection cardinality disagrees with its representation type",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary pcurve collection cardinality disagrees with its representation type"))?;
                 valid = false;
                 break;
             }
@@ -1819,17 +1795,14 @@ pub(super) fn project(
                 if entries.get(&pcurve).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
-                    losses.push(entity_loss(
-                        entry,
-                        "boundary pcurve does not have entity-use flag 05",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary pcurve does not have entity-use flag 05"))?;
                     pcurves.clear();
                     break;
                 }
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
-                losses.push(entity_loss(entry, "boundary pcurve pointer is invalid"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary pcurve pointer is invalid"))?;
                 valid = false;
                 break;
             }
@@ -1853,7 +1826,7 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let carrier_agreement_tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
         let surface_kind = if entry.entity_type == 144 {
@@ -1869,10 +1842,7 @@ pub(super) fn project(
             mut valid,
         ) = if surface_kind == BoundarySurfaceKind::Trimmed {
             let Some(surface) = pointer(record, 1) else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface support pointer is invalid",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface support pointer is invalid"))?;
                 continue;
             };
             let Some(has_explicit_outer) = record.integer(2).and_then(|value| match value {
@@ -1880,17 +1850,11 @@ pub(super) fn project(
                 1 => Some(true),
                 _ => None,
             }) else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface outer-boundary flag is not 0 or 1",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary flag is not 0 or 1"))?;
                 continue;
             };
             let Some(inner_count) = record.count(3) else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface inner-boundary count is invalid",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary count is invalid"))?;
                 continue;
             };
             let mut sequences = Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
@@ -1899,20 +1863,14 @@ pub(super) fn project(
             let mut explicit_outer_sequence = None;
             if has_explicit_outer {
                 let Some(outer) = pointer(record, 4) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "trimmed-surface outer-boundary pointer is invalid",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer is invalid"))?;
                     continue;
                 };
                 if entries
                     .get(&outer)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    losses.push(entity_loss(
-                            entry,
-                            "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity",
-                        ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     continue;
                 }
                 sequences.push(outer);
@@ -1921,19 +1879,13 @@ pub(super) fn project(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
             ) {
-                losses.push(entity_loss(
-                        entry,
-                        "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted",
-                    ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface parameter-domain outer-boundary pointer is neither zero nor omitted"))?;
                 continue;
             }
             let mut valid = true;
             for index in 0..inner_count {
                 let Some(sequence) = pointer(record, 5 + index) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "trimmed-surface inner-boundary pointer is invalid",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer is invalid"))?;
                     valid = false;
                     break;
                 };
@@ -1941,10 +1893,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 142 || target.form != 0)
                 {
-                    losses.push(entity_loss(
-                            entry,
-                            "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity",
-                        ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -1960,34 +1909,22 @@ pub(super) fn project(
         } else {
             let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
             else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface representation type is not 0 or 1",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface representation type is not 0 or 1"))?;
                 continue;
             };
             let Some(surface) = pointer(record, 2) else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface support pointer is invalid",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface support pointer is invalid"))?;
                 continue;
             };
             let Some(count) = record.count(3).filter(|count| *count > 0) else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface boundary count is not positive",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface boundary count is not positive"))?;
                 continue;
             };
             let mut sequences = Vec::with_capacity(count);
             let mut valid = true;
             for index in 0..count {
                 let Some(sequence) = pointer(record, 4 + index) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "bounded-surface boundary pointer is invalid",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer is invalid"))?;
                     valid = false;
                     break;
                 };
@@ -1995,10 +1932,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 141 || target.form != 0)
                 {
-                    losses.push(entity_loss(
-                        entry,
-                        "bounded-surface boundary pointer does not target a Type 141 Form 0 entity",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface boundary pointer does not target a Type 141 Form 0 entity"))?;
                     valid = false;
                     break;
                 }
@@ -2016,10 +1950,7 @@ pub(super) fn project(
                 }) {
                     sequences.push(sequence);
                 } else {
-                    losses.push(entity_loss(
-                        entry,
-                        "bounded-surface representation disagrees with its boundary",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "bounded-surface representation disagrees with its boundary"))?;
                     valid = false;
                     break;
                 }
@@ -2036,10 +1967,7 @@ pub(super) fn project(
                 |cache| SurfaceGeometry::Solved(cache.clone()),
             )
         }) else {
-            losses.push(entity_loss(
-                entry,
-                "trimmed-surface support carrier is missing",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface support carrier is missing"))?;
             continue;
         };
         let mut candidate = ModelDraft::new();
@@ -2071,18 +1999,12 @@ pub(super) fn project(
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface boundary definition is missing",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface boundary definition is missing"))?;
                 valid = false;
                 break;
             };
             if boundary.surface != surface_sequence {
-                losses.push(entity_loss(
-                    entry,
-                    "boundary definition names a different support surface",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary definition names a different support surface"))?;
                 valid = false;
                 break;
             }
@@ -2091,10 +2013,7 @@ pub(super) fn project(
                 let model_curve_id =
                     crate::ids::curve(&crate::ids::Stem::directory(segment.model_curve));
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
-                    losses.push(entity_loss(
-                        entry,
-                        "boundary model curve has no bounded edge",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model curve has no bounded edge"))?;
                     valid = false;
                     break;
                 };
@@ -2131,20 +2050,14 @@ pub(super) fn project(
                 }
                 if let Some(error) = pcurve_refusal {
                     let error = error.non_resource()?;
-                    losses.push(entity_loss(
-                        entry,
-                        format!("boundary parameter curve states no NURBS carrier: {error}"),
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("boundary parameter curve states no NURBS carrier: {error}"))?;
                     valid = false;
                     break;
                 }
                 let mut pcurves = match pcurves {
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {
-                        losses.push(entity_loss(
-                            entry,
-                            "boundary parameter curve has no NURBS carrier",
-                        ));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary parameter curve has no NURBS carrier"))?;
                         valid = false;
                         break;
                     }
@@ -2202,34 +2115,22 @@ pub(super) fn project(
                 ) {
                     Ok(selected) => selected,
                     Err(BoundaryEdgeSelectionError::MissingEndpoints) => {
-                        losses.push(entity_loss(
-                            entry,
-                            "boundary model-curve endpoints are missing",
-                        ));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model-curve endpoints are missing"))?;
                         valid = false;
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::InvalidRange) => {
-                        losses.push(entity_loss(
-                            entry,
-                            "boundary model-curve edge range does not evaluate to its vertices",
-                        ));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model-curve edge range does not evaluate to its vertices"))?;
                         valid = false;
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::Ambiguous) => {
-                        losses.push(entity_loss(
-                            entry,
-                            "boundary model curve maps to multiple ambiguous edge occurrences",
-                        ));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model curve maps to multiple ambiguous edge occurrences"))?;
                         valid = false;
                         break;
                     }
                     Err(BoundaryEdgeSelectionError::PcurveDisagreement) => {
-                        losses.push(entity_loss(
-                            entry,
-                            "curve-on-surface carriers disagree beyond the minimum resolution",
-                        ));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "curve-on-surface carriers disagree beyond the minimum resolution"))?;
                         valid = false;
                         break;
                     }
@@ -2273,10 +2174,7 @@ pub(super) fn project(
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
                 !close(end.get(), next_start.get(), sewing_tolerance)
             }) {
-                losses.push(entity_loss(
-                    entry,
-                    "ordered boundary segments do not form a closed ring",
-                ));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "ordered boundary segments do not form a closed ring"))?;
                 valid = false;
                 break;
             }
@@ -2313,7 +2211,7 @@ pub(super) fn project(
             let Some(checked_sewing_tolerance) =
                 cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
-                losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary sewing tolerance is invalid"))?;
                 valid = false;
                 break;
             };
@@ -2328,10 +2226,7 @@ pub(super) fn project(
             ) {
                 Ok(result) => result,
                 Err(BoundaryVertexClusterError::NonTransitive) => {
-                    losses.push(entity_loss(
-                        entry,
-                        "boundary endpoint tolerance neighborhoods are non-transitive",
-                    ));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary endpoint tolerance neighborhoods are non-transitive"))?;
                     valid = false;
                     break;
                 }
@@ -2349,7 +2244,7 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        losses.push(entity_loss(entry, error));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                         valid = false;
                         break;
                     }
@@ -2397,7 +2292,7 @@ pub(super) fn project(
                 {
                     Ok(uses) => uses,
                     Err(error) => {
-                        losses.push(entity_loss(entry, error));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                         valid = false;
                         break;
                     }
@@ -2414,7 +2309,7 @@ pub(super) fn project(
                 });
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
-                losses.push(entity_loss(entry, "boundary loop contains no coedges"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary loop contains no coedges"))?;
                 valid = false;
                 break;
             };
@@ -2446,14 +2341,11 @@ pub(super) fn project(
             )
         });
         if linear_relationship == Some(false) {
-            losses.push(entity_loss(
-                entry,
-                if surface_kind == BoundarySurfaceKind::Trimmed {
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", if surface_kind == BoundarySurfaceKind::Trimmed {
                     "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
                 } else {
                     "boundary loop is not a simple closed carrier"
-                },
-            ));
+                }))?;
             continue;
         }
         let face_surface_id = if implicit_outer_domain {
@@ -2467,7 +2359,7 @@ pub(super) fn project(
                 source_object: Some(match source_object(entry, Some(ctx)) {
                     Ok(source) => source,
                     Err(error) => {
-                        losses.push(entity_loss(entry, super::non_resource_error(error)?));
+                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", super::non_resource_error(error)?))?;
                         continue;
                     }
                 }),
@@ -2478,7 +2370,7 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error.to_string()))?;
                     continue;
                 }
             };
@@ -2504,7 +2396,7 @@ pub(super) fn project(
         };
         let checked_face_tolerance = if face_tolerance > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
-                losses.push(entity_loss(entry, "face tolerance is invalid"));
+                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face tolerance is invalid"))?;
                 continue;
             };
             Some(value)
@@ -2555,10 +2447,7 @@ pub(super) fn project(
     let mut commit_session = CommitSession::new(ir);
     for (entry, candidate, derivations) in staged {
         if commit_session.commit_model(candidate).is_err() {
-            losses.push(entity_loss(
-                entry,
-                "trimmed sheet candidate failed neutral validation",
-            ));
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed sheet candidate failed neutral validation"))?;
             continue;
         }
         decoded.insert(entry.sequence);
