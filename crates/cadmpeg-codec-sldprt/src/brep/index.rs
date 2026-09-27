@@ -6,6 +6,7 @@ use super::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 /// An exact carrier or a derived intersection carrier.
 pub(super) enum IndexedCurve {
@@ -41,24 +42,44 @@ pub(super) struct CarrierIndex {
 }
 
 impl CarrierIndex {
-    pub(super) fn insert(&mut self, carrier: Carrier) {
+    pub(super) fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        carrier: Carrier,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         match carrier {
             Carrier::Curve(carrier) => {
+                if !self.curves.contains_key(&carrier.attr) {
+                    ctx.charge_collection_items(1, "index SLDPRT curve carriers")?;
+                    self.curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT curve carriers", u64::MAX - 1, u64::MAX))?;
+                }
                 self.curves
                     .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
             Carrier::Surface(carrier) => {
+                if !self.surfaces.contains_key(&carrier.attr) {
+                    ctx.charge_collection_items(1, "index SLDPRT surface carriers")?;
+                    self.surfaces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT surface carriers", u64::MAX - 1, u64::MAX))?;
+                }
                 self.surfaces.insert(carrier.attr, carrier);
             }
         }
+        Ok(())
     }
 
     pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
         self.curves.get(&attr)
     }
 
-    pub(super) fn curve_attrs(&self) -> HashSet<u16> {
-        self.curves.keys().copied().collect()
+    pub(super) fn curve_attrs(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<HashSet<u16>, cadmpeg_core::CodecError> {
+        ctx.charge_collection_items(self.curves.len() as u64, "collect SLDPRT curve attributes")?;
+        let mut attrs = HashSet::new();
+        attrs.try_reserve(self.curves.len()).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT curve attributes", u64::MAX - 1, u64::MAX))?;
+        attrs.extend(self.curves.keys().copied());
+        Ok(attrs)
     }
 
     pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
@@ -85,10 +106,19 @@ impl CarrierIndex {
         self.blend_support_pairs.get(&attr)
     }
 
-    fn insert_intersection(&mut self, intersection: intersection::IntersectionCarrier) {
+    fn insert_intersection(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        intersection: intersection::IntersectionCarrier,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !self.curves.contains_key(&intersection.carrier.attr) {
+            ctx.charge_collection_items(1, "index SLDPRT intersection carriers")?;
+            self.curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT intersection carriers", u64::MAX - 1, u64::MAX))?;
+        }
         self.curves
             .entry(intersection.carrier.attr)
             .or_insert(IndexedCurve::Derived(intersection));
+        Ok(())
     }
 
     #[cfg(test)]
@@ -96,27 +126,37 @@ impl CarrierIndex {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
-    pub(super) fn merge_missing(&mut self, other: Self) {
-        for (attr, carrier) in other.curves {
-            self.curves.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.surfaces {
-            self.surfaces.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.sweeps {
-            self.sweeps.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blends {
-            self.blends.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.offsets {
-            self.offsets.entry(attr).or_insert(carrier);
-        }
-        for (attr, carrier) in other.blend_support_pairs {
-            self.blend_support_pairs.entry(attr).or_insert(carrier);
-        }
+    pub(super) fn merge_missing(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        merge_missing_map(ctx, &mut self.curves, other.curves, "merge SLDPRT curve carriers")?;
+        merge_missing_map(ctx, &mut self.surfaces, other.surfaces, "merge SLDPRT surface carriers")?;
+        merge_missing_map(ctx, &mut self.sweeps, other.sweeps, "merge SLDPRT sweep carriers")?;
+        merge_missing_map(ctx, &mut self.blends, other.blends, "merge SLDPRT blend carriers")?;
+        merge_missing_map(ctx, &mut self.offsets, other.offsets, "merge SLDPRT offset carriers")?;
+        merge_missing_map(ctx, &mut self.blend_support_pairs, other.blend_support_pairs, "merge SLDPRT blend support pairs")?;
+        ctx.reserve_precharged_vec(&mut self.lane_refusals, other.lane_refusals.len(), "merge SLDPRT lane refusals")?;
         self.lane_refusals.extend(other.lane_refusals);
+        Ok(())
     }
+}
+
+fn merge_missing_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    target: &mut HashMap<K, V>,
+    source: HashMap<K, V>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for (key, value) in source {
+        if !target.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            target.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            target.insert(key, value);
+        }
+    }
+    Ok(())
 }
 
 /// Scan the whole stream body for compact analytic carriers, keyed by attribute
@@ -133,28 +173,28 @@ pub(super) fn scan_carriers(
     while i + 2 <= body.len() {
         if body[i] == 0x00 {
             if let Some(c) = parse_carrier(body, i) {
-                out.insert(c);
+                out.insert(ctx, c)?;
             }
         }
         i += 1;
     }
     let mut lane_refusals = Vec::new();
     for carrier in spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?.into_values() {
-        out.insert(Carrier::Curve(carrier));
+        out.insert(ctx, Carrier::Curve(carrier))?;
     }
     for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
-        out.insert(Carrier::Surface(carrier));
+        out.insert(ctx, Carrier::Surface(carrier))?;
     }
     for carrier in subset::scan(ctx, body, &out)? {
-        out.insert(Carrier::Curve(carrier));
+        out.insert(ctx, Carrier::Curve(carrier))?;
     }
-    out.sweeps = sweep::scan_sweep_carriers(body);
+    out.sweeps = sweep::scan_sweep_carriers(ctx, body)?;
     (out.blends, out.blend_support_pairs) = blend::scan(ctx, body)?;
     out.offsets = offset::scan(ctx, body)?;
     for intersection in
         intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
     {
-        out.insert_intersection(intersection);
+        out.insert_intersection(ctx, intersection)?;
     }
     out.lane_refusals = lane_refusals;
     Ok(out)
@@ -280,7 +320,13 @@ mod tests {
             },
         );
 
-        base.merge_missing(delta);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test merge fits service policy");
+        base.merge_missing(&ctx, delta).expect("test merge fits service policy");
 
         let pair = base.blend_support_pair(9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
