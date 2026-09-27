@@ -1402,11 +1402,8 @@ impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
 }
 
 /// Complete element sequence and post-marker tail of one compressed JT segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressedElementSequenceWire",
-    into = "DisplayJtCompressedElementSequenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtCompressedElementSequenceWire")]
 pub(super) struct DisplayJtCompressedElementSequence {
     /// Globally unique sequence identity.
     pub(super) id: String,
@@ -1420,6 +1417,8 @@ pub(super) struct DisplayJtCompressedElementSequence {
     framed_byte_len: u32,
     /// Exact bytes following the end-object marker.
     tail: Vec<u8>,
+    /// SHA-256 of the exact post-marker tail.
+    tail_sha256: Sha256Hex,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1434,14 +1433,38 @@ impl DisplayJtCompressedElementSequence {
     fn framed_byte_len(&self) -> u32 {
         self.framed_byte_len
     }
+}
 
-    /// SHA-256 of the exact post-marker tail.
-    fn tail_sha256(&self) -> Sha256Hex {
-        Sha256Hex::digest(&self.tail)
+#[derive(Serialize)]
+struct DisplayJtCompressedElementSequenceRef<'a> {
+    id: &'a str,
+    segment: &'a str,
+    segment_type: u32,
+    elements: &'a [String],
+    framed_byte_len: u32,
+    tail: &'a [u8],
+    tail_sha256: &'a Sha256Hex,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtCompressedElementSequence {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtCompressedElementSequenceRef {
+            id: &self.id,
+            segment: &self.segment,
+            segment_type: self.segment_type,
+            elements: &self.elements,
+            framed_byte_len: self.framed_byte_len,
+            tail: &self.tail,
+            tail_sha256: &self.tail_sha256,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressedElementSequenceWire {
     id: String,
     segment: String,
@@ -1473,14 +1496,22 @@ impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElem
             elements: wire.elements,
             framed_byte_len: wire.framed_byte_len,
             tail: wire.tail,
+            tail_sha256: wire.tail_sha256,
             source_offset: wire.source_offset,
         })
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequenceWire {
     fn from(value: DisplayJtCompressedElementSequence) -> Self {
-        let tail_sha256 = value.tail_sha256();
+        JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
+        let tail_sha256 = Sha256Hex::digest(&value.tail);
         Self {
             id: value.id,
             segment: value.segment,
@@ -3737,11 +3768,67 @@ pub(super) fn display_jt_compressed_element_sequences(
         else {
             return Ok((Vec::new(), Vec::new()));
         };
+        if let Some((ctx, _)) = budget {
+            let count = u64::try_from(parsed.len()).map_err(|_| {
+                ctx.refuse_codec_limit("count DisplayJT compressed elements", 0, u64::MAX)
+            })?;
+            let id_slots = count
+                .checked_mul(std::mem::size_of::<String>() as u64)
+                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element ids", 0, count))?;
+            let element_slots = count
+                .checked_mul(std::mem::size_of::<DisplayJtCompressedElement>() as u64)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("size DisplayJT compressed elements", 0, count)
+                })?;
+            ctx.charge_collection_items(count, "store DisplayJT element ids")?;
+            ctx.charge_retained(id_slots, "retain DisplayJT element ids")?;
+            ctx.charge_collection_items(count, "store DisplayJT compressed elements")?;
+            ctx.charge_retained(element_slots, "retain DisplayJT compressed elements")?;
+        }
         let mut element_ids = Vec::new();
         if element_ids.try_reserve_exact(parsed.len()).is_err() {
-            return Ok((Vec::new(), Vec::new()));
+            return match budget {
+                Some((ctx, _)) => {
+                    Err(ctx.refuse_codec_limit("allocate DisplayJT element ids", 0, 1))
+                }
+                None => Ok((Vec::new(), Vec::new())),
+            };
+        }
+        if elements.try_reserve_exact(parsed.len()).is_err() {
+            return match budget {
+                Some((ctx, _)) => {
+                    Err(ctx.refuse_codec_limit("allocate DisplayJT compressed elements", 0, 1))
+                }
+                None => Ok((Vec::new(), Vec::new())),
+            };
         }
         for (ordinal, element) in parsed.into_iter().enumerate() {
+            if let Some((ctx, _)) = budget {
+                let digits = if ordinal == 0 {
+                    1
+                } else {
+                    ordinal.ilog10() as usize + 1
+                };
+                let id_len = segment
+                    .id
+                    .len()
+                    .checked_add("-inflated-element-".len())
+                    .and_then(|len| len.checked_add(digits))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("size DisplayJT element identity", 0, 1)
+                    })?;
+                let string_bytes = id_len
+                    .checked_mul(2)
+                    .and_then(|len| len.checked_add(segment.id.len()))
+                    .and_then(|len| len.checked_add(64))
+                    .and_then(|len| u64::try_from(len).ok())
+                    .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element fields", 0, 1))?;
+                ctx.charge_retained(string_bytes, "retain DisplayJT compressed element fields")?;
+                let body_work = u64::try_from(element.body.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("size DisplayJT compressed element body", 0, u64::MAX)
+                })?;
+                ctx.charge_work(body_work, "hash DisplayJT compressed element body")?;
+            }
             let id = format!("{}-inflated-element-{ordinal}", segment.id);
             element_ids.push(id.clone());
             elements.push(
@@ -3765,6 +3852,47 @@ pub(super) fn display_jt_compressed_element_sequences(
             );
         }
         let tail = &inflated[framed_end..];
+        if let Some((ctx, _)) = budget {
+            ctx.charge_collection_items(1, "store DisplayJT compressed sequence")?;
+            ctx.charge_retained(
+                std::mem::size_of::<DisplayJtCompressedElementSequence>() as u64,
+                "retain DisplayJT compressed sequence",
+            )?;
+            let string_bytes = segment
+                .id
+                .len()
+                .checked_mul(2)
+                .and_then(|len| len.checked_add("-inflated-sequence".len()))
+                .and_then(|len| len.checked_add(64))
+                .and_then(|len| u64::try_from(len).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT sequence fields", 0, 1))?;
+            ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
+            let tail_work = u64::try_from(tail.len())
+                .map_err(|_| ctx.refuse_codec_limit("size DisplayJT sequence tail", 0, u64::MAX))?;
+            ctx.charge_work(tail_work, "hash DisplayJT compressed sequence tail")?;
+        }
+        sequences.try_reserve_exact(1).map_err(|_| match budget {
+            Some((ctx, _)) => {
+                ctx.refuse_codec_limit("allocate DisplayJT compressed sequence", 0, 1)
+            }
+            None => display_jt_framing_error("compressed sequence allocation failed"),
+        })?;
+        let retained_tail = match budget {
+            Some((ctx, _)) => {
+                ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?
+            }
+            None => tail.to_vec(),
+        };
+        let _digest_check = match budget {
+            Some((ctx, _)) => {
+                let tail_work = u64::try_from(tail.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("size DisplayJT sequence tail", 0, u64::MAX)
+                })?;
+                ctx.charge_work(tail_work, "check DisplayJT compressed sequence tail hash")?;
+                Some(ctx.reserve_scoped(64, "check DisplayJT sequence tail hash")?)
+            }
+            None => None,
+        };
         sequences.push(
             DisplayJtCompressedElementSequence::try_from(DisplayJtCompressedElementSequenceWire {
                 id: format!("{}-inflated-sequence", segment.id),
@@ -3773,7 +3901,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 elements: element_ids,
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
-                tail: tail.to_vec(),
+                tail: retained_tail,
                 tail_sha256: Sha256Hex::digest(tail),
                 source_offset: segment.source_offset + 24,
             })
@@ -5364,6 +5492,29 @@ mod tests {
     }
 
     #[test]
+    fn jt_compressed_sequence_borrowed_wire_and_native_limit() {
+        let wire = serde_json::json!({
+            "id": "nx:jt:compressed-sequence#0", "segment": "nx:jt:segment#0",
+            "segment_type": 7, "elements": ["nx:jt:compressed-element#0"],
+            "framed_byte_len": 48, "tail": [6, 5],
+            "tail_sha256": cadmpeg_ir::hash::sha256_hex(&[6, 5]),
+            "source_offset": 10
+        });
+        let value: super::DisplayJtCompressedElementSequence =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::DisplayJtCompressedElementSequenceWire::from(
+                value.clone()
+            ))
+            .unwrap()
+        );
+        super::JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
+        super::JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
     fn index_wire_preserves_count_and_rejects_invalid_rows() {
         let wire = r#"{"id":"index","version":9,"declared_count":1,"rows":[{"id":"row","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
         let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
@@ -5534,6 +5685,280 @@ mod tests {
         bytes.extend_from_slice(&16_u32.to_le_bytes());
         bytes.extend_from_slice(&[0xff; 16]);
         bytes
+    }
+
+    fn compressed_jt_fixture() -> (Vec<u8>, super::DisplayJtSegment) {
+        let mut expanded = framed_jt_element();
+        expanded[..4].copy_from_slice(&24_u32.to_le_bytes());
+        expanded.splice(25..25, [9, 8, 7]);
+        expanded.extend_from_slice(&[6, 5]);
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&expanded).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut data = vec![0; 33];
+        data.extend_from_slice(&compressed);
+        let compression: super::DisplayJtCompression = serde_json::from_value(serde_json::json!({
+            "flag": 2,
+            "compressed_data_byte_len": compressed.len() + 1,
+            "algorithm": 2,
+            "compressed_byte_len": compressed.len(),
+            "inflated_sha256": cadmpeg_ir::hash::sha256_hex(&expanded)
+        }))
+        .unwrap();
+        let segment = super::DisplayJtSegment {
+            id: "nx:jt:segment#0".into(),
+            document: "nx:jt:document#0".into(),
+            toc_entry: "nx:jt:toc-entry#0".into(),
+            segment_id: [0; 16],
+            segment_type: 7,
+            segment_byte_len: u32::try_from(data.len()).unwrap(),
+            payload_sha256: Sha256Hex::digest(&data[24..]),
+            compression: Some(compression),
+            source_offset: 0,
+        };
+        (data, segment)
+    }
+
+    fn assert_compressed_jt_limit(
+        policy: cadmpeg_core::decode::DecodePolicy,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &'static str,
+    ) {
+        use crate::container::{Container, DirEntry, Region};
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let (data, segment) = compressed_jt_fixture();
+        let arena = DecodeArena::new();
+        let container = Container {
+            data: std::borrow::Cow::Borrowed(&data),
+            physical_size: data.len() as u64,
+            layout: crate::container::test_modern_layout(6),
+            entries: vec![DirEntry {
+                name: "/Root/UG_PART/DisplayJT".into(),
+                region: Region::Footer,
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data.len() as u64,
+                },
+            }],
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        };
+        let (ctx, root) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+        let error = super::display_jt_compressed_element_sequences(
+            Some((&ctx, root)),
+            &container,
+            std::slice::from_ref(&segment),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation),
+            "{error}"
+        );
+
+        let (service, root) =
+            DecodeContext::from_root_bytes(&data, &arena, &DecodePolicy::service()).unwrap();
+        let (elements, sequences) = super::display_jt_compressed_element_sequences(
+            Some((&service, root)),
+            &container,
+            &[segment],
+        )
+        .unwrap();
+        assert_eq!((elements.len(), sequences.len()), (1, 1));
+    }
+
+    #[test]
+    fn jt_element_ids_refuse_before_vector_reservation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::CollectionItems,
+            "store DisplayJT element ids",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_elements_refuse_before_vector_reservation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::CollectionItems,
+            "store DisplayJT compressed elements",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_refuses_before_vector_reservation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 3;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::CollectionItems,
+            "store DisplayJT compressed sequence",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_element_fields_refuse_before_string_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = framed_jt_element().len() as u64
+            + 3
+            + 2
+            + std::mem::size_of::<super::ParsedJtElement<'_>>() as u64
+            + std::mem::size_of::<String>() as u64
+            + std::mem::size_of::<super::DisplayJtCompressedElement>() as u64;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT compressed element fields",
+        );
+    }
+
+    #[test]
+    fn jt_sequence_tail_hash_refuses_before_scoped_validation_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 63;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::MaterializedBytes,
+            "check DisplayJT sequence tail hash",
+        );
+    }
+
+    struct CompressedJtRetainedStages {
+        before_ids: u64,
+        before_elements: u64,
+        before_sequence: u64,
+        before_sequence_fields: u64,
+        before_tail: u64,
+    }
+
+    fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
+        let segment = "nx:jt:segment#0";
+        let expanded_len = (framed_jt_element().len() + 3 + 2) as u64;
+        let before_ids = expanded_len + std::mem::size_of::<super::ParsedJtElement<'_>>() as u64;
+        let before_elements = before_ids + std::mem::size_of::<String>() as u64;
+        let element_id_len = segment.len() + "-inflated-element-".len() + 1;
+        let element_fields = (element_id_len * 2 + segment.len() + 64) as u64;
+        let before_sequence = before_elements
+            + std::mem::size_of::<super::DisplayJtCompressedElement>() as u64
+            + element_fields;
+        let before_sequence_fields = before_sequence
+            + std::mem::size_of::<super::DisplayJtCompressedElementSequence>() as u64;
+        let before_tail =
+            before_sequence_fields + (segment.len() * 2 + "-inflated-sequence".len() + 64) as u64;
+        CompressedJtRetainedStages {
+            before_ids,
+            before_elements,
+            before_sequence,
+            before_sequence_fields,
+            before_tail,
+        }
+    }
+
+    #[test]
+    fn jt_element_ids_refuse_before_retained_vector_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_ids;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT element ids",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_elements_refuse_before_retained_vector_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_elements;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT compressed elements",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_refuses_before_retained_vector_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_sequence;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT compressed sequence",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_fields_refuse_before_string_allocation() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_sequence_fields;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT compressed sequence fields",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_tail_refuses_before_copy() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_tail;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::RetainedBytes,
+            "retain DisplayJT compressed sequence tail",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_element_hash_refuses_before_body_work() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::WorkUnits,
+            "hash DisplayJT compressed element body",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_hash_refuses_before_tail_work() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 5;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::WorkUnits,
+            "hash DisplayJT compressed sequence tail",
+        );
+    }
+
+    #[test]
+    fn jt_compressed_sequence_validation_refuses_before_second_hash() {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 7;
+        assert_compressed_jt_limit(
+            policy,
+            ResourceDimension::WorkUnits,
+            "check DisplayJT compressed sequence tail hash",
+        );
     }
 
     #[test]
