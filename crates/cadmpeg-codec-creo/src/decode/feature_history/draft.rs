@@ -25,7 +25,7 @@ use super::super::sweep::planes::{
     generated_cap_plane_extent,
 };
 use super::super::uniqueness::{
-    unique_feature_datum_plane, unique_feature_definition_for_transform,
+    exactly_one, unique_feature_datum_plane, unique_feature_definition_for_transform,
     unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
 use super::axes::{feature_revolution_axis_for_transfer, model_feature_ids, section_profile_ref};
@@ -74,7 +74,6 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
-use std::collections::BTreeSet;
 
 /// The tolerance a feature definition's `local_sys` parameter frame is written to.
 ///
@@ -673,18 +672,19 @@ pub(in super::super) fn schema_feature_definition(
         && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(scan, feature_id)
     {
-        let transforms = scan
+        let mut transforms = scan
             .features
             .section_transforms
             .iter()
-            .filter(|transform| transform.feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
-        let definition = match transforms.as_slice() {
-            [transform] => {
+            .filter(|transform| transform.feature_id == Some(feature_id));
+        let first = transforms.next();
+        let unique_transform = transforms.next().is_none().then_some(first);
+        let definition = match unique_transform {
+            Some(Some(transform)) => {
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)
             }
-            [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
-            _ => None,
+            Some(None) => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+            None => None,
         };
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
@@ -748,25 +748,18 @@ pub(in super::super) fn schema_feature_definition(
                 },
             ));
         }
-        let plane_ids = scan
+        let mut plane_ids = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
-            .map(|row| row.id)
-            .collect::<BTreeSet<_>>();
-        let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
-        if plane_ids.len() > 1 {
-            return Ok(IrFeatureDefinition::Operation(
-                IrFeatureOperation::Unresolved {
-                    family: UnresolvedFamily::DatumPlane,
-                },
-            ));
-        }
-        if let [surface_id] = plane_ids.as_slice() {
-            if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
+            .map(|row| row.id);
+        if let Some(surface_id) = plane_ids.next() {
+            if plane_ids.any(|id| id != surface_id)
+                || crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none()
+            {
                 return Ok(IrFeatureDefinition::Operation(
                     IrFeatureOperation::Unresolved {
                         family: UnresolvedFamily::DatumPlane,
@@ -774,7 +767,7 @@ pub(in super::super) fn schema_feature_definition(
                 ));
             }
             if let Some(definition) =
-                reconciled_datum_plane_definition(scan, ir, source_carriers, *surface_id)
+                reconciled_datum_plane_definition(scan, ir, source_carriers, surface_id)
             {
                 return Ok(definition);
             }
@@ -784,13 +777,10 @@ pub(in super::super) fn schema_feature_definition(
                 },
             ));
         }
-        let definitions = scan
-            .features
-            .definitions
-            .iter()
-            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
-            .collect::<Vec<_>>();
-        if let [definition] = definitions.as_slice() {
+        if let Some(definition) = exactly_one(
+            scan.features.definitions.iter()
+                .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
+        ) {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
                 let values = values.get();
                 let raw_normal = [values[6], values[7], values[8]];
@@ -822,13 +812,10 @@ pub(in super::super) fn schema_feature_definition(
         return knit_surface_feature_definition(ctx, scan, feature_id);
     }
     if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
-        let definitions = scan
-            .features
-            .definitions
-            .iter()
-            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
-            .collect::<Vec<_>>();
-        if let [definition] = definitions.as_slice() {
+        if let Some(definition) = exactly_one(
+            scan.features.definitions.iter()
+                .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
+        ) {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
                 let values = values.get();
                 let x_axis = normalize([values[0], values[1], values[2]]);
@@ -956,15 +943,7 @@ fn reconciled_datum_plane_definition(
         .map(|(_, u_axis, _)| Vector3::from(*u_axis))
         .or_else(|| {
             let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
-            let surfaces = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == model_id)
-                .collect::<Vec<_>>();
-            let [surface] = surfaces.as_slice() else {
-                return None;
-            };
+            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == model_id))?;
             match source_carriers.surface_geometry(surface) {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                     let u_axis = plane_surface.frame().reference().as_raw();
@@ -991,20 +970,12 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<IrFeatureDefinition> {
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-        })
-        .collect::<Vec<_>>();
-    let [row] = rows.as_slice() else {
-        return None;
-    };
+    let row = exactly_one(scan.surfaces.rows.iter().filter(|row| {
+        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+    }))?;
     (row.boundary_type == crate::surface::BoundaryType::Code01
         && row.next_surface == 0
-        && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
+        && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
     .then_some(())?;
     reconciled_datum_plane_definition(scan, ir, source_carriers, row.id)
 }
@@ -1118,15 +1089,10 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     {
         return false;
     }
-    let owned = tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .collect::<Vec<_>>();
     let unique_table = |class_id| {
-        let mut matches = owned
+        let mut matches = tables
             .iter()
-            .copied()
-            .filter(|table| table.table_class_id == class_id);
+            .filter(|table| table.feature_id == feature_id && table.table_class_id == class_id);
         let table = matches.next()?;
         matches.next().is_none().then_some(table)
     };
