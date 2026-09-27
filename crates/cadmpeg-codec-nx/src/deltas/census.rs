@@ -118,7 +118,7 @@ impl Census {
     }
 }
 
-fn push_event<T>(
+pub(super) fn push_event<T>(
     ctx: &DecodeContext<'_>,
     events: &mut Vec<T>,
     value: T,
@@ -150,7 +150,7 @@ fn extend_events<T>(
 /// Walk all accepted records, revisions, tombstones, and numeric tails in an
 /// inflated deltas stream.
 pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, CodecError> {
-    let transmit_header = transmit_header(stream);
+    let transmit_header = transmit_header(ctx, stream)?;
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
     let terminal_null_references = TerminalNullReferences::at_end(stream);
     let trailer_byte_len = terminal_null_references
@@ -295,7 +295,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
         offset += 1;
         value_boundary = false;
     }
-    census.events.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    census.events.term_use_numeric_tails = term_use_numeric_tails(ctx, stream, &census)?;
     census.bytes_decoded += census
         .term_use_numeric_tails
         .iter()
