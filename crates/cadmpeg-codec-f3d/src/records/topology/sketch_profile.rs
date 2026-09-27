@@ -221,7 +221,7 @@ pub(crate) struct DesignSketchProfileRegion {
 }
 
 /// One fixed-width persistent curve member of a selected sketch region.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignSketchProfileRegionMemberWire",
     into = "DesignSketchProfileRegionMemberWire"

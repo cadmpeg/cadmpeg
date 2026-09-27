@@ -476,11 +476,11 @@ fn parse_feature_timeline_record(
     bytes: &[u8],
     stream: &str,
     frame: std::ops::Range<usize>,
-    expected_class_tag: &str,
-    expected_entity_id: u64,
+    expected: (&str, u64),
     source_ordinal: u32,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Result<Option<DesignFeatureTimeline>, CodecError> {
+    let (expected_class_tag, expected_entity_id) = expected;
     let Some((
         class_tag,
         mut at,
@@ -766,7 +766,7 @@ pub(crate) fn decode_feature_timelines(
                     return Err(CodecError::Malformed(
                         "Design feature timeline has no unique primary record-index entry".into(),
                     ));
-                };
+                }
                 let start = usize::try_from(record.bulk_offset).map_err(|_| {
                     CodecError::Malformed("Design feature-timeline offset exceeds usize".into())
                 })?;
@@ -790,8 +790,7 @@ pub(crate) fn decode_feature_timelines(
                     bytes,
                     &bulk_name,
                     start..end,
-                    &expected_class_tag,
-                    *entity_id,
+                    (&expected_class_tag, *entity_id),
                     entity_source_ordinal,
                     &type_guids_by_entity,
                 )?

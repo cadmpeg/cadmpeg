@@ -18,7 +18,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
     for edges in [vec![], vec![7], vec![7, 8]] {
         for count in [0, 1, 3] {
             let entries: Vec<_> = (0..count)
-                .map(|index| (index % 2 == 0).then(|| entry.clone()))
+                .map(|index| (index % 2 == 0).then_some(entry))
                 .collect();
             let slots: Vec<_> = (0..count)
                 .map(|index| (index % 2 == 0).then(|| [vec![7, 8], vec![7]]))
@@ -88,7 +88,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
         let triplet: super::DesignTopologyRecipeTriplet = serde_json::from_str(&wire).unwrap();
         assert_eq!(triplet.vertex_ordinal(), vertex);
         assert_eq!(serde_json::to_string(&triplet).unwrap(), wire);
-        let mut invalid = serde_json::to_value(&triplet).unwrap();
+        let mut invalid = serde_json::to_value(triplet).unwrap();
         invalid["vertex_ordinal"] = serde_json::json!(outer);
         assert!(
             serde_json::from_value::<super::DesignTopologyRecipeTriplet>(invalid)

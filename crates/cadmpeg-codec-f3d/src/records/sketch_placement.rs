@@ -10,7 +10,7 @@ cadmpeg_core::named_optional_field!(deserialize_scope_record_index, u32, "scope_
 cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
 cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibility, "visibility");
 /// Typed sketch-container visibility bound to a Design sketch entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignSketchVisibilityWire",
     into = "DesignSketchVisibilityWire"

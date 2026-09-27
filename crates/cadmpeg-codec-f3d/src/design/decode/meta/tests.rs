@@ -43,8 +43,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         &bulk,
         "Design/BulkStream.dat",
         frame.clone(),
-        "256",
-        35,
+        ("256", 35),
         0,
         &HashMap::new(),
     )
@@ -63,8 +62,7 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
         &bulk,
         "Design/BulkStream.dat",
         frame,
-        "256",
-        35,
+        ("256", 35),
         0,
         &HashMap::new(),
     )

@@ -303,7 +303,7 @@ impl DesignTopologyRecipeSide {
 }
 
 /// One eight-word topology entry in an edge-recipe side clause.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignTopologyRecipeEntryWire",
     into = "DesignTopologyRecipeEntryWire"
@@ -377,7 +377,7 @@ impl From<DesignTopologyRecipeEntry> for DesignTopologyRecipeEntryWire {
 }
 
 /// One three-word invariant in an edge-recipe entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignTopologyRecipeTripletWire",
     into = "DesignTopologyRecipeTripletWire"

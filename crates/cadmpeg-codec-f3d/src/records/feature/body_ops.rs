@@ -17,7 +17,7 @@ cadmpeg_core::named_optional_field!(
     "center_position_offset"
 );
 /// Fixed construction carried by a uniform body-scale scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignScaleOperationWire",
     into = "DesignScaleOperationWire"
