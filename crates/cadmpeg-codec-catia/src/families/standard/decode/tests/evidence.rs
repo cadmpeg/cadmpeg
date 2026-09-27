@@ -23,8 +23,8 @@ use crate::families::standard::decode::standard_native_support_endpoint_pair;
 use crate::families::standard::decode::standard_object_evidence_from_streams;
 use crate::families::standard::decode::standard_oriented_native_support_pcurves;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
-use crate::families::standard::decode::standard_shared_boundary_group_domains;
-use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options;
+use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
+use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
@@ -60,6 +60,31 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+
+fn standard_shared_boundary_group_domains(
+    supports: &[StandardCurveSupport],
+    original: &[Vec<[usize; 2]>],
+    filtered: &mut [Vec<[usize; 2]>],
+    edge_identity_evidence: &[bool],
+    boundary_witnesses: &[bool],
+) {
+    crate::test_support::with_service_context(|ctx| {
+        charged_shared_boundary_group_domains(ctx, supports, original, filtered, edge_identity_evidence, boundary_witnesses)
+    })
+    .expect("service context admits shared boundary groups");
+}
+
+fn standard_shared_nurbs_boundary_pair_options(
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+    points: &[Point3],
+    options: &[[usize; 2]],
+) -> Option<Vec<[usize; 2]>> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_shared_nurbs_boundary_pair_options(ctx, left, right, points, options)
+    })
+    .expect("service context admits NURBS boundary pairs")
+}
 
 #[test]
 fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
@@ -734,6 +759,31 @@ fn repeated_shared_boundary_rows_keep_domains_when_one_witness_cannot_cover_them
         &[true, true],
     );
 
+    assert_eq!(filtered, original);
+}
+
+#[test]
+fn shared_boundary_group_entries_refuse_before_inner_row_growth() {
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [3, 7],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let original = vec![vec![[2, 8]]];
+    let mut filtered = original.clone();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_shared_boundary_group_domains(
+            ctx,
+            &supports,
+            &original,
+            &mut filtered,
+            &[false],
+            &[true],
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    standard_shared_boundary_group_domains(&supports, &original, &mut filtered, &[false], &[true]);
     assert_eq!(filtered, original);
 }
 

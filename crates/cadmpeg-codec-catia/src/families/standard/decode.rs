@@ -5432,6 +5432,7 @@ fn attach_standard_topology(
                 // FBB-only rows are complete boundary runs. Their global
                 // handle quotient is the incidence source.
                 let mut solver_options = standard_endpoint_options_for_selected_faces(
+                    ctx,
                     ir,
                     bindings,
                     &surface_indices,
@@ -5439,7 +5440,7 @@ fn attach_standard_topology(
                     &point_positions,
                     options,
                     &edge_identity_evidence,
-                );
+                )?;
                 for (edge, deferred) in solver_deferred_edges.iter().copied().enumerate() {
                     if deferred && !edge_identity_evidence[edge] {
                         solver_options[edge].clear();
@@ -7324,61 +7325,57 @@ fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
 /// intersection. `None` means that the relation is unavailable; `Some` may be
 /// empty when the relation is present but no supplied pair lies on it.
 fn standard_shared_nurbs_boundary_pair_options(
+    ctx: &DecodeContext<'_>,
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
     points: &[Point3],
     options: &[[usize; 2]],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(left)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(right)),
     ) = (left, right)
     else {
-        return None;
+        return Ok(None);
     };
-    let left_boundaries = nurbs_surface_boundary_curves(left)?;
-    let right_boundaries = nurbs_surface_boundary_curves(right)?;
-    let shared_boundaries = left_boundaries
-        .iter()
-        .filter(|left| {
+    let Some(left_boundaries) = nurbs_surface_boundary_curves(left) else { return Ok(None) };
+    let Some(right_boundaries) = nurbs_surface_boundary_curves(right) else { return Ok(None) };
+    let shared_boundary = |left: &NurbsCurve| {
             right_boundaries
                 .iter()
                 .any(|right| nurbs_shared_boundary_curves_match(left, right))
-        })
-        .collect::<Vec<_>>();
-    if shared_boundaries.is_empty() {
-        return None;
+        };
+    if !left_boundaries.iter().any(shared_boundary) {
+        return Ok(None);
     }
-    Some(
-        options
+    Ok(Some(crate::resource::collect_vec(ctx, options
             .iter()
             .copied()
             .filter(|pair| {
-                shared_boundaries.iter().any(|boundary| {
+                left_boundaries.iter().filter(|boundary| shared_boundary(boundary)).any(|boundary| {
                     pair.iter().all(|point| {
                         points
                             .get(*point)
                             .is_some_and(|point| nurbs_boundary_contains_point(boundary, *point))
                     })
                 })
-            })
-            .collect(),
-    )
+            }), "catia_shared_nurbs_boundary_pairs")?))
 }
 
 fn standard_shared_boundary_group_domains(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     original: &[Vec<[usize; 2]>],
     filtered: &mut [Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
     boundary_witnesses: &[bool],
-) {
+) -> Result<(), CodecError> {
     if supports.len() != original.len()
         || supports.len() != filtered.len()
         || supports.len() != edge_identity_evidence.len()
         || supports.len() != boundary_witnesses.len()
     {
-        return;
+        return Ok(());
     }
     // A shared carrier boundary is positive endpoint evidence, not a row
     // identity. Repeated rows can include trimmed boundaries in the carrier
@@ -7400,7 +7397,13 @@ fn standard_shared_boundary_group_domains(
         }
         let mut faces = support.faces;
         faces.sort_unstable();
-        groups.entry(faces).or_default().push(edge);
+        if let Some(edges) = groups.get_mut(&faces) {
+            crate::resource::push(ctx, edges, edge, "catia_shared_boundary_group_edges")?;
+        } else {
+            let mut edges = Vec::new();
+            crate::resource::push(ctx, &mut edges, edge, "catia_shared_boundary_group_edges")?;
+            crate::resource::insert_map(ctx, &mut groups, faces, edges, "catia_shared_boundary_groups")?;
+        }
     }
     for edges in groups.into_values() {
         if edges.len() < 2 {
@@ -7408,28 +7411,27 @@ fn standard_shared_boundary_group_domains(
         }
         if edges.iter().any(|edge| !boundary_witnesses[*edge]) {
             for edge in edges {
-                filtered[edge].clone_from(&original[edge]);
+                filtered[edge] = crate::resource::copy_slice(ctx, &original[edge], "catia_shared_boundary_original_domain")?;
             }
             continue;
         }
-        let filtered_pairs = edges
-            .iter()
-            .flat_map(|edge| filtered[*edge].iter().copied())
-            .map(|mut pair| {
+        let mut filtered_pairs = HashSet::new();
+        for mut pair in edges.iter().flat_map(|edge| filtered[*edge].iter().copied()) {
                 pair.sort_unstable();
-                pair
-            })
-            .collect::<HashSet<_>>();
+                crate::resource::insert_set(ctx, &mut filtered_pairs, pair, "catia_shared_boundary_filtered_pairs")?;
+        }
         if filtered_pairs.len() >= edges.len() {
             continue;
         }
         for edge in edges {
-            filtered[edge].clone_from(&original[edge]);
+            filtered[edge] = crate::resource::copy_slice(ctx, &original[edge], "catia_shared_boundary_original_domain")?;
         }
     }
+    Ok(())
 }
 
 fn standard_endpoint_options_for_selected_faces(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -7437,49 +7439,44 @@ fn standard_endpoint_options_for_selected_faces(
     points: &[Point3],
     options: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
-) -> Vec<Vec<[usize; 2]>> {
-    let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) = supports
-        .iter()
-        .enumerate()
-        .map(|(edge, support)| {
+) -> Result<Vec<Vec<[usize; 2]>>, CodecError> {
+    let mut filtered_options = Vec::new();
+    let mut boundary_witnesses = Vec::new();
+    for (edge, support) in supports.iter().enumerate() {
             let Some(pairs) = options.get(edge) else {
-                return (Vec::new(), false);
+                crate::resource::push(ctx, &mut filtered_options, Vec::new(), "catia_selected_face_option_rows")?;
+                crate::resource::push(ctx, &mut boundary_witnesses, false, "catia_selected_face_witnesses")?;
+                continue;
             };
-            if edge_identity_evidence.get(edge).copied().unwrap_or(false)
+            let (filtered, witnessed) = if edge_identity_evidence.get(edge).copied().unwrap_or(false)
                 || !matches!(
                     support.geometry,
                     crate::families::standard::records::StandardCurveGeometry::Bspline
                 )
                 || support.faces[0] == support.faces[1]
             {
-                return (pairs.clone(), false);
-            }
-            let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
-                return (pairs.clone(), false);
+                (crate::resource::copy_slice(ctx, pairs, "catia_selected_face_original_pairs")?, false)
+            } else if let Some((left, right)) = face_surface(ir, bindings, surface_indices, support.faces[0])
+                .zip(face_surface(ir, bindings, surface_indices, support.faces[1])) {
+                match standard_shared_nurbs_boundary_pair_options(ctx, &left.geometry, &right.geometry, points, pairs)? {
+                    Some(filtered) if !filtered.is_empty() => (filtered, true),
+                    _ => (crate::resource::copy_slice(ctx, pairs, "catia_selected_face_original_pairs")?, false),
+                }
+            } else {
+                (crate::resource::copy_slice(ctx, pairs, "catia_selected_face_original_pairs")?, false)
             };
-            let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
-                return (pairs.clone(), false);
-            };
-            let filtered = standard_shared_nurbs_boundary_pair_options(
-                &left.geometry,
-                &right.geometry,
-                points,
-                pairs,
-            );
-            match filtered {
-                Some(filtered) if !filtered.is_empty() => (filtered, true),
-                _ => (pairs.clone(), false),
-            }
-        })
-        .unzip();
+            crate::resource::push(ctx, &mut filtered_options, filtered, "catia_selected_face_option_rows")?;
+            crate::resource::push(ctx, &mut boundary_witnesses, witnessed, "catia_selected_face_witnesses")?;
+    }
     standard_shared_boundary_group_domains(
+        ctx,
         supports,
         options,
         &mut filtered_options,
         edge_identity_evidence,
         &boundary_witnesses,
-    );
-    filtered_options
+    )?;
+    Ok(filtered_options)
 }
 
 fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {
