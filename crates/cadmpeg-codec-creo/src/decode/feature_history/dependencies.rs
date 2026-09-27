@@ -455,12 +455,19 @@ pub(in super::super) fn reconcile_feature_links(
         ctx.try_reserve_items(&mut output_updates, 1, "creo reconciled output update rows")?;
         output_updates.push((index, outputs));
     }
-    let emitted = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut emitted = BTreeSet::new();
+    for feature in &ir.model.features {
+        if emitted.contains(&feature.id) {
+            continue;
+        }
+        let id = IrFeatureId::mint(ctx.copy_retained_text(
+            feature.id.as_str(),
+            "creo emitted feature identity text",
+        )?)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "creo emitted feature identity nodes")?;
+        emitted.insert(id);
+    }
     let mut regeneration_edges = Vec::new();
     let mut updates = output_updates.into_iter();
     let mut pending = updates.next();
