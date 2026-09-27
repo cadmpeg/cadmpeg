@@ -422,3 +422,88 @@ fn curve_expression_unique_key_refuses_before_text_copy() {
             if limit.operation == "creo curve-expression unique key"
     ));
 }
+
+#[test]
+fn curve_expression_emitted_indices_refuse_before_vector_reserve() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02a=1\0b=2\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let emitted = crate::decode::with_test_decode_ctx(|ctx| {
+        super::curve_expression_emitted_ordinals(ctx, &record, &[0, 1])
+    })
+    .expect("service profile admits emitted ordinals");
+    assert_eq!(emitted.get(&0), Some(&0));
+    assert_eq!(emitted.get(&1), Some(&1));
+
+    let error = with_collection_limit(1, |ctx| {
+        super::curve_expression_emitted_ordinals(ctx, &record, &[0, 1])
+    })
+    .expect_err("two emitted indices exceed one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression emitted indices"
+    ));
+}
+
+#[test]
+fn curve_expression_emitted_ordinals_refuse_before_tree_insert() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02a=1\0b=2\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let error = with_collection_limit(2, |ctx| {
+        super::curve_expression_emitted_ordinals(ctx, &record, &[0, 1])
+    })
+    .expect_err("the first tree entry follows two emitted indices");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression emitted ordinals"
+    ));
+}
+
+#[test]
+fn curve_expression_source_content_refuses_before_vector_reserve() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let run = |policy: DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root input fits the limit");
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves.expressions.push(record.clone());
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(None);
+        super::transfer_curve_expression_features(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &mut carriers,
+        )
+    };
+    assert_eq!(
+        run(DecodePolicy::service()).expect("service profile admits the feature"),
+        1
+    );
+
+    let mut limited = DecodePolicy::service();
+    limited.limits.max_collection_items = 9;
+    let error = run(limited).expect_err("source content follows nine admitted items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression source content"
+    ));
+}
