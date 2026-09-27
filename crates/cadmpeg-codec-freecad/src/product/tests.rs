@@ -887,10 +887,27 @@ fn link_group_retains_element_list_on_the_native_wire() {
 #[test]
 fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
     assert!(matches!(
-        product_record_index(&records),
+        product_record_index(&ctx, &records),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn product_record_index_refuses_at_caller_limit() {
+    let records = [node("A", &[]), node("B", &[])];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(product_record_index(&ctx, &records),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product record index"));
 }
 
 #[test]

@@ -16,7 +16,7 @@ use crate::native::{
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string};
+use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
 use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
@@ -173,10 +173,13 @@ fn nonempty_subelements(ctx: &DecodeContext<'_>, values: &[String]) -> Result<Ve
     Ok(subelements)
 }
 
-fn product_record_index(
-    records: &[ProductNodeRecord],
-) -> Result<HashMap<&str, &ProductNodeRecord>, CodecError> {
-    let mut index = HashMap::with_capacity(records.len());
+fn product_record_index<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [ProductNodeRecord],
+) -> Result<HashMap<&'a str, &'a ProductNodeRecord>, CodecError> {
+    let mut index = HashMap::new();
+    ctx.charge_collection_items(records.len() as u64, "fcstd product record index")?;
+    index.try_reserve(records.len()).map_err(|_| collection_allocation_failed(ctx, records.len() as u64, "fcstd product record index"))?;
     for record in records {
         if index.insert(record.object.as_str(), record).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -198,68 +201,72 @@ pub(crate) fn transfer_neutral(
     payloads: &[ShapePayloadRecord],
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
-    let record_by_object = product_record_index(records)?;
-    let mut component_objects = records
-        .iter()
-        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
-        .map(|record| record.object.clone())
-        .collect::<Vec<_>>();
-    let occurrence_objects = records
-        .iter()
-        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-        .map(|record| record.object.as_str())
-        .collect::<std::collections::HashSet<_>>();
+    let record_by_object = product_record_index(ctx, records)?;
+    let mut component_objects = Vec::new();
+    let mut occurrence_objects = HashSet::new();
     for record in records {
-        component_objects.extend(
-            record
-                .members()
-                .iter()
-                .filter(|member| !occurrence_objects.contains(member.as_str()))
-                .cloned(),
-        );
-        if record.external_document().is_none() {
-            component_objects.extend(record.prototype().map(str::to_owned));
+        if matches!(record.node, ProductNode::Occurrence(_)) {
+            crate::resource::insert_hash_set(ctx, &mut occurrence_objects, record.object.as_str(), "fcstd product occurrence names")?;
+        } else {
+            reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+            component_objects.push(record.object.as_str());
         }
-        component_objects.extend(
-            record
-                .copy_on_change_source()
-                .into_iter()
-                .filter(|target| target.document().is_none())
-                .filter_map(|target| target.object().map(str::to_owned)),
-        );
-        component_objects.extend(
-            record
-                .copy_on_change_group()
-                .into_iter()
-                .filter(|target| target.document().is_none())
-                .filter_map(|target| target.object().map(str::to_owned)),
-        );
-        component_objects.extend(record.element_objects().iter().cloned());
     }
-    component_objects.extend(
-        joints
-            .iter()
-            .flat_map(|joint| joint.references().into_iter().cloned())
-            .filter(|reference| reference.document().is_none())
-            .filter_map(|reference| reference.object().map(str::to_owned))
-            .filter(|object| !occurrence_objects.contains(object.as_str())),
-    );
+    for record in records {
+        for member in record.members().iter().filter(|member| !occurrence_objects.contains(member.as_str())) {
+            reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+            component_objects.push(member.as_str());
+        }
+        if record.external_document().is_none() {
+            if let Some(prototype) = record.prototype() {
+                reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+                component_objects.push(prototype);
+            }
+        }
+        for target in [record.copy_on_change_source(), record.copy_on_change_group()].into_iter().flatten() {
+            if target.document().is_none() {
+                if let Some(name) = target.object() {
+                    reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+                    component_objects.push(name);
+                }
+            }
+        }
+        for name in record.element_objects() {
+            reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+            component_objects.push(name);
+        }
+    }
+    for joint in joints {
+        for reference in joint.references() {
+            if reference.document().is_none() {
+                if let Some(name) = reference.object().filter(|name| !occurrence_objects.contains(*name)) {
+                    reserve_vec_items(ctx, &mut component_objects, 1, "fcstd product component names")?;
+                    component_objects.push(name);
+                }
+            }
+        }
+    }
     component_objects.sort();
     component_objects.dedup();
 
-    let properties_by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(property.owner.as_str())
-                .or_default()
-                .push(property);
-            map
-        },
-    );
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        if !properties_by_owner.contains_key(property.owner.as_str()) {
+            ctx.charge_collection_items(1, "fcstd product neutral owner index")?;
+            properties_by_owner.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product neutral owner index"))?;
+            properties_by_owner.insert(property.owner.as_str(), Vec::new());
+        }
+        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
+            reserve_vec_items(ctx, owned, 1, "fcstd product neutral owner properties")?;
+            owned.push(property);
+        }
+    }
     let mut placements_by_object = HashMap::new();
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(owned)? {
             if let Some(placement) = placement_matrix(property)? {
+                ctx.charge_collection_items(1, "fcstd product placements")?;
+                placements_by_object.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product placements"))?;
                 placements_by_object.insert(owner, placement.transform());
             }
         }
@@ -288,18 +295,18 @@ pub(crate) fn transfer_neutral(
     {
         for member in record.members() {
             let member = member.as_str();
-            match parent_by_object.entry(member) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(&record.object);
+            match parent_by_object.get(member) {
+                None => {
+                    ctx.charge_collection_items(1, "fcstd product parent index")?;
+                    parent_by_object.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product parent index"))?;
+                    parent_by_object.insert(member, record.object.as_str());
                 }
-                std::collections::hash_map::Entry::Occupied(entry)
-                    if *entry.get() != record.object.as_str() =>
-                {
+                Some(previous) if *previous != record.object.as_str() => {
                     return Err(CodecError::malformed(format_args!(
                         "product member {member} has multiple parent containers"
                     )));
                 }
-                std::collections::hash_map::Entry::Occupied(_) => {}
+                Some(_) => {}
             }
         }
     }
@@ -351,21 +358,22 @@ pub(crate) fn transfer_neutral(
                 .copy_on_change_policy()
                 .map(|policy| {
                     Ok::<_, CodecError>(CopyOnChange {
-                        policy: copy_on_change_policy(policy),
+                        policy: copy_on_change_policy(ctx, policy)?,
                         source: record
                             .copy_on_change_source()
-                            .map(neutral_link_target)
+                            .map(|target| neutral_link_target(ctx, target))
                             .transpose()?
                             .flatten(),
                         group: record
                             .copy_on_change_group()
-                            .map(neutral_link_target)
+                            .map(|target| neutral_link_target(ctx, target))
                             .transpose()?
                             .flatten(),
                         touched: record.copy_on_change_touched(),
                     })
                 })
                 .transpose()?;
+            reserve_vec_items(ctx, &mut occurrences, 1, "fcstd product occurrences")?;
             occurrences.push(Occurrence {
                 id: OccurrenceId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "occurrence"),
@@ -379,15 +387,8 @@ pub(crate) fn transfer_neutral(
                 ),
                 prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
-                        document: match document {
-                            crate::native::ExternalDocument::File(path) => {
-                                cadmpeg_ir::products::ExternalDocument::path(path.as_str())
-                            }
-                            crate::native::ExternalDocument::Name(name) => {
-                                cadmpeg_ir::products::ExternalDocument::document_id(name.as_str())
-                            }
-                        },
-                        object: record.prototype().map(str::to_owned),
+                        document: external_document_reference_charged(ctx, document.as_str(), document.attribute())?,
+                        object: record.prototype().map(|value| retained_string(ctx, value, "fcstd product external prototype")).transpose()?,
                     }
                 } else if let Some(prototype) = record.prototype() {
                     PrototypeReference::Local {
@@ -396,11 +397,11 @@ pub(crate) fn transfer_neutral(
                 } else {
                     PrototypeReference::Unresolved {}
                 },
-                parent: parent
-                    .clone()
-                    .map_or(OccurrenceParent::Root {}, |occurrence| {
-                        OccurrenceParent::Occurrence { occurrence }
-                    }),
+                parent: parent.as_ref().map(|occurrence| {
+                    OccurrenceId::mint(retained_string(ctx, occurrence.as_str(), "fcstd product parent identity")?)
+                        .map(|occurrence| OccurrenceParent::Occurrence { occurrence })
+                        .map_err(CodecError::malformed)
+                }).transpose()?.unwrap_or(OccurrenceParent::Root {}),
                 ordinal: u32::try_from(index).map_err(|_| {
                     CodecError::malformed(format_args!(
                         "product occurrence {} element index exceeds u32",
@@ -411,10 +412,10 @@ pub(crate) fn transfer_neutral(
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
                 scale,
-                name: Some(record.object.clone()),
+                name: Some(retained_string(ctx, &record.object, "fcstd product occurrence name")?),
                 visible: None,
                 link: LinkState::new(
-                    record.linked_subelements().to_vec(),
+                    retained_strings(ctx, record.linked_subelements(), "fcstd product occurrence subelements")?,
                     record
                         .element_objects()
                         .get(index)
@@ -423,98 +424,100 @@ pub(crate) fn transfer_neutral(
                     record.claim_child(),
                     copy_on_change,
                 ),
-                native_ref: Some(record.object.clone()),
+                native_ref: Some(retained_string(ctx, &record.object, "fcstd product occurrence native reference")?),
             });
         }
     }
 
-    let object_by_id = objects
-        .iter()
-        .map(|object| (object.id.as_str(), object))
-        .collect::<HashMap<_, _>>();
-    let property_owner = properties
-        .iter()
-        .map(|property| (property.id.as_str(), property.owner.as_str()))
-        .collect::<HashMap<_, _>>();
-    let body_owners = payloads
-        .iter()
-        .filter_map(|payload| {
-            property_owner
-                .get(payload.property.as_str())
-                .map(|owner| (crate::native::model_id("body", &payload.id, ""), *owner))
-        })
-        .collect::<Vec<_>>();
-    let definitions = component_objects
-        .iter()
-        .map(|object| {
-            let record = record_by_object.get(object.as_str()).copied();
-            let kind = match record.map(|record| &record.node) {
-                Some(ProductNode::Part(_)) => ProductDefinitionKind::Part,
-                Some(ProductNode::Group(_)) => ProductDefinitionKind::Group,
-                Some(ProductNode::LinkGroup { .. }) => ProductDefinitionKind::LinkGroup,
-                _ => ProductDefinitionKind::Object,
-            };
-            let source_object = object_by_id.get(object.as_str()).copied();
-            let owned = properties_by_owner
-                .get(object.as_str())
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            let bom_properties = [
-                cadmpeg_core::nonblank_literal!("Label2"),
-                cadmpeg_core::nonblank_literal!("StockCode"),
-                cadmpeg_core::nonblank_literal!("Vendor"),
-                cadmpeg_core::nonblank_literal!("Manufacturer"),
-            ]
-            .into_iter()
-            .filter_map(|name| metadata_string(owned, name.as_str()).map(|value| (name, value)))
-            .collect();
-            let id_part_number = source_object.and_then(|object| {
-                matches!(
-                    object.type_name.as_str(),
-                    "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part"
-                )
-                .then(|| metadata_string(owned, "Id"))
-                .flatten()
-                .filter(|value| !value.is_empty())
-            });
-            Ok(ProductDefinition {
-                id: definition_id(object)?,
-                kind,
-                source_name: source_object.map(|object| object.name.clone()),
-                label: metadata_string(owned, "Label"),
-                description: metadata_string(owned, "Description"),
-                part_number: metadata_string(owned, "PartNumber")
-                    .filter(|value| !value.is_empty())
-                    .or(id_part_number),
-                bom_properties,
-                bodies: bodies
-                    .iter()
-                    .filter(|body| {
-                        body_owners.iter().any(|(prefix, owner)| {
-                            *owner == object.as_str() && body.id.as_str().starts_with(prefix)
-                        })
-                    })
-                    .map(|body| body.id.clone())
-                    .collect(),
-                native_ref: Some(object.clone()),
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut object_by_id = HashMap::new();
+    ctx.charge_collection_items(objects.len() as u64, "fcstd product object index")?;
+    object_by_id.try_reserve(objects.len())
+        .map_err(|_| collection_allocation_failed(ctx, objects.len() as u64, "fcstd product object index"))?;
+    for object in objects {
+        object_by_id.insert(object.id.as_str(), object);
+    }
+    let mut property_owner = HashMap::new();
+    ctx.charge_collection_items(properties.len() as u64, "fcstd product property owners")?;
+    property_owner.try_reserve(properties.len())
+        .map_err(|_| collection_allocation_failed(ctx, properties.len() as u64, "fcstd product property owners"))?;
+    for property in properties {
+        property_owner.insert(property.id.as_str(), property.owner.as_str());
+    }
+    let mut body_owners = Vec::new();
+    for payload in payloads {
+        if let Some(owner) = property_owner.get(payload.property.as_str()) {
+            reserve_vec_items(ctx, &mut body_owners, 1, "fcstd product body owners")?;
+            body_owners.push((crate::native::model_id("body", &payload.id, ""), *owner));
+        }
+    }
+    let mut definitions = collection_vec(ctx, component_objects.len(), "fcstd product definitions")?;
+    for &object in &component_objects {
+        let record = record_by_object.get(object).copied();
+        let kind = match record.map(|record| &record.node) {
+            Some(ProductNode::Part(_)) => ProductDefinitionKind::Part,
+            Some(ProductNode::Group(_)) => ProductDefinitionKind::Group,
+            Some(ProductNode::LinkGroup { .. }) => ProductDefinitionKind::LinkGroup,
+            _ => ProductDefinitionKind::Object,
+        };
+        let source_object = object_by_id.get(object).copied();
+        let owned = properties_by_owner.get(object).map(Vec::as_slice).unwrap_or_default();
+        let mut bom_properties = BTreeMap::new();
+        for name in [
+            cadmpeg_core::nonblank_literal!("Label2"),
+            cadmpeg_core::nonblank_literal!("StockCode"),
+            cadmpeg_core::nonblank_literal!("Vendor"),
+            cadmpeg_core::nonblank_literal!("Manufacturer"),
+        ] {
+            if let Some(value) = metadata_string(ctx, owned, name.as_str())? {
+                bom_properties.insert(name, value);
+            }
+        }
+        let id_part_number = if source_object.is_some_and(|object| matches!(
+            object.type_name.as_str(),
+            "Assembly::AssemblyObject" | "Assembly::AssemblyLink" | "App::Part"
+        )) {
+            metadata_string(ctx, owned, "Id")?.filter(|value| !value.is_empty())
+        } else {
+            None
+        };
+        let mut definition_bodies = Vec::new();
+        for body in bodies.iter().filter(|body| body_owners.iter().any(|(prefix, owner)| {
+            *owner == object && body.id.as_str().starts_with(prefix)
+        })) {
+            reserve_vec_items(ctx, &mut definition_bodies, 1, "fcstd product definition bodies")?;
+            definition_bodies.push(cadmpeg_ir::ids::BodyId::mint(retained_string(
+                ctx, body.id.as_str(), "fcstd product body identity",
+            )?).map_err(CodecError::malformed)?);
+        }
+        definitions.push(ProductDefinition {
+            id: definition_id(object)?,
+            kind,
+            source_name: source_object.map(|object| retained_string(ctx, &object.name, "fcstd product source name")).transpose()?,
+            label: metadata_string(ctx, owned, "Label")?,
+            description: metadata_string(ctx, owned, "Description")?,
+            part_number: metadata_string(ctx, owned, "PartNumber")?
+                .filter(|value| !value.is_empty()).or(id_part_number),
+            bom_properties,
+            bodies: definition_bodies,
+            native_ref: Some(retained_string(ctx, object, "fcstd product definition native reference")?),
+        });
+    }
 
     for object in &component_objects {
-        let record = record_by_object.get(object.as_str()).copied();
+        let record = record_by_object.get(*object).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
             .map(crate::native::frame::FiniteFrame::transform)
-            .or_else(|| placements_by_object.get(object.as_str()).copied())
+            .or_else(|| placements_by_object.get(*object).copied())
             .unwrap_or_default();
-        let parent = parent_by_object.get(object.as_str()).copied();
+        let parent = parent_by_object.get(*object).copied();
         let parent = match parent {
             Some(parent) => OccurrenceParent::Occurrence {
                 occurrence: container_occurrence_id(parent)?,
             },
             None => OccurrenceParent::Root {},
         };
+        reserve_vec_items(ctx, &mut occurrences, 1, "fcstd product occurrences")?;
         occurrences.push(Occurrence {
             id: container_occurrence_id(object)?,
             prototype: PrototypeReference::Local {
@@ -525,18 +528,22 @@ pub(crate) fn transfer_neutral(
             transform: local_transform,
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(object.clone()),
+            name: Some(retained_string(ctx, object, "fcstd product container name")?),
             visible: None,
             link: None,
-            native_ref: Some(object.clone()),
+            native_ref: Some(retained_string(ctx, object, "fcstd product container native reference")?),
         });
     }
     let mut next_ordinal = HashMap::<Option<String>, u32>::new();
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
             OccurrenceParent::Root {} => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
+            OccurrenceParent::Occurrence { occurrence } => Some(retained_string(ctx, occurrence.as_str(), "fcstd product ordinal parent")?),
         };
+        if !next_ordinal.contains_key(&parent) {
+            ctx.charge_collection_items(1, "fcstd product ordinal index")?;
+            next_ordinal.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product ordinal index"))?;
+        }
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
         *ordinal = ordinal
@@ -566,7 +573,8 @@ fn linked_prototype_transform(
             record.object
         )));
     }
-    stack.push(record.object.clone());
+    reserve_vec_items(ctx, stack, 1, "fcstd nested product stack")?;
+    stack.push(retained_string(ctx, &record.object, "fcstd nested product identity")?);
     let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(ProductNodeRecord::local_transform)
@@ -607,14 +615,14 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecErr
     Ok(count)
 }
 
-fn copy_on_change_policy(value: &NativeCopyOnChangePolicy) -> CopyOnChangePolicy {
-    match value.index() {
+fn copy_on_change_policy(ctx: &DecodeContext<'_>, value: &NativeCopyOnChangePolicy) -> Result<CopyOnChangePolicy, CodecError> {
+    Ok(match value.index() {
         0 => CopyOnChangePolicy::Disabled,
         1 => CopyOnChangePolicy::Enabled,
         2 => CopyOnChangePolicy::Owned,
         3 => CopyOnChangePolicy::Tracking,
-        _ => CopyOnChangePolicy::Native(value.as_str().to_owned()),
-    }
+        _ => CopyOnChangePolicy::Native(retained_string(ctx, value.as_str(), "fcstd product copy on change")?),
+    })
 }
 
 pub(crate) fn external_document_reference_charged(
@@ -918,25 +926,25 @@ fn product_kind(kind: &str) -> Option<ProductKind> {
     }
 }
 
-fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String> {
-    let property = properties.iter().find(|property| property.name == name)?;
+fn metadata_string(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<String>, CodecError> {
+    let Some(property) = properties.iter().find(|property| property.name == name) else { return Ok(None); };
     if property.type_name != "App::PropertyString" {
-        return None;
+        return Ok(None);
     }
-    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
+    let Ok(document) = roxmltree::Document::parse(property.xml.text()) else { return Ok(None); };
     let root = document.root_element();
     if !root.has_tag_name("Property") {
-        return None;
+        return Ok(None);
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
-    let value = values.next()?;
+    let Some(value) = values.next() else { return Ok(None); };
     if values.next().is_some()
         || !value.has_tag_name("String")
         || value.children().any(|node| node.is_element())
     {
-        return None;
+        return Ok(None);
     }
-    value.attribute("value").map(str::to_owned)
+    value.attribute("value").map(|value| retained_string(ctx, value, "fcstd product metadata")).transpose()
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
@@ -1021,19 +1029,13 @@ fn linked_target(
 }
 
 fn neutral_link_target(
+    ctx: &DecodeContext<'_>,
     target: &crate::native::LinkTarget,
 ) -> Result<Option<cadmpeg_ir::products::PrototypeReference>, CodecError> {
     if let Some(document) = target.document() {
         return Ok(Some(cadmpeg_ir::products::PrototypeReference::External {
-            document: match document {
-                crate::native::ExternalDocument::File(path) => {
-                    cadmpeg_ir::products::ExternalDocument::path(path.as_str())
-                }
-                crate::native::ExternalDocument::Name(name) => {
-                    cadmpeg_ir::products::ExternalDocument::document_id(name.as_str())
-                }
-            },
-            object: target.object().map(str::to_owned),
+            document: external_document_reference_charged(ctx, document.as_str(), document.attribute())?,
+            object: target.object().map(|name| retained_string(ctx, name, "fcstd product external target")).transpose()?,
         }));
     }
     let Some(object) = target.object() else {
