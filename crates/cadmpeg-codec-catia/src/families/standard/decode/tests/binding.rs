@@ -295,7 +295,9 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_empty());
-    assert!(!crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records).is_empty());
+    assert!(!crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+        .collect::<Vec<_>>()
+        .is_empty());
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
     ir.model.surfaces.push(Surface {

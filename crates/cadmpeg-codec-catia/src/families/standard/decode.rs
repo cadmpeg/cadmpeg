@@ -8876,7 +8876,11 @@ fn bind_standard_a5_owner_surfaces(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
-    let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
+    let owners = crate::resource::collect_vec(
+        ctx,
+        crate::families::b2::records::b2_owner_packets_from_records(data, records),
+        "catia_a5_owner_packets",
+    )?;
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
         return Ok(0);
     }
