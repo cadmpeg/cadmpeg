@@ -40,6 +40,7 @@ fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
     let curve = parametric_spline_curve_file();
     for operation in [
         "iges spline curve knots",
+        "iges spline curve admitted knots",
         "iges spline neutral point slots",
         "iges spline neutral vertex slots",
         "iges spline neutral curve slots",
@@ -53,6 +54,8 @@ fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
     for operation in [
         "iges spline surface u knots",
         "iges spline surface v knots",
+        "iges spline surface admitted u knots",
+        "iges spline surface admitted v knots",
         "iges spline surface pole rows",
         "iges spline surface pole row controls",
         "iges spline neutral surface slots",

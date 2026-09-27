@@ -2348,9 +2348,13 @@ pub(super) fn project(
         };
         let u_domain = [finite_u_knots[u_degree_usize], finite_u_knots[u_count]];
         let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]];
+        let mut raw_u_knots = reserve_optional_vec(ctx, finite_u_knots.len(), "iges NURBS surface admitted u knots")?;
+        raw_u_knots.extend(finite_u_knots.into_iter().map(FiniteReal::get));
+        let mut raw_v_knots = reserve_optional_vec(ctx, finite_v_knots.len(), "iges NURBS surface admitted v knots")?;
+        raw_v_knots.extend(finite_v_knots.into_iter().map(FiniteReal::get));
         let (Ok(u_knots), Ok(v_knots)) = (
-            KnotVector::from_finite_lanes(finite_u_knots),
-            KnotVector::from_finite_lanes(finite_v_knots),
+            KnotVector::new(raw_u_knots),
+            KnotVector::new(raw_v_knots),
         ) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface knot vector is decreasing"))?;
             continue;
