@@ -32,8 +32,8 @@ cadmpeg_core::named_optional_field!(deserialize_second_reference, u32, "second_r
 cadmpeg_core::named_optional_field!(deserialize_vertical_alignment, u32, "vertical_alignment");
 cadmpeg_core::named_optional_field!(deserialize_width_factor, f64, "width_factor");
 /// One text entity in a Fusion sketch coordinate system.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchTextSerde", into = "SketchTextSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchTextSerde")]
 pub(crate) struct SketchText {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -76,6 +76,114 @@ pub(crate) struct SketchText {
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
     pub(crate) raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_TEXT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchText {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            class_version: self.class_version,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            base_id: self.base_id,
+            text: self.text.clone(),
+            font_family: self.font_family.clone(),
+            font_weight: self.font_weight,
+            height: self.height,
+            color: self.color,
+            layout: self.layout.clone(),
+            raw_bytes: self.raw_bytes.clone(),
+        }
+    }
+}
+
+impl Serialize for SketchText {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            owner_reference: u32,
+            class_tag: &'a str,
+            class_version: u32,
+            byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persistent_id: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            base_id: Option<u64>,
+            text: &'a str,
+            font_family: &'a str,
+            font_weight: i32,
+            height: f64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            width_factor: Option<f64>,
+            color: Color,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            anchor: Option<Point2>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            rotation: Option<f64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            horizontal_alignment: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            vertical_alignment: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_reference: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_reference: Option<u32>,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            raw_bytes: &'a [u8],
+        }
+        let placement = self.placement();
+        let alignment = self.alignment();
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.as_str(),
+            class_version: self.class_version,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            base_id: self.base_id,
+            text: &self.text,
+            font_family: &self.font_family,
+            font_weight: self.font_weight,
+            height: self.height.get(),
+            width_factor: self.width_factor().map(NonNegativeReal::get),
+            color: self.color,
+            anchor: placement.map(|value| value.anchor.get()),
+            rotation: placement.map(|value| value.rotation.get()),
+            horizontal_alignment: alignment.map(|value| value.horizontal),
+            vertical_alignment: alignment.map(|value| value.vertical),
+            first_reference: match self.layout {
+                SketchTextLayout::TxtTag { .. } => None,
+                SketchTextLayout::TextexTag {
+                    first_reference, ..
+                } => first_reference,
+            },
+            second_reference: match self.layout {
+                SketchTextLayout::TxtTag { .. } => None,
+                SketchTextLayout::TextexTag {
+                    second_reference, ..
+                } => second_reference,
+            },
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Horizontal and vertical alignment members of a sketch-text record.
@@ -271,6 +379,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
     }
 }
 
+#[cfg(test)]
 impl From<SketchText> for SketchTextSerde {
     fn from(text: SketchText) -> Self {
         let (width_factor, alignment, first_reference, second_reference, placement) =
@@ -2157,7 +2266,7 @@ impl SketchNurbsPoles {
 
 #[cfg(test)]
 mod tests {
-    use super::{SketchCurveGeometry, SketchSurface};
+    use super::{SketchCurveGeometry, SketchSurface, SketchText};
     use serde_json::json;
 
     fn native_surface_wire() -> serde_json::Value {
@@ -2172,6 +2281,58 @@ mod tests {
                 [{"x":1.0,"y":0.0,"z":0.0},{"x":1.0,"y":1.0,"z":0.0}]
             ]
         })
+    }
+
+    fn native_text_wire(extended: bool) -> serde_json::Value {
+        let mut wire = json!({
+            "id": "text", "record_index": 1, "owner_reference": 2,
+            "class_tag": "000", "class_version": 4, "byte_offset": 0,
+            "text": "text", "font_family": "Arial", "font_weight": 400,
+            "height": 10.0, "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "raw_bytes": "AQID"
+        });
+        if extended {
+            wire["width_factor"] = json!(1.0);
+            wire["horizontal_alignment"] = json!(3);
+            wire["vertical_alignment"] = json!(7);
+            wire["first_reference"] = json!(12);
+            wire["second_reference"] = json!(13);
+        }
+        wire["anchor"] = json!({"u": 2.0, "v": 3.0});
+        wire["rotation"] = json!(0.5);
+        wire
+    }
+
+    #[test]
+    fn sketch_text_borrowed_wire_matches_owned_wire_bytes() {
+        for extended in [false, true] {
+            let text: SketchText = serde_json::from_value(native_text_wire(extended)).unwrap();
+            let owned = super::SketchTextSerde::from(text.clone());
+            assert_eq!(
+                serde_json::to_vec(&text).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_text_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchText,
+        }
+        let text: SketchText = serde_json::from_value(native_text_wire(true)).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-text#0",
+            value: &text,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_texts",
+            || super::SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_TEXT_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 
     fn native_arc_wire() -> serde_json::Value {
