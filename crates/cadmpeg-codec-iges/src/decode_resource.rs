@@ -25,6 +25,19 @@ pub(crate) fn reserve_admitted_vec<T>(
     Ok(values)
 }
 
+pub(crate) fn reserve_vec_growth<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let requested = u64_from_index(additional);
+    ctx.charge_collection_items(requested, operation)?;
+    values
+        .try_reserve(additional)
+        .map_err(|_| refuse_local_limit(operation, requested, requested))
+}
+
 pub(crate) fn collect_optional_vec<T>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = Option<T>>,

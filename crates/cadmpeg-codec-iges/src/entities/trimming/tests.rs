@@ -17,7 +17,7 @@ use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
 use cadmpeg_ir::CadIr;
 
 use super::{
-    cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
+    append_path, cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
     linear_boundary_relationship_is_valid, linear_boundary_rings, pcurve_within_declared_bounds,
     BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind, BoundaryVertexClusterError,
     BoundaryVertexSourceEndpoint, DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry,
@@ -49,6 +49,29 @@ use crate::IgesCodec;
 
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
+
+#[test]
+fn linear_boundary_path_refuses_collection_limit_before_append() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut target = Vec::new();
+    let result = append_path(&mut target, vec![1_u8, 2, 3], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 3
+    ));
+    assert!(target.is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(append_path(&mut target, vec![1_u8, 2, 3], &ctx).unwrap());
+    assert_eq!(target, [1, 2, 3]);
+}
 
 #[test]
 fn pcurve_bounds_keep_a_wide_finite_knot_span() {
