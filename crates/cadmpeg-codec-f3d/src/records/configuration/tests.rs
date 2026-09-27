@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{encode_configuration_payload, DesignConfiguration};
+use super::{
+    encode_configuration_payload, DesignConfiguration, DesignConfigurationWire,
+    CONFIGURATION_CLONE_COUNT,
+};
 use serde_json::{json, Value};
 
 fn wire(kind: &str, order: &[&str], payload: Value) -> Value {
@@ -27,6 +30,120 @@ fn wire(kind: &str, order: &[&str], payload: Value) -> Value {
         .into_iter()
         .collect(),
     )
+}
+
+#[test]
+fn configuration_borrowed_wire_matches_owned_wire_bytes() {
+    for (kind, order, payload) in [
+        ("table", vec![], json!({})),
+        (
+            "table",
+            vec!["b", "a"],
+            json!({
+                "active": "b", "before": [1, null], "after": false,
+                "configurations": {
+                    "a": {"z": [true], "material": "steel", "parameters": {"a": null, "b": -0.0}},
+                    "b": {"suppressed": ["x"], "before": 2, "after": "y"}
+                }
+            }),
+        ),
+        (
+            "rule",
+            vec![],
+            json!({"when": {"x": [1, 2]}, "activate": "a"}),
+        ),
+    ] {
+        let record: DesignConfiguration =
+            serde_json::from_value(wire(kind, &order, payload)).unwrap();
+        let owned = DesignConfigurationWire::from(record.clone());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+    let name = "a 😀# b.dsgcfg";
+    let mut escaped = wire("table", &[], json!({}));
+    escaped["entry_name"] = json!(name);
+    escaped["id"] = json!(crate::ids::configuration_entry_id(
+        name,
+        &cadmpeg_ir::identity_component!("configuration")
+    ));
+    let record: DesignConfiguration = serde_json::from_value(escaped).unwrap();
+    let owned = DesignConfigurationWire::from(record.clone());
+    assert_eq!(
+        serde_json::to_vec(&record).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn configuration_variant_sort_work_limit_refuses_before_serialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record: DesignConfiguration = serde_json::from_value(wire(
+        "table",
+        &["b", "a"],
+        json!({"configurations":{"a":{},"b":{}}}),
+    ))
+    .unwrap();
+    let native = crate::native::F3dNative {
+        design_configurations: vec![record],
+        ..Default::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 3;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "sort F3D configuration variants"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    native.store(&service, &mut namespace).unwrap();
+    assert_eq!(namespace.arenas()["design_configurations"].len(), 1);
+}
+
+#[test]
+fn configuration_native_retained_limit_refuses_before_record_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record: DesignConfiguration = serde_json::from_value(wire(
+        "table",
+        &["one"],
+        json!({"active":"one", "configurations":{"one":{"parameters":{"x":1},"suppressed":["part"]}}}),
+    ))
+    .unwrap();
+    let arena_name = "design_configurations";
+    let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    CONFIGURATION_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .set_arena(&limited, arena_name, std::slice::from_ref(&record))
+        .unwrap_err();
+    CONFIGURATION_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, arena_name, std::slice::from_ref(&record))
+        .unwrap();
+    assert_eq!(namespace.arenas()[arena_name].len(), 1);
 }
 
 #[test]
