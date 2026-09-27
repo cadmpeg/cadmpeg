@@ -28,6 +28,46 @@ use cadmpeg_asm::{acis_header, asm_header};
 use crate::dialect::F3dDialect;
 use crate::manifest;
 
+fn push_charged<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.push(value);
+    Ok(())
+}
+
+fn copy_string_charged(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let length = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn insert_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "index F3D container attributes")?;
+    attributes.insert(key.to_owned(), value);
+    Ok(())
+}
+
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
 /// Decode opens nested archives through `ArchiveSnapshot` / `begin_expand`, so
 /// session `ResourceLimits` bind there instead of these constants.
@@ -399,7 +439,7 @@ pub(crate) fn scan<'a>(
     let mut inflated_entries = BTreeMap::new();
 
     for file in archive.entries() {
-        let name = file.name.clone();
+        let name = copy_string_charged(ctx, &file.name, "retain F3D entry name")?;
         let role = classify(&name);
         let compression = file.compression;
         let compressed_size = file.compressed_size;
@@ -421,82 +461,85 @@ pub(crate) fn scan<'a>(
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
             let sha = Sha256Digest::digest(buf);
 
-            attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
+            insert_attribute(ctx, &mut attributes, "asm_magic", asm_magic_label(buf))?;
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
-                attributes.insert("asm_width".to_string(), h.width.to_string());
+                insert_attribute(ctx, &mut attributes, "asm_width", h.width.to_string())?;
                 if let Some(v) = h.metadata.save_format_version {
-                    attributes.insert("acis_save_format_version".to_string(), v.to_string());
+                    insert_attribute(ctx, &mut attributes, "acis_save_format_version", v.to_string())?;
                 }
                 if let Some(v) = asm_header::record_count(buf) {
-                    attributes.insert("asm_record_count".to_string(), v.to_string());
+                    insert_attribute(ctx, &mut attributes, "asm_record_count", v.to_string())?;
                 }
                 if let Some(v) = h.metadata.entity_count {
-                    attributes.insert("asm_entity_count".to_string(), v.to_string());
+                    insert_attribute(ctx, &mut attributes, "asm_entity_count", v.to_string())?;
                 }
                 if let Some(v) = h.metadata.flags {
-                    attributes.insert("asm_flags".to_string(), v.to_string());
+                    insert_attribute(ctx, &mut attributes, "asm_flags", v.to_string())?;
                 }
                 if let Some(pf) = &h.metadata.product_family {
-                    attributes.insert("product_family".to_string(), pf.clone());
+                    insert_attribute(ctx, &mut attributes, "product_family", copy_string_charged(ctx, pf, "retain F3D container attribute")?)?;
                 }
                 if let Some(pv) = &h.metadata.product_version {
-                    attributes.insert("product_version".to_string(), pv.clone());
+                    insert_attribute(ctx, &mut attributes, "product_version", copy_string_charged(ctx, pv, "retain F3D container attribute")?)?;
                 }
                 if let Some(sd) = &h.metadata.save_date {
-                    attributes.insert("save_date".to_string(), sd.clone());
+                    insert_attribute(ctx, &mut attributes, "save_date", copy_string_charged(ctx, sd, "retain F3D container attribute")?)?;
                 }
                 if let Some(s) = h.metadata.scale {
-                    attributes.insert("scale".to_string(), format!("{s}"));
+                    insert_attribute(ctx, &mut attributes, "scale", format!("{s}"))?;
                 }
                 if let Some(r) = h.metadata.linear {
-                    attributes.insert("resabs".to_string(), format!("{r}"));
+                    insert_attribute(ctx, &mut attributes, "resabs", format!("{r}"))?;
                 }
                 if let Some(r) = h.metadata.angular {
-                    attributes.insert("resnor".to_string(), format!("{r}"));
+                    insert_attribute(ctx, &mut attributes, "resnor", format!("{r}"))?;
                 }
             }
             match solved_record_limit {
                 Some(offset) => {
-                    attributes.insert("history_partition_offset".to_string(), offset.to_string());
-                    attributes.insert("solved_record_len".to_string(), offset.to_string());
+                    insert_attribute(ctx, &mut attributes, "history_partition_offset", offset.to_string())?;
+                    insert_attribute(ctx, &mut attributes, "solved_record_len", offset.to_string())?;
                 }
                 None => {
-                    attributes.insert("history_partition_offset".to_string(), "none".to_string());
+                    insert_attribute(ctx, &mut attributes, "history_partition_offset", "none".to_string())?;
                 }
             }
-            attributes.insert("sha256".to_string(), sha.as_str().to_owned());
+            insert_attribute(ctx, &mut attributes, "sha256", sha.as_str().to_owned())?;
 
-            breps.push(BrepFacts {
-                name: name.clone(),
+            push_charged(ctx, &mut breps, BrepFacts {
+                name: copy_string_charged(ctx, &name, "retain F3D BREP name")?,
                 uncompressed_len: uncompressed_size,
                 kernel,
                 sha256: sha,
-            });
+            }, "collect F3D BREP facts")?;
         }
 
         let storage = match compression.storage(compressed_size, uncompressed_size) {
             Ok(storage) => storage,
             Err(message) => {
-                attributes.insert(
-                    "storage_declaration".to_string(),
+                insert_attribute(
+                    ctx,
+                    &mut attributes,
+                    "storage_declaration",
                     format!("{message}: {compressed_size}/{uncompressed_size}"),
-                );
+                )?;
                 EntryStorage::payload_only(VerbatimLabel::Stored, uncompressed_size)
             }
         };
-        entries.push(ContainerEntry {
-            name: name.clone(),
+        push_charged(ctx, &mut entries, ContainerEntry {
+            name: copy_string_charged(ctx, &name, "retain F3D summary entry name")?,
             role,
             storage,
             attributes,
-        });
+        }, "collect F3D container entries")?;
+        ctx.charge_collection_items(1, "index F3D inflated entries")?;
         inflated_entries.insert(name, view);
     }
 
     // The parse strategy and the dialect row are chosen together, from the same
     // discriminants, before anything semantic is read. Classifying here is what
     // keeps the report from re-deriving an identity the parse already settled.
-    let root_document_members = root_f3d_members(&inflated_entries);
+    let root_document_members = root_f3d_members(ctx, &inflated_entries)?;
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
@@ -525,10 +568,15 @@ pub(crate) fn scan<'a>(
 
     let mut scope_entry_indices = std::collections::HashMap::<String, Vec<usize>>::new();
     for (index, entry) in entries.iter().enumerate() {
-        scope_entry_indices
-            .entry(crate::ids::native_scope(&entry.name))
-            .or_default()
-            .push(index);
+        let scope = crate::ids::native_scope_charged(ctx, &entry.name)?;
+        if !scope_entry_indices.contains_key(&scope) {
+            ctx.charge_collection_items(1, "index F3D native scopes")?;
+            scope_entry_indices
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D native scopes", 0, 1))?;
+        }
+        let indices = scope_entry_indices.entry(scope).or_default();
+        push_charged(ctx, indices, index, "index F3D scope entries")?;
     }
 
     let mut scan = ContainerScan {
@@ -541,12 +589,12 @@ pub(crate) fn scan<'a>(
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     };
-    let text_names = text_brep_names(&scan)
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    for name in text_names {
-        let bytes = scan.entry_bytes(&name)?;
+    for index in 0..scan.entries.len() {
+        let entry = &scan.entries[index];
+        if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
+            continue;
+        }
+        let bytes = scan.entry_bytes(&entry.name)?;
         let framing = match cadmpeg_asm::sat::parse(ctx, bytes) {
             Ok(stream) => TextBrepFraming::Parsed(stream),
             Err(cadmpeg_asm::stream_error::StreamFailure::Parse(error)) => {
@@ -561,6 +609,10 @@ pub(crate) fn scan<'a>(
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         };
         ctx.charge_collection_items(1, "retain F3D text B-rep framing")?;
+        scan.text_breps
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("retain F3D text B-rep framing", 0, 1))?;
+        let name = copy_string_charged(ctx, &entry.name, "retain F3D text B-rep name")?;
         scan.text_breps.insert(name, framing);
     }
     Ok(scan)
@@ -643,12 +695,17 @@ pub(crate) fn summary_notes(scan: &ContainerScan<'_>, scope: SummaryScope) -> Ve
 /// and whose extension is `f3d`, case-insensitively. Each name is returned as
 /// the archive spells it, and the order is the entry map's, which is sorted
 /// rather than the archive's own sequence.
-fn root_f3d_members<'a>(entries: &'a BTreeMap<String, View<'_>>) -> Vec<&'a str> {
-    entries
-        .keys()
-        .map(String::as_str)
-        .filter(|name| !name.contains('/') && is_f3d_name(name))
-        .collect()
+fn root_f3d_members<'a>(
+    ctx: &DecodeContext<'_>,
+    entries: &'a BTreeMap<String, View<'_>>,
+) -> Result<Vec<&'a str>, CodecError> {
+    let mut members = Vec::new();
+    for name in entries.keys().map(String::as_str) {
+        if !name.contains('/') && is_f3d_name(name) {
+            push_charged(ctx, &mut members, name, "collect F3Z document members")?;
+        }
+    }
+    Ok(members)
 }
 
 /// Whether an archive path names an F3D document by extension.
@@ -728,6 +785,120 @@ fn asm_magic_label(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::is_f3d_name;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+    use std::collections::BTreeMap;
+    use std::io::Write;
+
+    fn scan_refusal_at(operation: &str) -> cadmpeg_core::CodecError {
+        let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
+        for limit in 0..256 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            if let Err(error) = super::scan(&ctx, root) {
+                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                    if refusal.operation == operation)
+                {
+                    return error;
+                }
+            }
+        }
+        panic!("operation {operation} did not refuse a collection limit");
+    }
+
+    #[test]
+    fn container_attributes_refuse_collection_limit() {
+        let error = scan_refusal_at("index F3D container attributes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_brep_facts_refuse_collection_limit() {
+        let error = scan_refusal_at("collect F3D BREP facts");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_entries_refuse_collection_limit() {
+        let error = scan_refusal_at("collect F3D container entries");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_inflated_index_refuses_collection_limit() {
+        let error = scan_refusal_at("index F3D inflated entries");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_native_scope_index_refuses_collection_limit() {
+        let error = scan_refusal_at("index F3D native scopes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_scope_entry_index_refuses_collection_limit() {
+        let error = scan_refusal_at("index F3D scope entries");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn container_entry_name_refuses_retained_limit() {
+        let mut policy = DecodePolicy::service();
+        let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+        let mut name_bytes = 0_u64;
+        for index in 0..archive.len() {
+            name_bytes += archive.by_index(index).unwrap().name().len() as u64;
+        }
+        policy.limits.max_retained_bytes = name_bytes * 4;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = match super::scan(&ctx, root) {
+            Ok(_) => panic!("entry name must refuse"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D entry name"));
+    }
+
+    #[test]
+    fn container_f3z_member_list_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let entries = BTreeMap::from([("document.f3d".to_owned(), View::over_retained(&[]))]);
+        let error = super::root_f3d_members(&ctx, &entries).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3Z document members"));
+    }
+
+    #[test]
+    fn container_text_brep_framing_refuses_collection_limit() {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.sat", stored)
+            .unwrap();
+        zip.write_all(b"bad text BREP").unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        for limit in 0..256 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            if let Err(error) = super::scan(&ctx, root) {
+                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                    if refusal.operation == "retain F3D text B-rep framing")
+                {
+                    return;
+                }
+            }
+        }
+        panic!("text BREP framing did not refuse a collection limit");
+    }
 
     #[test]
     fn f3d_name_requires_a_nonempty_stem_and_case_insensitive_extension() {
