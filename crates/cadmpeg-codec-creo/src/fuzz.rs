@@ -52,7 +52,7 @@ pub fn compact_int(data: &[u8]) {
 
 /// Exercise Creo PSB token stream parsing.
 pub fn psb_tokens(data: &[u8]) {
-    let _probe = crate::psb::tokens(data);
+    let _probe = crate::psb::tokens(data).count();
 }
 
 /// Exercise Creo short-form float decoding.

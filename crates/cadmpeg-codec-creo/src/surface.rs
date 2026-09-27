@@ -3459,9 +3459,7 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame> {
                 record_end = record_end.min(at);
             }
         }
-        let tokens = psb::tokens(&payload[close + 2..record_end]);
-        let mut named = tokens
-            .iter()
+        let mut named = psb::tokens(&payload[close + 2..record_end])
             .filter_map(|token| {
                 let token_offset = close + 2 + token.offset;
                 (token.kind == psb::TokenKind::NamedRecord
@@ -3523,7 +3521,6 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame> {
             ) {
                 value_end = value_offset + length;
             } else if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
-                .into_iter()
                 .find(|token| token.kind == psb::TokenKind::CompoundClose)
             {
                 value_end = value_offset + compound_close.offset;
