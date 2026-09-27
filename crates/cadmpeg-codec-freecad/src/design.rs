@@ -45,7 +45,7 @@ use cadmpeg_ir::{
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_allocation_failed, collection_vec, reserved_vec, retained_string};
+use crate::resource::{collection_allocation_failed, collection_vec, insert_hash_map, reserved_vec, retained_string};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -63,54 +63,45 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     program_version: Option<&str>,
 ) -> Result<BTreeSet<String>, CodecError> {
-    let properties_by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(&property.owner).or_default().push(property);
-            map
-        },
-    );
-    let feature_ids = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .map(|object| Ok((object.id.as_str(), feature_id(object)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let parent_by_member = objects
-        .iter()
-        .filter(|object| is_body(&object.type_name))
-        .flat_map(|body| {
-            properties_by_owner
-                .get(body.id.as_str())
-                .and_then(|properties| body_membership_property(properties))
-                .into_iter()
-                .flat_map(PropertyRecord::links)
-                .filter_map(|link| link.as_ref()?.object())
-                .map(move |member| Ok((member, feature_id(body)?)))
-        })
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let mut sketch_ids = objects
-        .iter()
-        .filter(|object| is_sketch(&object.type_name))
-        .map(|object| {
-            Ok((
-                object.id.as_str(),
-                SketchId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
-                    object_key(object)?,
-                ),
-            ))
-        })
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let body_ids = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
-    let source_order = objects
-        .iter()
-        .map(|candidate| Ok((feature_id(candidate)?, candidate.order)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        if !properties_by_owner.contains_key(property.owner.as_str()) {
+            insert_hash_map(ctx, &mut properties_by_owner, property.owner.as_str(), Vec::new(), "fcstd design owner index")?;
+        }
+        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
+            crate::resource::reserve_vec_items(ctx, owned, 1, "fcstd design owner properties")?;
+            owned.push(property);
+        }
+    }
+    let mut feature_ids = HashMap::new();
+    for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
+        insert_hash_map(ctx, &mut feature_ids, object.id.as_str(), feature_id(object)?, "fcstd design feature ids")?;
+    }
+    let mut parent_by_member = HashMap::new();
+    for body in objects.iter().filter(|object| is_body(&object.type_name)) {
+        let Some(property) = properties_by_owner.get(body.id.as_str())
+            .and_then(|properties| body_membership_property(properties)) else { continue; };
+        for member in property.links().iter().flatten().filter_map(crate::native::LinkTarget::object) {
+            insert_hash_map(ctx, &mut parent_by_member, member, feature_id(body)?, "fcstd design body membership")?;
+        }
+    }
+    let mut sketch_ids = HashMap::new();
+    for object in objects.iter().filter(|object| is_sketch(&object.type_name)) {
+        let id = SketchId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
+            object_key(object)?,
+        );
+        insert_hash_map(ctx, &mut sketch_ids, object.id.as_str(), id, "fcstd design sketch ids")?;
+    }
+    let mut body_ids = collection_vec(ctx, ir.model.bodies.len(), "fcstd design body ids")?;
+    for body in &ir.model.bodies {
+        body_ids.push(cadmpeg_ir::ids::BodyId::mint(retained_string(ctx, body.id.as_str(), "fcstd design body id")?)
+            .map_err(CodecError::malformed)?);
+    }
+    let mut source_order = HashMap::new();
+    for candidate in objects {
+        insert_hash_map(ctx, &mut source_order, feature_id(candidate)?, candidate.order, "fcstd design source order")?;
+    }
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         ctx,
         objects,
@@ -118,20 +109,18 @@ pub(crate) fn transfer(
         &parent_by_member,
         &source_order,
     )?;
-    let ordinal_by_feature = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .map(|object| Ok((feature_id(object)?, feature_ordinals[object.id.as_str()])))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut ordinal_by_feature = HashMap::new();
+    for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
+        insert_hash_map(ctx, &mut ordinal_by_feature, feature_id(object)?, feature_ordinals[object.id.as_str()], "fcstd design feature ordinals")?;
+    }
 
     for object in objects {
         if !is_design_object(&object.type_name) {
             continue;
         }
-        let owned = properties_by_owner
-            .get(object.id.as_str())
-            .cloned()
-            .unwrap_or_default();
+        let source = properties_by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
+        let mut owned = collection_vec(ctx, source.len(), "fcstd design selected properties")?;
+        owned.extend_from_slice(source);
         let id = feature_id(object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
