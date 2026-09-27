@@ -2207,8 +2207,8 @@ pub(super) struct ParasolidTopologyAttributeListReference {
 }
 
 /// Framed Parasolid type-81 entity/attribute-list record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Entity51Wire", into = "Entity51Wire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Entity51Wire")]
 pub(super) struct ParasolidEntity51Record {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -2347,11 +2347,8 @@ pub(super) struct ParasolidEntity58TagRecord {
 }
 
 /// Counted Parasolid type-98 Unicode-value record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidEntity62UnicodeRecordWire",
-    into = "ParasolidEntity62UnicodeRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidEntity62UnicodeRecordWire")]
 pub(super) struct ParasolidEntity62UnicodeRecord {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -2367,6 +2364,45 @@ pub(super) struct ParasolidEntity62UnicodeRecord {
     pub(super) inflated_offset: u64,
 }
 
+struct UnicodeCodeUnits<'a>(&'a str);
+
+impl Serialize for UnicodeCodeUnits<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut units = serializer.serialize_seq(Some(self.0.encode_utf16().count()))?;
+        for unit in self.0.encode_utf16() {
+            units.serialize_element(&unit)?;
+        }
+        units.end()
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidEntity62UnicodeRecordRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: NonNullXmt,
+    code_units: UnicodeCodeUnits<'a>,
+    value: &'a UnicodeValue,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidEntity62UnicodeRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidEntity62UnicodeRecordRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            code_units: UnicodeCodeUnits(self.value.as_str()),
+            value: &self.value,
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct ParasolidEntity62UnicodeRecordWire {
     id: String,
@@ -2378,6 +2414,7 @@ struct ParasolidEntity62UnicodeRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidEntity62UnicodeRecord> for ParasolidEntity62UnicodeRecordWire {
     fn from(value: ParasolidEntity62UnicodeRecord) -> Self {
         let code_units = value.value.as_str().encode_utf16().collect();
@@ -3766,9 +3803,26 @@ mod tests {
         let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
         let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::ParasolidEntity62UnicodeRecordWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
         let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
         assert!(
             serde_json::from_str::<super::ParasolidEntity62UnicodeRecord>(&inconsistent).is_err()
+        );
+    }
+
+    #[test]
+    fn unicode_record_native_limit_refuses_before_code_unit_copy() {
+        let wire = r#"{"id":"nx:parasolid:unicode-record#0","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
+        let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(wire).unwrap(),
         );
     }
 
