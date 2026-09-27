@@ -3,6 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
+use crate::decode_resource::format_retained;
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -33,6 +34,17 @@ fn standard_color(number: i64) -> Option<Color> {
         _ => return None,
     };
     Color::new(r, g, b, 1.0)
+}
+
+fn retained_utf8(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<Option<String>, CodecError> {
+    let Ok(value) = std::str::from_utf8(bytes) else {
+        return Ok(None);
+    };
+    Ok(Some(format_retained(ctx, format_args!("{value}"), operation)?))
 }
 
 fn text_font_definition_pointer_valid(
@@ -206,7 +218,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
@@ -220,7 +232,6 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
-    let mut names = BTreeMap::new();
     let text_fonts = directory
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
@@ -236,7 +247,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, Some(ctx), |sequence| {
             text_fonts
                 .get(&sequence)
                 .and_then(|font| font.supersedes)
@@ -406,9 +417,10 @@ pub(super) fn project(
         };
         let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
-            Some(crate::parameter::TokenValue::String(_)) => record
-                .string(4)
-                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
+            Some(crate::parameter::TokenValue::String(_)) => match record.string(4) {
+                Some(bytes) => retained_utf8(ctx, bytes, "iges color definition name")?,
+                None => None,
+            },
             Some(crate::parameter::TokenValue::Integer(0))
                 if matches!(global.global_table(), GlobalTable::V4_0) =>
             {
@@ -447,7 +459,6 @@ pub(super) fn project(
             continue;
         };
         defined.insert(entry.sequence, color);
-        names.insert(entry.sequence, name.clone());
         appearance(
             ir,
             crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
@@ -584,7 +595,7 @@ pub(super) fn project(
         else {
             continue;
         };
-        let names = groups
+        let mut names = groups
             .properties()
             .iter()
             .filter_map(|pointer| {
@@ -600,10 +611,11 @@ pub(super) fn project(
                         name.iter()
                             .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
                     })
-                    .and_then(|name| String::from_utf8(name.to_vec()).ok())
+                    .and_then(|name| std::str::from_utf8(name).ok())
             })
-            .collect::<BTreeSet<_>>();
-        if names.len() > 1 {
+            ;
+        let first = names.next();
+        if first.is_some_and(|first| names.any(|name| name != first)) {
             if let Some(entry) = entries.get(&sequence) {
                 losses.push(
                     IgesLossCode::BodyNameAmbiguous
@@ -614,7 +626,10 @@ pub(super) fn project(
                 );
             }
         } else {
-            body.name = names.into_iter().next();
+            body.name = match first {
+                Some(name) => retained_utf8(ctx, name.as_bytes(), "iges body property name")?,
+                None => None,
+            };
         }
     }
 
