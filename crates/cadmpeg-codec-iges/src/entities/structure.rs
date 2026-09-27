@@ -1947,6 +1947,56 @@ fn legacy_single_parent_face(
     )))
 }
 
+fn read_flow_pointer(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    cursor: &mut usize,
+    nullable: bool,
+) -> Option<Option<u32>> {
+    let raw = record.integer(*cursor)?;
+    let index = *cursor;
+    *cursor = cursor.checked_add(1)?;
+    if nullable && raw == 0 {
+        return Some(None);
+    }
+    existing_pointer(record, index, entries).map(Some)
+}
+
+fn read_flow_required_pointers(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    cursor: &mut usize,
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut pointers = reserve_vec(ctx, count, operation)?;
+    for _ in 0..count {
+        let Some(Some(sequence)) = read_flow_pointer(record, entries, cursor, false) else {
+            return Ok(None);
+        };
+        pointers.push(sequence);
+    }
+    Ok(Some(pointers))
+}
+
+fn read_flow_optional_pointers(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    cursor: &mut usize,
+    count: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Option<u32>>>, CodecError> {
+    let mut pointers = reserve_vec(ctx, count, "iges flow continuation pointers")?;
+    for _ in 0..count {
+        let Some(pointer) = read_flow_pointer(record, entries, cursor, true) else {
+            return Ok(None);
+        };
+        pointers.push(pointer);
+    }
+    Ok(Some(pointers))
+}
+
 fn flow_associativity(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -1954,65 +2004,44 @@ fn flow_associativity(
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global_table: GlobalTable,
-) -> Option<FlowAssociativity> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FlowAssociativity>, CodecError> {
     if !flow_associativity_directory_valid(entry, global_table) {
-        return None;
+        return Ok(None);
     }
     let form = entry.form;
     let context_count = if form == 18 { 2 } else { 1 };
     if record.integer(1) != Some(context_count) {
-        return None;
+        return Ok(None);
     }
-    let counts = (2..=7)
-        .map(|index| record.count(index))
-        .collect::<Option<Vec<_>>>()?;
-    let _type_flag = record.integer(8).filter(|value| matches!(value, 0..=2))?;
+    let Some(counts) = (|| Some([
+        record.count(2)?, record.count(3)?, record.count(4)?,
+        record.count(5)?, record.count(6)?, record.count(7)?,
+    ]))() else {
+        return Ok(None);
+    };
+    if record.integer(8).filter(|value| matches!(value, 0..=2)).is_none() {
+        return Ok(None);
+    }
     let function_flag = (form == 18)
         .then(|| record.integer(9).filter(|value| matches!(value, 0..=2)))
         .flatten();
     if form == 18 && function_flag.is_none() {
-        return None;
+        return Ok(None);
     }
     let mut cursor = if form == 18 { 10 } else { 9 };
-    let pointers = |cursor: &mut usize, count: usize, nullable: bool| {
-        (0..count)
-            .map(|_| {
-                let raw = record.integer(*cursor)?;
-                *cursor += 1;
-                if nullable && raw == 0 {
-                    return Some(None);
-                }
-                existing_pointer(record, *cursor - 1, entries).map(Some)
-            })
-            .collect::<Option<Vec<_>>>()
-    };
-    let associated = pointers(&mut cursor, counts[0], false)?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let connections = pointers(&mut cursor, counts[1], false)?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let joins = pointers(&mut cursor, counts[2], false)?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let _names = (0..counts[3])
-        .map(|_| {
-            let name = record
-                .string(cursor)
-                .filter(|name| !name.is_empty())?
-                .to_vec();
-            cursor += 1;
-            Some(name)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let displays = pointers(&mut cursor, counts[4], false)?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let continuations = pointers(&mut cursor, counts[5], true)?;
+    let Some(associated) = read_flow_required_pointers(record, entries, &mut cursor, counts[0], ctx, "iges flow associated pointers")? else { return Ok(None); };
+    let Some(connections) = read_flow_required_pointers(record, entries, &mut cursor, counts[1], ctx, "iges flow connection pointers")? else { return Ok(None); };
+    let Some(joins) = read_flow_required_pointers(record, entries, &mut cursor, counts[2], ctx, "iges flow join pointers")? else { return Ok(None); };
+    for _ in 0..counts[3] {
+        if record.string(cursor).is_none_or(|name| name.is_empty()) {
+            return Ok(None);
+        }
+        let Some(next) = cursor.checked_add(1) else { return Ok(None); };
+        cursor = next;
+    }
+    let Some(displays) = read_flow_required_pointers(record, entries, &mut cursor, counts[4], ctx, "iges flow display pointers")? else { return Ok(None); };
+    let Some(continuations) = read_flow_optional_pointers(record, entries, &mut cursor, counts[5], ctx)? else { return Ok(None); };
     let associated_valid = associated.iter().all(|sequence| {
         entries
             .get(sequence)
@@ -2050,7 +2079,7 @@ fn flow_associativity(
                     has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
                 }))
     });
-    (cursor == record.parameter_end()
+    Ok((cursor == record.parameter_end()
         && associated_valid
         && connections_valid
         && joins_valid
@@ -2060,7 +2089,7 @@ fn flow_associativity(
             form,
             associated,
             continuations,
-        })
+        }))
 }
 
 /// The structure admission failure for one product instance.
@@ -2213,22 +2242,24 @@ pub(super) fn project(
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
-    let flows = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
-        .filter_map(|entry| {
-            let record = records.get(&entry.sequence).copied()?;
-            flow_associativity(
+    let mut flows = BTreeMap::new();
+    for entry in directory.iter().filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
+        let Some(record) = records.get(&entry.sequence).copied() else { continue; };
+        if let Some(flow) = flow_associativity(
                 entry,
                 record,
                 &entries,
                 &records,
                 trailing_pointer_analysis,
                 global.global_table(),
-            )
-            .map(|flow| (entry.sequence, flow))
-        })
-        .collect::<BTreeMap<_, _>>();
+                ctx,
+            )? {
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut flows, entry.sequence, flow,
+                "iges flow index nodes",
+            )?;
+        }
+    }
 
     for entry in directory
         .iter()
