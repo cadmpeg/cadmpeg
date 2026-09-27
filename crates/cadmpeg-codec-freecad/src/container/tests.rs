@@ -180,7 +180,7 @@ fn inspects_and_closes_physical_ledger() {
     assert!(ledger
         .windows(2)
         .all(|pair| pair[0].span.end() == pair[1].span.start()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     for role in [
         "local-signature",
         "local-fields",
@@ -325,7 +325,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
     assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(shared.id.as_str()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();
     let mut corrupted_entries = entries.clone();
@@ -344,7 +344,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
             &corrupted_entries,
         )
         .expect("replace entries");
-    assert!(crate::validate_native(&corrupted)
+    assert!(crate::test_support::validate_native(&corrupted)
         .iter()
         .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity));
 }

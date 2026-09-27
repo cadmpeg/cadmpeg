@@ -159,7 +159,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
             .map(|value| wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -218,7 +218,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         model_page.relationships["Template"][0].local_target(),
         Some("fcstd:native:object#Model")
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -298,7 +298,7 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         Some(neutral_template.id.as_str())
     );
     assert!(neutral_view.template.is_none());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -354,7 +354,7 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
         Some(15.0)
     );
     assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -556,7 +556,7 @@ fn retains_unknown_techdraw_runtime_types_only_in_native_records() {
     assert_eq!(drawings.len(), 1);
     assert!(drawings[0].object.ends_with("#Arch"));
     assert_eq!(result.ir().model.drawings.len(), 1);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]

@@ -252,22 +252,29 @@ impl ShapeSet {
     }
 
     fn shape_type_counts(&self) -> BTreeMap<String, usize> {
-        self.tshapes
-            .iter()
-            .fold(BTreeMap::new(), |mut counts, shape| {
-                let name = match shape.kind() {
-                    TextShapeKind::Vertex => "vertex",
-                    TextShapeKind::Edge => "edge",
-                    TextShapeKind::Wire => "wire",
-                    TextShapeKind::Face => "face",
-                    TextShapeKind::Shell => "shell",
-                    TextShapeKind::Solid => "solid",
-                    TextShapeKind::CompSolid => "compsolid",
-                    TextShapeKind::Compound => "compound",
-                };
-                *counts.entry(name.to_owned()).or_default() += 1;
-                counts
-            })
+        const KINDS: [&str; 8] = [
+            "vertex", "edge", "wire", "face", "shell", "solid", "compsolid", "compound",
+        ];
+        let mut counts = [0_usize; KINDS.len()];
+        for shape in self.tshapes.iter() {
+            let index = match shape.kind() {
+                TextShapeKind::Vertex => 0,
+                TextShapeKind::Edge => 1,
+                TextShapeKind::Wire => 2,
+                TextShapeKind::Face => 3,
+                TextShapeKind::Shell => 4,
+                TextShapeKind::Solid => 5,
+                TextShapeKind::CompSolid => 6,
+                TextShapeKind::Compound => 7,
+            };
+            counts[index] += 1;
+        }
+        KINDS
+            .into_iter()
+            .zip(counts)
+            .filter(|(_, count)| *count != 0)
+            .map(|(name, count)| (name.to_owned(), count))
+            .collect()
     }
 
     /// Validate all cross-table references before a shape set enters CADIR.
@@ -2358,13 +2365,21 @@ fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, Codec
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
 pub(crate) fn carrier_census(
+    ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
-) -> Vec<crate::native::CarrierCensusRecord> {
-    let mut census = payloads
+) -> Result<Vec<crate::native::CarrierCensusRecord>, CodecError> {
+    let count = payloads
         .iter()
-        .filter_map(|payload| {
-            let facts = payload.payload.shape_set()?;
-            let version = payload.payload.topology_version()?;
+        .filter(|payload| payload.payload.shape_set().is_some())
+        .count();
+    let mut census = collection_vec(ctx, count, "FreeCAD carrier census records")?;
+    for payload in payloads {
+            let Some(facts) = payload.payload.shape_set() else {
+                continue;
+            };
+            let Some(version) = payload.payload.topology_version() else {
+                continue;
+            };
             let curve2ds = &facts.curve2ds;
             let curves = &facts.curves;
             let surfaces = &facts.surfaces;
@@ -2378,7 +2393,7 @@ pub(crate) fn carrier_census(
                 form: match payload.payload.form() {
                     ShapePayloadForm::Text => crate::native::CarrierCensusForm::Text,
                     ShapePayloadForm::Binary => crate::native::CarrierCensusForm::Binary,
-                    ShapePayloadForm::Empty => return None,
+                    ShapePayloadForm::Empty => continue,
                 },
                 topology_version: version,
                 curves_2d: BTreeMap::new(),
@@ -2390,16 +2405,17 @@ pub(crate) fn carrier_census(
                 triangulations: triangulations as u64,
             };
             for curve in curve2ds {
-                census_curve(CensusCurve::Parameter(curve), &mut record.curves_2d);
+                census_curve(ctx, CensusCurve::Parameter(curve), &mut record.curves_2d)?;
             }
             for curve in curves {
-                census_curve(CensusCurve::Model(curve), &mut record.curves_3d);
+                census_curve(ctx, CensusCurve::Model(curve), &mut record.curves_3d)?;
             }
             for surface in surfaces {
-                census_surface(surface, &mut record.surfaces, &mut record.curves_3d);
+                census_surface(ctx, surface, &mut record.surfaces, &mut record.curves_3d)?;
             }
             for shape in tshapes.iter() {
                 increment(
+                    ctx,
                     &mut record.topology,
                     match shape.kind() {
                         TextShapeKind::Vertex => "vertex",
@@ -2411,17 +2427,26 @@ pub(crate) fn carrier_census(
                         TextShapeKind::CompSolid => "compsolid",
                         TextShapeKind::Compound => "compound",
                     },
-                );
+                )?;
             }
-            Some(record)
-        })
-        .collect::<Vec<_>>();
+            census.push(record);
+    }
     census.sort_by(|left, right| left.id.cmp(&right.id));
-    census
+    Ok(census)
 }
 
-fn increment(counts: &mut BTreeMap<String, u64>, family: &str) {
-    *counts.entry(family.into()).or_default() += 1;
+fn increment(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<String, u64>,
+    family: &str,
+) -> Result<(), CodecError> {
+    if let Some(count) = counts.get_mut(family) {
+        *count += 1;
+    } else {
+        ctx.charge_collection_items(1, "FreeCAD carrier census families")?;
+        counts.insert(family.to_owned(), 1);
+    }
+    Ok(())
 }
 
 enum CensusCurve<'a> {
@@ -2429,7 +2454,11 @@ enum CensusCurve<'a> {
     Parameter(&'a TextCurve2d),
 }
 
-fn census_curve(mut curve: CensusCurve<'_>, counts: &mut BTreeMap<String, u64>) {
+fn census_curve(
+    ctx: &DecodeContext<'_>,
+    mut curve: CensusCurve<'_>,
+    counts: &mut BTreeMap<String, u64>,
+) -> Result<(), CodecError> {
     use CensusCurve::{Model, Parameter};
     loop {
         let (family, basis) = match curve {
@@ -2456,17 +2485,20 @@ fn census_curve(mut curve: CensusCurve<'_>, counts: &mut BTreeMap<String, u64>) 
                 ("offset", Some(Parameter(basis.curve())))
             }
         };
-        increment(counts, family);
-        let Some(basis) = basis else { return };
+        ctx.charge_work(1, "FreeCAD carrier curve census")?;
+        increment(ctx, counts, family)?;
+        let Some(basis) = basis else { return Ok(()) };
         curve = basis;
     }
 }
 
 fn census_surface(
+    ctx: &DecodeContext<'_>,
     surface: &TextSurface,
     counts: &mut BTreeMap<String, u64>,
     curves: &mut BTreeMap<String, u64>,
-) {
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("FreeCAD carrier surface census")?;
     let family = match surface {
         TextSurface::Plane { .. } => "plane",
         TextSurface::Cylinder { .. } => "cylinder",
@@ -2475,27 +2507,25 @@ fn census_surface(
         TextSurface::Torus { .. } => "torus",
         TextSurface::Nurbs(_) => "nurbs",
         TextSurface::Extrusion { directrix, .. } => {
-            increment(counts, "extrusion");
-            census_curve(CensusCurve::Model(directrix.curve()), curves);
-            return;
+            increment(ctx, counts, "extrusion")?;
+            census_curve(ctx, CensusCurve::Model(directrix.curve()), curves)?;
+            return Ok(());
         }
         TextSurface::Revolution { directrix, .. } => {
-            increment(counts, "revolution");
-            census_curve(CensusCurve::Model(directrix.curve()), curves);
-            return;
+            increment(ctx, counts, "revolution")?;
+            census_curve(ctx, CensusCurve::Model(directrix.curve()), curves)?;
+            return Ok(());
         }
         TextSurface::Trimmed { basis, .. } => {
-            increment(counts, "trimmed");
-            census_surface(basis.surface(), counts, curves);
-            return;
+            increment(ctx, counts, "trimmed")?;
+            return census_surface(ctx, basis.surface(), counts, curves);
         }
         TextSurface::Offset { basis, .. } => {
-            increment(counts, "offset");
-            census_surface(basis.surface(), counts, curves);
-            return;
+            increment(ctx, counts, "offset")?;
+            return census_surface(ctx, basis.surface(), counts, curves);
         }
     };
-    increment(counts, family);
+    increment(ctx, counts, family)
 }
 
 fn parse_text(
@@ -2557,7 +2587,11 @@ fn parse_text(
             "Co" => "compound",
             _ => continue,
         };
-        *shape_types.entry(name.to_owned()).or_insert(0) += 1;
+        if let Some(count) = shape_types.get_mut(name) {
+            *count += 1;
+        } else {
+            shape_types.insert(name.to_owned(), 1);
+        }
     }
     if shape_types.values().sum::<usize>() != declared_shapes {
         return Err(CodecError::malformed(format_args!(
@@ -6294,6 +6328,54 @@ pub(crate) mod tests {
             result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD periodic B-rep knots"
+        ));
+    }
+
+    fn one_curve_payload() -> ShapePayloadRecord {
+        ShapePayloadRecord {
+            id: "fcstd:test:shape-payload#one".to_owned(),
+            property: "fcstd:test:property#one".to_owned(),
+            entry: "fcstd:test:entry#one".to_owned(),
+            payload: ShapePayload::Text {
+                version: super::TextTopologyVersion::V1,
+                facts: super::ShapeSet {
+                    locations: Vec::new(),
+                    curve2ds: Vec::new(),
+                    curves: vec![TextCurve::Line {
+                        origin: FinitePoint3::ZERO,
+                        direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                            .expect("finite direction"),
+                    }],
+                    polygons3d: Vec::new(),
+                    polygons_on_triangulations: Vec::new(),
+                    surfaces: Vec::new(),
+                    triangulations: Vec::new(),
+                    tshapes: Vec::new().into(),
+                    roots: Vec::new(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn carrier_census_record_capacity_refuses_on_collection_limit() {
+        let payload = one_curve_payload();
+        let result = with_collection_limit(&[], 0, |ctx| super::carrier_census(ctx, &[payload]));
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD carrier census records"
+        ));
+    }
+
+    #[test]
+    fn carrier_census_family_insert_refuses_on_collection_limit() {
+        let payload = one_curve_payload();
+        let result = with_collection_limit(&[], 1, |ctx| super::carrier_census(ctx, &[payload]));
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD carrier census families"
         ));
     }
 

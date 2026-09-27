@@ -83,15 +83,15 @@ impl FcstdCodec {
     }
 }
 
-fn validate_native(ir: &CadIr) -> Vec<Finding> {
+fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     macro_rules! arena {
         ($read:expr) => {
             match $read {
                 Ok(records) => records,
-                Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+                Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
             }
         };
     }
@@ -123,7 +123,7 @@ fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let design_census = arena!(namespace.arena_as::<native::DesignCensusRecord>("design_census"));
 
     let mut findings = Vec::new();
-    if carrier_census != brep::carrier_census(&shape_payloads) {
+    if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
             "FCStd carrier census does not match parsed shape payloads",
@@ -203,7 +203,7 @@ fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let applications_match =
         match application::matches_native(namespace, &objects, &properties, &entries) {
             Ok(matches) => matches,
-            Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+            Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
         };
     if !applications_match {
         findings.push(finding(
@@ -710,7 +710,7 @@ fn validate_native(ir: &CadIr) -> Vec<Finding> {
             None,
         ));
     }
-    findings
+    Ok(findings)
 }
 
 fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
@@ -768,8 +768,8 @@ fn validate_logical_chain(
 impl CodecBackend for FcstdCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(_ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
-        Ok(crate::validate_native(ir))
+    fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+        crate::validate_native(ctx, ir)
     }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
@@ -943,7 +943,7 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(
                 ctx,
                 "carrier_census",
-                &brep::carrier_census(&shape_payloads),
+                &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;

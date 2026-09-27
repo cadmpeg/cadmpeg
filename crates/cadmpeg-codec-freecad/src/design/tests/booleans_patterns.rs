@@ -477,7 +477,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             &stale_census,
         )
         .expect("replace design census");
-    let corrupted_findings = crate::validate_native(&corrupted);
+    let corrupted_findings = crate::test_support::validate_native(&corrupted);
     assert!(
         corrupted_findings.iter().any(|finding| finding
             .message

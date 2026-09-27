@@ -1721,7 +1721,7 @@ Co 1001000 +2 0 *
                 .count(),
             2
         );
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 

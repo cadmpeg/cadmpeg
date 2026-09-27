@@ -198,7 +198,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         Some("Hardened drive gear")
     );
     assert_eq!(prototype.part_number.as_deref(), Some("GEAR-42"));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
@@ -284,7 +284,7 @@ fn projects_direct_string_metadata_and_part_number_precedence() {
         Some("ID-ONLY-42")
     );
     assert_eq!(definition("EmptyId").part_number, None);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -330,7 +330,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
     assert!(properties.iter().any(|property| {
         property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -380,7 +380,7 @@ fn selects_the_active_link_placement_carrier() {
     };
     assert_eq!(x("Propagating"), 2.0);
     assert_eq!(x("LocalOnly"), 30.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -423,7 +423,7 @@ fn accepts_axis_angle_placement_values() {
     assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -466,7 +466,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
     assert!((matrix[0][1] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][0] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -546,7 +546,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!(matrix[2][2].abs() < f64::EPSILON * 16.0);
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -1019,7 +1019,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
             .rows()[0][3],
         14.0
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -1075,7 +1075,7 @@ fn transfers_external_product_paths_and_targets() {
         cadmpeg_ir::products::ExternalDocument::Missing {}
     ));
 
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
     let mut wire = serde_json::to_value(result.ir()).expect("document wire");
     let document = &mut wire["model"]["occurrences"][0]["prototype"]["document"];
@@ -1181,7 +1181,7 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
         Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
             if (match &document { cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()), _ => None }) == Some("other.FCStd") && object == "Box"
     ));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 

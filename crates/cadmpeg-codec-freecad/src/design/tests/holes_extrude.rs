@@ -1889,7 +1889,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             ..
         }) if actual_length.get() == 2.5
     ));
-    let native_findings = crate::validate_native(result.ir());
+    let native_findings = crate::test_support::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     let design_findings = validation

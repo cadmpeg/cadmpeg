@@ -773,7 +773,7 @@ pub(crate) mod tests {
         };
         assert!((range.minimum().get() - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR);
         assert!((range.maximum().get() - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
             .expect("assembly joint wire");
@@ -819,7 +819,7 @@ pub(crate) mod tests {
         assert_eq!(connectors[0].frame.rows()[0][3], 7.0);
         assert_eq!(connectors[0].frame.rows()[1][3], 8.0);
         assert_eq!(connectors[0].frame.rows()[2][3], 9.0);
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
 

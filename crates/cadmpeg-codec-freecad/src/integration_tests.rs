@@ -60,7 +60,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     assert_valid_document(result.ir());
-    let findings = crate::validate_native(result.ir());
+    let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
@@ -326,7 +326,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             "{name}: {:#?}",
             first.report().losses
         );
-        let native_findings = crate::validate_native(first.ir());
+        let native_findings = crate::test_support::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(first.ir());
     }

@@ -161,7 +161,7 @@ mod tests {
             .unwrap();
         let roundtrip: cadmpeg_ir::CadIr =
             serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
-        let findings = crate::validate_native(&roundtrip);
+        let findings = crate::test_support::validate_native(&roundtrip);
         assert!(findings.iter().any(|finding| {
             finding.message.contains("string table id")
                 && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
