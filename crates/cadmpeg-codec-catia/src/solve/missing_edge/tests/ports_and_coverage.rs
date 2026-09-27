@@ -316,6 +316,31 @@ fn mesh_ordered_assignments_refuse_collection_limit() {
     assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_ordered_assignments"));
 }
 
+#[test]
+fn mesh_boundary_domain_face_rows_refuse_collection_limit() {
+    assert!(mesh_boundary_domain_limit_operations().contains("catia_mesh_boundary_domain_faces"));
+}
+
+#[test]
+fn mesh_boundary_assignment_projection_refuses_before_face_rows() {
+    let bytes = standard_quad_topology_stream();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_boundary_assignments(ctx, &bytes, &[[0, 0]; 4], None)
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    let mut operations = std::collections::HashSet::new();
+    for limit in 0..=1024 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected boundary assignment outcome: {outcome:?}"),
+        }
+    }
+    assert!(operations.contains("catia_boundary_assignment_faces"));
+}
+
 fn placement_endpoint_limit_operation(max_collection_items: u64) -> Option<&'static str> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -939,7 +964,7 @@ fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
         }
     }
     assert!(completed, "adaptive limit reaches the service outcome");
-    for operation in ["catia_gap_placed_edges", "catia_gap_complete_assignments"] {
+    for operation in ["catia_gap_placed_edges", "catia_gap_complete_assignments", "catia_missing_assignment_faces"] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
 }
