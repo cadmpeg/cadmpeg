@@ -7479,56 +7479,6 @@ fn standard_endpoint_options_for_selected_faces(
     Ok(filtered_options)
 }
 
-fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {
-    let mut boundaries = Vec::new();
-    for &knot in knots.get(degree..=count)? {
-        if boundaries.last().is_none_or(|previous| *previous != knot) {
-            boundaries.push(knot);
-        }
-    }
-    let mut samples = Vec::new();
-    for pair in boundaries.windows(2) {
-        let [lower, upper] = *pair else {
-            continue;
-        };
-        for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
-            let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-            samples.push(cadmpeg_ir::math::interpolate(lower, upper, fraction)?.get());
-        }
-    }
-    (!samples.is_empty()).then_some(samples)
-}
-
-fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> Option<Vec<Point2>> {
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = surface.u_count();
-    let v_count = surface.v_count();
-    let u_samples = nurbs_surface_axis_samples(surface.u_knots(), u_degree, u_count)?;
-    let v_samples = nurbs_surface_axis_samples(surface.v_knots(), v_degree, v_count)?;
-    if u_samples.len().checked_mul(v_samples.len())? > NURBS_SURFACE_MAX_SEEDS {
-        let side = (NURBS_SURFACE_MAX_SEEDS as f64).sqrt() as usize;
-        let mut grid = Vec::with_capacity(side * side);
-        for u in 0..side {
-            for v in 0..side {
-                let u_fraction = u as f64 / (side - 1) as f64;
-                let v_fraction = v as f64 / (side - 1) as f64;
-                grid.push(Point2::new(
-                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?.get(),
-                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?.get(),
-                ));
-            }
-        }
-        return Some(grid);
-    }
-    Some(
-        u_samples
-            .into_iter()
-            .flat_map(|u| v_samples.iter().copied().map(move |v| Point2::new(u, v)))
-            .collect(),
-    )
-}
-
 fn nurbs_surface_point_distance(surface: &NurbsSurface, point: Point3, uv: Point2) -> Option<f64> {
     let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v).ok()?;
     let distance = position.distance(point);
@@ -7580,11 +7530,63 @@ fn refine_nurbs_surface_point(
 
 fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Option<f64> {
     let domains = nurbs_surface_parameter_domain(surface)?;
-    let starts = nurbs_surface_start_grid(surface, domains)?;
-    starts
-        .into_iter()
-        .filter_map(|seed| refine_nurbs_surface_point(surface, point, seed, domains))
-        .min_by(f64::total_cmp)
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_knots = surface.u_knots().get(u_degree..=surface.u_count())?;
+    let v_knots = surface.v_knots().get(v_degree..=surface.v_count())?;
+    let u_spans = u_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
+    let v_spans = v_knots.windows(2).filter(|pair| pair[0] != pair[1]).count();
+    if u_spans == 0 || v_spans == 0 {
+        return None;
+    }
+    let samples = u_spans
+        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)?
+        .checked_mul(v_spans)?
+        .checked_mul(NURBS_SURFACE_SEEDS_PER_SPAN)?;
+    let mut best: Option<f64> = None;
+    let mut consider = |seed: Point2| {
+        if let Some(distance) = refine_nurbs_surface_point(surface, point, seed, domains) {
+            best = Some(best.map_or(distance, |previous| {
+                if previous.total_cmp(&distance).is_le() { previous } else { distance }
+            }));
+        }
+    };
+    if samples > NURBS_SURFACE_MAX_SEEDS {
+        const SIDE: usize = 16;
+        for knots in [u_knots, v_knots] {
+            for pair in knots.windows(2).filter(|pair| pair[0] != pair[1]) {
+                for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
+                    let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                    cadmpeg_ir::math::interpolate(pair[0], pair[1], fraction)?;
+                }
+            }
+        }
+        for u in 0..SIDE {
+            for v in 0..SIDE {
+                let u_fraction = u as f64 / (SIDE - 1) as f64;
+                let v_fraction = v as f64 / (SIDE - 1) as f64;
+                consider(Point2::new(
+                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?.get(),
+                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?.get(),
+                ));
+            }
+        }
+    } else {
+        for u_pair in u_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
+            for u_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
+                let u_fraction = u_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                let u = cadmpeg_ir::math::interpolate(u_pair[0], u_pair[1], u_fraction)?.get();
+                for v_pair in v_knots.windows(2).filter(|pair| pair[0] != pair[1]) {
+                    for v_step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
+                        let v_fraction = v_step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+                        let v = cadmpeg_ir::math::interpolate(v_pair[0], v_pair[1], v_fraction)?.get();
+                        consider(Point2::new(u, v));
+                    }
+                }
+            }
+        }
+    }
+    best
 }
 
 fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool> {
