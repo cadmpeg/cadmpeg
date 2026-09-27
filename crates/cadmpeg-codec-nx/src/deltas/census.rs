@@ -16,7 +16,8 @@ use super::{
     ReferenceTypeMap, ReferenceTypeMapLimit, SchemaReferencePreamble, TaggedReferenceLane,
     Tombstone, TransmitHeader, Type150StatePacket,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Result of a deterministic deltas record walk.
@@ -77,21 +78,35 @@ impl Census {
     }
 
     /// Complete-record counts keyed by Parasolid family name.
-    pub(crate) fn full_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn full_counts(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
         for record in &self.records {
-            *counts.entry(record.family_name()).or_default() += 1;
+            let family = record.family_name();
+            if !counts.contains_key(family) {
+                ctx.charge_collection_items(1, "NX deltas full count families")?;
+            }
+            *counts.entry(family).or_default() += 1;
         }
-        counts
+        Ok(counts)
     }
 
     /// Compact tombstone counts keyed by Parasolid family name.
-    pub(crate) fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn tombstone_counts(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
         for tombstone in &self.tombstones {
-            *counts.entry(tombstone.kind.name()).or_default() += 1;
+            let family = tombstone.kind.name();
+            if !counts.contains_key(family) {
+                ctx.charge_collection_items(1, "NX deltas tombstone count families")?;
+            }
+            *counts.entry(family).or_default() += 1;
         }
-        counts
+        Ok(counts)
     }
 
     /// Return the sorted disjoint union of every admitted event byte span.
