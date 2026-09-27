@@ -2625,7 +2625,7 @@ impl<'a> DecodeContext<'a> {
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        let attributes = full_source_attributes(self.scan);
+        let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
         let (attributes, refused) =
             cadmpeg_core::text::named_entries_reporting("the rhino document", attributes);
         for key in refused {
@@ -6561,135 +6561,152 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     ir
 }
 
+fn insert_full_source_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, "Rhino full source attributes")?;
+    let key = crate::wire::admitted_format(ctx, key, "Rhino full source attribute key")?;
+    let value = crate::wire::admitted_format(ctx, value, "Rhino full source attribute value")?;
+    attributes.insert(key, value);
+    Ok(())
+}
+
+struct LayerAttributePrefix {
+    index: i32,
+    duplicate: Option<(usize, usize)>,
+}
+
+impl std::fmt::Display for LayerAttributePrefix {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "layer.{}", self.index)?;
+        if let Some((occurrence, offset)) = self.duplicate {
+            write!(formatter, ".record-{occurrence:06}-offset-{offset}")?;
+        }
+        Ok(())
+    }
+}
+
 /// Builds the path-specific facts available after full decoding.
-fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
+fn full_source_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<BTreeMap<String, String>, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
+    macro_rules! attribute {
+        ($key:literal, $value:expr) => {
+            insert_full_source_attribute(
+                ctx,
+                &mut attributes,
+                format_args!($key),
+                format_args!("{}", $value),
+            )?
+        };
+    }
     let settings = &scan.metadata.settings;
     if let Some(units) = &settings.units {
-        attributes.insert("unit_value".to_string(), units.unit.value().to_string());
-        attributes.insert(
-            "unit_system".to_string(),
-            match &units.unit {
-                crate::settings::UnitSystem::None => "none".to_string(),
-                crate::settings::UnitSystem::Unset => "unset".to_string(),
-                crate::settings::UnitSystem::Standard(value) => {
-                    format!("standard:{}", value.value())
-                }
-                crate::settings::UnitSystem::Custom(unit) => format!("custom:{}", unit.name()),
-            },
-        );
+        attribute!("unit_value", units.unit.value());
+        match &units.unit {
+            crate::settings::UnitSystem::None => attribute!("unit_system", "none"),
+            crate::settings::UnitSystem::Unset => attribute!("unit_system", "unset"),
+            crate::settings::UnitSystem::Standard(value) => {
+                attribute!("unit_system", format_args!("standard:{}", value.value()))
+            }
+            crate::settings::UnitSystem::Custom(unit) => {
+                attribute!("unit_system", format_args!("custom:{}", unit.name()))
+            }
+        }
         if let crate::settings::UnitSystem::Custom(unit) = &units.unit {
-            attributes.insert("custom_unit_name".to_string(), unit.name().to_string());
-            attributes.insert(
-                "custom_meters_per_unit".to_string(),
-                unit.meters_per_unit().get().to_string(),
-            );
+            attribute!("custom_unit_name", unit.name());
+            attribute!("custom_meters_per_unit", unit.meters_per_unit().get());
         }
         if let Some(scale) = units.millimeters_per_unit() {
-            attributes.insert("millimeters_per_unit".to_string(), scale.to_string());
+            attribute!("millimeters_per_unit", scale);
         }
-        attributes.insert(
-            "absolute_tolerance_native".to_string(),
-            units.absolute_tolerance.get().to_string(),
-        );
-        attributes.insert(
-            "absolute_tolerance_millimeters".to_string(),
-            units
-                .absolute_tolerance_millimeters()
-                .map_or_else(|| "unresolved".to_string(), |value| value.get().to_string()),
-        );
-        attributes.insert(
-            "angular_tolerance".to_string(),
-            units.angular_tolerance.get().to_string(),
-        );
-        attributes.insert(
-            "relative_tolerance".to_string(),
-            units.relative_tolerance.get().to_string(),
-        );
+        attribute!("absolute_tolerance_native", units.absolute_tolerance.get());
+        if let Some(value) = units.absolute_tolerance_millimeters() {
+            attribute!("absolute_tolerance_millimeters", value.get());
+        } else {
+            attribute!("absolute_tolerance_millimeters", "unresolved");
+        }
+        attribute!("angular_tolerance", units.angular_tolerance.get());
+        attribute!("relative_tolerance", units.relative_tolerance.get());
         if let Some(display) = units.distance_display {
-            attributes.insert(
-                "distance_display_mode".to_string(),
-                display.mode.to_string(),
-            );
-            attributes.insert(
-                "distance_display_precision".to_string(),
-                display.precision.to_string(),
-            );
+            attribute!("distance_display_mode", display.mode);
+            attribute!("distance_display_precision", display.precision);
         }
     }
     if let Some(application) = &scan.metadata.properties.application {
-        attributes.insert("application_name".to_string(), application.name.clone());
-        attributes.insert("application_url".to_string(), application.url.clone());
-        attributes.insert(
-            "application_details".to_string(),
-            application.details.clone(),
-        );
+        attribute!("application_name", application.name);
+        attribute!("application_url", application.url);
+        attribute!("application_details", application.details);
     }
     if let Some(current) = settings.current_layer {
-        attributes.insert("current_layer".to_string(), current.to_string());
+        attribute!("current_layer", current);
     }
     if let Some(current) = settings.current_material {
-        attributes.insert("current_material".to_string(), current.value.to_string());
-        attributes.insert(
-            "current_material_source".to_string(),
-            current.source.to_string(),
-        );
+        attribute!("current_material", current.value);
+        attribute!("current_material_source", current.source);
     }
     if let Some(current) = settings.current_color {
-        attributes.insert(
-            "current_color".to_string(),
-            current
-                .value
-                .iter()
-                .map(u8::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
+        attribute!(
+            "current_color",
+            format_args!(
+                "{},{},{},{}",
+                current.value[0], current.value[1], current.value[2], current.value[3]
+            )
         );
-        attributes.insert(
-            "current_color_source".to_string(),
-            current.source.to_string(),
-        );
+        attribute!("current_color_source", current.source);
     }
     if let Some(current) = settings.current_wire_density {
-        attributes.insert("current_wire_density".to_string(), current.to_string());
+        attribute!("current_wire_density", current);
     }
     if let Some(current) = settings.current_font {
-        attributes.insert("current_font".to_string(), current.to_string());
+        attribute!("current_font", current);
     }
     if let Some(current) = settings.current_dimstyle {
-        attributes.insert("current_dimstyle".to_string(), current.to_string());
+        attribute!("current_dimstyle", current);
     }
     if let Some(url) = &settings.model_url {
-        attributes.insert("model_url".to_string(), url.clone());
+        attribute!("model_url", url);
     }
     let mut layer_index_counts = BTreeMap::<i32, usize>::new();
     for layer in &scan.metadata.layers {
+        if !layer_index_counts.contains_key(&layer.index) {
+            ctx.charge_collection_items(1, "Rhino layer index counts")?;
+        }
         *layer_index_counts.entry(layer.index).or_default() += 1;
     }
     let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();
     for layer in &scan.metadata.layers {
-        let occurrence = layer_index_occurrences.entry(layer.index).or_default();
-        let prefix = if layer_index_counts.get(&layer.index) == Some(&1) {
-            format!("layer.{}", layer.index)
+        let duplicate = if layer_index_counts.get(&layer.index) == Some(&1) {
+            None
         } else {
+            if !layer_index_occurrences.contains_key(&layer.index) {
+                ctx.charge_collection_items(1, "Rhino layer index occurrences")?;
+            }
+            let occurrence = layer_index_occurrences.entry(layer.index).or_default();
             let current = *occurrence;
             *occurrence += 1;
-            format!(
-                "layer.{}.record-{current:06}-offset-{}",
-                layer.index, layer.source.range.start
-            )
+            Some((current, layer.source.range.start))
         };
-        if layer_index_counts.get(&layer.index) != Some(&1) {
-            attributes.insert(format!("{prefix}.index"), layer.index.to_string());
+        let prefix = LayerAttributePrefix {
+            index: layer.index,
+            duplicate,
+        };
+        if duplicate.is_some() {
+            attribute!("{prefix}.index", layer.index);
         }
-        attributes.insert(format!("{prefix}.name"), layer.name.clone());
-        attributes.insert(format!("{prefix}.visible"), layer.visible.to_string());
-        attributes.insert(format!("{prefix}.locked"), layer.locked.to_string());
+        attribute!("{prefix}.name", layer.name);
+        attribute!("{prefix}.visible", layer.visible);
+        attribute!("{prefix}.locked", layer.locked);
         if let Some(id) = layer.id {
-            attributes.insert(format!("{prefix}.uuid"), id.to_string());
+            attribute!("{prefix}.uuid", id);
         }
     }
-    attributes
+    Ok(attributes)
 }
 
 #[cfg(test)]
