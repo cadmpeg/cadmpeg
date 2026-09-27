@@ -8,7 +8,7 @@ use super::geometry::{
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use super::{affine_parameter_map, line_directrix, pointer};
-use crate::decode_resource::{format_retained, reserve_optional_vec, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{copy_optional_identity, format_retained, insert_optional_btree_set, reserve_optional_vec, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -598,39 +598,59 @@ fn source_curve_control_intervals(
     precision: RealPrecision,
     factor: f64,
     active: &mut BTreeSet<CurveId>,
-) -> Option<Vec<[DeclaredInterval; 3]>> {
-    if !active.insert(curve_id.clone()) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    let _nested = ctx.enter_nested("iges source curve intervals")?;
+    if active.contains(curve_id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
+    let active_id = copy_optional_identity(Some(ctx), curve_id.as_str(), "iges source active curve ID")?;
+    insert_optional_btree_set(Some(ctx), active, active_id, "iges source active curve nodes")?;
+    let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
+            return Ok(None);
+        };
         if let Some(sequence) = native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D") {
-            let entry = entries.get(&sequence).copied()?;
+            let Some(entry) = entries.get(&sequence).copied() else {
+                return Ok(None);
+            };
             if entry.entity_type == 102 && entry.form == 0 {
-                let record = records.get(&sequence).copied()?;
-                let child_count = record.count(1)?;
-                let child_ids = (0..child_count)
-                    .map(|offset| {
+                let Some(record) = records.get(&sequence).copied() else {
+                    return Ok(None);
+                };
+                let Some(child_count) = record.count(1) else {
+                    return Ok(None);
+                };
+                let mut child_ids = reserve_vec(ctx, child_count, "iges source composite child IDs")?;
+                for offset in 0..child_count {
+                    let Some(child_id) = (|| {
                         let child_sequence = record
                             .integer(offset.checked_add(2)?)
                             .and_then(|value| u32::try_from(value).ok())?;
                         parameter_curve_carrier_id(child_sequence, entries, records)
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+                    })() else {
+                        return Ok(None);
+                    };
+                    child_ids.push(child_id);
+                }
                 let mut controls = Vec::new();
                 for child_id in child_ids {
-                    controls.extend(source_curve_control_intervals(
-                        ir, &child_id, entries, records, precision, factor, active,
-                    )?);
+                    let Some(child) = source_curve_control_intervals(
+                        ir, &child_id, entries, records, precision, factor, active, ctx,
+                    )? else {
+                        return Ok(None);
+                    };
+                    reserve_vec_growth(ctx, &mut controls, child.len(), "iges source composite controls")?;
+                    controls.extend(child);
                 }
-                return (!controls.is_empty()).then_some(controls);
+                return Ok((!controls.is_empty()).then_some(controls));
             }
         }
         match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let mut controls = Vec::new();
                 for segment in segments {
-                    controls.extend(source_curve_control_intervals(
+                    let Some(child) = source_curve_control_intervals(
                         ir,
                         &segment.curve,
                         entries,
@@ -638,55 +658,58 @@ fn source_curve_control_intervals(
                         precision,
                         factor,
                         active,
-                    )?);
+                        ctx,
+                    )? else {
+                        return Ok(None);
+                    };
+                    reserve_vec_growth(ctx, &mut controls, child.len(), "iges source solved composite controls")?;
+                    controls.extend(child);
                 }
-                (!controls.is_empty()).then_some(controls)
+                Ok((!controls.is_empty()).then_some(controls))
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                if nurbs
-                    .weights()
-                    .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
+                if (0..nurbs.pole_count())
+                    .any(|index| nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight <= 0.0))
                 {
-                    return None;
+                    return Ok(None);
                 }
-                let exact = || {
-                    nurbs
-                        .control_points()
-                        .iter()
-                        .map(|point| {
-                            [point.x, point.y, point.z]
-                                .map(|value| DeclaredInterval::around(value, 0.0))
-                        })
-                        .collect::<Vec<_>>()
+                let exact = || -> Result<Vec<[DeclaredInterval; 3]>, CodecError> {
+                    let mut controls = reserve_vec(ctx, nurbs.pole_count(), "iges source exact controls")?;
+                    for index in 0..nurbs.pole_count() {
+                        let point = nurbs.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("source curve pole is missing"))?.get();
+                        controls.push([point.x, point.y, point.z].map(|value| DeclaredInterval::around(value, 0.0)));
+                    }
+                    Ok(controls)
                 };
                 let Some(sequence) =
                     native_sequence_from_id(curve_id.as_str(), "iges:model:curve#D")
                 else {
-                    return Some(exact());
+                    return Ok(Some(exact()?));
                 };
                 let Some(entry) = entries.get(&sequence).copied() else {
-                    return Some(exact());
+                    return Ok(Some(exact()?));
                 };
                 if entry.entity_type != 126 {
-                    return Some(exact());
+                    return Ok(Some(exact()?));
                 }
                 if entry.transform != 0 {
-                    return None;
+                    return Ok(None);
                 }
-                let record = records.get(&sequence).copied()?;
-                let raw_controls =
-                    super::geometry::type126_declared_control_points(record, precision)?;
-                if raw_controls.len() != nurbs.control_points().len() {
-                    return None;
+                let Some(record) = records.get(&sequence).copied() else {
+                    return Ok(None);
+                };
+                let Some(mut raw_controls) = super::geometry::type126_declared_control_points(record, precision, ctx)? else {
+                    return Ok(None);
+                };
+                if raw_controls.len() != nurbs.pole_count() {
+                    return Ok(None);
                 }
-                Some(
-                    raw_controls
-                        .into_iter()
-                        .map(|control| control.map(|value| value.scale(factor)))
-                        .collect(),
-                )
+                for control in &mut raw_controls {
+                    *control = control.map(|value| value.scale(factor));
+                }
+                Ok(Some(raw_controls))
             }
-            _ => None,
+            _ => Ok(None),
         }
     })();
     active.remove(curve_id);
@@ -729,12 +752,13 @@ fn source_curve_control_polygon_within_bounds(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     precision: RealPrecision,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let Some(bounds) = bounds else {
-        return true;
+        return Ok(true);
     };
     let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
-        return false;
+        return Ok(false);
     };
     let Some(controls) = source_curve_control_intervals(
         ir,
@@ -744,10 +768,11 @@ fn source_curve_control_polygon_within_bounds(
         precision,
         support.factor,
         &mut BTreeSet::new(),
-    ) else {
-        return false;
+        ctx,
+    )? else {
+        return Ok(false);
     };
-    !controls.is_empty()
+    Ok(!controls.is_empty()
         && controls.into_iter().all(|[u, v, _]| {
             let Some(u) = affine_parameter_interval(u, u_factor, u_offset) else {
                 return false;
@@ -757,7 +782,7 @@ fn source_curve_control_polygon_within_bounds(
             };
             parameter_interval_reaches_bounds(u, bounds[0], bounds[1])
                 && parameter_interval_reaches_bounds(v, bounds[2], bounds[3])
-        })
+        }))
 }
 
 fn linear_model_nurbs_points(
@@ -2121,11 +2146,9 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
-                if pcurves
-                    .iter()
-                    .zip(&segment.pcurves)
-                    .any(|((geometry, range), sequence)| {
-                        !pcurve_within_declared_intervals(
+                let mut pcurve_outside_support = false;
+                for ((geometry, range), sequence) in pcurves.iter().zip(&segment.pcurves) {
+                    if !pcurve_within_declared_intervals(
                             geometry,
                             *range,
                             support_parameter_intervals,
@@ -2142,9 +2165,13 @@ pub(super) fn project(
                             &entries,
                             &records,
                             global.real_precision(),
-                        )
-                    })
-                {
+                            ctx,
+                        )? {
+                        pcurve_outside_support = true;
+                        break;
+                    }
+                }
+                if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
                         losses.push(boundary_parameter_loss(
                             entry,
