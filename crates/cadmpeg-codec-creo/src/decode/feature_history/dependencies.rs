@@ -398,39 +398,13 @@ pub(in super::super) fn agreed_feature_replay_edge_ids(
 }
 
 pub(in super::super) fn reconcile_feature_links(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let output_updates =
-        ir.model
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let feature_id = feature
-                    .id
-                    .as_str()
-                    .strip_prefix("creo:model:feature#")
-                    .and_then(|value| value.parse::<u32>().ok())?;
-                Some(
-                    super::outputs::feature_output_bodies(scan, ir, feature_id)
-                        .try_into()
-                        .map(|outputs| (feature.id.clone(), outputs))
-                        .map_err(cadmpeg_core::CodecError::malformed),
-                )
-            })
-            .collect::<Result<
-                BTreeMap<_, cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>>,
-                _,
-            >>()?;
-    let emitted = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.clone())
-        .collect::<BTreeSet<_>>();
-    let mut regeneration_edges = Vec::new();
-    for feature in &mut ir.model.features {
+    let mut output_updates = Vec::new();
+    for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
             .id
             .as_str()
@@ -439,8 +413,36 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        if let Some(outputs) = output_updates.get(&feature.id) {
-            feature.evaluation.set_outputs(outputs.clone());
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+            super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.try_reserve_items(&mut output_updates, 1, "creo reconciled output update rows")?;
+        output_updates.push((index, outputs));
+    }
+    let emitted = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut regeneration_edges = Vec::new();
+    let mut updates = output_updates.into_iter();
+    let mut pending = updates.next();
+    for (index, feature) in ir.model.features.iter_mut().enumerate() {
+        let Some(feature_id) = feature
+            .id
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if pending.as_ref().is_some_and(|(update_index, _)| *update_index == index) {
+            if let Some((_, outputs)) = pending.take() {
+                feature.evaluation.set_outputs(outputs);
+            }
+            pending = updates.next();
         }
         let native_dependencies = native_feature_dependency_ids(
             &scan.features.affected_ids,
@@ -458,11 +460,25 @@ pub(in super::super) fn reconcile_feature_links(
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
         let generated_dependencies =
-            feature_generated_dependencies(feature.evaluation.definition());
+            feature_generated_dependencies(ctx, feature.evaluation.definition())?;
+        let mut generated_ids = Vec::new();
+        for dependency in generated_dependencies {
+            let id = IrFeatureId::mint(ctx.copy_retained_text(
+                dependency.as_str(),
+                "creo reconciled generated dependency IDs",
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.try_reserve_items(
+                &mut generated_ids,
+                1,
+                "creo reconciled generated dependencies",
+            )?;
+            generated_ids.push(id);
+        }
         feature.dependencies = (reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
-            native_dependencies.chain(generated_dependencies),
+            native_dependencies.chain(generated_ids),
             &emitted,
         ))
         .into_iter()
@@ -515,54 +531,55 @@ pub(in super::super) fn reconcile_feature_links(
     Ok(())
 }
 
-pub(in super::super) fn feature_generated_dependencies(
-    definition: &IrFeatureDefinition,
-) -> Vec<IrFeatureId> {
-    let face_selections = match definition {
+pub(in super::super) fn feature_generated_dependencies<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'a IrFeatureDefinition,
+) -> Result<Vec<&'a IrFeatureId>, cadmpeg_core::CodecError> {
+    let mut dependencies = Vec::new();
+    let mut push_unique = |dependency: &'a IrFeatureId| -> Result<(), cadmpeg_core::CodecError> {
+        if !dependencies.contains(&dependency) {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo generated dependencies")?;
+            dependencies.push(dependency);
+        }
+        Ok(())
+    };
+    let face_selection = match definition {
         IrFeatureDefinition::Operation(
             IrFeatureOperation::Hole {
                 face: Some(face), ..
             }
             | IrFeatureOperation::Thicken { faces: face, .. }
             | IrFeatureOperation::KnitSurface { faces: face, .. },
-        ) => {
-            vec![face]
-        }
-        _ => Vec::new(),
+        ) => Some(face),
+        _ => None,
     };
-    let edge_selections = match definition {
+    if let Some(FaceSelection::Generated { faces, .. }) = face_selection {
+        for face in faces {
+            push_unique(&face.feature)?;
+        }
+    }
+    let mut visit_selection = |selection: &'a EdgeSelection| -> Result<(), cadmpeg_core::CodecError> {
+        if let EdgeSelection::Generated { edges, .. } = selection {
+            for edge in edges {
+                push_unique(&edge.feature)?;
+            }
+        }
+        Ok(())
+    };
+    match definition {
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { groups }) => {
-            groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+            for group in groups {
+                visit_selection(&group.edges)?;
+            }
         }
         IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer { groups, .. }) => {
-            groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+            for group in groups {
+                visit_selection(&group.edges)?;
+            }
         }
-        _ => Vec::new(),
-    };
-    face_selections
-        .into_iter()
-        .flat_map(|selection| match selection {
-            FaceSelection::Generated { faces, .. } => faces
-                .iter()
-                .map(|face| face.feature.clone())
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        })
-        .chain(edge_selections.into_iter().flat_map(|selection| {
-            match selection {
-                EdgeSelection::Generated { edges, .. } => edges
-                    .iter()
-                    .map(|edge| edge.feature.clone())
-                    .collect::<Vec<_>>(),
-                _ => Vec::new(),
-            }
-        }))
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+        _ => {}
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn reconciled_dependencies(

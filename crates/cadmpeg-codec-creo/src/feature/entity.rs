@@ -55,11 +55,15 @@ impl FeatureEntityTable {
     }
 
     pub(crate) fn surface_ids(&self) -> Vec<u32> {
+        self.surface_ids_iter().collect()
+    }
+
+    /// Iterate materialized surface identities in declared entry order.
+    pub(crate) fn surface_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
             .filter(|id| self.surface_ids.contains(id))
-            .collect()
     }
 
     pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
