@@ -11,13 +11,8 @@ pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
     })
 }
 
-pub(super) fn items(record: &RawRecord) -> Option<Vec<u64>> {
-    item_values(record).map(|items| {
-        items
-            .iter()
-            .filter_map(ValueExt::reference)
-            .collect::<Vec<_>>()
-    })
+pub(super) fn items(record: &RawRecord) -> Option<impl DoubleEndedIterator<Item = u64> + '_> {
+    item_values(record).map(|items| items.iter().filter_map(ValueExt::reference))
 }
 
 pub(super) fn item_values(record: &RawRecord) -> Option<&[Value]> {
@@ -66,6 +61,6 @@ mod tests {
                 .as_slice()
             )
         );
-        assert_eq!(items(&record), Some(vec![2, 3]));
+        assert_eq!(items(&record).map(Iterator::collect::<Vec<_>>), Some(vec![2, 3]));
     }
 }
