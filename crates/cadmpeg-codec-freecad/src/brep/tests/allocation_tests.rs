@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Input-sized BREP parser allocation tests.
 
-use super::super::{parse_binary_prefix, parse_text};
+use super::super::{
+    parse_binary_prefix, parse_reference_suffix, parse_shape_kind, parse_shape_use, parse_text,
+    TokenCursor,
+};
 use crate::native::{EntryRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 
 #[test]
 fn text_brep_token_index_refuses_at_materialized_limit() {
@@ -217,4 +221,38 @@ fn uppercase_binary_shape_extension_selects_binary_reader() {
     let error = super::super::parse_payloads(&ctx, &[property], &[entry])
         .expect_err("malformed binary payload");
     assert!(error.to_string().contains("unsupported binary B-rep header"));
+}
+
+#[test]
+fn invalid_shape_kind_refuses_before_diagnostic_allocation() {
+    assert_retained_refusal_at(&[], "FreeCAD invalid shape kind", |ctx| {
+        parse_shape_kind(ctx, "UnexpectedShapeKind")
+    });
+}
+
+#[test]
+fn invalid_shape_use_prefix_refuses_before_diagnostic_allocation() {
+    let tokens = ["?VeryLongShapeUse"];
+    assert_retained_refusal_at(&[], "FreeCAD invalid shape use", |ctx| {
+        let mut cursor = TokenCursor::new(ctx, &tokens);
+        parse_shape_use(&mut cursor, 1, &BTreeMap::new())
+    });
+}
+
+#[test]
+fn invalid_shape_use_index_refuses_before_diagnostic_allocation() {
+    let tokens = ["+VeryLongShapeIndex"];
+    assert_retained_refusal_at(&[], "FreeCAD invalid shape use", |ctx| {
+        let mut cursor = TokenCursor::new(ctx, &tokens);
+        parse_shape_use(&mut cursor, 1, &BTreeMap::new())
+    });
+}
+
+#[test]
+fn reference_suffix_copy_refuses_at_retained_limit() {
+    let tokens = ["1FaceOfLongSource"];
+    assert_retained_refusal_at(&[], "FreeCAD B-rep reference suffix", |ctx| {
+        let mut cursor = TokenCursor::new(ctx, &tokens);
+        parse_reference_suffix(&mut cursor, "test suffix", 1)
+    });
 }

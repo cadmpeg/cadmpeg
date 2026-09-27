@@ -4540,7 +4540,8 @@ fn parse_tshapes(
     // Each TShape consumes at least its one kind token.
     let mut shapes = collection_vec(cursor.ctx, cursor.bounded(count, 1, "text TShapes")?, "FreeCAD B-rep parse_tshapes")?;
     for index in 1..=count {
-        let kind = parse_shape_kind(cursor.next("TShape kind")?)?;
+        let token = cursor.next("TShape kind")?;
+        let kind = parse_shape_kind(cursor.ctx, token)?;
         let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
         let flags = parse_shape_flags(cursor.next("TShape flags")?, topology_version)?;
         let mut children = Vec::new();
@@ -4582,7 +4583,7 @@ fn parse_tshapes(
     Ok((shapes, roots))
 }
 
-fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
+fn parse_shape_kind(ctx: &DecodeContext<'_>, token: &str) -> Result<TextShapeKind, CodecError> {
     match token {
         "Ve" => Ok(TextShapeKind::Vertex),
         "Ed" => Ok(TextShapeKind::Edge),
@@ -4592,9 +4593,11 @@ fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
         "So" => Ok(TextShapeKind::Solid),
         "CS" => Ok(TextShapeKind::CompSolid),
         "Co" => Ok(TextShapeKind::Compound),
-        _ => Err(CodecError::malformed(format_args!(
-            "invalid TShape kind {token:?}"
-        ))),
+        _ => Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("invalid TShape kind {token:?}"),
+            "FreeCAD invalid shape kind",
+        )?)),
     }
 }
 
@@ -4920,14 +4923,22 @@ fn parse_shape_use(
         Some(b'i') => (TextOrientation::Internal, &token[1..]),
         Some(b'e') => (TextOrientation::External, &token[1..]),
         _ => {
-            return Err(CodecError::malformed(format_args!(
-                "invalid shape use {token:?}"
-            )));
+            return Err(CodecError::Malformed(retained_format(
+                cursor.ctx,
+                format_args!("invalid shape use {token:?}"),
+                "FreeCAD invalid shape use",
+            )?));
         }
     };
     let encoded = encoded
         .parse::<usize>()
-        .map_err(|_| CodecError::malformed(format_args!("invalid shape use {token:?}")))?;
+        .or_else(|_| {
+            Err(CodecError::Malformed(retained_format(
+                cursor.ctx,
+                format_args!("invalid shape use {token:?}"),
+                "FreeCAD invalid shape use",
+            )?))
+        })?;
     if encoded == 0 || encoded > shape_count {
         return Err(CodecError::malformed(format_args!(
             "shape use index {encoded} is out of range"
@@ -4973,7 +4984,9 @@ fn parse_reference_suffix(
             "{label} limit exceeded"
         )));
     }
-    Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
+    Ok((value, (!suffix.is_empty())
+        .then(|| retained_string(cursor.ctx, suffix, "FreeCAD B-rep reference suffix"))
+        .transpose()?))
 }
 
 fn parse_range(cursor: &mut TokenCursor<'_, '_, '_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
