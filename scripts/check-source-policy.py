@@ -32,7 +32,7 @@ class Finding:
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 INTEGER_CLAMP = re.compile(
-    r"\bunwrap_or(?:_else\s*\(\s*\|_\|\s*|\s*\(\s*)"
+    r"\bunwrap_or(?:_else\s*\(\s*\|_?\|\s*|\s*\(\s*)"
     r"[ui](?:8|16|32|64|128|size)::(?:MAX|MIN)\s*\)"
 )
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
