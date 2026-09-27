@@ -65,12 +65,13 @@ pub fn positive_controls<P: PoleValue<FinitePoint3>>(
 }
 
 /// Knot and control scratch is bounded by the admitted knot and control counts.
-fn insert_knot<const DIMENSION: usize>(
+fn insert_knot<const DIMENSION: usize, E: From<ResourceLimit>>(
     degree: usize,
     knots: &mut Vec<f64>,
     controls: &mut Vec<[f64; DIMENSION]>,
     value: f64,
-) -> Result<Option<()>, ResourceLimit> {
+    charge: &mut impl FnMut(usize, &'static str) -> Result<(), E>,
+) -> Result<Option<()>, E> {
     let Some(last) = controls.len().checked_sub(1) else {
         return Ok(None);
     };
@@ -90,8 +91,10 @@ fn insert_knot<const DIMENSION: usize>(
     let Some(_) = controls.len().checked_add(1) else {
         return Ok(None);
     };
-    scratch::reserve_exact(controls, 1, "Bezier knot insertion")?;
-    scratch::reserve_exact(knots, 1, "Bezier inserted knot")?;
+    charge(1, "Bezier knot insertion")?;
+    scratch::reserve_exact(controls, 1, "Bezier knot insertion").map_err(E::from)?;
+    charge(1, "Bezier inserted knot")?;
+    scratch::reserve_exact(knots, 1, "Bezier inserted knot").map_err(E::from)?;
     controls.push([0.0; DIMENSION]);
     controls.copy_within(tail..=last, tail + 1);
     for index in (first + 1..=tail).rev() {
@@ -117,8 +120,18 @@ fn insert_knot<const DIMENSION: usize>(
 pub fn homogeneous_spans<const DIMENSION: usize>(
     degree: usize,
     knots: &[f64],
-    mut controls: Vec<[f64; DIMENSION]>,
+    controls: Vec<[f64; DIMENSION]>,
 ) -> Result<Option<Vec<HomogeneousBezierSpan<DIMENSION>>>, ResourceLimit> {
+    homogeneous_spans_with_charge(degree, knots, controls, |_, _| Ok(()))
+}
+
+/// Extract active spans while charging each working vector before its allocation.
+pub fn homogeneous_spans_with_charge<const DIMENSION: usize, E: From<ResourceLimit>>(
+    degree: usize,
+    knots: &[f64],
+    mut controls: Vec<[f64; DIMENSION]>,
+    mut charge: impl FnMut(usize, &'static str) -> Result<(), E>,
+) -> Result<Option<Vec<HomogeneousBezierSpan<DIMENSION>>>, E> {
     let count = controls.len();
     let Some(expected_knots) = count
         .checked_add(degree)
@@ -138,18 +151,20 @@ pub fn homogeneous_spans<const DIMENSION: usize>(
     if domain[0] >= domain[1] {
         return Ok(None);
     }
-    let mut knots_copy = scratch::filled(knots.len(), 0.0, "Bezier knot copy")?;
+    charge(knots.len(), "Bezier knot copy")?;
+    let mut knots_copy = scratch::filled(knots.len(), 0.0, "Bezier knot copy").map_err(E::from)?;
     knots_copy.copy_from_slice(knots);
     let mut knots = knots_copy;
     for endpoint in domain {
         while knots.iter().filter(|knot| **knot == endpoint).count() < degree + 1 {
-            if insert_knot(degree, &mut knots, &mut controls, endpoint)?.is_none() {
+            if insert_knot(degree, &mut knots, &mut controls, endpoint, &mut charge)?.is_none() {
                 return Ok(None);
             }
         }
     }
     let mut internal = Vec::new();
-    scratch::reserve_exact(&mut internal, knots.len(), "Bezier internal knots")?;
+    charge(knots.len(), "Bezier internal knots")?;
+    scratch::reserve_exact(&mut internal, knots.len(), "Bezier internal knots").map_err(E::from)?;
     internal.extend(
         knots
             .iter()
@@ -159,18 +174,20 @@ pub fn homogeneous_spans<const DIMENSION: usize>(
     internal.dedup();
     for knot in internal {
         while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            if insert_knot(degree, &mut knots, &mut controls, knot)?.is_none() {
+            if insert_knot(degree, &mut knots, &mut controls, knot, &mut charge)?.is_none() {
                 return Ok(None);
             }
         }
     }
     let mut spans = Vec::new();
-    scratch::reserve_exact(&mut spans, controls.len() - degree, "Bezier spans")?;
+    charge(controls.len() - degree, "Bezier spans")?;
+    scratch::reserve_exact(&mut spans, controls.len() - degree, "Bezier spans").map_err(E::from)?;
     for span in degree..controls.len() {
         let interval = [knots[span], knots[span + 1]];
         if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
-            let mut span_controls =
-                scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")?;
+            charge(degree + 1, "Bezier span controls")?;
+            let mut span_controls = scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")
+                .map_err(E::from)?;
             span_controls.copy_from_slice(&controls[span - degree..=span]);
             spans.push(HomogeneousBezierSpan {
                 domain: interval,
