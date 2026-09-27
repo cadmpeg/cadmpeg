@@ -8,7 +8,6 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
-use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -87,10 +86,9 @@ pub(crate) fn transfer(
     }
     let mut sketch_ids = HashMap::new();
     for object in objects.iter().filter(|object| is_sketch(&object.type_name)) {
-        let id = SketchId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
-            object_key(object)?,
-        );
+        let id = SketchId::mint(design_identity_text(
+            ctx, "sketch", object, format_args!(""), "fcstd design sketch identity",
+        )?).map_err(CodecError::malformed)?;
         insert_hash_map(ctx, &mut sketch_ids, object.id.as_str(), id, "fcstd design sketch ids")?;
     }
     let mut body_ids = collection_vec(ctx, ir.model.bodies.len(), "fcstd design body ids")?;
@@ -803,12 +801,13 @@ fn append_spreadsheet(
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
-        let id = ParameterId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
-            object_key(object)?
-                .colon(cadmpeg_ir::identity_key!("cell"))
-                .colon(IdentityKey::encode_segment(address)),
-        );
+        let address_key = crate::native::encoded_segment_charged(
+            ctx, address, "fcstd spreadsheet cell address key",
+        )?;
+        let id = ParameterId::mint(design_identity_text(
+            ctx, "parameter", object, format_args!(":cell:{address_key}"),
+            "fcstd spreadsheet cell identity",
+        )?).map_err(CodecError::malformed)?;
         cell_ids.push(SpreadsheetCell {
             address: cell_address,
             parameter: ParameterId::mint(retained_string(ctx, id.as_str(), "fcstd spreadsheet cell parameter")?)
@@ -847,10 +846,9 @@ fn append_spreadsheet(
         });
     }
     Spreadsheet::new(
-        SpreadsheetId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "design", "spreadsheet"),
-            object_key(object)?,
-        ),
+        SpreadsheetId::mint(design_identity_text(
+            ctx, "spreadsheet", object, format_args!(""), "fcstd spreadsheet identity",
+        )?).map_err(CodecError::malformed)?,
         feature_id(ctx, object)?,
         cell_ids,
         spreadsheet_dimensions(
@@ -1086,10 +1084,13 @@ fn append_operation_parameters(
         };
         reserve_vec_items(ctx, parameters, 1, "fcstd operation parameters")?;
         parameters.push(DesignParameter {
-            id: ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
-                object_key(object)?.colon(IdentityKey::encode_segment(&property.name)),
-            ),
+            id: ParameterId::mint(design_identity_text(
+                ctx, "parameter", object,
+                format_args!(":{}", crate::native::encoded_segment_charged(
+                    ctx, &property.name, "fcstd operation parameter name key",
+                )?),
+                "fcstd operation parameter identity",
+            )?).map_err(CodecError::malformed)?,
             owner: Some(FeatureId::mint(retained_string(ctx, owner.as_str(), "fcstd operation parameter owner")?)
                 .map_err(CodecError::malformed)?),
             ordinal: property.order as u32,
@@ -1312,10 +1313,9 @@ fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<SketchTransfer, CodecError> {
-    let id = SketchId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
-        object_key(object)?,
-    );
+    let id = SketchId::mint(design_identity_text(
+        ctx, "sketch", object, format_args!(""), "fcstd design sketch identity",
+    )?).map_err(CodecError::malformed)?;
     let mut entities = Vec::new();
     let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
@@ -1354,10 +1354,10 @@ fn parse_sketch(
             reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                        object_key(object)?.colon(index + 1),
-                    ),
+                    SketchEntityId::mint(design_identity_text(
+                        ctx, "sketch-entity", object, format_args!(":{}", index + 1),
+                        "fcstd sketch geometry identity",
+                    )?).map_err(CodecError::malformed)?,
                     SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                         .map_err(CodecError::malformed)?,
                     geometry_value,
@@ -1438,12 +1438,10 @@ fn parse_sketch(
             reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                        object_key(object)?
-                            .colon(cadmpeg_ir::identity_key!("external"))
-                            .colon(external_index),
-                    ),
+                    SketchEntityId::mint(design_identity_text(
+                        ctx, "sketch-entity", object, format_args!(":external:{external_index}"),
+                        "fcstd sketch external geometry identity",
+                    )?).map_err(CodecError::malformed)?,
                     SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                         .map_err(CodecError::malformed)?,
                     geometry,
@@ -1475,27 +1473,22 @@ fn parse_sketch(
                 continue;
             };
             let numeric_suffix = format!(":external:{external_index}");
-            let entity_key = object_key(object)?
-                .colon(cadmpeg_ir::identity_key!("external"))
-                .colon(external_index);
-            let link_entity_key = object_key(object)?
-                .colon(cadmpeg_ir::identity_key!("external-link"))
-                .colon(external_index);
-            let entity_suffix = if entities
+            let entity_kind = if entities
                 .iter()
                 .any(|entity| entity.id().as_str().ends_with(&numeric_suffix))
             {
-                link_entity_key
+                "external-link"
             } else {
-                entity_key
+                "external"
             };
             reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                        entity_suffix,
-                    ),
+                    SketchEntityId::mint(design_identity_text(
+                        ctx, "sketch-entity", object,
+                        format_args!(":{entity_kind}:{external_index}"),
+                        "fcstd sketch external link identity",
+                    )?).map_err(CodecError::malformed)?,
                     SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                         .map_err(CodecError::malformed)?,
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
@@ -1519,11 +1512,10 @@ fn parse_sketch(
         reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
-                SketchEntityId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                    object_key(object)?
-                        .colon(cadmpeg_ir::identity_key!("reference-horizontal-axis")),
-                ),
+                SketchEntityId::mint(design_identity_text(
+                    ctx, "sketch-entity", object, format_args!(":reference-horizontal-axis"),
+                    "fcstd sketch horizontal axis identity",
+                )?).map_err(CodecError::malformed)?,
                 SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                     .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
@@ -1540,10 +1532,10 @@ fn parse_sketch(
         reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
-                SketchEntityId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                    object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-vertical-axis")),
-                ),
+                SketchEntityId::mint(design_identity_text(
+                    ctx, "sketch-entity", object, format_args!(":reference-vertical-axis"),
+                    "fcstd sketch vertical axis identity",
+                )?).map_err(CodecError::malformed)?,
                 SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                     .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
@@ -1560,10 +1552,10 @@ fn parse_sketch(
         reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
-                SketchEntityId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
-                    object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-root-point")),
-                ),
+                SketchEntityId::mint(design_identity_text(
+                    ctx, "sketch-entity", object, format_args!(":reference-root-point"),
+                    "fcstd sketch root point identity",
+                )?).map_err(CodecError::malformed)?,
                 SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
                     .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -2006,12 +1998,10 @@ fn parse_constraints(
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
-                    let id = ParameterId::compose(
-                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
-                        object_key(object)?
-                            .colon(cadmpeg_ir::identity_key!("constraint"))
-                            .colon(index + 1),
-                    );
+                    let id = ParameterId::mint(design_identity_text(
+                        ctx, "parameter", object, format_args!(":constraint:{}", index + 1),
+                        "fcstd constraint parameter identity",
+                    )?).map_err(CodecError::malformed)?;
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(
                             cadmpeg_ir::scalar::Angle::new(value).ok_or_else(|| {
@@ -2165,10 +2155,10 @@ fn parse_constraints(
             });
         reserve_vec_items(ctx, &mut constraints, 1, "fcstd sketch constraints")?;
         constraints.push(SketchConstraint {
-            id: SketchConstraintId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-constraint"),
-                object_key(object)?.colon(index + 1),
-            ),
+            id: SketchConstraintId::mint(design_identity_text(
+                ctx, "sketch-constraint", object, format_args!(":{}", index + 1),
+                "fcstd sketch constraint identity",
+            )?).map_err(CodecError::malformed)?,
             sketch: SketchId::mint(retained_string(ctx, sketch.as_str(), "fcstd constraint sketch identity")?)
                 .map_err(CodecError::malformed)?,
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
@@ -6503,15 +6493,24 @@ fn operation_boolean(kind: &str) -> BooleanOp {
 }
 
 fn feature_id(ctx: &DecodeContext<'_>, object: &ObjectRecord) -> Result<FeatureId, CodecError> {
-    FeatureId::mint(retained_format(
-        ctx,
-        format_args!("fcstd:design:feature#{}", crate::native::id_key(&object.id)),
+    FeatureId::mint(design_identity_text(
+        ctx, "feature", object, format_args!(""),
         "fcstd design feature identity",
     )?).map_err(CodecError::malformed)
 }
 
-fn object_key(object: &ObjectRecord) -> Result<IdentityKey, CodecError> {
-    crate::native::id_key_identity(&object.id).map_err(CodecError::malformed)
+fn design_identity_text(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    object: &ObjectRecord,
+    tail: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    retained_format(
+        ctx,
+        format_args!("fcstd:design:{kind}#{}{tail}", crate::native::id_key(&object.id)),
+        operation,
+    )
 }
 
 fn feature_base_definition(
