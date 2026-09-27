@@ -108,6 +108,55 @@ impl IndexedRecordOffsets {
     }
 }
 
+/// Cache a stream index under its borrowed identity after charging the map slot.
+pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
+    ctx: &DecodeContext<'_>,
+    cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
+    stream: &'s str,
+    bytes: &[u8],
+) -> Result<&'a IndexedRecordOffsets, CodecError> {
+    if !cache.contains_key(stream) {
+        ctx.charge_collection_items(1, "f3d indexed stream cache entry")?;
+        cache.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d indexed stream cache allocation", 0, 1)
+        })?;
+    }
+    match cache.entry(stream) {
+        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            Ok(entry.insert(IndexedRecordOffsets::build(ctx, bytes)?))
+        }
+    }
+}
+
+/// Cache a stream index under owned text after charging its key and map slot.
+pub(in crate::design) fn cached_owned_record_offsets<'a>(
+    ctx: &DecodeContext<'_>,
+    cache: &'a mut HashMap<String, IndexedRecordOffsets>,
+    stream: &str,
+    bytes: &[u8],
+) -> Result<&'a IndexedRecordOffsets, CodecError> {
+    if !cache.contains_key(stream) {
+        ctx.charge_collection_items(1, "f3d indexed stream cache entry")?;
+        ctx.charge_retained(stream.len() as u64, "f3d indexed stream cache key")?;
+        cache.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d indexed stream cache allocation", 0, 1)
+        })?;
+    }
+    let _key_bytes = ctx.reserve_scoped(stream.len() as u64, "f3d indexed stream lookup")?;
+    let mut key = String::new();
+    key.try_reserve(stream.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d indexed stream key allocation", 0, 1)
+    })?;
+    key.push_str(stream);
+    match cache.entry(key) {
+        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            Ok(entry.insert(IndexedRecordOffsets::build(ctx, bytes)?))
+        }
+    }
+}
+
 /// Decode the unique local-to-model placement frame referenced by every
 /// parameter-owning sketch scope, and every member-run head placement. A
 /// localized Sketch scope follows its entity container within the same

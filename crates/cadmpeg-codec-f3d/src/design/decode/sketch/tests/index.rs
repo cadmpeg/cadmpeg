@@ -47,3 +47,51 @@ fn indexed_record_offsets_charge_distinct_keys() {
             if limit.dimension == ResourceDimension::CollectionItems
     ));
 }
+
+#[test]
+fn borrowed_record_cache_refuses_map_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::decode::sketch::cached_borrowed_record_offsets(
+            &ctx, &mut cache, "stream", &[]
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn owned_record_cache_refuses_retained_key() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::decode::sketch::cached_owned_record_offsets(
+            &ctx, &mut cache, "stream", &[]
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn owned_record_cache_refuses_temporary_lookup() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = std::collections::HashMap::new();
+    assert!(matches!(
+        crate::design::decode::sketch::cached_owned_record_offsets(
+            &ctx, &mut cache, "stream", &[]
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+}

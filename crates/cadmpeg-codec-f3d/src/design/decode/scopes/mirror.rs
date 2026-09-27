@@ -7,7 +7,7 @@ use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
@@ -303,12 +303,7 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records = match record_offset_index.entry(stream.clone()) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-                }
-            };
+            let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
             parse_face_operand(
                 bytes,
                 records,
@@ -363,12 +358,7 @@ pub(crate) fn bind_mirror_constructions(
                     && owner.scope_record_index() == scope_record_index
             })
             .collect::<Vec<_>>();
-        let records = match record_offset_index.entry(stream.clone()) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
-            }
-        };
+        let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let count = scope_owners
             .iter()
             .copied()
