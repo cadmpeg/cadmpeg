@@ -129,6 +129,10 @@ pub(super) fn browser_node_records(
         let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
+        ctx.charge_collection_items(1, "f3d browser node records")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d browser node records allocation", 0, 1)
+        })?;
         out.push(BrowserNodeRecord {
             record_index,
             guid,
@@ -147,7 +151,7 @@ pub(crate) fn body_presentations(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
     let nodes = browser_node_records(ctx, bytes, meta)?;
-    let entity_types = entity_types(meta)?;
+    let entity_types = entity_types(ctx, meta)?;
 
     let mut out = Vec::new();
     for frame in typed_primary_frames(
@@ -228,22 +232,22 @@ pub(crate) fn body_presentations(
             };
             (entity_suffix, BodyPresentationOwner::Bare, Some(material))
         };
-        let matching_nodes = material
-            .as_ref()
-            .map(|material| {
-                nodes
-                    .iter()
-                    .filter(|node| {
-                        node.entity_suffix == entity_suffix
-                            && node.guid.eq_ignore_ascii_case(&material.node_guid)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let browser_node = match matching_nodes.as_slice() {
-            [node] => Some((*node).clone()),
-            _ => None,
+        let browser_node = if let Some(material) = material.as_ref() {
+            let mut matching_nodes = nodes.iter().filter(|node| {
+                node.entity_suffix == entity_suffix
+                    && node.guid.eq_ignore_ascii_case(&material.node_guid)
+            });
+            match (matching_nodes.next(), matching_nodes.next()) {
+                (Some(node), None) => Some(copy_browser_node(ctx, node)?),
+                _ => None,
+            }
+        } else {
+            None
         };
+        ctx.charge_collection_items(1, "f3d body presentation records")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d body presentation records allocation", 0, 1)
+        })?;
         out.push(BodyPresentation {
             byte_offset: frame.start as u64,
             entity_suffix,
@@ -255,23 +259,40 @@ pub(crate) fn body_presentations(
     Ok(out)
 }
 
-fn entity_types(
-    meta: &crate::metastream::MetaStream,
-) -> Result<HashMap<u64, (&str, u32)>, CodecError> {
+fn copy_browser_node(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node: &BrowserNodeRecord,
+) -> Result<BrowserNodeRecord, CodecError> {
+    let guid = String::from_utf8(ctx.copy_retained(
+        node.guid.as_bytes(),
+        "f3d body presentation browser node GUID",
+    )?).map_err(|_| CodecError::Malformed("F3D browser node GUID is invalid UTF-8".into()))?;
+    Ok(BrowserNodeRecord {
+        record_index: node.record_index,
+        guid,
+        entity_suffix: node.entity_suffix,
+        hidden_offset: node.hidden_offset,
+        hidden: node.hidden,
+    })
+}
+
+fn entity_types<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {
-            if out
-                .insert(
-                    entity_id,
-                    (design_type.type_guid.as_str(), design_type.version),
-                )
-                .is_some()
-            {
+            if out.contains_key(&entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design entity {entity_id} has multiple registered types"
                 )));
             }
+            ctx.charge_collection_items(1, "f3d presentation entity types")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d presentation entity types allocation", 0, 1)
+            })?;
+            out.insert(entity_id, (design_type.type_guid.as_str(), design_type.version));
         }
     }
     Ok(out)
@@ -642,6 +663,53 @@ mod tests {
     }
 
     #[test]
+    fn browser_records_and_entity_types_refuse_collection_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, "256");
+        bytes.extend_from_slice(&43_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&42_u64.to_le_bytes());
+        let meta = crate::metastream::MetaStream {
+            types: vec![design_type(
+                BROWSER_NODE_TYPE_GUID,
+                Some(BROWSER_NODE_BASE_TYPE_GUID),
+                BROWSER_NODE_TYPE_VERSION,
+                DESIGN_MODULE_FUSION,
+                vec![43],
+            )],
+            records: vec![primary_record(43, 0)],
+            secondary_records: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = browser_node_records_with_context(&ctx, &bytes, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d browser node records"
+        ));
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::entity_types(&ctx, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d presentation entity types"
+        ));
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let nodes = browser_node_records_with_context(ctx, &bytes, &meta).unwrap();
+            assert_eq!(nodes.len(), 1);
+            assert_eq!(nodes[0].entity_suffix, 42);
+        });
+    }
+
+    #[test]
     fn typed_presentation_joins_its_exact_browser_node() {
         let body_tag = 256u32;
         let node_tag = 257u32;
@@ -727,6 +795,101 @@ mod tests {
         assert_eq!(material.physical_token, "PrismMaterial-001");
         assert_eq!(&*material.visual_guid, visual_guid);
         assert_eq!(material.visual_preset, None);
+    }
+
+    #[test]
+    fn linked_body_presentation_refuses_output_and_node_copy_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body_tag = 256u32;
+        let node_tag = 257u32;
+        let entity = (1u64 << 40) + 42;
+        let node_guid = "11111111-2222-8333-A444-555555555555";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, &body_tag.to_string());
+        bytes.extend_from_slice(&entity.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        lp_utf16(&mut bytes, &format!("0_{entity}"));
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        lp_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
+        lp_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
+        lp_utf16(&mut bytes, "PrismMaterial-001");
+        push_reference_u64(&mut bytes, 7);
+        bytes.push(0);
+        push_reference_u64(&mut bytes, entity + 1);
+        lp_utf16(&mut bytes, "Body");
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        lp_utf16(&mut bytes, visual_guid);
+        for marker in MODERN_APPEARANCE_LIBRARY_IDS {
+            lp_utf16(&mut bytes, marker);
+        }
+        let node_start = bytes.len();
+        lp_ascii(&mut bytes, &node_tag.to_string());
+        bytes.extend_from_slice(&43u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, node_guid);
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&entity.to_le_bytes());
+
+        let meta = crate::metastream::MetaStream {
+            types: vec![
+                design_type(
+                    BODY_PRESENTATION_TYPE_GUID,
+                    Some(BODY_PRESENTATION_BASE_TYPE_GUID),
+                    BODY_PRESENTATION_TYPE_VERSION,
+                    DESIGN_MODULE_BODY,
+                    vec![entity],
+                ),
+                design_type(
+                    BROWSER_NODE_TYPE_GUID,
+                    Some(BROWSER_NODE_BASE_TYPE_GUID),
+                    BROWSER_NODE_TYPE_VERSION,
+                    DESIGN_MODULE_FUSION,
+                    vec![43],
+                ),
+                design_type(
+                    BREP_CONTAINER_TYPE_GUID,
+                    None,
+                    BREP_CONTAINER_TYPE_VERSION,
+                    "",
+                    vec![7],
+                ),
+                design_type(
+                    BODY_SCENE_NODE_TYPE_GUID,
+                    None,
+                    BODY_SCENE_NODE_TYPE_VERSION,
+                    "",
+                    vec![entity + 1],
+                ),
+            ],
+            records: vec![primary_record(entity, 0), primary_record(43, node_start)],
+            secondary_records: Vec::new(),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 23;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = body_presentations_with_context(&ctx, &bytes, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d body presentation records"
+        ));
+        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        policy.limits.max_retained_bytes = (node_guid.len() - 1) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = body_presentations_with_context(&ctx, &bytes, &meta).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d body presentation browser node GUID"
+        ));
+        let presentations = body_presentations(&bytes, &meta).unwrap();
+        assert_eq!(presentations.len(), 1);
+        assert_eq!(presentations[0].browser_node.as_ref().unwrap().guid, node_guid);
     }
 
     #[test]
