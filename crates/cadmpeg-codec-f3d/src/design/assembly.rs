@@ -327,6 +327,9 @@ pub(crate) fn project_assembly_joints(
             }
             None => (None, None),
         };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d assembly joint map entry")?;
+        }
         let id = crate::ids::neutral_assembly_joint_id(scope);
         let [first_operand, second_operand] = operands;
         let first_frame = super::components::neutral_transform(frames[0].transform)?;
@@ -647,6 +650,72 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "f3d assembly occurrence map entry"
+        ));
+    }
+
+    #[test]
+    fn assembly_joint_map_refuses_collection_limit() {
+        use crate::records::feature::{
+            assembly::{
+                DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+            },
+            scope::{DesignFeatureKind, DesignScopePayload},
+        };
+        let mut scopes = Vec::new();
+        for index in [1, 2] {
+            let mut scope = DesignParameterScope::empty(
+                &format!("f3d:synthetic:design-parameter-scope#{index}"),
+                DesignFeatureKind::JointOrigin,
+                index,
+            );
+            scope.with_joint_origin_transform(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            );
+            scopes.push(scope);
+        }
+        let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
+            reference_record_index: index,
+            reference_offset: 0,
+            transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            transform_offset: 0,
+        });
+        let qualifiers = [1, 2].map(|scope_record_index| {
+            DesignAssemblyOperandQualifier::AxialTarget {
+                target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index,
+                },
+            }
+        });
+        let mut joint_scope = DesignParameterScope::empty(
+            "f3d:synthetic:design-parameter-scope#3",
+            DesignFeatureKind::Assemble,
+            3,
+        );
+        joint_scope
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::Assemble(Some(
+                    DesignAssemblyAlignment::try_new(
+                        0.0,
+                        [0.0; 3],
+                        Vec::new(),
+                        Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                    )
+                    .unwrap(),
+                ));
+            })
+            .unwrap();
+        scopes.push(joint_scope);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+            .expect_err("one projected joint needs one map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly joint map entry"
         ));
     }
 
