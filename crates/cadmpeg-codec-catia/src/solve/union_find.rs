@@ -38,7 +38,7 @@ impl UnionFind {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            parents: crate::resource::copy_slice(ctx, &self.parents, operation)?,
+            parents: crate::resource::copy_retained_slice(ctx, &self.parents, operation)?,
         })
     }
 
@@ -121,6 +121,26 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "catia_union_test_parents")
         );
+    }
+
+    #[test]
+    fn union_clone_refuses_retained_parent_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let union = UnionFind::new(1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits retained limit");
+        assert!(matches!(
+            union.clone_charged(&ctx, "catia_union_clone_bytes"),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_union_clone_bytes"
+        ));
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(union.clone_charged(ctx, "catia_union_clone_bytes").expect("service budget").len(), 1);
+        });
     }
 
     #[test]
