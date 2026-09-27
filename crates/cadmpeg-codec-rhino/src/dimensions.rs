@@ -11,6 +11,30 @@ use crate::wire::{scaled_coordinate, uuid, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
+fn admitted_points<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, FramingError> {
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)
+        .map_err(|error| match error {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            error => FramingError::unpositioned(error.to_string()),
+        })?;
+    let mut points = Vec::new();
+    points.try_reserve_exact(count).map_err(|_| {
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: cadmpeg_core::decode::u64_from_index(count),
+            operation,
+        })
+    })?;
+    Ok(points)
+}
+
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
     0x8a, 0xd5, 0xb9, 0xfc, 0x0d, 0x5c, 0x47, 0xfb, 0xad, 0xfd, 0x74, 0xc2, 0x8b, 0x6f, 0x66, 0x1e,
@@ -377,13 +401,14 @@ pub(crate) struct LegacyAnnotation {
 }
 
 pub(crate) fn legacy_annotation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<LegacyAnnotation, FramingError> {
     let (mut annotation, next, minor) = anonymous(data, reader.position(), reader.end(), archive)?;
-    let value = legacy_annotation_fields(&mut annotation, scale, minor, false)?;
+    let value = legacy_annotation_fields(ctx, &mut annotation, scale, minor, false)?;
     annotation.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
@@ -393,6 +418,7 @@ pub(crate) fn legacy_annotation(
 /// and 4. Those archives store a packed version byte and then the common
 /// fields without an anonymous wrapper.
 pub(crate) fn legacy_annotation_direct(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<LegacyAnnotation, FramingError> {
@@ -403,12 +429,13 @@ pub(crate) fn legacy_annotation_direct(
             "unsupported direct legacy annotation version",
         ));
     }
-    let value = legacy_annotation_fields(reader, scale, 0, true)?;
+    let value = legacy_annotation_fields(ctx, reader, scale, 0, true)?;
     reader.skip_remaining()?;
     Ok(value)
 }
 
 fn legacy_annotation_fields(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotation: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     minor: i32,
@@ -426,7 +453,7 @@ fn legacy_annotation_fields(
         .ok_or_else(|| {
             FramingError::structural(point_count_offset, "invalid legacy annotation point count")
         })?;
-    let mut points = Vec::with_capacity(point_count);
+    let mut points = admitted_points(ctx, point_count, "Rhino legacy annotation points")?;
     for _ in 0..point_count {
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
@@ -574,6 +601,7 @@ pub(crate) struct V2Annotation {
 /// The reader stops after `m_userpositionedtext`. The enclosing class-data
 /// range owns every subclass field and any future suffix.
 pub(crate) fn v2_annotation_direct(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<V2Annotation, FramingError> {
@@ -607,7 +635,7 @@ pub(crate) fn v2_annotation_direct(
         1 << 20,
         point_count_offset,
     )?;
-    let mut points = Vec::with_capacity(point_bytes / 16);
+    let mut points = admitted_points(ctx, point_bytes / 16, "Rhino V2 annotation points")?;
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
@@ -660,6 +688,7 @@ enum LegacyDimensionFields {
 }
 
 fn decode_legacy(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
@@ -684,7 +713,7 @@ fn decode_legacy(
                 "unsupported direct legacy dimension version",
             ));
         }
-        let annotation = legacy_annotation_fields(&mut reader, scale, 0, true)?;
+        let annotation = legacy_annotation_fields(ctx, &mut reader, scale, 0, true)?;
         (reader, 0, annotation)
     } else {
         // The class reader closes the family child and the enclosing class-data
@@ -694,15 +723,15 @@ fn decode_legacy(
             let (mut wrapper, wrapper_next, _wrapper_minor) =
                 anonymous(data, outer.position(), outer.end(), archive)?;
             let annotation = if direct_legacy_common {
-                legacy_annotation_direct(&mut wrapper, scale)?
+                legacy_annotation_direct(ctx, &mut wrapper, scale)?
             } else {
-                legacy_annotation(data, &mut wrapper, scale, archive)?
+                legacy_annotation(ctx, data, &mut wrapper, scale, archive)?
             };
             wrapper.skip_remaining()?;
             outer.skip(wrapper_next - outer.position())?;
             annotation
         } else {
-            legacy_annotation(data, &mut outer, scale, archive)?
+            legacy_annotation(ctx, data, &mut outer, scale, archive)?
         };
         (outer, minor, annotation)
     };
@@ -897,13 +926,14 @@ fn decode_legacy(
 }
 
 fn decode_v2(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
     scale: MillimeterScale,
 ) -> Result<Dimension, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let annotation = v2_annotation_direct(&mut reader, scale)?;
+    let annotation = v2_annotation_direct(ctx, &mut reader, scale)?;
     let kind = annotation.kind;
     let points = &annotation.points;
     let mut angular_radius = None;
@@ -1083,6 +1113,7 @@ fn read_arrow_position(
 
 /// Decodes one modern linear, angular, or radial dimension.
 pub(crate) fn decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
@@ -1090,10 +1121,10 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
-        return decode_v2(data, class, range, scale);
+        return decode_v2(ctx, data, class, range, scale);
     }
     if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
-        return decode_legacy(data, class, range, scale, archive);
+        return decode_legacy(ctx, data, class, range, scale, archive);
     }
     // The class reader closes the family child and the enclosing class-data
     // reader owns any direct suffix after that child.
@@ -1815,7 +1846,7 @@ pub(crate) mod tests {
             false,
             None,
         );
-        let value = decode(
+        let value = test_decode(
             &bytes,
             V2_LINEAR,
             0..bytes.len(),
@@ -1827,7 +1858,7 @@ pub(crate) mod tests {
     }
 
     use super::{
-        angular_measurement, apply_userdata, decode, legacy_text_scaling, modern_annotation_type,
+        angular_measurement, apply_userdata, legacy_text_scaling, modern_annotation_type,
         semantic_json, v2_annotation_direct, v2_effective_text, Definition, DimensionFamily,
         OrdinateAxis, ANGULAR, ANONYMOUS, CENTERMARK, LINEAR, ORDINATE, RADIAL, V2_ANGULAR,
         V2_LINEAR, V2_RADIAL, V2_REALLY_BIG_NUMBER, V5_ANGULAR, V5_ANGULAR_EXTRA, V5_DIM_EXTRA,
@@ -1837,9 +1868,120 @@ pub(crate) mod tests {
     use crate::objects::ClassUserdata;
     use crate::objects::UserdataDescriptor;
     use crate::settings::MillimeterScale;
-    use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
+    use crate::test_support::test_dump::{
+        crc_chunk, object_record_with_payload, scan_with_objects, utf16_bytes,
+    };
     use crate::wire::Uuid;
     use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+
+    fn with_test_context<R>(
+        data: &[u8],
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("dimension fixture fits root limit");
+        apply(&ctx)
+    }
+
+    fn test_decode(
+        data: &[u8],
+        class: Uuid,
+        range: std::ops::Range<usize>,
+        scale: MillimeterScale,
+        archive: ArchiveVersion,
+    ) -> Result<super::Dimension, crate::chunks::FramingError> {
+        with_test_context(data, |ctx| {
+            super::decode(ctx, data, class, range, scale, archive)
+        })
+    }
+
+    fn with_collection_limit<R>(
+        data: &[u8],
+        limit: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("dimension fixture fits root limit");
+        apply(&ctx)
+    }
+
+    #[test]
+    fn legacy_annotation_points_refuse_collection_limit() {
+        let bytes = direct_legacy_payload(7, &[[1.0, 2.0], [3.0, 4.0]], &[]);
+        let refusal = with_collection_limit(&bytes, 1, |ctx| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded payload");
+            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("two points exceed one collection item")
+        });
+        assert!(matches!(
+            refusal,
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino legacy annotation points"
+        ));
+    }
+
+    #[test]
+    fn v2_annotation_points_refuse_collection_limit() {
+        let bytes = v2_payload(7, &[[1.0, 2.0], [3.0, 4.0]], "", "", false, None);
+        let refusal = with_collection_limit(&bytes, 1, |ctx| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded payload");
+            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .err()
+                .expect("two points exceed one collection item")
+        });
+        assert!(matches!(
+            refusal,
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino V2 annotation points"
+        ));
+    }
+
+    #[test]
+    fn dimension_decode_propagates_v2_point_limit() {
+        let payload = v2_payload(
+            1,
+            &[[1.0, 2.0], [0.0, 0.0], [5.0, 0.0], [3.0, 0.0], [7.0, 4.0]],
+            "user",
+            "default",
+            false,
+            None,
+        );
+        let object =
+            object_record_with_payload(ArchiveVersion::V5, 1, V2_LINEAR.to_wire(), &payload);
+        let scan = scan_with_objects(&[object]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 8;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("fixture fits root limit");
+        let refusal = crate::decode::decode(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+            .expect_err("dimension points exceed collection limit");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino V2 annotation points"
+        ));
+        let service_arena = cadmpeg_core::decode::DecodeArena::new();
+        let service_policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (service_ctx, service_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            scan.data,
+            &service_arena,
+            &service_policy,
+        )
+        .expect("fixture fits root limit");
+        let service = crate::decode::decode(
+            &scan,
+            crate::mesh::MeshExpand::new(&service_ctx, service_root),
+        );
+        assert!(service.is_ok(), "service dimension decode: {service:?}");
+    }
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {
@@ -1948,9 +2090,10 @@ pub(crate) mod tests {
             None,
         );
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
-        let annotation =
-            v2_annotation_direct(&mut reader, crate::test_support::millimeter_scale(2.0))
-                .expect("V2 common prefix");
+        let annotation = with_test_context(&bytes, |ctx| {
+            v2_annotation_direct(ctx, &mut reader, crate::test_support::millimeter_scale(2.0))
+        })
+        .expect("V2 common prefix");
         assert_eq!(annotation.points[0], [2.0, 4.0]);
         assert_eq!(annotation.user_text, "  user <>  ");
         assert_eq!(annotation.default_text, "default");
@@ -1969,7 +2112,7 @@ pub(crate) mod tests {
             false,
             None,
         );
-        let linear = decode(
+        let linear = test_decode(
             &linear_bytes,
             V2_LINEAR,
             0..linear_bytes.len(),
@@ -2001,7 +2144,7 @@ pub(crate) mod tests {
             true,
             None,
         );
-        let radial = decode(
+        let radial = test_decode(
             &radial_bytes,
             V2_RADIAL,
             0..radial_bytes.len(),
@@ -2022,7 +2165,7 @@ pub(crate) mod tests {
             true,
             Some((1.25, 9.5)),
         );
-        let angular = decode(
+        let angular = test_decode(
             &angular_bytes,
             V2_ANGULAR,
             0..angular_bytes.len(),
@@ -2050,7 +2193,7 @@ pub(crate) mod tests {
             false,
             Some((0.0, 9.5)),
         );
-        assert!(decode(
+        assert!(test_decode(
             &bytes,
             V2_ANGULAR,
             0..bytes.len(),
@@ -2070,7 +2213,7 @@ pub(crate) mod tests {
             false,
             Some((V2_REALLY_BIG_NUMBER.next_up(), 9.5)),
         );
-        assert!(decode(
+        assert!(test_decode(
             &bytes,
             V2_ANGULAR,
             0..bytes.len(),
@@ -2093,7 +2236,7 @@ pub(crate) mod tests {
         let point_offset = 1 + 4 + 16 * 8 + 4;
         bytes[point_offset..point_offset + 8]
             .copy_from_slice(&V2_REALLY_BIG_NUMBER.next_up().to_le_bytes());
-        assert!(decode(
+        assert!(test_decode(
             &bytes,
             V2_LINEAR,
             0..bytes.len(),
@@ -2189,7 +2332,7 @@ pub(crate) mod tests {
                 .next_back()
                 .expect("distance scale in source bytes");
             bytes[offset..offset + 8].copy_from_slice(&refused.to_le_bytes());
-            let result = decode(
+            let result = test_decode(
                 &bytes,
                 RADIAL,
                 0..bytes.len(),
@@ -2261,7 +2404,7 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let linear_bytes = payload(1, &linear_family);
-        let linear = decode(
+        let linear = test_decode(
             &linear_bytes,
             LINEAR,
             0..linear_bytes.len(),
@@ -2286,7 +2429,7 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let radial_bytes = payload(3, &radial_family);
-        let radial = decode(
+        let radial = test_decode(
             &radial_bytes,
             RADIAL,
             0..radial_bytes.len(),
@@ -2297,7 +2440,7 @@ pub(crate) mod tests {
         assert_eq!(radial.measurement, 20.0);
         let outside_bytes =
             dimension_payload_with_arrow_fit(3, &radial_family, [0; 16], &plane(), None, 2);
-        let outside = decode(
+        let outside = test_decode(
             &outside_bytes,
             RADIAL,
             0..outside_bytes.len(),
@@ -2316,7 +2459,7 @@ pub(crate) mod tests {
         .flat_map(f64::to_le_bytes)
         .collect::<Vec<_>>();
         let angular_bytes = payload(2, &angular_family);
-        let angular = decode(
+        let angular = test_decode(
             &angular_bytes,
             ANGULAR,
             0..angular_bytes.len(),
@@ -2337,7 +2480,7 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes),
         );
         let ordinate_bytes = payload(6, &ordinate_family);
-        let ordinate = decode(
+        let ordinate = test_decode(
             &ordinate_bytes,
             ORDINATE,
             0..ordinate_bytes.len(),
@@ -2367,7 +2510,7 @@ pub(crate) mod tests {
             .collect::<Vec<_>>();
         for (wire, expected) in [(0, 0), (1, 1), (2, -1)] {
             let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, wire);
-            let dimension = decode(
+            let dimension = test_decode(
                 &bytes,
                 RADIAL,
                 0..bytes.len(),
@@ -2378,7 +2521,7 @@ pub(crate) mod tests {
             assert_eq!(dimension.arrow_position, expected);
         }
         let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, 3);
-        let error = decode(
+        let error = test_decode(
             &bytes,
             RADIAL,
             0..bytes.len(),
@@ -2408,7 +2551,7 @@ pub(crate) mod tests {
 
         let mut modern = payload(1, &family);
         modern.extend([0xa5, 0x5a]);
-        let modern_dimension = decode(
+        let modern_dimension = test_decode(
             &modern,
             LINEAR,
             0..modern.len(),
@@ -2424,7 +2567,7 @@ pub(crate) mod tests {
             &[],
         );
         legacy.extend([0x3c, 0xc3]);
-        let legacy_dimension = decode(
+        let legacy_dimension = test_decode(
             &legacy,
             V5_LINEAR,
             0..legacy.len(),
@@ -2443,7 +2586,7 @@ pub(crate) mod tests {
             &[[0.0, 0.0], [0.0, 5.0], [3.0, 0.0], [3.0, 5.0], [1.0, 5.0]],
             &[],
         );
-        let linear = decode(
+        let linear = test_decode(
             &linear_bytes,
             V5_LINEAR,
             0..linear_bytes.len(),
@@ -2470,7 +2613,7 @@ pub(crate) mod tests {
 
         let radial_bytes =
             legacy_payload(4, &[[1.0, 2.0], [4.0, 6.0], [7.0, 8.0], [6.0, 8.0]], &[]);
-        let radial = decode(
+        let radial = test_decode(
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
@@ -2495,7 +2638,7 @@ pub(crate) mod tests {
             &[[2.0, 2.0], [2.0, 0.0], [0.0, 3.0], [1.0, 1.0]],
             &[std::f64::consts::FRAC_PI_2, 5.0],
         );
-        let angular = decode(
+        let angular = test_decode(
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
@@ -2523,7 +2666,7 @@ pub(crate) mod tests {
         assert_eq!(second_extension_offset.get(), -1.0);
 
         let center_bytes = payload(8, &4.5_f64.to_le_bytes());
-        let center = decode(
+        let center = test_decode(
             &center_bytes,
             CENTERMARK,
             0..center_bytes.len(),
@@ -2543,7 +2686,7 @@ pub(crate) mod tests {
         wrapped.extend(1.25_f64.to_le_bytes());
         wrapped.extend(0.5_f64.to_le_bytes());
         let ordinate_bytes = anonymous(1, &wrapped);
-        let ordinate = decode(
+        let ordinate = test_decode(
             &ordinate_bytes,
             V5_ORDINATE,
             0..ordinate_bytes.len(),
@@ -2606,7 +2749,7 @@ pub(crate) mod tests {
             panic!("expected known userdata");
         };
         *item_uuid = Uuid::nil();
-        let mut wrong_item_radial = decode(
+        let mut wrong_item_radial = test_decode(
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
@@ -2664,7 +2807,7 @@ pub(crate) mod tests {
             panic!("expected known userdata");
         };
         *item_uuid = Uuid::nil();
-        let mut wrong_item_angular = decode(
+        let mut wrong_item_angular = test_decode(
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
@@ -2732,7 +2875,7 @@ pub(crate) mod tests {
             &[[0.0, 0.0], [0.0, 5.0], [3.0, 0.0], [3.0, 5.0], [1.0, 5.0]],
             &[],
         );
-        let linear = decode(
+        let linear = test_decode(
             &linear_bytes,
             V5_LINEAR,
             0..linear_bytes.len(),
@@ -2747,7 +2890,7 @@ pub(crate) mod tests {
             &[[1.0, 2.0], [4.0, 6.0], [7.0, 8.0], [6.0, 8.0], [7.0, 8.0]],
             &[],
         );
-        let radial = decode(
+        let radial = test_decode(
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
@@ -2762,7 +2905,7 @@ pub(crate) mod tests {
             &[[2.0, 2.0], [2.0, 0.0], [0.0, 3.0], [1.0, 1.0]],
             &[std::f64::consts::FRAC_PI_2, 5.0],
         );
-        let angular = decode(
+        let angular = test_decode(
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
@@ -2779,7 +2922,7 @@ pub(crate) mod tests {
         ordinate_body.extend(1.25_f64.to_le_bytes());
         ordinate_body.extend(0.5_f64.to_le_bytes());
         let ordinate_outer = anonymous_v4(1, &ordinate_body);
-        let ordinate = decode(
+        let ordinate = test_decode(
             &ordinate_outer,
             V5_ORDINATE,
             0..ordinate_outer.len(),

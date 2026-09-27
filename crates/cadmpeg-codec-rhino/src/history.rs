@@ -1107,20 +1107,27 @@ fn extended_geometry_json(
             "page_per_model_ratio": detail.page_per_model_ratio,
         })
     } else if crate::dimensions::supported_class(value.class_id) {
-        let dimension = crate::dimensions::decode(
+        let dimension = match crate::dimensions::decode(
+            expand.ctx(),
             data,
             value.class_id,
             value.class_data_range.clone(),
             scale,
             archive,
-        )
-        .map_err(|error| {
-            warnings.push(format!(
-                "embedded history dimension at offset {}: {error}",
-                value.class_data_range.start
-            ));
-        })
-        .ok()?;
+        ) {
+            Ok(dimension) => dimension,
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
+                return None;
+            }
+            Err(error) => {
+                warnings.push(format!(
+                    "embedded history dimension at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+                return None;
+            }
+        };
         let mut dimension = dimension;
         crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
             .map_err(|error| {
