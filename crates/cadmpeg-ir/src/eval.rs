@@ -45,7 +45,7 @@ mod depth;
 mod model_surface_point;
 mod polyline;
 mod rational;
-use depth::ModelEvaluationDepthGuard;
+use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
 use polyline::{polyline_point, polyline_samples, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};
 
@@ -4238,7 +4238,7 @@ fn model_curve_differential_by_id_inner(
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     if !parameter.is_finite() {
         return Err(EvaluationFailure::NoValue);
     }
@@ -4246,6 +4246,12 @@ fn model_curve_differential_by_id_inner(
         .curves(curve_id.as_str())
         .ok_or(EvaluationFailure::NoValue)?;
     if budget.is_some_and(|budget| !budget.charge()) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    if !depth_guard.bind(
+        ModelEvaluationIdentity::Curve(std::ptr::from_ref(curve)),
+        budget,
+    ) {
         return Err(EvaluationFailure::NoValue);
     }
     if let Some(procedural) = index
@@ -4901,11 +4907,17 @@ fn model_curve_point_by_id_inner(
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     let curve = index
         .curves(curve_id.as_str())
         .ok_or(EvaluationFailure::NoValue)?;
     if budget.is_some_and(|budget| !budget.charge()) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    if !depth_guard.bind(
+        ModelEvaluationIdentity::Curve(std::ptr::from_ref(curve)),
+        budget,
+    ) {
         return Err(EvaluationFailure::NoValue);
     }
     let Some(procedural) = index
@@ -8725,7 +8737,7 @@ fn model_surface_jet_by_id(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
-    let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new(), budget)?;
+    let mapping = model_surface_mapping(index, surface, u, v, budget)?;
     let jet = if mapping.offset_distance == 0.0 {
         mapping.base
     } else {
@@ -8773,19 +8785,20 @@ fn model_surface_mapping(
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
-    visiting: &mut Vec<crate::ids::SurfaceId>,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceMapping, EvaluationFailure<Point3>> {
-    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    let depth_guard = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     let no_value = EvaluationFailure::NoValue;
     if budget.is_some_and(|budget| !budget.charge()) {
         return Err(no_value);
     }
-    if visiting.contains(surface) {
+    let carrier = index.surfaces(surface.as_str()).ok_or(no_value)?;
+    if !depth_guard.bind(
+        ModelEvaluationIdentity::Surface(std::ptr::from_ref(carrier)),
+        budget,
+    ) {
         return Err(no_value);
     }
-    visiting.push(surface.clone());
-    let carrier = index.surfaces(surface.as_str()).ok_or(no_value)?;
     let procedural = index.procedural_surface_for_surface(surface.as_str());
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
@@ -8795,7 +8808,7 @@ fn model_surface_mapping(
         reversed: [false, false],
         orientation: 1.0,
     };
-    let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
+    match procedural.map(crate::geometry::ProceduralSurface::definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
             model_axis_revolution_jet(
                 index,
@@ -8826,10 +8839,10 @@ fn model_surface_mapping(
             model_sum_surface_jet(index, definition_payload, u, v).map(direct)
         }
         Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-            model_surface_mapping(index, support, u, v, visiting, budget)
+            model_surface_mapping(index, support, u, v, budget)
         }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-            model_surface_mapping(index, source, u, v, visiting, budget).and_then(|source| {
+            model_surface_mapping(index, source, u, v, budget).and_then(|source| {
                 let base = if source.offset_distance == 0.0 {
                     source.base
                 } else {
@@ -8853,9 +8866,8 @@ fn model_surface_mapping(
             subset_support_parameters_with_derivatives(u, v, parameter_ranges, *u_sense, *v_sense)
                 .ok_or(no_value)
                 .and_then(|(support_u, support_v, u_derivative, v_derivative)| {
-                    let support = model_surface_mapping(
-                        index, support, support_u, support_v, visiting, budget,
-                    )?;
+                    let support =
+                        model_surface_mapping(index, support, support_u, support_v, budget)?;
                     let [u_reversed, v_reversed] = support.reversed;
                     Ok(SurfaceMapping {
                         base: support.base,
@@ -8869,7 +8881,7 @@ fn model_surface_mapping(
                 })
         }
         Some(ProceduralSurfaceDefinition::ParallelOffset(payload)) => {
-            model_surface_mapping(index, payload.support(), u, v, visiting, budget).map(|support| {
+            model_surface_mapping(index, payload.support(), u, v, budget).map(|support| {
                 SurfaceMapping {
                     offset_distance: support.offset_distance
                         + payload.distance().get() * support.orientation,
@@ -8878,7 +8890,7 @@ fn model_surface_mapping(
             })
         }
         Some(ProceduralSurfaceDefinition::Offset(payload)) => {
-            model_surface_mapping(index, payload.support(), u, v, visiting, budget).map(|support| {
+            model_surface_mapping(index, payload.support(), u, v, budget).map(|support| {
                 SurfaceMapping {
                     offset_distance: support.offset_distance
                         + payload.distance().get() * support.orientation,
@@ -8887,9 +8899,7 @@ fn model_surface_mapping(
             })
         }
         _ => surface_jet(&carrier.geometry, u, v, budget).map(direct),
-    };
-    visiting.pop();
-    result
+    }
 }
 
 fn subset_support_parameters_with_derivatives(
