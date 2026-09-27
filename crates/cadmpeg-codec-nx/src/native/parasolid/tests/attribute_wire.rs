@@ -31,11 +31,17 @@ fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
 
 #[test]
 fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
-    use crate::native::parasolid::ParasolidAttributeDefinition;
+    use crate::native::parasolid::{
+        ParasolidAttributeDefinition, ParasolidAttributeDefinitionWire,
+    };
 
     let wire = r#"{"id":"definition","stream_ordinal":0,"xmt":2,"next_definition_xmt":1,"identifier_xmt":3,"identifier_inflated_offset":4,"name":"CLASS","type_id":8000,"action_codes":[0,1,2,3,4,5,6,0],"field_names_xmt":1,"legal_owner_flags":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"field_count":2,"field_codes":[0,10],"inflated_offset":8}"#;
     let definition: ParasolidAttributeDefinition = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&definition).unwrap(), wire);
+    assert_eq!(
+        serde_json::to_vec(&definition).unwrap(),
+        serde_json::to_vec(&ParasolidAttributeDefinitionWire::from(definition.clone())).unwrap()
+    );
     for target in [0, 1, 2, u32::MAX] {
         let wire = wire
             .replace(
@@ -62,6 +68,17 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
     ] {
         assert!(serde_json::from_str::<ParasolidAttributeDefinition>(&invalid).is_err());
     }
+}
+
+#[test]
+fn attribute_definition_native_limit_refuses_before_field_code_copy() {
+    use crate::native::parasolid::ParasolidAttributeDefinition;
+    let wire = r#"{"id":"nx:parasolid:attribute-definition#0","stream_ordinal":0,"xmt":2,"next_definition_xmt":1,"identifier_xmt":3,"identifier_inflated_offset":4,"name":"CLASS","type_id":8000,"action_codes":[0,1,2,3,4,5,6,0],"field_names_xmt":1,"legal_owner_flags":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"field_count":2,"field_codes":[0,10],"inflated_offset":8}"#;
+    let definition: ParasolidAttributeDefinition = serde_json::from_str(wire).unwrap();
+    cadmpeg_test_support::native_serialization::assert_native_limit(
+        &definition,
+        serde_json::from_str::<serde_json::Value>(wire).unwrap(),
+    );
 }
 
 #[test]

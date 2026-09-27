@@ -1979,11 +1979,8 @@ fn is_default_legal_owner_flag_count(value: &u8) -> bool {
 }
 
 /// Named Parasolid attribute class declared in one inflated body stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidAttributeDefinitionWire",
-    into = "ParasolidAttributeDefinitionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidAttributeDefinitionWire")]
 pub(super) struct ParasolidAttributeDefinition {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -2011,6 +2008,49 @@ pub(super) struct ParasolidAttributeDefinition {
     pub(super) field_codes: Vec<AttributeField>,
     /// Offset of the declaration in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidAttributeDefinitionRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    next_definition_xmt: u32,
+    identifier_xmt: u32,
+    identifier_inflated_offset: u64,
+    name: &'a str,
+    type_id: u32,
+    action_codes: [AttributeAction; 8],
+    field_names_xmt: u32,
+    legal_owner_flags: [u8; 16],
+    #[serde(skip_serializing_if = "is_default_legal_owner_flag_count")]
+    legal_owner_flag_count: u8,
+    field_count: usize,
+    field_codes: &'a [AttributeField],
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidAttributeDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidAttributeDefinitionRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt.into(),
+            next_definition_xmt: XmtTarget::to_wire(self.next_definition_xmt),
+            identifier_xmt: self.identifier_xmt.into(),
+            identifier_inflated_offset: self.identifier_inflated_offset,
+            name: self.name.as_str(),
+            type_id: self.type_id.get(),
+            action_codes: self.action_codes,
+            field_names_xmt: XmtTarget::to_wire(self.field_names_xmt),
+            legal_owner_flags: self.legal_owner_flags.padded(),
+            legal_owner_flag_count: self.legal_owner_flags.as_slice().len() as u8,
+            field_count: self.field_codes.len(),
+            field_codes: &self.field_codes,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2051,6 +2091,7 @@ struct ParasolidAttributeDefinitionWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
     fn from(value: ParasolidAttributeDefinition) -> Self {
         Self {
