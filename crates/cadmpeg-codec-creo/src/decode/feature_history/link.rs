@@ -14,37 +14,48 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
-    let links = scan
-        .features
-        .section_transforms
-        .iter()
-        .filter(|transform| {
-            unique_feature_section_transform(
-                &scan.features.section_transforms,
-                transform.definition_id,
-                transform.offset,
-            )
-            .is_some()
-        })
-        .filter_map(|transform| {
-            let owner =
-                IrFeatureId::compose(&crate::identity::MODEL_FEATURE, transform.feature_id?);
-            let definition =
-                unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
-            let sketch = model_sketch_id(scan, definition)?;
-            let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch)?;
-            exactly_one(
-                ir.model
-                    .features
-                    .iter()
-                    .filter(|feature| feature.id == sketch_feature),
-            )
-            .is_some()
-            .then_some((owner, sketch_feature))
-        })
-        .collect::<Vec<_>>();
-    for (owner, sketch_feature) in links {
+pub(in super::super) fn link_feature_sketch_history(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
+    for transform in &scan.features.section_transforms {
+        if unique_feature_section_transform(
+            &scan.features.section_transforms,
+            transform.definition_id,
+            transform.offset,
+        )
+        .is_none()
+        {
+            continue;
+        }
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        let owner = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
+        let Some(definition) =
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+        else {
+            continue;
+        };
+        let Some(sketch) = model_sketch_id(scan, definition) else {
+            continue;
+        };
+        let Some(sketch_feature) =
+            section_owner_feature_id(scan, transform.definition_id, &sketch)
+        else {
+            continue;
+        };
+        if exactly_one(
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| feature.id == sketch_feature),
+        )
+        .is_none()
+        {
+            continue;
+        }
         let Some(feature) = exactly_one(
             ir.model
                 .features
@@ -54,9 +65,12 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
             continue;
         };
         if !feature.dependencies.contains(&sketch_feature) {
-            feature.dependencies.insert(sketch_feature);
+            ctx.try_collection(1, "creo sketch history dependencies", || {
+                feature.dependencies.try_insert(sketch_feature)
+            })?;
         }
     }
+    Ok(())
 }
 
 pub(in super::super) fn surface_kind_for_geometry(

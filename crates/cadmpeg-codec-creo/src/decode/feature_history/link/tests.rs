@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
@@ -78,6 +80,13 @@ fn feature(id: &str) -> Feature {
     }
 }
 
+fn link_service(scan: &crate::container::ContainerScan<'_>, ir: &mut CadIr) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    link_feature_sketch_history(&ctx, scan, ir).expect("service history link");
+}
+
 #[test]
 fn history_link_rejects_duplicate_owner_feature_ids() {
     let scan = section_scan();
@@ -88,7 +97,7 @@ fn history_link_rejects_duplicate_owner_feature_ids() {
         feature("creo:model:sketch_feature#7"),
     ]);
 
-    link_feature_sketch_history(&scan, &mut ir);
+    link_service(&scan, &mut ir);
 
     assert!(ir.model.features[..2]
         .iter()
@@ -105,9 +114,45 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
         feature("creo:model:sketch_feature#7"),
     ]);
 
-    link_feature_sketch_history(&scan, &mut ir);
+    link_service(&scan, &mut ir);
 
     assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn history_link_refuses_dependency_vector_before_growth() {
+    let scan = section_scan();
+    let mut ir = CadIr::empty();
+    ir.model.features.extend([
+        feature("creo:model:feature#2"),
+        feature("creo:model:sketch_feature#7"),
+    ]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+    let error = link_feature_sketch_history(&ctx, &scan, &mut ir)
+        .expect_err("one sketch dependency exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo sketch history dependencies"));
+    assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
+fn history_link_preserves_service_profile_dependency() {
+    let scan = section_scan();
+    let mut ir = CadIr::empty();
+    ir.model.features.extend([
+        feature("creo:model:feature#2"),
+        feature("creo:model:sketch_feature#7"),
+    ]);
+    let sketch_feature = ir.model.features[1].id.clone();
+
+    link_service(&scan, &mut ir);
+
+    assert_eq!(ir.model.features[0].dependencies.as_slice(), &[sketch_feature]);
 }
 
 #[test]
