@@ -222,11 +222,27 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             ctx.refuse_codec_limit("f3d unresolved component occurrence allocation", 0, 1)
         })?;
         let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
+        let feature_occurrence_id = cadmpeg_ir::ids::OccurrenceId::mint(copy_component_text(
+            ctx,
+            occurrence_id.as_str(),
+            "f3d unresolved component feature occurrence id",
+        )?)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let name = copy_component_text(
+            ctx,
+            &construction.neutron_role,
+            "f3d unresolved component name",
+        )?;
+        let native_ref = copy_component_text(
+            ctx,
+            &scope.id,
+            "f3d unresolved component native reference",
+        )?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::InsertComponent {
-                    occurrence: occurrence_id.clone(),
+                    occurrence: feature_occurrence_id,
                 },
             ));
         occurrences.push(Occurrence {
@@ -248,13 +264,28 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             transform: neutral_transform(*construction.transform())?,
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(construction.neutron_role.clone()),
+            name: Some(name),
             visible: None,
             link: None,
-            native_ref: Some(scope.id.clone()),
+            native_ref: Some(native_ref),
         });
     }
     Ok(occurrences)
+}
+
+fn copy_component_text(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let count = u64::try_from(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(count, operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    text.push_str(source);
+    Ok(text)
 }
 
 fn project_occurrence(
@@ -455,8 +486,7 @@ mod tests {
                 && limit.operation == "f3d component output"));
     }
 
-    #[test]
-    fn unresolved_component_occurrence_refuses_collection_limit() {
+    fn unresolved_component_fixture() -> (DesignParameterScope, Feature) {
         let mut scope = DesignParameterScope::empty(
             "f3d:synthetic:design-parameter-scope#7",
             crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
@@ -492,6 +522,12 @@ mod tests {
             ),
             native_ref: Some(scope.id.clone()),
         };
+        (scope, feature)
+    }
+
+    #[test]
+    fn unresolved_component_occurrence_refuses_collection_limit() {
+        let (scope, feature) = unresolved_component_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
@@ -506,6 +542,52 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d unresolved component occurrence"));
+    }
+
+    fn unresolved_component_retained_refusal(maximum: u64) -> cadmpeg_core::CodecError {
+        let (scope, feature) = unresolved_component_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = maximum;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::project_unresolved_component_insert_occurrences(
+            &ctx,
+            &mut [feature],
+            &[scope],
+            0,
+        )
+        .expect_err("unresolved component text exceeds the retained limit")
+    }
+
+    #[test]
+    fn unresolved_component_feature_id_refuses_retained_limit() {
+        let error = unresolved_component_retained_refusal(0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d unresolved component feature occurrence id"));
+    }
+
+    #[test]
+    fn unresolved_component_name_refuses_retained_limit() {
+        let (scope, _) = unresolved_component_fixture();
+        let feature_id = crate::ids::neutral_component_insert_occurrence_id(&scope);
+        let maximum = u64::try_from(feature_id.as_str().len()).unwrap();
+        let error = unresolved_component_retained_refusal(maximum);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d unresolved component name"));
+    }
+
+    #[test]
+    fn unresolved_component_native_reference_refuses_retained_limit() {
+        let (scope, _) = unresolved_component_fixture();
+        let feature_id = crate::ids::neutral_component_insert_occurrence_id(&scope);
+        let name = &scope.component_insert_construction().unwrap().neutron_role;
+        let maximum = u64::try_from(feature_id.as_str().len() + name.len()).unwrap();
+        let error = unresolved_component_retained_refusal(maximum);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d unresolved component native reference"));
     }
 
     #[test]
