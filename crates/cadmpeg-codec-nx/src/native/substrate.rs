@@ -118,16 +118,15 @@ pub(super) fn paired_delta_streams(
     let mut has_links = false;
     let mut linked_deltas = BTreeSet::new();
     for wrapper in scan.container.segment_stream_wrappers() {
-        ctx.charge_work(
-            u64::try_from(scan.streams.len()).unwrap_or(u64::MAX),
-            "nx linked delta stream matching",
-        )?;
-        if let Some((ordinal, stream)) = scan
-            .streams
-            .iter()
-            .enumerate()
-            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
-        {
+        let mut matched = None;
+        for (ordinal, stream) in scan.streams.iter().enumerate() {
+            ctx.charge_work(1, "nx linked delta stream matching")?;
+            if stream.file_offset == wrapper.zlib_offset {
+                matched = Some((ordinal, stream));
+                break;
+            }
+        }
+        if let Some((ordinal, stream)) = matched {
             has_links = true;
             if stream.kind() == crate::parasolid::StreamKind::Deltas
                 && !linked_deltas.contains(&ordinal)
@@ -732,6 +731,34 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "nx linked delta stream matching"
         ));
+    }
+
+    #[test]
+    fn linked_delta_pairing_charges_only_examined_streams() {
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            crate::test_support::test_om::segment_stream_payload(),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let scan_policy = DecodePolicy::default();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
+                .expect("bounded segment stream fixture");
+        let mut scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
+        scan.streams.push(crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let pairs = super::paired_delta_streams(&ctx, &scan)
+            .expect("the first stream matches within one work unit");
+        assert!(pairs.is_empty());
     }
 
     #[test]
