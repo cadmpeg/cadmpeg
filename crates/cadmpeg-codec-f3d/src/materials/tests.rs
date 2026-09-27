@@ -38,6 +38,14 @@ use crate::F3dCodec;
 
 use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};
 
+fn decode_definition_catalog_record(
+    record: &[u8],
+) -> Result<super::DefinitionCatalog, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        super::decode_definition_catalog_record(ctx, record)
+    })
+}
+
 #[test]
 fn legacy_face_selector_refuses_short_carriers_without_indexing() {
     assert_eq!(super::legacy_face_selector_kind(Some(&[])), None);
@@ -194,12 +202,112 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };
-    let decoded = super::decode_definition_catalog_record(frame.bytes())
+    let decoded = decode_definition_catalog_record(frame.bytes())
         .expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
     assert_eq!(decoded.category.as_deref(), Some(category.as_str()));
 }
+
+#[test]
+fn definition_catalog_schema_refuses_retained_limit() {
+    let mut record = RECORD_MARKER.to_vec();
+    lp_ascii(&mut record, "GenericSchema");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_definition_catalog_record(&ctx, &record)
+        .expect_err("catalog schema must exceed retained budget");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-8 string"));
+}
+
+fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+    let mut record = RECORD_MARKER.to_vec();
+    lp_ascii(&mut record, "S");
+    record.push(0);
+    lp_ascii(&mut record, "A");
+    lp_ascii(&mut record, "B");
+    record.extend_from_slice(&3u32.to_le_bytes());
+    for field in ["C", "G", "H", "D"] {
+        lp_ascii(&mut record, field);
+    }
+    record.extend_from_slice(&1u32.to_le_bytes());
+    lp_ascii(&mut record, "E");
+    record.extend_from_slice(&0u32.to_le_bytes());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_before;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    super::decode_definition_catalog_record(&ctx, &record)
+        .expect_err("catalog field must exceed retained budget")
+}
+
+macro_rules! catalog_field_limit_test {
+    ($name:ident, $retained_before:literal) => {
+        #[test]
+        fn $name() {
+            let error = catalog_field_refusal($retained_before);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D UTF-8 string"));
+        }
+    };
+}
+
+catalog_field_limit_test!(definition_catalog_asset_refuses_retained_limit, 1);
+catalog_field_limit_test!(definition_catalog_base_refuses_retained_limit, 2);
+catalog_field_limit_test!(definition_catalog_category_refuses_retained_limit, 3);
+catalog_field_limit_test!(definition_catalog_group_refuses_retained_limit, 4);
+catalog_field_limit_test!(definition_catalog_subgroup_refuses_retained_limit, 5);
+catalog_field_limit_test!(definition_catalog_description_refuses_retained_limit, 6);
+catalog_field_limit_test!(definition_catalog_extension_refuses_retained_limit, 7);
+
+#[test]
+fn fixed_material_schema_refuses_retained_limit() {
+    let mut record = RECORD_MARKER.to_vec();
+    lp_ascii(&mut record, "GenericSchema");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_fixed_record(&ctx, &record)
+        .expect_err("fixed material schema must exceed retained budget");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-8 string"));
+}
+
+fn fixed_material_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+    let mut record = RECORD_MARKER.to_vec();
+    for field in ["S", "G", "B", "L"] {
+        lp_ascii(&mut record, field);
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_before;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    super::decode_fixed_record(&ctx, &record)
+        .expect_err("fixed material field must exceed retained budget")
+}
+
+macro_rules! fixed_material_field_limit_test {
+    ($name:ident, $retained_before:literal) => {
+        #[test]
+        fn $name() {
+            let error = fixed_material_field_refusal($retained_before);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "retain F3D UTF-8 string"));
+        }
+    };
+}
+
+fixed_material_field_limit_test!(fixed_material_guid_refuses_retained_limit, 1);
+fixed_material_field_limit_test!(fixed_material_base_refuses_retained_limit, 2);
+fixed_material_field_limit_test!(fixed_material_library_refuses_retained_limit, 3);
 
 #[test]
 fn definition_catalog_version_one_omits_category() {
@@ -216,7 +324,7 @@ fn definition_catalog_version_one_omits_category() {
     lp_ascii(&mut logical, "opaque");
     logical.extend_from_slice(&0_u32.to_le_bytes());
 
-    let decoded = super::decode_definition_catalog_record(&logical)
+    let decoded = decode_definition_catalog_record(&logical)
         .expect("decode version-one definition record");
     assert_eq!(decoded.schema, "PrismOpaqueSchema");
     assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
@@ -238,7 +346,7 @@ fn definition_catalog_version_zero_omits_category_and_group() {
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
 
-    let decoded = super::decode_definition_catalog_record(&logical)
+    let decoded = decode_definition_catalog_record(&logical)
         .expect("decode version-zero definition record");
     assert_eq!(decoded.category, None);
     assert_eq!(decoded.schema, "UnifiedBitmapSchema");
@@ -259,7 +367,7 @@ fn definition_catalog_version_three_adds_subgroup() {
     logical.extend_from_slice(&0_u32.to_le_bytes());
     logical.extend_from_slice(&0_u32.to_le_bytes());
 
-    let decoded = super::decode_definition_catalog_record(&logical)
+    let decoded = decode_definition_catalog_record(&logical)
         .expect("decode version-three definition record");
     assert_eq!(decoded.category.as_deref(), Some("Metal"));
     assert_eq!(decoded.schema, "GenericSchema");
