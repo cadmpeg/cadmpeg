@@ -3,8 +3,10 @@
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -20,6 +22,50 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
+
+fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("unsupported test dimension"),
+        }
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation { return; }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
+    let primitive = primitive_solids_file();
+    assert_csg_refusal(&primitive, "iges csg decoded sequences", ResourceDimension::CollectionItems);
+    let boolean = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges Boolean postfix terms",
+        "iges Boolean definition nodes",
+        "iges boolean validation path",
+        "iges boolean validity memo",
+    ] {
+        assert_csg_refusal(&boolean, operation, ResourceDimension::CollectionItems);
+    }
+    assert_csg_refusal(&boolean, "iges boolean tree validation", ResourceDimension::RecursionDepth);
+    assert_csg_refusal(&boolean, "iges boolean term validation", ResourceDimension::WorkUnits);
+}
 
 #[test]
 fn profile_closure_rejects_conflicting_edge_occurrences() {
