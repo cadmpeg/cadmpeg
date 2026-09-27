@@ -1106,11 +1106,13 @@ fn object_records(
     let mut unresolved = 0usize;
     for scope in scopes {
         let declarations = declaration_index(ctx, scope)?;
-        let value_attributes = scope
-            .values
-            .iter()
-            .map(|value| (value.offset, value.attribute_id))
-            .collect::<BTreeMap<_, _>>();
+        let mut value_attributes = BTreeMap::new();
+        for value in &scope.values {
+            if !value_attributes.contains_key(&value.offset) {
+                ctx.charge_collection_items(1, "creo legacy object value attribute nodes")?;
+            }
+            value_attributes.insert(value.offset, value.attribute_id);
+        }
         let mut direct_array_elements = BTreeMap::<usize, Vec<usize>>::new();
         for child in &scope.values {
             let Some(parent_offset) = parents.get(&child.offset).copied() else {
@@ -1123,10 +1125,20 @@ fn object_records(
                         matches!(declaration.type_code, LegacyTypeCode::Object)
                     })
             {
-                direct_array_elements
-                    .entry(parent_offset)
-                    .or_default()
-                    .push(child.offset);
+                match direct_array_elements.entry(parent_offset) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo legacy object array index nodes")?;
+                        let mut elements = Vec::new();
+                        ctx.try_reserve_items(&mut elements, 1, "creo legacy object array index rows")?;
+                        elements.push(child.offset);
+                        entry.insert(elements);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        let elements = entry.get_mut();
+                        ctx.try_reserve_items(elements, 1, "creo legacy object array index rows")?;
+                        elements.push(child.offset);
+                    }
+                }
             }
         }
         for value in &scope.values {
@@ -1144,12 +1156,14 @@ fn object_records(
             } else if bytes == b"NULL" {
                 ObjectPayload::Null
             } else if let Some(dimensions) = array_dimensions(ctx, bytes)? {
-                let elements = direct_array_elements
+                let offsets = direct_array_elements
                     .get(&value.offset)
-                    .into_iter()
-                    .flatten()
-                    .map(|offset| object_node_id(*offset))
-                    .collect::<Vec<_>>();
+                    .map_or(&[][..], Vec::as_slice);
+                let mut elements = Vec::new();
+                ctx.try_reserve_items(&mut elements, offsets.len(), "creo legacy object array elements")?;
+                for offset in offsets {
+                    elements.push(checked_object_node_id(ctx, *offset, "creo legacy object array element IDs")?);
+                }
                 let payload = ObjectPayload::Array {
                     dimensions,
                     elements,
@@ -1159,11 +1173,13 @@ fn object_records(
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
-                    bytes: bytes.to_vec(),
+                    bytes: ctx.copy_retained(bytes, "creo legacy opaque object bytes")?,
                 }
             };
+            let name = ctx.copy_retained_text(&declaration.name, "creo legacy object record names")?;
+            ctx.try_reserve_items(&mut records, 1, "creo legacy object records")?;
             records.push(ObjectRecord {
-                name: declaration.name.clone(),
+                name,
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
                 parent: parents.get(&value.offset).copied(),
