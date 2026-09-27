@@ -234,7 +234,12 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
             }
         };
         entries.push(ContainerEntry {
-            name: entry.name.clone(),
+            name: render_summary_text(
+                ctx,
+                "nx summary directory name",
+                entry.name.len(),
+                format_args!("{}", entry.name),
+            )?,
             role: entry.content().role(),
             storage,
             attributes,
@@ -361,17 +366,50 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        storage_notes.push(format!(
-                            "parasolid#{si}: {message}: {}/{inflated_len}",
-                            stream.consumed
-                        ));
+                        let note_len = [
+                            "parasolid#".len(),
+                            decimal_len(u64::try_from(si).unwrap_or(u64::MAX)),
+                            ": ".len(),
+                            message.len(),
+                            ": ".len(),
+                            decimal_len(stream.consumed),
+                            "/".len(),
+                            decimal_len(inflated_len),
+                        ]
+                        .into_iter()
+                        .try_fold(0usize, usize::checked_add)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit("nx summary storage note", 0, u64::MAX)
+                        })?;
+                        ctx.charge_collection_items(1, "nx summary storage notes")?;
+                        storage_notes.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("nx summary storage notes", 0, 1)
+                        })?;
+                        storage_notes.push(render_summary_text(
+                            ctx,
+                            "nx summary storage note",
+                            note_len,
+                            format_args!(
+                                "parasolid#{si}: {message}: {}/{inflated_len}",
+                                stream.consumed
+                            ),
+                        )?);
                         EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
                     }
                 }
             }
         };
+        let name_len = "parasolid#"
+            .len()
+            .checked_add(decimal_len(u64::try_from(si).unwrap_or(u64::MAX)))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx summary stream name", 0, u64::MAX))?;
         entries.push(ContainerEntry {
-            name: format!("parasolid#{si}"),
+            name: render_summary_text(
+                ctx,
+                "nx summary stream name",
+                name_len,
+                format_args!("parasolid#{si}"),
+            )?,
             role: if stream.kind().is_parasolid() {
                 ContainerRole::ParasolidStream
             } else {
@@ -401,6 +439,29 @@ enum SummaryValue<'a> {
     Number(u64),
 }
 
+fn decimal_len(number: u64) -> usize {
+    if number == 0 {
+        1
+    } else {
+        usize::try_from(u64::from(number.ilog10()) + 1).unwrap_or(usize::MAX)
+    }
+}
+
+fn render_summary_text(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    len: usize,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(u64::try_from(len).unwrap_or(u64::MAX), operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(len)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    text.write_fmt(args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(text)
+}
+
 fn insert_summary_attribute(
     ctx: &DecodeContext<'_>,
     attributes: &mut BTreeMap<String, String>,
@@ -415,10 +476,7 @@ fn insert_summary_attribute(
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
     let value_len = match value {
         SummaryValue::Text(text) => text.len(),
-        SummaryValue::Number(0) => 1,
-        SummaryValue::Number(number) => {
-            usize::try_from(u64::from(number.ilog10()) + 1).unwrap_or(usize::MAX)
-        }
+        SummaryValue::Number(number) => decimal_len(number),
     };
     let text_len = key_len
         .checked_add(value_len)
