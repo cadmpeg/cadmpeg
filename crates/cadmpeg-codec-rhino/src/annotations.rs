@@ -12,8 +12,8 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, CoordinateLane, MillimeterScale, Plane, UnitBinding};
-use crate::wire::{scaled_coordinate, uuid, Uuid};
+use crate::settings::{utf16_retained, CoordinateLane, MillimeterScale, Plane, UnitBinding};
+use crate::wire::{admitted_format, copy_retained_string, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const TEXT: Uuid = Uuid::from_canonical([
@@ -283,6 +283,7 @@ fn anonymous(
 }
 
 fn parse_v5_text_extra(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -300,7 +301,15 @@ fn parse_v5_text_extra(
     })?;
     reader.skip_remaining()?;
     Ok(V5TextExtraRecord {
-        parent_text_uuid: (!parent_text_uuid.is_nil()).then(|| parent_text_uuid.to_string()),
+        parent_text_uuid: (!parent_text_uuid.is_nil())
+            .then(|| {
+                admitted_format(
+                    ctx,
+                    format_args!("{parent_text_uuid}"),
+                    "Rhino V5 text parent UUID",
+                )
+            })
+            .transpose()?,
         draw_mask,
         mask_color_source,
         mask_color,
@@ -448,7 +457,7 @@ fn decode_v2_annotation(
                 "V2 text object has a non-text annotation type",
             ));
         }
-        let face_name = utf16(&mut reader)?;
+        let face_name = utf16_retained(ctx, &mut reader, "Rhino V2 text face name")?;
         let font_weight = reader.i32()?;
         let raw_text_height = reader.f64()?;
         if !raw_text_height.is_finite()
@@ -481,6 +490,7 @@ fn decode_v2_annotation(
 }
 
 fn decode_dot(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -501,11 +511,11 @@ fn decode_dot(
         })?;
     }
     let height_points = reader.i32()?;
-    let primary_text = utf16(&mut reader)?;
-    let font_face = utf16(&mut reader)?;
+    let primary_text = utf16_retained(ctx, &mut reader, "Rhino text dot primary text")?;
+    let font_face = utf16_retained(ctx, &mut reader, "Rhino text dot font face")?;
     let display = DotDisplay(reader.i32()?);
     let secondary_text = if packed & 0x0f >= 1 {
-        utf16(&mut reader)?
+        utf16_retained(ctx, &mut reader, "Rhino text dot secondary text")?
     } else {
         String::new()
     };
@@ -554,6 +564,7 @@ fn v2_point(
 }
 
 fn decode_v2_text_dot(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -561,7 +572,7 @@ fn decode_v2_text_dot(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(&mut reader, range.start, "text-dot")?;
     let center = v2_point(&mut reader, scale, range.start, "text-dot")?;
-    let primary_text = utf16(&mut reader)?;
+    let primary_text = utf16_retained(ctx, &mut reader, "Rhino V2 text dot primary text")?;
     reader.skip_remaining()?;
     Ok(TextDotData {
         center,
@@ -595,23 +606,13 @@ fn source_key(
     source_order: usize,
 ) -> Result<String, CodecError> {
     let Some((_, key)) = identity.source_id.rsplit_once('#') else {
-        return Ok(format!("record-{source_order:06}"));
+        return admitted_format(
+            ctx,
+            format_args!("record-{source_order:06}"),
+            "Rhino annotation source key",
+        );
     };
-    let size = cadmpeg_core::decode::u64_from_index(key.len());
-    ctx.charge_retained(size, "Rhino annotation source key")?;
-    let mut copy = String::new();
-    copy.try_reserve(key.len()).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: size,
-            operation: "Rhino annotation source key",
-        })
-    })?;
-    copy.push_str(key);
-    Ok(copy)
+    copy_retained_string(ctx, key, "Rhino annotation source key")
 }
 
 fn record_identity(
@@ -621,11 +622,20 @@ fn record_identity(
 ) -> Result<(Vec<String>, String, String), CodecError> {
     let mut links = Vec::new();
     reserve_record_slot(ctx, &mut links, "Rhino annotation links")?;
-    links.push(format!("rhino:object:record#{source_order:06}"));
+    let key = source_key(ctx, identity, source_order)?;
+    links.push(admitted_format(
+        ctx,
+        format_args!("rhino:object:record#{source_order:06}"),
+        "Rhino annotation object link",
+    )?);
     Ok((
         links,
-        source_key(ctx, identity, source_order)?,
-        identity.object_id.to_string(),
+        key,
+        admitted_format(
+            ctx,
+            format_args!("{}", identity.object_id),
+            "Rhino annotation object UUID",
+        )?,
     ))
 }
 
@@ -638,15 +648,20 @@ fn annotation_record_dropped(
     error: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
     reserve_record_slot(ctx, losses, "Rhino annotation loss notes")?;
+    let message = admitted_format(
+        ctx,
+        format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"),
+        "Rhino annotation loss text",
+    )?;
+    let tag = admitted_format(
+        ctx,
+        format_args!("ANNOTATION/source={source_id}/class={class_uuid}"),
+        "Rhino annotation loss tag",
+    )?;
     losses.push(
         RhinoLossCode::AnnotationRecordDropped
-            .note(format!(
-                "annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"
-            ))
-            .with_provenance(
-                SourceProvenance::root("rhino", source_offset as u64)
-                    .with_tag(format!("ANNOTATION/source={source_id}/class={class_uuid}")),
-            ),
+            .note(message)
+            .with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
     );
     Ok(())
 }
@@ -704,7 +719,7 @@ pub(crate) fn install(
                 &identity.source_id,
                 object.range.start,
                 object.class_uuid,
-                format!("no physical millimetre binding ({})", binding.label()),
+                format_args!("no physical millimetre binding ({})", binding.label()),
             )?;
             continue;
         };
@@ -721,14 +736,21 @@ pub(crate) fn install(
                     userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
                 })
             {
-                match parse_v5_text_extra(scan.data, extra, scan.archive) {
+                match parse_v5_text_extra(ctx, scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit))
+                    }
                     Err(error) => {
                         reserve_record_slot(ctx, &mut losses, "Rhino annotation loss notes")?;
-                        losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format!(
-                            "V5 text-extra userdata at offset {} could not be transferred: {error}",
-                            extra.range.start
-                        )));
+                        losses.push(RhinoLossCode::AnnotationUserdataDropped.note(admitted_format(
+                            ctx,
+                            format_args!(
+                                "V5 text-extra userdata at offset {} could not be transferred: {error}",
+                                extra.range.start
+                            ),
+                            "Rhino annotation userdata loss text",
+                        )?));
                     }
                 }
             }
@@ -762,7 +784,11 @@ pub(crate) fn install(
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
                 let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
-                    id: format!("rhino:document:annotation#{key}"),
+                    id: admitted_format(
+                        ctx,
+                        format_args!("rhino:document:annotation#{key}"),
+                        "Rhino annotation ID",
+                    )?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind: if leader {
@@ -777,7 +803,14 @@ pub(crate) fn install(
                     plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
-                        .then(|| value.dimstyle_id.to_string()),
+                        .then(|| {
+                            admitted_format(
+                                ctx,
+                                format_args!("{}", value.dimstyle_id),
+                                "Rhino annotation dimstyle UUID",
+                            )
+                        })
+                        .transpose()?,
                     annotation_type: value.kind,
                     text_rectangle_width: value.text_rectangle_width,
                     text_rotation_radians: value.text_rotation_radians,
@@ -839,7 +872,11 @@ pub(crate) fn install(
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
                 let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
-                    id: format!("rhino:document:annotation#{key}"),
+                    id: admitted_format(
+                        ctx,
+                        format_args!("rhino:document:annotation#{key}"),
+                        "Rhino annotation ID",
+                    )?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind: if leader {
@@ -935,7 +972,11 @@ pub(crate) fn install(
                 reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
                 let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
-                    id: format!("rhino:document:annotation#{key}"),
+                    id: admitted_format(
+                        ctx,
+                        format_args!("rhino:document:annotation#{key}"),
+                        "Rhino annotation ID",
+                    )?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     kind,
@@ -969,12 +1010,15 @@ pub(crate) fn install(
             }
             AnnotationClass::Dot { v2 } => {
                 let decoded = if v2 {
-                    decode_v2_text_dot(scan.data, object.class_data_range.clone(), scale)
+                    decode_v2_text_dot(ctx, scan.data, object.class_data_range.clone(), scale)
                 } else {
-                    decode_dot(scan.data, object.class_data_range.clone(), scale)
+                    decode_dot(ctx, scan.data, object.class_data_range.clone(), scale)
                 };
                 let data = match decoded {
                     Ok(value) => value,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit))
+                    }
                     Err(error) => {
                         annotation_record_dropped(
                             ctx,
@@ -990,7 +1034,11 @@ pub(crate) fn install(
                 reserve_record_slot(ctx, &mut dots, "Rhino native text dots")?;
                 let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 dots.push(TextDotRecord {
-                    id: format!("rhino:document:text_dot#{key}"),
+                    id: admitted_format(
+                        ctx,
+                        format_args!("rhino:document:text_dot#{key}"),
+                        "Rhino text dot ID",
+                    )?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     data,
@@ -1019,7 +1067,11 @@ pub(crate) fn install(
                 reserve_record_slot(ctx, &mut arrows, "Rhino native annotation arrows")?;
                 let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 arrows.push(AnnotationArrowRecord {
-                    id: format!("rhino:document:annotation_arrow#{key}"),
+                    id: admitted_format(
+                        ctx,
+                        format_args!("rhino:document:annotation_arrow#{key}"),
+                        "Rhino annotation arrow ID",
+                    )?,
                     source_offset: object.range.start as u64,
                     source_uuid,
                     tail,
@@ -1078,6 +1130,185 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
             .expect("annotation fixture fits the root limit");
         apply(&ctx)
+    }
+
+    fn with_retained_limit<R>(
+        data: &[u8],
+        max_retained_bytes: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("annotation fixture fits the root limit");
+        apply(&ctx)
+    }
+
+    fn text_dot_payload() -> Vec<u8> {
+        let mut bytes = vec![0x11];
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(12_i32.to_le_bytes());
+        bytes.extend(utf16_bytes("primary"));
+        bytes.extend(utf16_bytes("Arial"));
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(utf16_bytes("secondary"));
+        bytes
+    }
+
+    fn text_dot_refusal(limit: u64) -> crate::chunks::FramingError {
+        let bytes = text_dot_payload();
+        with_retained_limit(&bytes, limit, |ctx| {
+            decode_dot(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("text dot string exceeds retained limit")
+        })
+    }
+
+    #[test]
+    fn text_dot_primary_refuses_retained_limit() {
+        assert!(matches!(
+            text_dot_refusal(0),
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino text dot primary text"
+        ));
+    }
+
+    #[test]
+    fn text_dot_font_face_refuses_retained_limit() {
+        assert!(matches!(
+            text_dot_refusal(7),
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino text dot font face"
+        ));
+    }
+
+    #[test]
+    fn text_dot_secondary_refuses_retained_limit() {
+        assert!(matches!(
+            text_dot_refusal(12),
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino text dot secondary text"
+        ));
+        let bytes = text_dot_payload();
+        assert_eq!(
+            with_decode_context(&bytes, |ctx| decode_dot(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                crate::settings::MillimeterScale::IDENTITY,
+            ))
+            .expect("service profile admits dot")
+            .secondary_text,
+            "secondary"
+        );
+    }
+
+    #[test]
+    fn v2_text_dot_primary_refuses_retained_limit() {
+        let mut bytes = vec![0x10];
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(utf16_bytes("V2 dot"));
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            decode_v2_text_dot(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("V2 dot text exceeds retained limit")
+        });
+        assert!(matches!(
+            error,
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino V2 text dot primary text"
+        ));
+    }
+
+    #[test]
+    fn text_dot_install_propagates_retained_refusal() {
+        let mut payload = vec![0x10];
+        for value in [1.0_f64, 2.0, 3.0] {
+            payload.extend(value.to_le_bytes());
+        }
+        payload.extend(utf16_bytes("V2 dot"));
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            V2_TEXT_DOT.to_wire(),
+            &payload,
+        )]);
+        let error = with_retained_limit(scan.data, 0, |ctx| {
+            install(ctx, &scan, &mut CadIr::empty())
+                .expect_err("dot text refusal must leave the installer")
+        });
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino V2 text dot primary text"
+        ));
+    }
+
+    #[test]
+    fn v2_text_face_name_refuses_retained_limit() {
+        let mut bytes = v2_annotation_payload(7, &[], "", "", false);
+        bytes.extend(utf16_bytes("Witness Sans"));
+        bytes.extend(700_i32.to_le_bytes());
+        bytes.extend(12.5_f64.to_le_bytes());
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            decode_v2_annotation(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                crate::settings::MillimeterScale::IDENTITY,
+                crate::dimensions::V2_TEXT_OBJECT,
+            )
+            .err()
+            .expect("face name exceeds retained limit")
+        });
+        assert!(matches!(
+            error,
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino V2 text face name"
+        ));
+    }
+
+    #[test]
+    fn v5_text_parent_uuid_refuses_retained_limit() {
+        let mut payload = [0x42_u8; 16].to_vec();
+        payload.push(1);
+        payload.extend(1_i32.to_le_bytes());
+        payload.extend([0x11, 0x22, 0x33, 0x44]);
+        payload.extend(0.375_f64.to_le_bytes());
+        let bytes = anonymous(0, &payload);
+        let descriptor = ClassUserdata {
+            range: 0..bytes.len(),
+            version: (2, 2),
+            class_uuid: V5_TEXT_EXTRA,
+            item_uuid: V5_TEXT_EXTRA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            save_context: None,
+            payload_range: 0..bytes.len(),
+        };
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_v5_text_extra(ctx, &bytes, &descriptor, ArchiveVersion::V8)
+                .expect_err("parent UUID exceeds retained limit")
+        });
+        assert!(matches!(
+            error,
+            crate::chunks::FramingError::Resource(limit)
+                if limit.operation == "Rhino V5 text parent UUID"
+        ));
     }
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
@@ -1808,6 +2039,7 @@ mod tests {
         bytes.extend(15_i32.to_le_bytes());
         bytes.extend(utf16_bytes("secondary"));
         let dot = decode_dot(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(10.0),
@@ -1839,6 +2071,7 @@ mod tests {
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend([0xde, 0xad]);
         let dot = decode_dot(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::settings::MillimeterScale::IDENTITY,
@@ -1869,6 +2102,7 @@ mod tests {
         bytes.extend(utf16_bytes("V2 dot"));
         bytes.extend([0xd1, 0xce]);
         let dot = decode_v2_text_dot(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(2.0),
@@ -2135,8 +2369,13 @@ mod tests {
             save_context: None,
             payload_range: 0..bytes.len(),
         };
-        let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
-            .expect("valid V5 text extra");
+        let value = parse_v5_text_extra(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &descriptor,
+            ArchiveVersion::V8,
+        )
+        .expect("valid V5 text extra");
         assert_eq!(value.parent_text_uuid, Some(parent.to_string()));
         assert!(value.draw_mask);
         assert_eq!(value.mask_color_source, 1);
