@@ -148,6 +148,47 @@ impl FramingDefect {
     }
 }
 
+struct DeclaredSequence(Option<u32>);
+
+impl fmt::Display for DeclaredSequence {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(sequence) => write!(formatter, "{sequence}"),
+            None => formatter.write_str("no valid sequence"),
+        }
+    }
+}
+
+struct TrimmedLossyField<'a>(&'a [u8]);
+
+impl fmt::Display for TrimmedLossyField<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut output = [0_u8; 24];
+        let mut used = 0_usize;
+        let mut remaining = self.0;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    output[used..used + valid.len()].copy_from_slice(valid.as_bytes());
+                    used += valid.len();
+                    break;
+                }
+                Err(error) => {
+                    let prefix = &remaining[..error.valid_up_to()];
+                    output[used..used + prefix.len()].copy_from_slice(prefix);
+                    used += prefix.len();
+                    output[used..used + 3].copy_from_slice("�".as_bytes());
+                    used += 3;
+                    let invalid = error.error_len().unwrap_or(remaining.len() - prefix.len());
+                    remaining = &remaining[prefix.len() + invalid..];
+                }
+            }
+        }
+        let text = std::str::from_utf8(&output[..used]).map_err(|_| fmt::Error)?;
+        formatter.write_str(text.trim())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FramingRecovery {
     position: usize,
@@ -161,33 +202,59 @@ struct FramingRecovery {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FramingRecoveries(BTreeMap<(Section, FramingDefect), FramingRecovery>);
 
+fn recovery_text(
+    ctx: Option<&DecodeContext<'_>>,
+    args: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => format_retained(ctx, args, operation),
+        None => Ok(fmt::format(args)),
+    }
+}
+
 impl FramingRecoveries {
     pub(crate) fn record(
         &mut self,
-        section: Section,
-        defect: FramingDefect,
+        ctx: Option<&DecodeContext<'_>>,
+        key: (Section, FramingDefect),
         position: usize,
         offset: u64,
-        declared: impl Into<String>,
-        used: impl Into<String>,
-    ) {
-        self.0
-            .entry((section, defect))
-            .and_modify(|recovery| recovery.count = recovery.count.saturating_add(1))
-            .or_insert_with(|| FramingRecovery {
+        declared: fmt::Arguments<'_>,
+        used: fmt::Arguments<'_>,
+    ) -> Result<(), CodecError> {
+        if let Some(recovery) = self.0.get_mut(&key) {
+            recovery.count = recovery
+                .count
+                .checked_add(1)
+                .ok_or_else(|| refuse_local_limit("iges framing recovery count", u64::MAX, 1))?;
+            return Ok(());
+        }
+        let declared = recovery_text(ctx, declared, "iges framing declared text")?;
+        let used = recovery_text(ctx, used, "iges framing used text")?;
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "iges framing recovery nodes")?;
+        }
+        self.0.insert(
+            key,
+            FramingRecovery {
                 position,
                 offset,
-                declared: declared.into(),
-                used: used.into(),
+                declared,
+                used,
                 count: 1,
-            });
+            },
+        );
+        Ok(())
     }
 
-    pub(crate) fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         for (key, recovery) in other.0 {
             match self.0.get_mut(&key) {
                 Some(held) => {
-                    held.count = held.count.saturating_add(recovery.count);
+                    held.count = held.count.checked_add(recovery.count).ok_or_else(|| {
+                        refuse_local_limit("iges framing recovery count", u64::MAX, 1)
+                    })?;
                     if recovery.position < held.position {
                         held.position = recovery.position;
                         held.offset = recovery.offset;
@@ -196,10 +263,12 @@ impl FramingRecoveries {
                     }
                 }
                 None => {
+                    ctx.charge_collection_items(1, "iges merged framing recovery nodes")?;
                     self.0.insert(key, recovery);
                 }
             }
         }
+        Ok(())
     }
 
     pub(crate) fn notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
@@ -483,28 +552,27 @@ fn frame_sections(
         let recovered = u32::try_from(position)
             .map_err(|_| CodecError::Malformed("IGES section sequence overflow".into()))?;
         if let Some(count) = raw.fused_cards {
+            let bytes = count
+                .checked_mul(CARD_WIDTH)
+                .ok_or_else(|| refuse_local_limit("iges fused card byte count", u64::MAX, 1))?;
             recoveries.record(
-                current,
-                FramingDefect::CardBoundary,
+                ctx,
+                (current, FramingDefect::CardBoundary),
                 position,
                 line.offset,
-                format!(
-                    "one physical line of {} bytes",
-                    count.saturating_mul(CARD_WIDTH)
-                ),
-                format!("{count} 80-column cards"),
-            );
+                format_args!("one physical line of {bytes} bytes"),
+                format_args!("{count} 80-column cards"),
+            )?;
         }
         if raw.sequence != Some(recovered) {
             recoveries.record(
-                current,
-                FramingDefect::Sequence,
+                ctx,
+                (current, FramingDefect::Sequence),
                 position,
                 line.offset,
-                raw.sequence
-                    .map_or_else(|| "no valid sequence".to_owned(), |value| value.to_string()),
-                recovered.to_string(),
-            );
+                format_args!("{}", DeclaredSequence(raw.sequence)),
+                format_args!("{recovered}"),
+            )?;
         }
         position = position
             .checked_add(1)
@@ -532,7 +600,11 @@ fn frame_sections(
 }
 
 /// Replace each Terminate count that disagrees with the card census.
-fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
+fn terminate_counts(
+    lines: &[ScannedLine],
+    recoveries: &mut FramingRecoveries,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     let Some(terminate) = lines.iter().find_map(|line| match line {
         ScannedLine::Card {
             section: Section::Terminate,
@@ -541,10 +613,10 @@ fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
         } => Some(line),
         _ => None,
     }) else {
-        return;
+        return Ok(());
     };
     let Some(data) = terminate.payload.get(..32) else {
-        return;
+        return Ok(());
     };
     let expected = [
         (b'S', Section::Start),
@@ -564,19 +636,16 @@ fn terminate_counts(lines: &[ScannedLine], recoveries: &mut FramingRecoveries) {
             .count();
         if declared != Some(census) {
             recoveries.record(
-                Section::Terminate,
-                FramingDefect::TerminateCount,
+                ctx,
+                (Section::Terminate, FramingDefect::TerminateCount),
                 1,
                 terminate.offset,
-                format!(
-                    "{} count {}",
-                    section.name(),
-                    String::from_utf8_lossy(field).trim()
-                ),
-                format!("{} count {census}", section.name()),
-            );
+                format_args!("{} count {}", section.name(), TrimmedLossyField(field)),
+                format_args!("{} count {census}", section.name()),
+            )?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -594,7 +663,7 @@ pub(crate) fn scan_with_context<'a>(
     let lines = physical_lines(source, ctx)?;
     let mut recoveries = FramingRecoveries::default();
     let lines = frame_sections(lines, &mut recoveries, ctx)?;
-    terminate_counts(&lines, &mut recoveries);
+    terminate_counts(&lines, &mut recoveries, ctx)?;
     Ok(CardScan {
         source,
         lines,

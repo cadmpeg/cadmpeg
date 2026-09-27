@@ -13,18 +13,112 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]
+fn framing_recovery_record_refuses_text_and_node_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut recoveries = super::FramingRecoveries::default();
+    assert!(matches!(
+        recoveries.record(Some(&ctx), (super::Section::Start, super::FramingDefect::Sequence),
+            1, 0, format_args!("bad"), format_args!("1")),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges framing declared text"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        recoveries.record(Some(&ctx), (super::Section::Start, super::FramingDefect::Sequence),
+            1, 0, format_args!("bad"), format_args!("1")),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges framing recovery nodes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    recoveries
+        .record(
+            Some(&ctx),
+            (super::Section::Start, super::FramingDefect::Sequence),
+            1,
+            0,
+            format_args!("bad"),
+            format_args!("1"),
+        )
+        .unwrap();
+    assert_eq!(recoveries.notes(&ctx).unwrap().len(), 1);
+}
+
+#[test]
+fn merging_framing_recoveries_refuses_new_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut incoming = super::FramingRecoveries::default();
+    incoming
+        .record(
+            None,
+            (
+                super::Section::Parameter,
+                super::FramingDefect::ParameterOwner,
+            ),
+            1,
+            80,
+            format_args!("D1"),
+            format_args!("D3"),
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut merged = super::FramingRecoveries::default();
+    assert!(matches!(
+        merged.merge(incoming.clone(), &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges merged framing recovery nodes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    merged.merge(incoming, &ctx).unwrap();
+    assert_eq!(merged.notes(&ctx).unwrap().len(), 1);
+}
+
+#[test]
+fn terminate_count_field_lossy_rendering_matches_source_text() {
+    let field = b"S\xff  12 ";
+    assert_eq!(
+        super::TrimmedLossyField(field).to_string(),
+        String::from_utf8_lossy(field).trim(),
+    );
+}
+
+#[test]
 fn framing_recovery_losses_refuse_slot_and_retained_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut recoveries = super::FramingRecoveries::default();
-    recoveries.record(
-        super::Section::Parameter,
-        super::FramingDefect::ParameterOwner,
-        2,
-        160,
-        "D1",
-        "D3",
-    );
+    recoveries
+        .record(
+            None,
+            (
+                super::Section::Parameter,
+                super::FramingDefect::ParameterOwner,
+            ),
+            2,
+            160,
+            format_args!("D1"),
+            format_args!("D3"),
+        )
+        .unwrap();
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
