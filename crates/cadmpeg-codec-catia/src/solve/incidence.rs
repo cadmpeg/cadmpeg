@@ -367,12 +367,13 @@ fn prune_incidence_choices_with_explicit_support(
 }
 
 fn incidence_choice_components(
+    ctx: &DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
-) -> Vec<Vec<usize>> {
-    let mut union = UnionFind::new(choices.len());
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut union = UnionFind::charged(ctx, choices.len(), "catia_incidence_choice_union")?;
     let mut point_nodes = HashMap::<(usize, usize), usize>::new();
     for (edge, pairs) in choices.iter().enumerate() {
         for (rank, face) in edge_faces[edge].into_iter().enumerate() {
@@ -381,11 +382,20 @@ fn incidence_choice_components(
             }
             for point in pairs.iter().flatten().copied() {
                 let next = point_nodes.len();
-                point_nodes.entry((face, point)).or_insert(next);
+                if !point_nodes.contains_key(&(face, point)) {
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut point_nodes,
+                        (face, point),
+                        next,
+                        "catia_incidence_point_nodes",
+                    )?;
+                }
             }
         }
     }
-    let mut fixed_incidence = UnionFind::new(point_nodes.len());
+    let mut fixed_incidence =
+        UnionFind::charged(ctx, point_nodes.len(), "catia_incidence_fixed_union")?;
     for (edge, pairs) in choices.iter().enumerate() {
         let [pair] = pairs.as_slice() else {
             continue;
@@ -398,13 +408,12 @@ fn incidence_choice_components(
         }
     }
     let mut owner = HashMap::<(usize, usize), usize>::new();
-    let ambiguous = choices
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, pairs)| {
-            (pairs.len() > 1 || (pairs.is_empty() && mesh_quotient.is_some())).then_some(edge)
-        })
-        .collect::<Vec<_>>();
+    let mut ambiguous = Vec::new();
+    for (edge, pairs) in choices.iter().enumerate() {
+        if pairs.len() > 1 || (pairs.is_empty() && mesh_quotient.is_some()) {
+            crate::resource::push(ctx, &mut ambiguous, edge, "catia_incidence_ambiguous_edges")?;
+        }
+    }
     for &edge in &ambiguous {
         let faces = edge_faces[edge];
         for (rank, face) in faces.into_iter().enumerate() {
@@ -413,13 +422,16 @@ fn incidence_choice_components(
             }
             for point in choices[edge].iter().flatten().copied() {
                 let point = fixed_incidence.find(point_nodes[&(face, point)]);
-                match owner.entry((face, point)) {
-                    std::collections::hash_map::Entry::Occupied(entry) => {
-                        union.union(*entry.get(), edge);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(edge);
-                    }
+                if let Some(&previous) = owner.get(&(face, point)) {
+                    union.union(previous, edge);
+                } else {
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut owner,
+                        (face, point),
+                        edge,
+                        "catia_incidence_choice_owner",
+                    )?;
                 }
             }
         }
@@ -441,45 +453,72 @@ fn incidence_choice_components(
             match domain {
                 MeshFaceBoundaryDomain::Ordered(assignments) if assignments.len() == 1 => {
                     for boundary in &assignments[0].boundaries {
-                        connect(boundary.iter().map(|use_| use_.edge).collect());
+                        let mut edges = Vec::new();
+                        for use_ in boundary {
+                            crate::resource::push(
+                                ctx,
+                                &mut edges,
+                                use_.edge,
+                                "catia_incidence_boundary_edges",
+                            )?;
+                        }
+                        connect(edges);
                     }
                 }
-                MeshFaceBoundaryDomain::Ordered(assignments) => connect(
-                    assignments
+                MeshFaceBoundaryDomain::Ordered(assignments) => {
+                    let mut edges = Vec::new();
+                    for use_ in assignments
                         .iter()
                         .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                        .map(|use_| use_.edge)
-                        .collect(),
+                    {
+                        crate::resource::push(
+                            ctx,
+                            &mut edges,
+                            use_.edge,
+                            "catia_incidence_boundary_edges",
+                        )?;
+                    }
+                    connect(edges);
+                }
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => connect(
+                    crate::resource::copy_slice(ctx, edges, "catia_incidence_boundary_edges")?,
                 ),
-                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => connect(edges.clone()),
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                    let mut edges = domain.missing_edges.clone();
-                    edges.extend(
-                        domain
-                            .cycles
-                            .iter()
-                            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
-                    );
+                    let mut edges = crate::resource::copy_slice(
+                        ctx,
+                        &domain.missing_edges,
+                        "catia_incidence_boundary_edges",
+                    )?;
+                    for (use_, _) in domain.cycles.iter().flat_map(|cycle| &cycle.exact_uses) {
+                        crate::resource::push(
+                            ctx,
+                            &mut edges,
+                            use_.edge,
+                            "catia_incidence_boundary_edges",
+                        )?;
+                    }
                     connect(edges);
                 }
             }
         }
     }
     if let Some(mesh_quotient) = mesh_quotient {
-        let mut quotient = mesh_quotient.clone();
-        if quotient.len() == choices.len().saturating_mul(2) {
+        if mesh_quotient.len() == choices.len().saturating_mul(2) {
             let mut owner = HashMap::<usize, usize>::new();
             for &edge in &ambiguous {
                 for port in [edge * 2, edge * 2 + 1] {
-                    let root = quotient.find(port);
-                    for point in quotient.domains()[root].iter().copied() {
-                        match owner.entry(point) {
-                            std::collections::hash_map::Entry::Occupied(entry) => {
-                                union.union(*entry.get(), edge);
-                            }
-                            std::collections::hash_map::Entry::Vacant(entry) => {
-                                entry.insert(edge);
-                            }
+                    let root = mesh_quotient.root(port);
+                    for point in mesh_quotient.domains()[root].iter().copied() {
+                        if let Some(&previous) = owner.get(&point) {
+                            union.union(previous, edge);
+                        } else {
+                            crate::resource::insert_map(
+                                ctx,
+                                &mut owner,
+                                point,
+                                edge,
+                                "catia_incidence_quotient_owner",
+                            )?;
                         }
                     }
                 }
@@ -488,29 +527,53 @@ fn incidence_choice_components(
     }
     let mut by_root = HashMap::<usize, Vec<usize>>::new();
     for edge in ambiguous {
-        by_root.entry(union.find(edge)).or_default().push(edge);
+        let root = union.find(edge);
+        if let Some(group) = by_root.get_mut(&root) {
+            crate::resource::push(ctx, group, edge, "catia_incidence_component_edges")?;
+        } else {
+            let mut group = Vec::new();
+            crate::resource::push(ctx, &mut group, edge, "catia_incidence_component_edges")?;
+            crate::resource::insert_map(
+                ctx,
+                &mut by_root,
+                root,
+                group,
+                "catia_incidence_component_roots",
+            )?;
+        }
     }
-    let mut components = by_root.into_values().collect::<Vec<_>>();
+    let mut components = Vec::new();
+    for group in by_root.into_values() {
+        crate::resource::push(ctx, &mut components, group, "catia_incidence_components")?;
+    }
     for component in &mut components {
         component.sort_unstable();
     }
     components.sort_by_key(|component| component[0]);
-    components
+    Ok(components)
 }
 
 /// Merge components whose assignments participate in one shared partial
 /// constraint. Evaluation-order constraints stay as edges between components
 /// so independent domains do not inherit each other's branch alternatives.
 fn join_incidence_components_by_coupling(
+    ctx: &DecodeContext<'_>,
     components: Vec<Vec<usize>>,
     coupled_edges: &[bool],
-) -> Vec<Vec<usize>> {
-    let component_by_edge = components
-        .iter()
-        .enumerate()
-        .flat_map(|(component, edges)| edges.iter().copied().map(move |edge| (edge, component)))
-        .collect::<HashMap<_, _>>();
-    let mut union = UnionFind::new(components.len());
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut component_by_edge = HashMap::new();
+    for (component, edges) in components.iter().enumerate() {
+        for &edge in edges {
+            crate::resource::insert_map(
+                ctx,
+                &mut component_by_edge,
+                edge,
+                component,
+                "catia_incidence_component_index",
+            )?;
+        }
+    }
+    let mut union = UnionFind::charged(ctx, components.len(), "catia_incidence_coupling_union")?;
     let mut coupled_owner = None;
     for (edge, active) in coupled_edges.iter().copied().enumerate() {
         if !active {
@@ -528,16 +591,43 @@ fn join_incidence_components_by_coupling(
     let mut joined = HashMap::<usize, (usize, Vec<usize>)>::new();
     for (index, component) in components.into_iter().enumerate() {
         let root = union.find(index);
-        let entry = joined.entry(root).or_insert_with(|| (index, Vec::new()));
-        entry.0 = entry.0.min(index);
-        entry.1.extend(component);
+        if let Some(entry) = joined.get_mut(&root) {
+            entry.0 = entry.0.min(index);
+            crate::resource::reserve_vec(
+                ctx,
+                &mut entry.1,
+                component.len(),
+                "catia_incidence_joined_edges",
+            )?;
+            entry.1.extend(component);
+        } else {
+            crate::resource::insert_map(
+                ctx,
+                &mut joined,
+                root,
+                (index, component),
+                "catia_incidence_joined_roots",
+            )?;
+        }
     }
-    let mut joined = joined.into_values().collect::<Vec<_>>();
-    for (_, edges) in &mut joined {
+    let mut joined_values = Vec::new();
+    for value in joined.into_values() {
+        crate::resource::push(
+            ctx,
+            &mut joined_values,
+            value,
+            "catia_incidence_joined_groups",
+        )?;
+    }
+    for (_, edges) in &mut joined_values {
         edges.sort_unstable();
     }
-    joined.sort_unstable_by_key(|(first, _)| *first);
-    joined.into_iter().map(|(_, edges)| edges).collect()
+    joined_values.sort_unstable_by_key(|(first, _)| *first);
+    let mut output = Vec::new();
+    for (_, edges) in joined_values {
+        crate::resource::push(ctx, &mut output, edges, "catia_incidence_joined_components")?;
+    }
+    Ok(output)
 }
 
 fn order_incidence_components_by_branch_width(
@@ -4594,10 +4684,10 @@ where
         }
         let choices = narrowed_choices.as_slice();
         let mut components =
-            incidence_choice_components(choices, edge_faces, mesh_assignments, mesh_quotient);
+            incidence_choice_components(ctx, choices, edge_faces, mesh_assignments, mesh_quotient)?;
         if let Some(constraint) = partial_solution_valid {
             components =
-                join_incidence_components_by_coupling(components, constraint.coupled_edges);
+                join_incidence_components_by_coupling(ctx, components, constraint.coupled_edges)?;
         }
         let ordered = order_incidence_components_by_constraints(
             ctx,
