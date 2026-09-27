@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 
 mod occurrence_limits;
+mod placement_limits;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
