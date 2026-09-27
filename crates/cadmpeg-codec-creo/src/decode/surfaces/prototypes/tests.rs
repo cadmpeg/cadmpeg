@@ -46,6 +46,82 @@ fn positional_replay_section_rows_refuse_before_vec_growth() {
 }
 
 #[test]
+fn prototype_vector_triples_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut array =
+        crate::surface::arrays::DimensionedScalars::empty(1, 3).expect("one test triple");
+    array
+        .fill_values(vec![Some(1.0), Some(2.0), Some(3.0)])
+        .expect("complete triple");
+    let record = crate::surface::SurfacePrototypeRecord {
+        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        parameters: vec![crate::surface::SurfaceNamedParameter {
+            name: "i_points".into(),
+            value: crate::surface::SurfaceNamedValue::ScalarArray(array),
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        offset: 0,
+    };
+    let data = [0u8];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
+        super::prototype_vector_array(&ctx, &record, "i_points")
+    };
+    assert_eq!(
+        run(1).expect("one triple admitted"),
+        Some(vec![[1.0, 2.0, 3.0]])
+    );
+    let error = run(0).expect_err("triple needs one Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype vector triples"));
+}
+
+#[test]
+fn prototype_parameter_values_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut array = crate::surface::arrays::CountedScalars::empty(2).expect("two test values");
+    array
+        .fill_values(vec![Some(0.0), Some(1.0)])
+        .expect("complete parameters");
+    let record = crate::surface::SurfacePrototypeRecord {
+        family: crate::surface::SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        parameters: vec![crate::surface::SurfaceNamedParameter {
+            name: "u_params".into(),
+            value: crate::surface::SurfaceNamedValue::CountedScalarArray(array),
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        }],
+        offset: 0,
+    };
+    let data = [0u8];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
+        super::prototype_parameter_array(&ctx, &record, "u_params")
+    };
+    assert_eq!(run(2).expect("two values admitted"), Some(vec![0.0, 1.0]));
+    let error = run(1).expect_err("second value exceeds one-item limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype parameter values"));
+}
+
+#[test]
 fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     const EPS_CONE_FRAME: f64 = f64::EPSILON * 8192.0;
 
