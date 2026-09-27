@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed records from the saved toggle-information stream.
 
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_core::decode::View;
@@ -22,15 +23,15 @@ enum SavedToggleState {
 }
 
 /// One named member of the saved toggle-information stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SavedToggleEntryWire", into = "SavedToggleEntryWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "SavedToggleEntryWire")]
 pub(super) struct SavedToggleEntry {
     /// Zero-based serialized member order.
     ordinal: u32,
     /// Lowercase 32-hex-digit toggle identity.
     toggle_id: ToggleId,
     /// Record-order-independent identity when the toggle ID is unique in the stream.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
     /// Exact state selected by the member text.
     state: SavedToggleState,
@@ -38,7 +39,84 @@ pub(super) struct SavedToggleEntry {
     source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg(test)]
+std::thread_local! {
+    static ENTRY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static ENTRY_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STREAM_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for SavedToggleEntry {
+    fn clone(&self) -> Self {
+        ENTRY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            ordinal: self.ordinal,
+            toggle_id: self.toggle_id.clone(),
+            stable_identity: self.stable_identity.clone(),
+            state: self.state,
+            source_offset: self.source_offset,
+        }
+    }
+}
+
+struct EntryId(u32);
+
+impl std::fmt::Display for EntryId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "nx:saved-toggle:entry#{}", self.0)
+    }
+}
+
+impl Serialize for EntryId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+struct EntryIds(u32);
+
+impl Serialize for EntryIds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut entries = serializer.serialize_seq(usize::try_from(self.0).ok())?;
+        for ordinal in 0..self.0 {
+            entries.serialize_element(&EntryId(ordinal))?;
+        }
+        entries.end()
+    }
+}
+
+#[derive(Serialize)]
+struct SavedToggleEntryRef<'a> {
+    id: EntryId,
+    ordinal: u32,
+    toggle_id: &'a ToggleId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<&'a str>,
+    state: SavedToggleState,
+    raw_byte_len: [u8; 2],
+    source_offset: u64,
+    value_source_offset: u64,
+}
+
+impl Serialize for SavedToggleEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SavedToggleEntryRef {
+            id: EntryId(self.ordinal),
+            ordinal: self.ordinal,
+            toggle_id: &self.toggle_id,
+            stable_identity: self.stable_identity.as_deref(),
+            state: self.state,
+            raw_byte_len: self.state.byte_len().to_le_bytes(),
+            source_offset: self.source_offset,
+            value_source_offset: self.source_offset + 2,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct SavedToggleEntryWire {
     id: String,
     ordinal: u32,
@@ -75,8 +153,10 @@ impl TryFrom<SavedToggleEntryWire> for SavedToggleEntry {
         })
     }
 }
+#[cfg(test)]
 impl From<SavedToggleEntry> for SavedToggleEntryWire {
     fn from(value: SavedToggleEntry) -> Self {
+        ENTRY_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         let id = value.id();
         let raw_byte_len = value.state.byte_len().to_le_bytes();
         let value_source_offset = value.source_offset + 2;
@@ -94,8 +174,8 @@ impl From<SavedToggleEntry> for SavedToggleEntryWire {
 }
 
 /// Complete saved toggle-information stream envelope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SavedToggleStreamWire", into = "SavedToggleStreamWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "SavedToggleStreamWire")]
 pub(super) struct SavedToggleStream {
     /// Number of ordered saved-toggle members.
     entry_count: u32,
@@ -107,6 +187,32 @@ pub(super) struct SavedToggleStream {
     trailer_source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct SavedToggleStreamRef {
+    id: &'static str,
+    version: u8,
+    raw_count: [u8; 4],
+    entries: EntryIds,
+    trailer: [u8; 4],
+    source_offset: u64,
+    trailer_source_offset: u64,
+}
+
+impl Serialize for SavedToggleStream {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SavedToggleStreamRef {
+            id: Self::id(),
+            version: 1,
+            raw_count: self.entry_count.to_le_bytes(),
+            entries: EntryIds(self.entry_count),
+            trailer: self.trailer,
+            source_offset: self.source_offset,
+            trailer_source_offset: self.trailer_source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl SavedToggleStream {
     /// Native identity of the saved-toggle stream.
     pub(super) const fn id() -> &'static str {
@@ -114,7 +220,8 @@ impl SavedToggleStream {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct SavedToggleStreamWire {
     id: String,
     version: u8,
@@ -154,8 +261,10 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
         })
     }
 }
+#[cfg(test)]
 impl From<SavedToggleStream> for SavedToggleStreamWire {
     fn from(value: SavedToggleStream) -> Self {
+        STREAM_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         let id = SavedToggleStream::id().to_string();
         let version = 1;
         let raw_count = value.entry_count.to_le_bytes();
@@ -309,7 +418,10 @@ fn assign_stable_toggle_identities(entries: &mut [SavedToggleEntry]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_saved_toggle_stream, SavedToggleState};
+    use super::{
+        parse_saved_toggle_stream, SavedToggleEntryWire, SavedToggleState, SavedToggleStreamWire,
+        ENTRY_CLONE_COUNT, ENTRY_INTO_WIRE_COUNT, STREAM_INTO_WIRE_COUNT,
+    };
 
     fn stream(members: &[&str], trailer: [u8; 4]) -> Vec<u8> {
         let mut bytes = vec![1];
@@ -320,6 +432,54 @@ mod tests {
         }
         bytes.extend_from_slice(&trailer);
         bytes
+    }
+
+    #[test]
+    fn saved_toggle_entry_borrowed_wire_refuses_before_clone() {
+        for members in [
+            &["0123456789abcdef0123456789abcdef:Off"][..],
+            &[
+                "0123456789abcdef0123456789abcdef:On",
+                "0123456789abcdef0123456789abcdef:Off",
+            ][..],
+        ] {
+            let bytes = stream(members, [0; 4]);
+            let parsed = parse_saved_toggle_stream(&bytes, 100).unwrap();
+            for entry in &parsed.entries {
+                let old = SavedToggleEntryWire::from(entry.clone());
+                assert_eq!(
+                    serde_json::to_vec(entry).unwrap(),
+                    serde_json::to_vec(&old).unwrap()
+                );
+                let expected = serde_json::to_value(&old).unwrap();
+                ENTRY_CLONE_COUNT.with(|count| count.set(0));
+                ENTRY_INTO_WIRE_COUNT.with(|count| count.set(0));
+                cadmpeg_test_support::native_serialization::assert_native_limit(entry, expected);
+                ENTRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+                ENTRY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+            }
+        }
+    }
+
+    #[test]
+    fn saved_toggle_stream_borrowed_wire_refuses_before_entry_list_allocation() {
+        let bytes = stream(
+            &[
+                "0123456789abcdef0123456789abcdef:On",
+                "fedcba9876543210fedcba9876543210:Off",
+            ],
+            [0xde, 0xad, 0xbe, 0xef],
+        );
+        let parsed = parse_saved_toggle_stream(&bytes, 100).unwrap();
+        let old = SavedToggleStreamWire::from(parsed.stream.clone());
+        assert_eq!(
+            serde_json::to_vec(&parsed.stream).unwrap(),
+            serde_json::to_vec(&old).unwrap()
+        );
+        let expected = serde_json::to_value(&old).unwrap();
+        STREAM_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&parsed.stream, expected);
+        STREAM_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     #[test]
