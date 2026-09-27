@@ -33,29 +33,50 @@ pub(in super::super) fn prototype_scalar(
 }
 
 fn prototype_vector_array(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
-) -> Option<Vec<[f64; 3]>> {
-    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field(name)?.value else {
-        return None;
+) -> Result<Option<Vec<[f64; 3]>>, cadmpeg_core::CodecError> {
+    let Some(field) = record.field(name) else {
+        return Ok(None);
     };
-    (array.count() == 3).then_some(())?;
-    let values = array.values();
-    values
-        .chunks_exact(3)
-        .map(|coordinates| Some([coordinates[0]?, coordinates[1]?, coordinates[2]?]))
-        .collect()
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
+        return Ok(None);
+    };
+    if array.count() != 3 {
+        return Ok(None);
+    }
+    let mut triples = Vec::new();
+    for coordinates in array.values().chunks_exact(3) {
+        let [Some(x), Some(y), Some(z)] = coordinates else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut triples, 1, "creo prototype vector triples")?;
+        triples.push([*x, *y, *z]);
+    }
+    Ok(Some(triples))
 }
 
 fn prototype_parameter_array(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
-) -> Option<Vec<f64>> {
-    let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &record.field(name)?.value
-    else {
-        return None;
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let Some(field) = record.field(name) else {
+        return Ok(None);
     };
-    array.values().iter().copied().collect()
+    let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &field.value else {
+        return Ok(None);
+    };
+    let mut parameters = Vec::new();
+    for value in array.values() {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut parameters, 1, "creo prototype parameter values")?;
+        parameters.push(*value);
+    }
+    Ok(Some(parameters))
 }
 
 fn prototype_spline_nurbs(
@@ -63,16 +84,35 @@ fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
-    let Some(grid) = (|| {
-        crate::interpolation_grid::InterpolationGrid::try_new(
-            prototype_vector_array(record, "i_points")?,
-            prototype_parameter_array(record, "u_params")?,
-            prototype_parameter_array(record, "v_params")?,
-            prototype_vector_array(record, "end_u_tangts")?,
-            prototype_vector_array(record, "end_v_tangts")?,
-            <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
-        )
-    })() else {
+    let Some(points) = prototype_vector_array(ctx, record, "i_points")? else {
+        return Ok(None);
+    };
+    let Some(u_parameters) = prototype_parameter_array(ctx, record, "u_params")? else {
+        return Ok(None);
+    };
+    let Some(v_parameters) = prototype_parameter_array(ctx, record, "v_params")? else {
+        return Ok(None);
+    };
+    let Some(u_derivatives) = prototype_vector_array(ctx, record, "end_u_tangts")? else {
+        return Ok(None);
+    };
+    let Some(v_derivatives) = prototype_vector_array(ctx, record, "end_v_tangts")? else {
+        return Ok(None);
+    };
+    let Some(mixed) = prototype_vector_array(ctx, record, "end_uv_deriv")? else {
+        return Ok(None);
+    };
+    let Ok(mixed_derivatives) = <[[f64; 3]; 4]>::try_from(mixed) else {
+        return Ok(None);
+    };
+    let Some(grid) = crate::interpolation_grid::InterpolationGrid::try_new(
+        points,
+        u_parameters,
+        v_parameters,
+        u_derivatives,
+        v_derivatives,
+        mixed_derivatives,
+    ) else {
         return Ok(None);
     };
     interpolation_spline_surface(
@@ -133,19 +173,17 @@ fn first_instance_surface_row(
     prototype_offset: usize,
     row_kind: crate::surface::SurfaceKind,
 ) -> Option<&crate::surface::SurfaceRow> {
-    let rows = rows
-        .iter()
-        .filter(|row| row.offset >= frame_start && row.offset < frame_end)
-        .collect::<Vec<_>>();
     let previous = rows
         .iter()
-        .copied()
-        .filter(|row| row.offset < prototype_offset)
+        .filter(|row| {
+            row.offset >= frame_start && row.offset < frame_end && row.offset < prototype_offset
+        })
         .max_by_key(|row| row.offset);
     if previous.is_some_and(|row| row.kind == row_kind) {
         return previous;
     }
-    rows.into_iter()
+    rows.iter()
+        .filter(|row| row.offset >= frame_start && row.offset < frame_end)
         .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
         .min_by_key(|row| row.offset)
 }
