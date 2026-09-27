@@ -29,7 +29,7 @@ use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
 
 use crate::chunks::ArchiveVersion;
@@ -4252,7 +4252,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         });
         edge_ids.push(id);
     }
-    let components = face_components(resolved);
+    let components = face_components(expand.ctx(), resolved)?;
     let grouping = region_shell_groups(expand.ctx(), raw, resolved, &components)?;
     let free_vertex_indices = brep_free_vertex_indices(expand.ctx(), resolved)?;
     if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
@@ -5130,31 +5130,40 @@ fn scaled_tolerance(
     ))
 }
 
-fn face_components(resolved: &crate::brep::ResolvedBrep) -> Vec<usize> {
-    let mut parent: Vec<usize> = (0..resolved.faces.len()).collect();
+fn face_components(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    resolved: &crate::brep::ResolvedBrep,
+) -> Result<Vec<usize>, crate::curves::GeometryError> {
+    let mut parent = ctx.alloc_filled(resolved.faces.len(), 0usize, "Rhino Brep face parents")?;
+    for (index, value) in parent.iter_mut().enumerate() {
+        *value = index;
+    }
     for edge in &resolved.edges {
-        let faces: Vec<usize> = edge
-            .trims
-            .iter()
-            .map(|trim| resolved.loops[resolved.trims[*trim].loop_index].face)
-            .collect();
+        let mut faces = ctx.alloc_filled(edge.trims.len(), 0usize, "Rhino Brep edge faces")?;
+        for (face, trim) in faces.iter_mut().zip(&edge.trims) {
+            *face = resolved.loops[resolved.trims[*trim].loop_index].face;
+        }
         for pair in faces.windows(2) {
             let left = disjoint_root(&mut parent, pair[0]);
             let right = disjoint_root(&mut parent, pair[1]);
             parent[left] = right;
         }
     }
-    let roots: Vec<usize> = (0..parent.len())
-        .map(|index| disjoint_root(&mut parent, index))
-        .collect();
-    let mut labels = BTreeMap::new();
-    roots
-        .into_iter()
-        .map(|value| {
-            let next = labels.len();
-            *labels.entry(value).or_insert(next)
-        })
-        .collect()
+    let mut roots = ctx.alloc_filled(parent.len(), 0usize, "Rhino Brep face roots")?;
+    for (index, root) in roots.iter_mut().enumerate() {
+        *root = disjoint_root(&mut parent, index);
+    }
+    let mut labels = ctx.alloc_filled(parent.len(), None, "Rhino Brep face labels")?;
+    let mut components = ctx.alloc_filled(parent.len(), 0usize, "Rhino Brep face components")?;
+    let mut next = 0;
+    for (component, root) in components.iter_mut().zip(roots) {
+        *component = *labels[root].get_or_insert_with(|| {
+            let label = next;
+            next += 1;
+            label
+        });
+    }
+    Ok(components)
 }
 
 fn brep_free_vertex_indices(
@@ -5176,11 +5185,18 @@ fn brep_free_vertex_indices(
             attached[trim.vertices[0]] = true;
         }
     }
-    Ok(attached
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, attached)| (!attached).then_some(index))
-        .collect())
+    let free_count = attached.iter().filter(|attached| !**attached).count();
+    ctx.charge_collection_items(free_count as u64, "Rhino Brep free vertices")?;
+    let mut free = Vec::new();
+    free.try_reserve_exact(free_count).map_err(|_| {
+        crate::curves::collection_allocation_failed("Rhino Brep free vertices", free_count)
+    })?;
+    for (index, attached) in attached.into_iter().enumerate() {
+        if !attached {
+            free.push(index);
+        }
+    }
+    Ok(free)
 }
 
 struct ShellGrouping {
@@ -5201,13 +5217,14 @@ fn region_shell_groups(
     components: &[usize],
 ) -> Result<ShellGrouping, crate::curves::GeometryError> {
     if raw.minor < 3 || raw.regions.is_empty() {
-        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for (face, component) in components.iter().copied().enumerate() {
-            groups.entry(component).or_default().push(face);
-        }
-        let mut shells = Vec::new();
         let mut face_groups =
             ctx.alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups")?;
+        let mut groups = HashMap::new();
+        for (face, component) in components.iter().copied().enumerate() {
+            push_group_face(ctx, &mut groups, component, face)?;
+        }
+        let groups = ordered_group_faces(ctx, groups)?;
+        let mut shells = shell_slots(ctx, groups.len())?;
         for (group, (_component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
                 face_groups[*face] = group;
@@ -5223,32 +5240,35 @@ fn region_shell_groups(
             fallback: false,
         });
     }
-    let mut grouped: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
-    let solid_regions: BTreeSet<usize> = raw
-        .regions
-        .iter()
-        .enumerate()
-        .filter(|(_, region)| region.region_type == 1)
-        .map(|(index, _)| index)
-        .collect();
+    let mut face_groups =
+        ctx.alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")?;
+    let mut grouped = HashMap::new();
     for face in 0..raw.faces.len() {
-        let bounded_regions: Vec<usize> = resolved
+        let mut bounded_region = None;
+        let mut bounded_count = 0;
+        for region in resolved
             .face_sides
             .iter()
             .filter(|side| side.face == face)
-            .filter_map(|side| side.region.filter(|region| solid_regions.contains(region)))
-            .collect();
-        if bounded_regions.len() != 1 {
+            .filter_map(|side| side.region)
+            .filter(|region| {
+                raw.regions
+                    .get(*region)
+                    .is_some_and(|item| item.region_type == 1)
+            })
+        {
+            bounded_region = Some(region);
+            bounded_count += 1;
+        }
+        if bounded_count != 1 {
             return region_shell_groups_without_records(ctx, components);
         }
-        grouped
-            .entry((bounded_regions[0], components[face]))
-            .or_default()
-            .push(face);
+        if let Some(region) = bounded_region {
+            push_group_face(ctx, &mut grouped, (region, components[face]), face)?;
+        }
     }
-    let mut face_groups =
-        ctx.alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")?;
-    let mut shells = Vec::new();
+    let grouped = ordered_group_faces(ctx, grouped)?;
+    let mut shells = shell_slots(ctx, grouped.len())?;
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
         for face in &faces {
             face_groups[*face] = group;
@@ -5266,13 +5286,14 @@ fn region_shell_groups_without_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: &[usize],
 ) -> Result<ShellGrouping, crate::curves::GeometryError> {
-    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for (face, component) in components.iter().copied().enumerate() {
-        groups.entry(component).or_default().push(face);
-    }
     let mut face_groups =
         ctx.alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups")?;
-    let mut shells = Vec::new();
+    let mut groups = HashMap::new();
+    for (face, component) in components.iter().copied().enumerate() {
+        push_group_face(ctx, &mut groups, component, face)?;
+    }
+    let groups = ordered_group_faces(ctx, groups)?;
+    let mut shells = shell_slots(ctx, groups.len())?;
     for (group, (_component, faces)) in groups.into_iter().enumerate() {
         for face in &faces {
             face_groups[*face] = group;
@@ -5287,6 +5308,50 @@ fn region_shell_groups_without_records(
         shells,
         fallback: true,
     })
+}
+
+fn push_group_face<K: Eq + std::hash::Hash>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    groups: &mut HashMap<K, Vec<usize>>,
+    key: K,
+    face: usize,
+) -> Result<(), crate::curves::GeometryError> {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, "Rhino Brep shell group keys")?;
+        groups.try_reserve(1).map_err(|_| {
+            crate::curves::collection_allocation_failed("Rhino Brep shell group keys", 1)
+        })?;
+    }
+    ctx.charge_collection_items(1, "Rhino Brep shell group faces")?;
+    let faces = groups.entry(key).or_default();
+    faces.try_reserve(1).map_err(|_| {
+        crate::curves::collection_allocation_failed("Rhino Brep shell group faces", 1)
+    })?;
+    faces.push(face);
+    Ok(())
+}
+
+fn ordered_group_faces<K: Ord>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    groups: HashMap<K, Vec<usize>>,
+) -> Result<Vec<(K, Vec<usize>)>, crate::curves::GeometryError> {
+    let mut ordered =
+        crate::curves::charged_vec(ctx, groups.len(), "Rhino Brep ordered shell groups")?;
+    ordered.extend(groups);
+    ordered.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    Ok(ordered)
+}
+
+fn shell_slots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+) -> Result<Vec<ShellGroup>, crate::curves::GeometryError> {
+    ctx.charge_collection_items(count as u64, "Rhino Brep shell groups")?;
+    let mut shells = Vec::new();
+    shells.try_reserve_exact(count).map_err(|_| {
+        crate::curves::collection_allocation_failed("Rhino Brep shell groups", count)
+    })?;
+    Ok(shells)
 }
 
 fn disjoint_root(parent: &mut [usize], mut value: usize) -> usize {
