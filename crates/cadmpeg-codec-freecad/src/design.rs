@@ -446,7 +446,7 @@ pub(crate) fn transfer(
             }
         }
         let definition = post_processed_definition(definition, &object.type_name, &owned);
-        append_operation_parameters(&mut ir.model.parameters, object, &owned)?;
+        append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
         let mut outputs = Vec::new();
         for payload in payloads.iter().filter(|payload| owned.iter().any(|property| property.id == payload.property)) {
             let prefix = crate::native::model_id("body", &payload.id, "");
@@ -1176,6 +1176,7 @@ fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
 }
 
 fn append_operation_parameters(
+    ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -1215,23 +1216,25 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(property) else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name);
+        let expression = expression_binding(ctx, properties, &property.name)?;
         let is_angle = property.type_name.contains("Angle");
         let mut retained = BTreeMap::new();
         if let Some((native_ref, _)) = &expression {
             retained.insert(
                 cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.clone(),
+                retained_string(ctx, native_ref, "fcstd operation expression reference")?,
             );
         }
+        reserve_vec_items(ctx, parameters, 1, "fcstd operation parameters")?;
         parameters.push(DesignParameter {
             id: ParameterId::compose(
                 &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
                 object_key(object)?.colon(IdentityKey::encode_segment(&property.name)),
             ),
-            owner: Some(owner.clone()),
+            owner: Some(FeatureId::mint(retained_string(ctx, owner.as_str(), "fcstd operation parameter owner")?)
+                .map_err(CodecError::malformed)?),
             ordinal: property.order as u32,
-            name: property.name.clone(),
+            name: retained_string(ctx, &property.name, "fcstd operation parameter name")?,
             expression: expression.map_or_else(
                 || scalar_text(property).unwrap_or_else(|| value.get().to_string()),
                 |(_, expression)| expression,
@@ -1245,7 +1248,7 @@ fn append_operation_parameters(
             dependencies: DistinctMembers::default(),
             properties: retained,
             pmi: None,
-            native_ref: Some(property.id.clone()),
+            native_ref: Some(retained_string(ctx, &property.id, "fcstd operation parameter native reference")?),
         });
     }
     Ok(())
@@ -1692,7 +1695,7 @@ fn parse_sketch(
             .with_native_ref(Some(object.id.clone())),
         );
     }
-    let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
+    let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
     let profiles = build_profiles(ctx, &entities, &constraints)?;
     let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
@@ -2043,6 +2046,7 @@ fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
 }
 
 fn parse_constraints(
+    ctx: &DecodeContext<'_>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
     sketch: &SketchId,
@@ -2130,40 +2134,43 @@ fn parse_constraints(
                         })?),
                     };
                     let path = format!("Constraints[{index}]");
-                    let expression = expression_binding(properties, &path);
+                    let expression = expression_binding(ctx, properties, &path)?;
                     let mut parameter_properties = [(
                         cadmpeg_core::nonblank_literal!("is_driving"),
-                        node.attribute("IsDriving").unwrap_or("1").to_owned(),
+                        retained_string(ctx, node.attribute("IsDriving").unwrap_or("1"), "fcstd constraint driving flag")?,
                     )]
                     .into_iter()
                     .collect::<BTreeMap<_, _>>();
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
                         parameter_properties.insert(
                             cadmpeg_core::nonblank_literal!("source_name"),
-                            name.to_owned(),
+                            retained_string(ctx, name, "fcstd constraint source name")?,
                         );
                     }
                     if let Some((native_ref, _)) = &expression {
                         parameter_properties.insert(
                             cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                            native_ref.clone(),
+                            retained_string(ctx, native_ref, "fcstd constraint expression reference")?,
                         );
                     }
+                    reserve_vec_items(ctx, &mut parameters, 1, "fcstd constraint parameters")?;
+                    let expression = match expression {
+                        Some((_, expression)) => expression,
+                        None => retained_string(ctx, node.attribute("Value").unwrap_or_default(), "fcstd constraint expression")?,
+                    };
                     parameters.push(DesignParameter {
-                        id: id.clone(),
+                        id: ParameterId::mint(retained_string(ctx, id.as_str(), "fcstd constraint parameter identity")?)
+                            .map_err(CodecError::malformed)?,
                         owner: Some(feature_id(object)?),
                         ordinal: index as u32,
                         name: format!("Constraint{}", index + 1),
-                        expression: expression.map_or_else(
-                            || node.attribute("Value").unwrap_or_default().to_owned(),
-                            |(_, expression)| expression,
-                        ),
+                        expression,
                         display: None,
                         value: Some(value),
                         dependencies: DistinctMembers::default(),
                         properties: parameter_properties,
                         pmi: None,
-                        native_ref: Some(property.id.clone()),
+                        native_ref: Some(retained_string(ctx, &property.id, "fcstd constraint parameter native reference")?),
                     });
                     Ok::<_, CodecError>(id)
                 })
@@ -2357,9 +2364,13 @@ fn nonempty_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(String, String)> {
-    let engine = property(properties, "ExpressionEngine")?;
-    engine
+fn expression_binding(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    path: &str,
+) -> Result<Option<(String, String)>, CodecError> {
+    let Some(engine) = property(properties, "ExpressionEngine") else { return Ok(None); };
+    let value = engine
         .values()
         .iter()
         .find(|value| {
@@ -2368,13 +2379,14 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
                     .attributes
                     .get("path")
                     .is_some_and(|value| value == path)
-        })
-        .and_then(|value| {
-            Some((
-                engine.id.clone(),
-                value.attributes.get("expression")?.clone(),
-            ))
-        })
+        });
+    let Some(expression) = value.and_then(|value| value.attributes.get("expression")) else {
+        return Ok(None);
+    };
+    Ok(Some((
+        retained_string(ctx, &engine.id, "fcstd expression engine reference")?,
+        retained_string(ctx, expression, "fcstd expression text")?,
+    )))
 }
 
 fn bind_parameter_dependencies(
