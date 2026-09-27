@@ -226,11 +226,11 @@ pub(crate) fn transfer(
                         .iter()
                         .find_map(|name| property(&owned, name))
                         .map_or_else(
-                            || ProfileRef::Planar(PlanarProfileRef::Unresolved(object.id.clone())),
-                            |property| {
-                                ProfileRef::Planar(PlanarProfileRef::Native(property.id.clone()))
-                            },
-                        )
+                            || retained_string(ctx, &object.id, "fcstd unresolved profile identity")
+                                .map(|id| ProfileRef::Planar(PlanarProfileRef::Unresolved(id))),
+                            |property| retained_string(ctx, &property.id, "fcstd native profile identity")
+                                .map(|id| ProfileRef::Planar(PlanarProfileRef::Native(id))),
+                        )?
                 }
                 profile => profile,
             };
@@ -363,6 +363,8 @@ pub(crate) fn transfer(
             }
             dependencies
         };
+        ctx.charge_collection_items(dependencies.len() as u64, "fcstd distinct feature dependencies")?;
+        ctx.charge_collection_items(outputs.len() as u64, "fcstd distinct feature outputs")?;
         reserve_vec_items(ctx, &mut ir.model.features, 1, "fcstd neutral features")?;
         ir.model.features.push(Feature {
             id,
@@ -460,6 +462,7 @@ fn body_definition(
         BodyTipResolution::Valid(active_child) => active_child,
         BodyTipResolution::Invalid => return Ok(None),
     };
+    ctx.charge_collection_items(children.len() as u64, "fcstd distinct body children")?;
     Ok(cadmpeg_ir::features::TreeChildren::new(children, active_child).ok().map(|children| FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::SolidBodies,
         children,
