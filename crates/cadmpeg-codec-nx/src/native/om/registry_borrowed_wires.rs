@@ -59,8 +59,8 @@ impl Serialize for FieldDefinition {
         let mut tail = [0_u8; 6];
         tail[0] = self.trailing_code;
         let suffix_len = self.registry_suffix.len().min(5);
-        tail[1..suffix_len + 1].copy_from_slice(&self.registry_suffix[..suffix_len]);
-        let registry = crate::om::registry::field_registry_layout(&tail[..suffix_len + 1]);
+        tail[1..=suffix_len].copy_from_slice(&self.registry_suffix[..suffix_len]);
+        let registry = crate::om::registry::field_registry_layout(&tail[..=suffix_len]);
         let layout = registry_layout(&self.registry_suffix);
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;

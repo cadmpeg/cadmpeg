@@ -85,7 +85,7 @@ impl Serialize for ParasolidChartRecord {
         let support_uv = self
             .data
             .support_uv_ref()
-            .map(|lane| lane.map(|lane| lane.as_slice()));
+            .map(|lane| lane.map(crate::intersection::SupportUvLane::as_slice));
         ChartRef {
             id: &self.id,
             stream_ordinal: self.stream_ordinal,

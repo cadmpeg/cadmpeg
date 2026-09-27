@@ -42,7 +42,10 @@ impl Serialize for FeatureSwp104LeadingBranch {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("discriminator", &self.discriminator)?;
         wire.serialize_entry("scalars", &self.scalars.map(|scalar| scalar.value().get()))?;
-        wire.serialize_entry("raw_scalars", &self.scalars.map(|scalar| scalar.raw()))?;
+        wire.serialize_entry(
+            "raw_scalars",
+            &self.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
+        )?;
         wire.serialize_entry("leading_zero", &self.leading_zero)?;
         wire.serialize_entry("mode", &self.mode)?;
         wire.serialize_entry("declared_count", &self.members.declared_count())?;

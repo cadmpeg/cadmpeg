@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! DisplayJT expansion and element-framing resource tests.
+//! `DisplayJT` expansion and element-framing resource tests.
 
 use std::io::Write;
 
@@ -211,11 +211,11 @@ fn jt_sequence_tail_hash_refuses_before_scoped_validation_allocation() {
 }
 
 struct CompressedJtRetainedStages {
-    before_ids: u64,
-    before_elements: u64,
-    before_sequence: u64,
-    before_sequence_fields: u64,
-    before_tail: u64,
+    ids: u64,
+    elements: u64,
+    sequence: u64,
+    sequence_fields: u64,
+    tail: u64,
 }
 
 fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
@@ -233,11 +233,11 @@ fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
     let before_tail =
         before_sequence_fields + (segment.len() * 2 + "-inflated-sequence".len() + 64) as u64;
     CompressedJtRetainedStages {
-        before_ids,
-        before_elements,
-        before_sequence,
-        before_sequence_fields,
-        before_tail,
+        ids: before_ids,
+        elements: before_elements,
+        sequence: before_sequence,
+        sequence_fields: before_sequence_fields,
+        tail: before_tail,
     }
 }
 
@@ -245,7 +245,7 @@ fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
 fn jt_element_ids_refuse_before_retained_vector_allocation() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_ids;
+    policy.limits.max_retained_bytes = compressed_jt_retained_stages().ids;
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,
@@ -257,7 +257,7 @@ fn jt_element_ids_refuse_before_retained_vector_allocation() {
 fn jt_compressed_elements_refuse_before_retained_vector_allocation() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_elements;
+    policy.limits.max_retained_bytes = compressed_jt_retained_stages().elements;
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,
@@ -269,7 +269,7 @@ fn jt_compressed_elements_refuse_before_retained_vector_allocation() {
 fn jt_compressed_sequence_refuses_before_retained_vector_allocation() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_sequence;
+    policy.limits.max_retained_bytes = compressed_jt_retained_stages().sequence;
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,
@@ -281,7 +281,7 @@ fn jt_compressed_sequence_refuses_before_retained_vector_allocation() {
 fn jt_compressed_sequence_fields_refuse_before_string_allocation() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_sequence_fields;
+    policy.limits.max_retained_bytes = compressed_jt_retained_stages().sequence_fields;
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,
@@ -293,7 +293,7 @@ fn jt_compressed_sequence_fields_refuse_before_string_allocation() {
 fn jt_compressed_sequence_tail_refuses_before_copy() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = compressed_jt_retained_stages().before_tail;
+    policy.limits.max_retained_bytes = compressed_jt_retained_stages().tail;
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,

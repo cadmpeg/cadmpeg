@@ -78,7 +78,7 @@ mod tests {
         NAME_REFERENCES_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id":"nx:parasolid:name-references#0", "name_xmts":[2,4294967295u32]}),
+            serde_json::json!({"id":"nx:parasolid:name-references#0", "name_xmts":[2,4_294_967_295_u32]}),
         );
         NAME_REFERENCES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

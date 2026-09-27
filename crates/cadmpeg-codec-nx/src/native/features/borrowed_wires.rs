@@ -211,7 +211,7 @@ impl Serialize for FeaturePayloadScalar {
         wire.serialize_entry("operation_label", &self.operation_label)?;
         match &self.payload {
             FeatureScalarPayload::DatumCsys { datum_csys_payload } => {
-                wire.serialize_entry("datum_csys_payload", datum_csys_payload)?
+                wire.serialize_entry("datum_csys_payload", datum_csys_payload)?;
             }
             FeatureScalarPayload::Construction {
                 construction_payload,
@@ -339,7 +339,10 @@ impl Serialize for FeatureExtrudePayloadHeader {
         wire.serialize_entry("id", &self.id)?;
         wire.serialize_entry("operation_label", &self.operation_label)?;
         wire.serialize_entry("scalars", &self.scalars.map(|scalar| scalar.value().get()))?;
-        wire.serialize_entry("raw_scalars", &self.scalars.map(|scalar| scalar.raw()))?;
+        wire.serialize_entry(
+            "raw_scalars",
+            &self.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
+        )?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
         wire.end()
     }

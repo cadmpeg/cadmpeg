@@ -2557,6 +2557,14 @@ fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, 
     ))
 }
 
+type AdmittedJtTail<'a, 'ctx> = Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>;
+
+#[derive(Debug)]
+enum JtOptionalReservation<'a> {
+    Invalid,
+    Admitted(Option<ScopedReservation<'a>>),
+}
+
 fn admit_jt_counted_u32<'a, 'ctx>(
     ctx: Option<&'ctx DecodeContext<'_>>,
     bytes: &'a [u8],
@@ -2564,7 +2572,7 @@ fn admit_jt_counted_u32<'a, 'ctx>(
     values_offset: usize,
     operation: &'static str,
     retained: bool,
-) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
     let Some(count) = View::u32_le_at(bytes, count_offset) else {
         return Ok(None);
     };
@@ -2599,7 +2607,7 @@ fn admit_jt_base_body<'a, 'ctx>(
     body: &'a [u8],
     major: u16,
     retained: bool,
-) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
     let (count_offset, values_offset) = if major < 10 { (6, 10) } else { (5, 9) };
     admit_jt_counted_u32(
         ctx,
@@ -2614,7 +2622,7 @@ fn admit_jt_base_body<'a, 'ctx>(
 fn admit_jt_group_body<'a, 'ctx>(
     ctx: Option<&'ctx DecodeContext<'_>>,
     body: &'a [u8],
-) -> Result<Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>, CodecError> {
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
     let Some((family, base_reservation)) = admit_jt_base_body(ctx, body, 9, false)? else {
         return Ok(None);
     };
@@ -2629,27 +2637,27 @@ fn admit_jt_group_body<'a, 'ctx>(
 fn admit_jt_partition_name<'a>(
     ctx: Option<&'a DecodeContext<'_>>,
     family: &[u8],
-) -> Result<Option<Option<ScopedReservation<'a>>>, CodecError> {
+) -> Result<JtOptionalReservation<'a>, CodecError> {
     let Some(count) = View::u32_le_at(family, 4) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(byte_len) = usize::try_from(count)
         .ok()
         .and_then(|count| count.checked_mul(2))
     else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(end) = 8usize.checked_add(byte_len) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(raw) = family.get(8..end) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(utf8_len) = utf16_utf8_len(raw) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(ctx) = ctx else {
-        return Ok(Some(None));
+        return Ok(JtOptionalReservation::Admitted(None));
     };
     ctx.charge_work(u64::from(count), "decode DisplayJT partition name")?;
     ctx.charge_collection_items(u64::from(count), "decode DisplayJT partition name")?;
@@ -2660,7 +2668,7 @@ fn admit_jt_partition_name<'a>(
     )?;
     let reservation =
         ctx.reserve_scoped(u64::from(count) * 2, "decode DisplayJT partition name")?;
-    Ok(Some(Some(reservation)))
+    Ok(JtOptionalReservation::Admitted(Some(reservation)))
 }
 
 fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
@@ -2673,21 +2681,21 @@ fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
 fn admit_jt_range_vectors<'a>(
     ctx: Option<&'a DecodeContext<'_>>,
     family: &[u8],
-) -> Result<Option<Option<ScopedReservation<'a>>>, CodecError> {
+) -> Result<JtOptionalReservation<'a>, CodecError> {
     let Some(first) = family.get(2..) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some((after_first, first_count)) = jt_f32_vector_tail(first) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(second) = after_first.get(6..) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some((_, second_count)) = jt_f32_vector_tail(second) else {
-        return Ok(None);
+        return Ok(JtOptionalReservation::Invalid);
     };
     let Some(ctx) = ctx else {
-        return Ok(Some(None));
+        return Ok(JtOptionalReservation::Admitted(None));
     };
     let total = first_count
         .checked_add(second_count)
@@ -2709,7 +2717,7 @@ fn admit_jt_range_vectors<'a>(
         first_count.max(second_count) * 4,
         "decode DisplayJT range values",
     )?;
-    Ok(Some(Some(reservation)))
+    Ok(JtOptionalReservation::Admitted(Some(reservation)))
 }
 
 fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
@@ -5265,7 +5273,9 @@ pub(super) fn display_jt_partition_nodes(
             let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            let Some(_name_reservation) = admit_jt_partition_name(ctx, family)? else {
+            let JtOptionalReservation::Admitted(_name_reservation) =
+                admit_jt_partition_name(ctx, family)?
+            else {
                 return Ok(Vec::new());
             };
             let Some(node) = parse_jt9_partition_node_body(element.body) else {
@@ -5346,7 +5356,9 @@ pub(super) fn display_jt_range_lod_nodes(
             let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
                 return Ok(Vec::new());
             };
-            let Some(_vector_reservation) = admit_jt_range_vectors(ctx, family)? else {
+            let JtOptionalReservation::Admitted(_vector_reservation) =
+                admit_jt_range_vectors(ctx, family)?
+            else {
                 return Ok(Vec::new());
             };
             let Some(node) = parse_jt9_range_lod_node_body(element.body) else {

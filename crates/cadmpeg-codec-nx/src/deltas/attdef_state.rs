@@ -182,13 +182,13 @@ mod tests {
 
     #[test]
     fn attdef_retained_limit_refuses_before_reference_collection() {
-        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
-        let state: AttdefState = serde_json::from_str(json).unwrap();
         #[derive(serde::Serialize)]
         struct Record<'a> {
             id: &'a str,
             state: &'a AttdefState,
         }
+        let json = r#"{"xmt":43,"slot_count":4,"active_count":2,"references":[143,155,1,1]}"#;
+        let state: AttdefState = serde_json::from_str(json).unwrap();
         let record = Record {
             id: "nx:deltas:attdef#0",
             state: &state,
