@@ -544,7 +544,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
 }
 
 /// Parameter-owner layout carried by a sheet-metal `Hem` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignHemParameterOwners {
     /// Flat and open forms own a gap and a length.
@@ -574,7 +574,7 @@ pub(crate) enum DesignHemParameterOwners {
 
 /// Fixed operation section and parameter-owner layout carried by a sheet-metal
 /// `Hem` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
 pub(crate) struct DesignHemOperation {
     /// Selection-wrapper record for the hem edge.
