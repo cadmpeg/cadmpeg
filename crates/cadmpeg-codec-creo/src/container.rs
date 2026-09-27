@@ -846,14 +846,13 @@ fn legacy_toc_sections<'a>(
     let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
         return Ok(Vec::new());
     };
-    let Some(toc_declaration) =
-        legacy::parse_declaration(toc_declaration, toc_offset).filter(|declaration| {
-            declaration.name == "Toc" && matches!(declaration.type_code, LegacyTypeCode::Object)
+    let Some((toc_id, _, _)) =
+        legacy::parse_declaration(toc_declaration).filter(|(_, name, type_code)| {
+            *name == "Toc" && matches!(type_code, LegacyTypeCode::Object)
         })
     else {
         return Ok(Vec::new());
     };
-    let toc_id = toc_declaration.id;
     let Some((toc_value, after_toc_value)) = legacy::line(data, after_toc_declaration) else {
         return Ok(Vec::new());
     };
@@ -873,14 +872,13 @@ fn legacy_toc_sections<'a>(
     else {
         return Ok(Vec::new());
     };
-    let Some(entry_declaration) = legacy::parse_declaration(entry_declaration, after_toc_value)
-        .filter(|declaration| {
-            declaration.name == "entry" && matches!(declaration.type_code, LegacyTypeCode::String)
+    let Some((entry_id, _, _)) = legacy::parse_declaration(entry_declaration)
+        .filter(|(_, name, type_code)| {
+            *name == "entry" && matches!(type_code, LegacyTypeCode::String)
         })
     else {
         return Ok(Vec::new());
     };
-    let entry_id = entry_declaration.id;
     let Some((entry_array, mut next)) = legacy::line(data, after_entry_declaration) else {
         return Ok(Vec::new());
     };
@@ -2738,7 +2736,7 @@ pub(crate) fn scan_bytes<'a>(
     };
     if let Some(framing) = &mut legacy_ascii {
         let scopes = legacy_scope_ranges(ctx, &data, framing, &sections)?;
-        framing.persistence = legacy::scan(&data, scopes)?;
+        framing.persistence = legacy::scan(ctx, &data, scopes)?;
     }
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii

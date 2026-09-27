@@ -883,7 +883,7 @@ pub(crate) fn line(data: &[u8], start: usize) -> Option<(&[u8], usize)> {
     ))
 }
 
-pub(crate) fn parse_declaration(line: &[u8], offset: usize) -> Option<AttributeDeclaration> {
+pub(crate) fn parse_declaration(line: &[u8]) -> Option<(u32, &str, LegacyTypeCode)> {
     let line = std::str::from_utf8(line).ok()?;
     let mut fields = line.split_ascii_whitespace();
     let name = fields.next()?.strip_prefix('@')?;
@@ -892,17 +892,12 @@ pub(crate) fn parse_declaration(line: &[u8], offset: usize) -> Option<AttributeD
     }
     let id = fields.next()?.parse().ok()?;
     let type_code = LegacyTypeCode::from(fields.next()?.parse::<u8>().ok()?);
-    fields.next().is_none().then(|| AttributeDeclaration {
-        id,
-        name: name.to_string(),
-        type_code,
-        offset,
-    })
+    fields.next().is_none().then_some((id, name, type_code))
 }
 
 pub(crate) fn starts_with_declaration(data: &[u8], start: usize) -> bool {
     line(data, start)
-        .and_then(|(line, _)| parse_declaration(line, start))
+        .and_then(|(line, _)| parse_declaration(line))
         .is_some()
 }
 
@@ -1455,7 +1450,11 @@ fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
     })
 }
 
-fn scan_scope(data: &[u8], range: Range<usize>) -> Result<Scope, CodecError> {
+fn scan_scope(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    range: Range<usize>,
+) -> Result<Scope, CodecError> {
     if range.end > data.len() {
         return Err(CodecError::malformed(format!(
             "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
@@ -1486,7 +1485,9 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Result<Scope, CodecError> {
                 match &mut value.continuation {
                     Some(continuation) => {
                         continuation.rows.end = line_offset + current.len();
-                        continuation.count = continuation.count.saturating_add(1);
+                        continuation.count = continuation.count.checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("creo legacy continuation count exceeds usize")
+                        })?;
                     }
                     None => {
                         value.continuation = Some(Continuation {
@@ -1500,21 +1501,32 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Result<Scope, CodecError> {
         }
         continuation_owner = None;
 
-        if let Some(declaration) = parse_declaration(current, line_offset) {
-            if let Some(index) = declaration_indices.get(&declaration.id).copied() {
+        if let Some((id, name, type_code)) = parse_declaration(current) {
+            if let Some(index) = declaration_indices.get(&id).copied() {
                 let previous = &declarations[index];
-                if previous.name != declaration.name || previous.type_code != declaration.type_code
-                {
-                    conflicting_ids.insert(declaration.id);
+                if previous.name != name || previous.type_code != type_code {
+                    if !conflicting_ids.contains(&id) {
+                        ctx.charge_collection_items(1, "creo legacy conflicting declaration IDs")?;
+                        conflicting_ids.insert(id);
+                    }
                 }
             } else {
-                declaration_indices.insert(declaration.id, declarations.len());
-                declarations.push(declaration);
+                let name = ctx.copy_retained_text(name, "creo legacy declaration names")?;
+                ctx.charge_collection_items(1, "creo legacy declaration index nodes")?;
+                ctx.try_reserve_items(&mut declarations, 1, "creo legacy declarations")?;
+                declaration_indices.insert(id, declarations.len());
+                declarations.push(AttributeDeclaration {
+                    id,
+                    name,
+                    type_code,
+                    offset: line_offset,
+                });
             }
             continue;
         }
         if let Some(value) = value(current, line_offset) {
             continuation_owner = Some(candidates.len());
+            ctx.try_reserve_items(&mut candidates, 1, "creo legacy scope value candidates")?;
             candidates.push(value);
         }
     }
@@ -1535,14 +1547,17 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Result<Scope, CodecError> {
 
 /// Scan independently scoped legacy ASCII record extents.
 pub(crate) fn scan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Result<Persistence, CodecError> {
-    let scopes = ranges
-        .into_iter()
-        .filter(|range| range.start < range.end && range.start < data.len())
-        .map(|range| scan_scope(data, range))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut scopes = Vec::new();
+    for range in ranges {
+        if range.start < range.end && range.start < data.len() {
+            ctx.try_reserve_items(&mut scopes, 1, "creo legacy parsed scopes")?;
+            scopes.push(scan_scope(ctx, data, range)?);
+        }
+    }
     let parents = parent_object_offsets(&scopes);
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(data, &scopes, &parents);
