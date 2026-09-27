@@ -1,7 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{feature_result_surface_ids, feature_result_topology};
+use super::{feature_result_surface_ids, feature_result_topology, generated_surface_face_refs};
 use super::super::selections::feature_result_edge_ids;
+
+fn generated_face_reference_error(
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let row = crate::surface::SurfaceRow {
+        id: 201,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 17,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let available = std::collections::BTreeSet::from([
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#17")
+            .expect("fixture feature ID"),
+    ]);
+    let results = std::collections::BTreeMap::from([(17, vec![201])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = generated_surface_face_refs(&ctx, &[201], &[row], &results, &available)
+        .expect_err("one generated face exceeds the resource limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn generated_surface_feature_id_refuses_retained_limit() {
+    generated_face_reference_error(None, Some(0), "creo generated surface feature IDs");
+}
+
+#[test]
+fn generated_surface_local_id_refuses_retained_limit() {
+    generated_face_reference_error(
+        None,
+        Some("creo:model:feature#17".len() as u64),
+        "creo generated surface local IDs",
+    );
+}
+
+#[test]
+fn generated_surface_face_references_refuse_collection_limit() {
+    generated_face_reference_error(
+        Some(0),
+        None,
+        "creo generated surface face references",
+    );
+}
 
 fn one_result_surface() -> (
     Vec<crate::feature::entity::FeatureEntityTable>,

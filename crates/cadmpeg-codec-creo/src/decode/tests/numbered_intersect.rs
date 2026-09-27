@@ -78,6 +78,18 @@ fn generated_curve_edge_refs_with_service(
     .expect("service profile admits generated curve references")
 }
 
+fn generated_surface_face_refs_with_service(
+    source_ids: &[u32],
+    rows: &[crate::surface::SurfaceRow],
+    result_surface_ids: &BTreeMap<u32, Vec<u32>>,
+    available_features: &BTreeSet<IrFeatureId>,
+) -> Option<Vec<GeneratedFaceRef>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_surface_face_refs(ctx, source_ids, rows, result_surface_ids, available_features)
+    })
+    .expect("service profile admits generated surface references")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -783,7 +795,7 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     let result_surface_ids = BTreeMap::from([(97, vec![98]), (144, vec![145])]);
 
     assert_eq!(
-        generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
+        generated_surface_face_refs_with_service(&[98, 145], &rows, &result_surface_ids, &producers),
         Some(vec![
             GeneratedFaceRef::new(
                 IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
@@ -798,7 +810,7 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         ])
     );
     assert_eq!(
-        generated_surface_face_refs(
+        generated_surface_face_refs_with_service(
             &[98],
             &[row(98, 97), row(98, 97)],
             &result_surface_ids,
@@ -807,7 +819,7 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         None
     );
     assert_eq!(
-        generated_surface_face_refs(&[98], &rows, &result_surface_ids, &BTreeSet::new()),
+        generated_surface_face_refs_with_service(&[98], &rows, &result_surface_ids, &BTreeSet::new()),
         None
     );
 }
@@ -1154,7 +1166,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         ])
     );
     assert_eq!(
-        generated_surface_face_refs(
+        generated_surface_face_refs_with_service(
             &[61],
             &scan.surfaces.rows,
             &BTreeMap::from([(50, vec![61])]),

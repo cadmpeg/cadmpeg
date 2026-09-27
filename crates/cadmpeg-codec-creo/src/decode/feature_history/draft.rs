@@ -129,11 +129,12 @@ pub(super) fn thicken_feature_definition(
             {
                 FaceSelection::Resolved { faces, native }
             } else if let Some(faces) = generated_surface_face_refs(
+                ctx,
                 &source_ids,
                 &scan.surfaces.rows,
                 &result_surface_ids,
                 &available_features,
-            ) {
+            )? {
                 FaceSelection::generated(faces, native.clone())
                     .unwrap_or(FaceSelection::Native(native))
             } else {
@@ -302,10 +303,10 @@ pub(in super::super) fn schema_feature_definition(
             &scan.surfaces.rows,
         )?;
         let available_features = model_feature_ids(ctx, scan)?;
-        let face_selection = |surface_id| {
+        let face_selection = |surface_id| -> Result<FaceSelection, cadmpeg_core::CodecError> {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id);
-            if ir.model.faces.iter().any(|candidate| candidate.id == face) {
+            Ok(if ir.model.faces.iter().any(|candidate| candidate.id == face) {
                 FaceSelection::Resolved {
                     faces: vec![face],
                     native,
@@ -315,16 +316,17 @@ pub(in super::super) fn schema_feature_definition(
             {
                 FaceSelection::Native(native)
             } else if let Some(faces) = generated_surface_face_refs(
+                ctx,
                 &[surface_id],
                 &scan.surfaces.rows,
                 &result_surface_ids,
                 &available_features,
-            ) {
+            )? {
                 FaceSelection::generated(faces, native.clone())
                     .unwrap_or(FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
-            }
+            })
         };
         let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
@@ -385,6 +387,7 @@ pub(in super::super) fn schema_feature_definition(
                 )
             },
         );
+        let face = face.transpose()?;
         let drilled_dimensions =
             drilled_dimensions.filter(|(drilled_diameter, _, drilled_depth)| {
                 !simple_form
