@@ -1279,10 +1279,11 @@ pub(crate) fn join_nurbs_segments(
             );
             let gap = previous.distance(next);
             if gap > 0.0 {
-                warnings.push_coded(
+                warnings.push_coded_admitted(
+                    ctx,
                     crate::loss::RhinoLossCode::PolycurveJoinGap,
-                    format!("polycurve join moved endpoints by half of gap {gap}"),
-                );
+                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                )?;
             }
             let Some(previous) = control_points.last_mut() else {
                 return Err(error(offset, "polycurve join has no previous endpoint"));
@@ -1565,10 +1566,11 @@ fn read_cloud(
     if minor >= 1 {
         let normal_count = crate::wire::element_count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
-            warnings.push_coded(
+            warnings.push_coded_admitted(
+                ctx,
                 crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                "redundant point-cloud normal count mismatch; channel dropped",
-            );
+                format_args!("redundant point-cloud normal count mismatch; channel dropped"),
+            )?;
         }
         for _ in 0..normal_count {
             crate::settings::vector(reader)?;
@@ -1578,10 +1580,11 @@ fn read_cloud(
             reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
-            warnings.push_coded(
+            warnings.push_coded_admitted(
+                ctx,
                 crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                "redundant point-cloud color count mismatch; channel dropped",
-            );
+                format_args!("redundant point-cloud color count mismatch; channel dropped"),
+            )?;
         }
     }
     if minor >= 2 {
@@ -1594,10 +1597,11 @@ fn read_cloud(
             }
         }
         if value_count != 0 && value_count != point_count {
-            warnings.push_coded(
+            warnings.push_coded_admitted(
+                ctx,
                 crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                "redundant point-cloud scalar count mismatch; channel dropped",
-            );
+                format_args!("redundant point-cloud scalar count mismatch; channel dropped"),
+            )?;
         }
     }
     if point_count == 0 {
@@ -1735,7 +1739,10 @@ fn read_arc(
         return Err(error(reader.position(), "arc dimension is invalid"));
     }
     if dimension != 2 && dimension != 3 {
-        warnings.push(format!("arc dimension {dimension} normalized to native 3D"));
+        warnings.push_admitted(
+            ctx,
+            format_args!("arc dimension {dimension} normalized to native 3D"),
+        )?;
     }
     if domain[0] >= domain[1] || angle[0] >= angle[1] {
         return Err(error(reader.position(), "arc interval is not increasing"));
@@ -2726,6 +2733,21 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn point_cloud_channel_diagnostic_refuses_collection_limit() {
+        let payload = mismatched_point_cloud_payload();
+        let refusal = with_collection_limit(2, |ctx| {
+            let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+            super::read_cloud(ctx, &mut reader, MillimeterScale::IDENTITY)
+                .expect_err("the first channel diagnostic exceeds two collection items")
+        });
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
     }
 
     #[test]
