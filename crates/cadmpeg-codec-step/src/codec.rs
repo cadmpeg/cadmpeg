@@ -836,6 +836,53 @@ mod tests {
     }
 
     #[test]
+    fn inspect_zip_logical_sections_refuse_retained_limit() {
+        use std::io::Write as _;
+
+        const ROOT: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "ISO-10303.p21",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .expect("start ZIP root");
+        writer.write_all(ROOT).expect("write ZIP root");
+        let bytes = writer.finish().expect("finish STEP ZIP").into_inner();
+
+        let mut limit = 0u64;
+        for _ in 0..1024 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("ZIP root fits retained policy");
+            match super::inspect_zip(&ctx, root) {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == "step_inspect_logical_sections" =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("retained requirement fits u64");
+                    assert!(next > limit, "retained limit must advance");
+                    limit = next;
+                }
+                Ok(_) => panic!("ZIP inspection completed before logical-section refusal"),
+                Err(error) => panic!("ZIP inspection did not reach logical sections: {error}"),
+            }
+        }
+        panic!("ZIP inspection never reached logical sections");
+    }
+
+    #[test]
     fn detects_magic_after_ignored_controls_and_inside_token() {
         let source = b"\0 /* leading comment */ \\N\\ ISO-10303-\n21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
         let codec = StepCodec::default();
