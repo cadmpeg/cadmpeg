@@ -195,7 +195,7 @@ pub(crate) fn decode(
             continue;
         }
         let Some((bulletin_boards, body_end)) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)
+            decode_bulletin_boards(ctx, bytes, position + 1, stream, offset, &state_record_id, width)?
         else {
             return Ok(None);
         };
@@ -212,14 +212,7 @@ pub(crate) fn decode(
         states.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("admit F3D ASM delta state", 0, 1)
         })?;
-        let history_id_len = u64::try_from(history_id.len())
-            .map_err(|_| ctx.refuse_codec_limit("copy F3D ASM history parent", 0, u64::MAX))?;
-        ctx.charge_retained(history_id_len, "copy F3D ASM history parent")?;
-        let mut parent = String::new();
-        parent.try_reserve(history_id.len()).map_err(|_| {
-            ctx.refuse_codec_limit("copy F3D ASM history parent", 0, history_id_len)
-        })?;
-        parent.push_str(&history_id);
+        let parent = copy_history_string(ctx, &history_id, "copy F3D ASM history parent")?;
         states.push(AsmDeltaState {
             id: state_record_id,
             parent,
@@ -9262,70 +9255,111 @@ fn materialize_record_table(
 }
 
 fn decode_bulletin_boards(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     mut position: usize,
     stream: &str,
     state_offset: usize,
     state_id: &str,
     width: RefWidth,
-) -> Option<(Vec<AsmBulletinBoard>, usize)> {
+) -> Result<Option<(Vec<AsmBulletinBoard>, usize)>, cadmpeg_core::CodecError> {
     if bytes.get(position) == Some(&0x11) {
-        return Some((Vec::new(), position));
+        return Ok(Some((Vec::new(), position)));
     }
     let mut boards = Vec::new();
     loop {
         let board_offset = position;
-        let present = take_int(bytes, &mut position, 0x04, width)?;
+        let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
+            return Ok(None);
+        };
         if present == 0 {
             break;
         }
-        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
-        let number = take_int(bytes, &mut position, 0x04, width)?;
-        let board_id = crate::ids::native_scoped_id(
+        let Some(owner_ref) = take_int(bytes, &mut position, 0x0c, width) else {
+            return Ok(None);
+        };
+        let Some(number) = take_int(bytes, &mut position, 0x04, width) else {
+            return Ok(None);
+        };
+        let board_id = crate::ids::native_scoped_id_charged(
+            ctx,
             stream,
             "asm-bulletin-board",
             format_args!("{state_offset:010}:{:06}", boards.len()),
-        );
+        )?;
         let mut changes = Vec::new();
         loop {
             let change_offset = position;
-            let present = take_int(bytes, &mut position, 0x04, width)?;
+            let Some(present) = take_int(bytes, &mut position, 0x04, width) else {
+                return Ok(None);
+            };
             if present == 0 {
                 break;
             }
-            let old = take_int(bytes, &mut position, 0x0c, width)?;
-            let new = take_int(bytes, &mut position, 0x0c, width)?;
+            let Some(old) = take_int(bytes, &mut position, 0x0c, width) else {
+                return Ok(None);
+            };
+            let Some(new) = take_int(bytes, &mut position, 0x0c, width) else {
+                return Ok(None);
+            };
             let kind = match (old >= 0, new >= 0) {
                 (false, true) => AsmEntityChangeKind::Insert { new },
                 (true, false) => AsmEntityChangeKind::Delete { old },
                 (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return None,
+                (false, false) => return Ok(None),
             };
-            changes.push(AsmEntityChange {
-                id: crate::ids::native_scoped_id(
-                    stream,
-                    "asm-entity-change",
-                    format_args!(
-                        "{state_offset:010}:{:06}:{:06}",
-                        boards.len(),
-                        changes.len()
-                    ),
+            ctx.charge_collection_items(1, "admit F3D ASM entity change")?;
+            changes.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("admit F3D ASM entity change", 0, 1)
+            })?;
+            let change_id = crate::ids::native_scoped_id_charged(
+                ctx,
+                stream,
+                "asm-entity-change",
+                format_args!(
+                    "{state_offset:010}:{:06}:{:06}",
+                    boards.len(),
+                    changes.len()
                 ),
-                parent: board_id.clone(),
+            )?;
+            let parent = copy_history_string(ctx, &board_id, "copy F3D ASM change parent")?;
+            changes.push(AsmEntityChange {
+                id: change_id,
+                parent,
                 byte_offset: change_offset as u64,
                 kind,
             });
         }
+        ctx.charge_collection_items(1, "admit F3D ASM bulletin board")?;
+        boards.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("admit F3D ASM bulletin board", 0, 1)
+        })?;
+        let parent = copy_history_string(ctx, state_id, "copy F3D ASM board parent")?;
         boards.push(AsmBulletinBoard {
             id: board_id,
-            parent: state_id.to_string(),
+            parent,
             byte_offset: board_offset as u64,
             owner_ref,
             number,
             changes,
         });
     }
-    Some((boards, position))
+    Ok(Some((boards, position)))
+}
+
+fn copy_history_string(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let length = u64::try_from(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    copy.push_str(source);
+    Ok(copy)
 }
 
 fn decode_history_records(
