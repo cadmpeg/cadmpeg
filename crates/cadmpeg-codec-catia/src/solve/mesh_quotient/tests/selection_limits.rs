@@ -66,7 +66,8 @@ fn mesh_selection_orientation_refuses_constraint_collection_limit() {
             reversed: None,
         }]],
     }]];
-    let equations = possible_face_equations(&assignments);
+    let equations =
+        possible_face_equations(&service_ctx, &assignments).expect("service resource budget");
     let run = |ctx: &DecodeContext<'_>| {
         let search = MeshSelectionSearch {
             ctx,
@@ -135,7 +136,8 @@ fn mesh_selection_completion_refuses_collection_limit() {
             reversed: Some(false),
         }]],
     }]];
-    let equations = possible_face_equations(&assignments);
+    let equations =
+        possible_face_equations(&service_ctx, &assignments).expect("service resource budget");
     let mut search = MeshSelectionSearch {
         ctx: &service_ctx,
         assignments: &assignments,
