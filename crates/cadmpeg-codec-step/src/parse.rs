@@ -70,7 +70,7 @@ pub(crate) struct PartialRecord {
 }
 
 pub(crate) mod partials {
-    use super::PartialRecord;
+    use super::{DecodeContext, ParseError, PartialRecord};
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
@@ -78,13 +78,27 @@ pub(crate) mod partials {
 
     impl RecordPartials {
         /// Builds the population of one simple entity instance.
+        #[cfg(test)]
         pub(crate) fn single(first: PartialRecord) -> Self {
             Self(vec![first])
         }
 
+        pub(super) fn single_charged(
+            first: PartialRecord,
+            budget: Option<&DecodeContext<'_>>,
+        ) -> Result<Self, ParseError> {
+            let mut records = Vec::new();
+            super::push_charged(budget, &mut records, first, "step_parse_record_partials")?;
+            Ok(Self(records))
+        }
+
         /// Append a partial without changing the nonempty population invariant.
-        pub(super) fn push(&mut self, partial: PartialRecord) {
-            self.0.push(partial);
+        pub(super) fn push_charged(
+            &mut self,
+            partial: PartialRecord,
+            budget: Option<&DecodeContext<'_>>,
+        ) -> Result<(), ParseError> {
+            super::push_charged(budget, &mut self.0, partial, "step_parse_record_partials")
         }
 
         /// Compact retained storage and report its allocation charge.
@@ -723,12 +737,25 @@ impl Parser<'_, '_, '_> {
             Err(message) => return self.err(message),
         };
         let implementation_level = header_admission.implementation_level.level();
-        self.diagnostics.extend(header_diagnostic);
-        self.diagnostics
-            .extend(schema_object_identifier_diagnostics(
-                &header_admission.schema_identifiers,
-                header[2].offset,
-            ));
+        if let Some(diagnostic) = header_diagnostic {
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                diagnostic,
+                "step_parse_diagnostics",
+            )?;
+        }
+        for diagnostic in schema_object_identifier_diagnostics(
+            &header_admission.schema_identifiers,
+            header[2].offset,
+        ) {
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                diagnostic,
+                "step_parse_diagnostics",
+            )?;
+        }
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
         let header_data_references = match validate_header_sections(
@@ -775,12 +802,22 @@ impl Parser<'_, '_, '_> {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    tags.push(AnchorTag { name, value });
+                    push_charged(
+                        self.budget,
+                        &mut tags,
+                        AnchorTag { name, value },
+                        "step_parse_anchor_tags",
+                    )?;
                 }
                 tags.shrink_to_fit();
                 self.charge_vec_storage(&tags, "step_anchor_tag_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
-                anchors.push(AnchorEntry { name, value, tags });
+                push_charged(
+                    self.budget,
+                    &mut anchors,
+                    AnchorEntry { name, value, tags },
+                    "step_parse_anchors",
+                )?;
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -821,7 +858,12 @@ impl Parser<'_, '_, '_> {
                 };
                 self.charge_string_storage(&uri, "step_parse_reference_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
-                reference_entries.push(ReferenceEntry { name, uri });
+                push_charged(
+                    self.budget,
+                    &mut reference_entries,
+                    ReferenceEntry { name, uri },
+                    "step_parse_reference_entries",
+                )?;
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -873,16 +915,21 @@ impl Parser<'_, '_, '_> {
                 if records.insert(id, record).is_some() {
                     return self.err("duplicate instance name");
                 }
-                ids.push(id);
+                push_charged(self.budget, &mut ids, id, "step_parse_section_ids")?;
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
             ids.shrink_to_fit();
             self.charge_vec_storage(&ids, "step_parse_section_storage")?;
-            data.push(DataSection {
-                parameters,
-                records: ids,
-            });
+            push_charged(
+                self.budget,
+                &mut data,
+                DataSection {
+                    parameters,
+                    records: ids,
+                },
+                "step_parse_data_sections",
+            )?;
         }
         if !implementation_level.is_edition3() && data.is_empty() {
             return self.err("historical implementation levels require one DATA section");
@@ -924,7 +971,12 @@ impl Parser<'_, '_, '_> {
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
             crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)?;
-            signatures.push(span);
+            push_charged(
+                self.budget,
+                &mut signatures,
+                span,
+                "step_parse_signature_spans",
+            )?;
         }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
@@ -1026,7 +1078,7 @@ impl Parser<'_, '_, '_> {
         for anchor in &anchors {
             refs.clear();
             value_refs.clear();
-            references(&anchor.value, &mut refs, &mut value_refs);
+            references(&anchor.value, &mut refs, &mut value_refs, self.budget)?;
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1042,7 +1094,7 @@ impl Parser<'_, '_, '_> {
             for tag in &anchor.tags {
                 refs.clear();
                 value_refs.clear();
-                references(&tag.value, &mut refs, &mut value_refs);
+                references(&tag.value, &mut refs, &mut value_refs, self.budget)?;
                 if refs
                     .iter()
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1062,7 +1114,7 @@ impl Parser<'_, '_, '_> {
             value_refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    references(value, &mut refs, &mut value_refs);
+                    references(value, &mut refs, &mut value_refs, self.budget)?;
                 }
             }
             if refs
@@ -1094,13 +1146,18 @@ impl Parser<'_, '_, '_> {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
         if let Some((offset, count)) = self.omitted_entity_names {
-            self.diagnostics.push(ParseDiagnostic {
-                offset,
-                kind: ParseDiagnosticKind::OmittedEntityName,
-                message: format!(
-                    "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
-                ),
-            });
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                ParseDiagnostic {
+                    offset,
+                    kind: ParseDiagnosticKind::OmittedEntityName,
+                    message: format!(
+                        "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
+                    ),
+                },
+                "step_parse_diagnostics",
+            )?;
         }
         for capacity in [
             compact_vec(&mut header),
@@ -1136,9 +1193,11 @@ impl Parser<'_, '_, '_> {
         self.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = partials::RecordPartials::single(self.partial()?);
+            let first = self.partial()?;
+            let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
             while !self.peek(&TokenKind::RParen) {
-                parts.push(self.partial()?);
+                let partial = self.partial()?;
+                parts.push_charged(partial, self.budget)?;
             }
             self.next_kind()?;
             let mut canonical_names = parts
@@ -1161,18 +1220,24 @@ impl Parser<'_, '_, '_> {
                     .map(|part| part.name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                self.diagnostics.push(ParseDiagnostic {
-                    offset: start,
-                    kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
-                    message: format!(
-                        "complex partial records are not alphabetical: observed ({observed}), expected ({})",
-                        canonical_names.join(", ")
-                    ),
-                });
+                push_charged(
+                    self.budget,
+                    &mut self.diagnostics,
+                    ParseDiagnostic {
+                        offset: start,
+                        kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
+                        message: format!(
+                            "complex partial records are not alphabetical: observed ({observed}), expected ({})",
+                            canonical_names.join(", ")
+                        ),
+                    },
+                    "step_parse_diagnostics",
+                )?;
             }
             parts
         } else {
-            partials::RecordPartials::single(self.partial()?)
+            let first = self.partial()?;
+            partials::RecordPartials::single_charged(first, self.budget)?
         };
         self.charge_retained(partials.compact_storage(), "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -1220,8 +1285,8 @@ impl Parser<'_, '_, '_> {
             return Ok(values);
         }
         loop {
-            self.charge_collection_items(1, "step_parse_parameter")?;
-            values.push(self.value()?);
+            let value = self.value()?;
+            push_charged(self.budget, &mut values, value, "step_parse_parameter")?;
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -1342,15 +1407,6 @@ impl Parser<'_, '_, '_> {
     fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), ParseError> {
         self.budget
             .map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
-            .map_err(ParseError::Resource)
-    }
-    fn charge_collection_items(
-        &self,
-        count: u64,
-        operation: &'static str,
-    ) -> Result<(), ParseError> {
-        self.budget
-            .map_or(Ok(()), |ctx| ctx.charge_collection_items(count, operation))
             .map_err(ParseError::Resource)
     }
     fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), ParseError> {
@@ -1586,10 +1642,10 @@ fn validate_header(
 fn schema_object_identifier_diagnostics(
     admitted: &[AdmittedSchemaIdentifier],
     offset: usize,
-) -> Vec<ParseDiagnostic> {
+) -> impl Iterator<Item = ParseDiagnostic> + '_ {
     admitted
         .iter()
-        .filter_map(|identifier| match identifier {
+        .filter_map(move |identifier| match identifier {
             AdmittedSchemaIdentifier::Valid { .. } => None,
             AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
                 name, component, ..
@@ -1601,7 +1657,6 @@ fn schema_object_identifier_diagnostics(
                 ),
             }),
         })
-        .collect()
 }
 
 enum HeaderDataReferences {
@@ -2268,7 +2323,17 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 )?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
-                let mut resolved = Vec::with_capacity(values.len());
+                let mut resolved = Vec::new();
+                resolved.try_reserve_exact(values.len()).map_err(|_| {
+                    ResolveError::Resource(match self.budget {
+                        Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
+                        None => cadmpeg_core::decode::refuse_local_limit(
+                            "step_anchor_list_items",
+                            0,
+                            1,
+                        ),
+                    })
+                })?;
                 for value in values {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
@@ -2398,11 +2463,21 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
                     .ok_or("reference list storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
-                values
-                    .iter()
-                    .map(|value| self.resolve_value(value, depth + 1))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Value::List)
+                let mut resolved = Vec::new();
+                resolved.try_reserve_exact(values.len()).map_err(|_| {
+                    ResolveError::Resource(match self.budget {
+                        Some(ctx) => ctx.refuse_codec_limit("step_reference_list_items", 0, 1),
+                        None => cadmpeg_core::decode::refuse_local_limit(
+                            "step_reference_list_items",
+                            0,
+                            1,
+                        ),
+                    })
+                })?;
+                for value in values {
+                    resolved.push(self.resolve_value(value, depth + 1)?);
+                }
+                Ok(Value::List(resolved))
             }
             Value::Typed(name, value) => {
                 let resolved = self.resolve_value(value, depth + 1)?;
@@ -2583,17 +2658,34 @@ fn value_node_count(
     Ok(limit - remaining)
 }
 
-fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>) {
-    let mut pending = vec![value];
+fn references<'a>(
+    value: &'a Value,
+    entity_out: &mut Vec<u64>,
+    value_out: &mut Vec<u64>,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(), ParseError> {
+    let mut pending = Vec::new();
+    push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
     while let Some(value) = pending.pop() {
         match value {
-            Value::Reference(id) => entity_out.push(*id),
-            Value::ValueReference(id) => value_out.push(*id),
-            Value::List(values) => pending.extend(values.iter().rev()),
-            Value::Typed(_, value) => pending.push(value),
+            Value::Reference(id) => {
+                push_charged(budget, entity_out, *id, "step_parse_reference_ids")?;
+            }
+            Value::ValueReference(id) => {
+                push_charged(budget, value_out, *id, "step_parse_value_reference_ids")?;
+            }
+            Value::List(values) => {
+                for child in values.iter().rev() {
+                    push_charged(budget, &mut pending, child, "step_parse_reference_pending")?;
+                }
+            }
+            Value::Typed(_, value) => {
+                push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
+            }
             _ => {}
         }
     }
+    Ok(())
 }
 
 fn contains_class3_occurrence(value: &Value) -> bool {
