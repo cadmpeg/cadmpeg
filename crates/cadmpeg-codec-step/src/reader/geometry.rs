@@ -2149,23 +2149,22 @@ pub(super) fn decode(
             insert_geometry_hash(&mut carrier_index.surfaces, surface_step, surface_index, ctx, "step_geometry_surface_index")?;
         }
     }
-    let surface_parameter_scales = ir
-        .model
-        .surfaces
-        .iter()
-        .filter_map(|surface| {
-            let id = step_instance_id(surface.id.as_str())?;
-            let scales = surface_parameter_scales_for_step(
+    let mut surface_parameter_scales = BTreeMap::new();
+    for surface in &ir.model.surfaces {
+        let Some(id) = step_instance_id(surface.id.as_str()) else {
+            continue;
+        };
+        if let Some(scales) = surface_parameter_scales_for_step(
                 ir,
                 &surface.id,
                 &surface.geometry,
                 unit_scales.length([id]).get(),
                 unit_scales.angle([id]).get(),
                 &source_curve_parameter_scales,
-            )?;
-            Some((id, scales))
-        })
-        .collect::<BTreeMap<_, _>>();
+            ) {
+            insert_geometry_map(&mut surface_parameter_scales, id, scales, ctx, "step_surface_parameter_scales")?;
+        }
+    }
     for (id, record) in exchange.entities("PCURVE") {
         if record.partial("PCURVE").is_none() {
             continue;
@@ -2178,19 +2177,18 @@ pub(super) fn decode(
             .and_then(representation_items)
             .into_iter()
             .flatten();
-        let decoded = curve_steps
-            .filter_map(|curve| {
-                pcurve_geometries
-                    .get(&curve)
-                    .map(|decoded| (curve, decoded))
-            })
-            .collect::<Vec<_>>();
+        let mut decoded = None;
+        let mut decoded_count = 0;
+        for curve in curve_steps {
+            if let Some(geometry) = pcurve_geometries.get(&curve) {
+                decoded = Some((curve, geometry));
+                decoded_count += 1;
+            }
+        }
+        let decoded = if decoded_count == 1 { decoded } else { None };
         let Some((curve_step, (geometry, geometry_records))) = surface_step
             .filter(|surface| carrier_index.surfaces.contains_key(surface))
-            .and(match decoded.as_slice() {
-                [decoded] => Some(*decoded),
-                _ => None,
-            })
+            .and(decoded)
         else {
             push_geometry_vec(&mut losses,
                 StepLossCode::DecodeWarning
@@ -2232,12 +2230,12 @@ pub(super) fn decode(
     // Curve-bounded surfaces resolve before the PCURVE pass because their 3D
     // boundaries do not depend on parameter-space geometry. Remove candidate
     // references whose pcurve carrier did not decode.
-    let decoded_pcurve_steps = ir
-        .model
-        .pcurves
-        .iter()
-        .filter_map(|pcurve| step_instance_id(pcurve.id.as_str()))
-        .collect::<BTreeSet<_>>();
+    let mut decoded_pcurve_steps = BTreeSet::new();
+    for pcurve in &ir.model.pcurves {
+        if let Some(id) = step_instance_id(pcurve.id.as_str()) {
+            insert_geometry_set(&mut decoded_pcurve_steps, id, ctx, "step_decoded_pcurve_steps")?;
+        }
+    }
     for surface in &mut ir.model.procedural_surfaces {
         surface.edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CurveBounded {
