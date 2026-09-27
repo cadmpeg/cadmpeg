@@ -363,7 +363,10 @@ impl<'a> Builder<'a> {
             }
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
+                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id(
+                        "tessellation", &self.payload.id, index.to_string(),
+                    ))
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         triangulation.nodes().to_vec(),
                         triangulation.triangles().to_vec(),
@@ -924,11 +927,12 @@ impl<'a> Builder<'a> {
                 .transpose()?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id(
+                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id(
                         "tessellation",
                         &self.payload.id,
                         format!("{index}@{face_key}"),
-                    ),
+                    ))
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,

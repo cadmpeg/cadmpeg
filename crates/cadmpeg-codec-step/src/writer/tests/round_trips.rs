@@ -841,7 +841,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.tessellations.push(
         Tessellation::new(
-            "synthetic:test:tessellation#mesh-0",
+            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh-0").expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 vec![
                     Point3::new(0.0, 0.0, 0.0),

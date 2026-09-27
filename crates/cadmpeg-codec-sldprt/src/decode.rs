@@ -2886,7 +2886,12 @@ fn build_geometry_ir(
             let mesh = display_face.mesh;
             ir.model
                 .tessellations
-                .push(mesh.into_tessellation(id).map_err(|error| {
+                .push(mesh.into_tessellation(
+                    cadmpeg_ir::tessellation::TessellationId::mint(id)
+                        .map_err(|error| CodecError::malformed(format_args!(
+                            "invalid display tessellation: {error}"
+                        )))?,
+                ).map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                 })?);
         }

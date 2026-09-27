@@ -1647,6 +1647,32 @@ fn embedded_subd_diagnostics_stream_without_message_vector() {
 }
 
 #[test]
+fn embedded_history_mesh_keeps_geometry_and_checked_identity() {
+    let bytes = crate::test_support::test_dump::mesh_payload();
+    let geometry = EmbeddedGeometry {
+        class_id: crate::mesh::ON_MESH,
+        class_data_range: 0..bytes.len(),
+        userdata: Vec::new(),
+    };
+    let text = crate::decode::with_expand_bytes(&bytes, |expand| {
+        extended_geometry_json(
+            expand,
+            &geometry,
+            ArchiveVersion::V5,
+            None,
+            MillimeterScale::IDENTITY,
+            &mut Diagnostics::new(),
+            &mut None,
+        )
+    })
+    .expect("embedded mesh geometry");
+    let json: serde_json::Value = serde_json::from_str(&text).expect("mesh JSON");
+    assert_eq!(json["id"], "rhino:history:mesh#embedded");
+    assert_eq!(json["kind"], "mesh");
+    assert!(json["vertices"].as_array().is_some_and(|vertices| !vertices.is_empty()));
+}
+
+#[test]
 fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
     let bytes = crate::test_support::test_dump::mesh_payload();
     let mesh = crate::decode::with_expand_bytes(&bytes, |expand| {
@@ -1658,7 +1684,7 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
             crate::mesh::MeshDecodeOptions {
                 writer_version: None,
                 association: None,
-                id: "rhino:history:mesh#embedded".to_string().into(),
+                id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("rhino:history:mesh#embedded").expect("valid identity")),
                 scale: MillimeterScale::IDENTITY,
                 userdata: &[],
             },
@@ -1667,6 +1693,7 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
     })
     .expect("valid embedded mesh");
     let baseline = serde_json::json!({
+        "id": "rhino:history:mesh#embedded",
         "kind": "mesh",
         "vertices": mesh.tessellation.vertices(),
         "triangles": mesh.tessellation.triangles(),

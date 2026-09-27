@@ -14,7 +14,7 @@ use crate::scalar::NonNegativeReal;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
-    TessellationId, into_string
+    TessellationId, compose, into_string
 );
 
 /// Admission error in a tessellation mesh or channel carrier.

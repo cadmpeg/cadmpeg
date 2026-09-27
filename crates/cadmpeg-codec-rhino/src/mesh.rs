@@ -207,31 +207,34 @@ pub(crate) struct MeshDecodeOptions<'a> {
 }
 
 pub(crate) enum MeshId {
-    Ready(String),
+    Ready(cadmpeg_ir::tessellation::TessellationId),
     ExtrusionCache(usize),
     V5ExtrusionCache(usize),
 }
 
-impl From<String> for MeshId {
-    fn from(id: String) -> Self {
-        Self::Ready(id)
-    }
-}
-
 impl MeshId {
-    fn into_string(self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+    fn into_string(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
         match self {
             Self::Ready(id) => Ok(id),
-            Self::ExtrusionCache(index) => crate::wire::admitted_format(
-                ctx,
-                format_args!("rhino:extrusion:mesh-cache#{index}"),
-                "Rhino extrusion mesh-cache ID",
-            ),
-            Self::V5ExtrusionCache(index) => crate::wire::admitted_format(
-                ctx,
-                format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
-                "Rhino V5 extrusion mesh-cache ID",
-            ),
+            Self::ExtrusionCache(index) => cadmpeg_ir::tessellation::TessellationId::mint(
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:extrusion:mesh-cache#{index}"),
+                    "Rhino extrusion mesh-cache ID",
+                )?,
+            )
+            .map_err(|error| CodecError::Malformed(error.to_string())),
+            Self::V5ExtrusionCache(index) => cadmpeg_ir::tessellation::TessellationId::mint(
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
+                    "Rhino V5 extrusion mesh-cache ID",
+                )?,
+            )
+            .map_err(|error| CodecError::Malformed(error.to_string())),
         }
     }
 }
@@ -2039,9 +2042,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#admitted-lanes"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#admitted-lanes").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2073,9 +2074,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#scaled-limit"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#scaled-limit").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2107,9 +2106,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#legacy-minor-five"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#legacy-minor-five").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2139,7 +2136,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v5-double".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v5-double").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2173,9 +2170,7 @@ mod tests {
                     MeshDecodeOptions {
                         writer_version: None,
                         association: None,
-                        id: "synthetic:test:tessellation#v5-double-limit"
-                            .to_string()
-                            .into(),
+                        id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v5-double-limit").expect("valid identity")),
                         scale: MillimeterScale::IDENTITY,
                         userdata: std::slice::from_ref(&descriptor),
                     },
@@ -2208,9 +2203,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v5-double-mismatch"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v5-double-mismatch").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2247,7 +2240,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2311,9 +2304,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-later"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon-later").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2346,9 +2337,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-old"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon-old").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2381,9 +2370,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-invalid"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon-invalid").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2420,9 +2407,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-bad-index"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon-bad-index").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2461,9 +2446,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#v4v5-ngon-crc"
-                        .to_string()
-                        .into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#v4v5-ngon-crc").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
@@ -2736,7 +2719,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#first".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#first").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2751,7 +2734,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "synthetic:test:tessellation#second".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#second").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
@@ -2929,7 +2912,7 @@ mod tests {
                 MeshDecodeOptions {
                     writer_version: None,
                     association: None,
-                    id: "test".to_string().into(),
+                    id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#future-v5-minor").expect("valid identity")),
                     scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
