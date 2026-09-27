@@ -315,7 +315,9 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         let marker = bulk.len();
         binding(&mut bulk, 17, reserved_len, CONTEXT_UUID);
         let decoded = with_scan(&archive(&bulk), |scan| {
-            crate::design::decode::meta::decode_component_naming_spaces(scan)
+            crate::design::decode::meta::decode_component_naming_spaces(
+                &cadmpeg_test_support::service_decode_context(), scan
+            )
         })
         .expect("component naming space");
         let [space] = decoded.as_slice() else {
@@ -334,7 +336,9 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     let typed_marker = typed.len();
     typed_binding(&mut typed, 17, CONTEXT_UUID);
     let decoded = with_scan(&archive(&typed), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(scan)
+        crate::design::decode::meta::decode_component_naming_spaces(
+                &cadmpeg_test_support::service_decode_context(), scan
+            )
     })
     .expect("typed component naming space");
     let [space] = decoded.as_slice() else {
@@ -353,7 +357,9 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     );
     typed_binding(&mut overlapping_reference, 17, CONTEXT_UUID);
     let decoded = with_scan(&archive(&overlapping_reference), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(scan)
+        crate::design::decode::meta::decode_component_naming_spaces(
+                &cadmpeg_test_support::service_decode_context(), scan
+            )
     })
     .expect("typed binding beside an overlapping 01 01 reference");
     let [space] = decoded.as_slice() else {
@@ -370,10 +376,83 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
     );
     let error = with_scan(&archive(&conflicting), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(scan)
+        crate::design::decode::meta::decode_component_naming_spaces(
+                &cadmpeg_test_support::service_decode_context(), scan
+            )
     })
     .expect_err("conflicting component UUIDs must be rejected");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn component_naming_space_refuses_each_collection_and_id_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let context_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let meta = design_metastream_with_records(
+        &[(
+            "11111111-2222-3333-4444-555555555555",
+            "21F379C8-CAFD-4985-B461-767673A4C502",
+            0,
+            "Component",
+            &[17],
+        )],
+        &[],
+    );
+    let mut bulk = vec![0xaa, 0xbb, 1];
+    bulk.extend_from_slice(&17_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    crate::test_support::lp_utf16(&mut bulk, context_uuid);
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(bulk_name, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    for (allowance, operation) in [
+        (0, "f3d component naming registered entities"),
+        (1, "f3d component naming spaces by entity"),
+        (2, "f3d component naming spaces output"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_component_naming_spaces(&ctx, scan))
+            .err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    let prefix_len = crate::ids::native_scope(bulk_name).len() as u64;
+    let suffix_len = ":design-component-naming-space#2".len() as u64;
+    for (allowance, operation) in [
+        (prefix_len - 1, "f3d native stream key"),
+        (prefix_len + suffix_len - 1, "f3d component naming space id suffix"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_component_naming_spaces(&ctx, scan))
+            .err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let spaces = with_scan(&archive, |scan| super::decode_component_naming_spaces(&ctx, scan))
+        .unwrap();
+    assert_eq!(spaces.len(), 1);
+    assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
+    assert_eq!(spaces[0].id, crate::ids::native_design_component_naming_space_id(bulk_name, 2));
 }
 
 #[test]
