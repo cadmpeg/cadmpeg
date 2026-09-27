@@ -2870,6 +2870,7 @@ impl<'a> F3dDecodeSession<'a> {
             .occurrences
             .extend(unresolved_component_inserts);
         self.ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
+            Some(self.ctx),
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
             &self.ir.model.features,
