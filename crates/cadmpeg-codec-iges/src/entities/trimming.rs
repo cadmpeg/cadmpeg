@@ -931,7 +931,7 @@ fn linear_boundary_geometry(
     }) {
         return Ok(None);
     }
-    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane) else {
+    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane, ctx)? else {
         return Ok(None);
     };
     if surface_kind == BoundarySurfaceKind::Trimmed

@@ -83,8 +83,11 @@ pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2];
 pub(super) fn plane_coordinates(
     points: &[Point3],
     plane: (Point3, Vector3),
-) -> Option<Vec<[f64; 2]>> {
-    let normal = plane.1.unit()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+    let Some(normal) = plane.1.unit() else {
+        return Ok(None);
+    };
     let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
         Vector3::new(1.0, 0.0, 0.0)
     } else if normal.y.abs() <= normal.z.abs() {
@@ -92,20 +95,24 @@ pub(super) fn plane_coordinates(
     } else {
         Vector3::new(0.0, 0.0, 1.0)
     };
-    let u_axis = normal.cross(reference).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    let coordinates = points
-        .iter()
-        .map(|point| {
+    let Some(u_axis) = normal.cross(reference).unit() else {
+        return Ok(None);
+    };
+    let Some(v_axis) = normal.cross(u_axis).unit() else {
+        return Ok(None);
+    };
+    let coordinates = crate::decode_resource::collect_result_vec(
+        ctx, points.len(), "iges plane coordinates", |index| {
+            let point = points[index];
             let displacement = point.vector_from(plane.0);
-            [displacement.dot(u_axis), displacement.dot(v_axis)]
-        })
-        .collect::<Vec<_>>();
-    coordinates
+            Ok([displacement.dot(u_axis), displacement.dot(v_axis)])
+        },
+    )?;
+    Ok(coordinates
         .iter()
         .flatten()
         .all(|coordinate| coordinate.is_finite())
-        .then_some(coordinates)
+        .then_some(coordinates))
 }
 
 pub(super) fn linear_nurbs_parameters(
