@@ -823,24 +823,33 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
     }
     assert!(refused_forced_corner, "no forced-corner collection refusal");
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let budget = WorkBudget::new(1_000);
-    let mut quotient = initial_quotient.clone();
-    let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
-        &ctx,
-        &domains,
-        &edge_candidates,
-        &mut quotient,
-        &budget,
-    )
-    .expect_err("direction options exceed the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_boundary_direction_options"));
+    let mut ordered_refusals = HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(1_000);
+        let mut quotient = initial_quotient.clone();
+        match crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+            &ctx,
+            &domains,
+            &edge_candidates,
+            &mut quotient,
+            &budget,
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                ordered_refusals.insert(error.operation);
+            }
+            Ok(Some(())) => break,
+            Ok(None) => panic!("closed corner cycle must propagate"),
+            Err(error) => panic!("unexpected ordered propagation refusal: {error}"),
+        }
+    }
+    assert!(ordered_refusals.contains("catia_ordered_face_order"));
+    assert!(ordered_refusals.contains("catia_boundary_direction_options"));
 }
 
 #[test]

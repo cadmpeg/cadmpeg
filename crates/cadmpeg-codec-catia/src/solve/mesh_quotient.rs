@@ -4353,7 +4353,13 @@ pub(super) fn propagate_common_ordered_face_quotients(
         const MAX_FACE_OPTIONS: usize = 4_096;
         const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
         const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
-        let mut face_order = (0..domains.len()).collect::<Vec<_>>();
+        let mut face_order = match ctx.alloc_filled(domains.len(), 0usize, "catia_ordered_face_order") {
+            Ok(order) => order,
+            Err(error) => return Some(Err(error)),
+        };
+        for (face, slot) in face_order.iter_mut().enumerate() {
+            *slot = face;
+        }
         face_order.sort_unstable_by_key(|face| match &domains[*face] {
             MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
             MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
@@ -5321,11 +5327,27 @@ fn edge_class_search_constraint(
             }
             active[left] = true;
             active[right] = true;
-            ctx.charge_collection_items(1, "catia_edge_class_ordered_pairs")?;
-            ordered.push((left, right));
+            crate::resource::push(ctx, &mut ordered, (left, right), "catia_edge_class_ordered_pairs")?;
         }
     }
     Ok(Some(EdgeClassSearchConstraint { active, ordered }))
+}
+
+#[test]
+fn edge_class_ordered_pairs_refuse_before_growth() {
+    let choices = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        match crate::test_support::with_collection_limit(cap, |ctx| edge_class_search_constraint(ctx, &[0, 0], &choices)) {
+            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("identical edge classes must have a search order"),
+            Err(error) => panic!("unexpected edge class refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia_edge_class_ordered_pairs"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| edge_class_search_constraint(ctx, &[0, 0], &choices))
+        .expect("service resource budget").expect("matching edge classes").ordered, vec![(0, 1)]);
 }
 
 fn changed_quotient_edges(
