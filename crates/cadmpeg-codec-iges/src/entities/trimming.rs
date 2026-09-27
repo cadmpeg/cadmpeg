@@ -1863,18 +1863,23 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "parameter curve does not have entity-use flag 05"))?;
             continue;
         }
-        boundaries.insert(
+        let mut pcurves = reserve_vec(ctx, usize::from(pcurve.is_some()), "iges Type142 boundary pcurve pointers")?;
+        if let Some(pcurve) = pcurve {
+            pcurves.push(pcurve);
+        }
+        let mut segments = reserve_vec(ctx, 1, "iges Type142 boundary segments")?;
+        segments.push(BoundarySegment {
+            pcurves,
+            model_curve,
+            sense: Sense::Forward,
+            parameter_curves_authoritative: pcurve.is_some() && preference != 2,
+        });
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut boundaries,
             entry.sequence,
-            BoundaryDefinition {
-                surface,
-                segments: vec![BoundarySegment {
-                    pcurves: pcurve.into_iter().collect(),
-                    model_curve,
-                    sense: Sense::Forward,
-                    parameter_curves_authoritative: pcurve.is_some() && preference != 2,
-                }],
-            },
-        );
+            BoundaryDefinition { surface, segments },
+            "iges trimming boundary index nodes",
+        )?;
         crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
     }
     for entry in directory
@@ -1960,7 +1965,11 @@ pub(super) fn project(
             index += 3 + pcurve_count;
         }
         if valid {
-            boundaries.insert(entry.sequence, BoundaryDefinition { surface, segments });
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut boundaries, entry.sequence,
+            BoundaryDefinition { surface, segments },
+            "iges trimming boundary index nodes",
+        )?;
             crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
         }
     }
