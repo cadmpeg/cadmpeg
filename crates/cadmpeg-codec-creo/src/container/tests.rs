@@ -690,6 +690,69 @@ fn toc_section_succeeds_under_service_policy() {
     assert_eq!(sections[0].section.raw_name, "ModelView#1");
 }
 
+fn one_legacy_toc_section() -> Vec<u8> {
+    let mut data = b"#Pro/ENGINEER  TM  Version H-01-21\n@Toc 52 0\n0 52 ->\n\
+        @entry 53 10\n1 53 [1]\n"
+        .to_vec();
+    let section = b"#BasicData\nabc";
+    let row_tail = format!(" {:08x} 0 983####\n", section.len());
+    let relative_offset = data.len() + b"2 53 BasicData ".len() + 8 + row_tail.len();
+    data.extend_from_slice(format!("2 53 BasicData {relative_offset:08x}{row_tail}").as_bytes());
+    data.extend_from_slice(section);
+    data
+}
+
+#[test]
+fn legacy_toc_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_legacy_toc_section();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("legacy TOC input is admitted");
+    let error = super::legacy_toc_sections(&ctx, &data, 0)
+        .err()
+        .expect("legacy TOC name needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy TOC section names"));
+}
+
+#[test]
+fn legacy_toc_section_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_legacy_toc_section();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("legacy TOC input is admitted");
+    let error = super::legacy_toc_sections(&ctx, &data, 0)
+        .err()
+        .expect("legacy TOC section needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy TOC sections"));
+}
+
+#[test]
+fn legacy_toc_section_succeeds_under_service_policy() {
+    let data = one_legacy_toc_section();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("legacy TOC input is admitted");
+    let sections =
+        super::legacy_toc_sections(&ctx, &data, 0).expect("legacy TOC section is admitted");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name, "BasicData");
+}
+
 #[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
