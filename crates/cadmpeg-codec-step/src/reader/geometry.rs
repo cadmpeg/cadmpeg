@@ -608,15 +608,15 @@ pub(super) fn decode(
             }
         }
         if is_apll_leader_line(record) {
-            let mut references = Vec::new();
             for parameter in record
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
             {
-                collect_references(parameter, &mut references);
+                point_carriers.extend(
+                    super::reference::references(parameter).filter(|id| points.contains_key(id)),
+                );
             }
-            point_carriers.extend(references.into_iter().filter(|id| points.contains_key(id)));
         }
         if let Some(item) = record
             .partials
@@ -791,10 +791,9 @@ pub(super) fn decode(
             unit_scales.angle([representation]).get()
         });
         let decoded = items
-            .iter()
             .filter_map(|curve| {
                 decode_pcurve_geometry(
-                    *curve,
+                    curve,
                     exchange,
                     &points2,
                     &vectors2,
@@ -805,7 +804,7 @@ pub(super) fn decode(
                     &mut BTreeSet::new(),
                     0,
                 )
-                .map(|decoded| (*curve, decoded))
+                .map(|decoded| (curve, decoded))
             })
             .collect::<Vec<_>>();
         if let [(curve, decoded)] = decoded.as_slice() {
@@ -2089,13 +2088,13 @@ pub(super) fn decode(
             .and_then(|representation| exchange.records().get(&representation));
         let curve_steps = representation
             .and_then(representation_items)
-            .unwrap_or_default();
+            .into_iter()
+            .flatten();
         let decoded = curve_steps
-            .iter()
             .filter_map(|curve| {
                 pcurve_geometries
-                    .get(curve)
-                    .map(|decoded| (*curve, decoded))
+                    .get(&curve)
+                    .map(|decoded| (curve, decoded))
             })
             .collect::<Vec<_>>();
         let Some((curve_step, (geometry, geometry_records))) = surface_step
@@ -2504,19 +2503,17 @@ pub(super) fn associate_free_presentation_carriers(
         associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses, ctx)?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
-        let mut targets = Vec::new();
         for parameter in plane
             .partials
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            collect_references(parameter, &mut targets);
-        }
-        for target in targets {
-            if index.surfaces.contains_key(&target) {
-                associate_presentation_carrier(
-                    exchange, ir, index, owned, target, plane_id, losses, ctx,
-                )?;
+            for target in super::reference::references(parameter) {
+                if index.surfaces.contains_key(&target) {
+                    associate_presentation_carrier(
+                        exchange, ir, index, owned, target, plane_id, losses, ctx,
+                    )?;
+                }
             }
         }
     }
@@ -2576,36 +2573,14 @@ fn associate_presentation_carrier(
     Ok(())
 }
 
-fn collect_references(value: &Value, references: &mut Vec<u64>) {
-    match value {
-        Value::Reference(id) => references.push(*id),
-        Value::List(values) => {
-            for value in values {
-                collect_references(value, references);
-            }
-        }
-        Value::Typed(_, value) => collect_references(value, references),
-        Value::Integer(_)
-        | Value::Real(_)
-        | Value::String(_)
-        | Value::Enumeration(_)
-        | Value::Binary(_)
-        | Value::Resource(_)
-        | Value::ValueReference(_)
-        | Value::ConstantEntity(_)
-        | Value::ConstantValue(_)
-        | Value::Omitted
-        | Value::Derived => {}
-    }
-}
-
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
+fn representation_items(record: &RawRecord) -> Option<impl Iterator<Item = u64> + '_> {
+    let items = record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
         .find_map(Value::list)
-        .map(|items| items.iter().filter_map(Value::reference).collect())
+        ?;
+    Some(items.iter().filter_map(Value::reference))
 }
 
 fn representation_item_name(record: &RawRecord) -> Option<&Value> {
@@ -3151,17 +3126,15 @@ fn retained_surface_curve_ids(
         }
     }
     for (_, plane) in exchange.entities("ANNOTATION_PLANE") {
-        let mut references = Vec::new();
         for parameter in plane
             .partials
             .iter()
             .flat_map(|partial| partial.parameters.iter())
         {
-            collect_references(parameter, &mut references);
-        }
-        for target in references {
-            if decoded_surface_curve(target, exchange, index) {
-                retained.insert(target);
+            for target in super::reference::references(parameter) {
+                if decoded_surface_curve(target, exchange, index) {
+                    retained.insert(target);
+                }
             }
         }
     }
@@ -3405,25 +3378,23 @@ fn collect_unit_scope_members(
         }
         return;
     }
-    let mut references = Vec::new();
     for parameter in record
         .partials
         .iter()
         .flat_map(|partial| &partial.parameters)
     {
-        collect_references(parameter, &mut references);
-    }
-    for reference in references {
-        let Some(referenced) = exchange.records().get(&reference) else {
-            continue;
-        };
-        if is_representation_record(referenced)
-            || is_unit_record(referenced)
-            || is_representation_context_record(referenced)
-        {
-            continue;
+        for reference in super::reference::references(parameter) {
+            let Some(referenced) = exchange.records().get(&reference) else {
+                continue;
+            };
+            if is_representation_record(referenced)
+                || is_unit_record(referenced)
+                || is_representation_context_record(referenced)
+            {
+                continue;
+            }
+            collect_unit_scope_members(reference, exchange, members, active);
         }
-        collect_unit_scope_members(reference, exchange, members, active);
     }
 }
 
