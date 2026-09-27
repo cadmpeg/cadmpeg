@@ -1164,6 +1164,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
     let (sketches, entities) = project_spatial_sketch_design(
+        None,
         &[placement.clone()],
         &points,
         &curves,
@@ -1296,7 +1297,7 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
         project_sketch_design(None, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
             .expect("sketch lanes pair");
     let (spatial, spatial_entities) =
-        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
+        project_spatial_sketch_design(None, &placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
             .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());

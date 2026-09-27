@@ -2662,6 +2662,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir.model.spatial_sketches,
             self.ir.model.spatial_sketch_entities,
         ) = crate::design::sketch_project::project_spatial_sketch_design(
+            Some(self.ctx),
             &self.native.design_sketch_placements,
             &self.native.sketch_points,
             &self.native.sketch_curve_identities,
