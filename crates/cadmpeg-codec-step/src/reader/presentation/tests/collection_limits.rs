@@ -304,3 +304,105 @@ fn presentation_invalid_surface_sides_refuse_collection_limit() {
 fn presentation_invalid_surface_side_text_refuses_retained_limit() {
     invalid_side_refuses("step_presentation_invalid_surface_side_text", true);
 }
+
+fn style_graph_refuses(
+    operation: &str,
+    depth: bool,
+    run: impl Fn(&crate::parse::Exchange, &DecodeContext<'_>) -> Result<(), CodecError>,
+) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OVER_RIDING_STYLED_ITEM('',(),#2,#3);#2=CARTESIAN_POINT('',(0.,0.,0.));#3=STYLED_ITEM('',(),#2);#4=GEOMETRIC_SET('',(#2));#5=NULL_STYLE();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("style graph exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if depth {
+        policy.limits.max_recursion_depth = 0;
+    } else {
+        policy.limits.max_collection_items = 0;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits graph policy");
+    assert!(matches!(
+        run(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn presentation_style_order_items_refuse_collection_limit() {
+    vector_refuses("step_presentation_style_order_items");
+}
+
+#[test]
+fn presentation_style_depth_active_refuses_collection_limit() {
+    style_graph_refuses("step_presentation_style_depth_active", false, |exchange, ctx| {
+        super::super::style_application_order(1, exchange, 128, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_style_depth_walk_refuses_depth_limit() {
+    style_graph_refuses("step_presentation_style_depth_walk", true, |exchange, ctx| {
+        super::super::style_application_order(1, exchange, 128, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_style_domain_active_refuses_collection_limit() {
+    style_graph_refuses("step_presentation_style_domain_active", false, |exchange, ctx| {
+        super::super::style_domain(4, exchange, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_style_domain_walk_refuses_depth_limit() {
+    style_graph_refuses("step_presentation_style_domain_walk", true, |exchange, ctx| {
+        super::super::style_domain(4, exchange, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_hidden_style_active_refuses_collection_limit() {
+    style_graph_refuses("step_presentation_hidden_style_active", false, |exchange, ctx| {
+        super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_hidden_style_walk_refuses_depth_limit() {
+    style_graph_refuses("step_presentation_hidden_style_walk", true, |exchange, ctx| {
+        super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_style_inheritance_active_refuses_collection_limit() {
+    style_graph_refuses("step_presentation_style_inheritance_active", false, |exchange, ctx| {
+        super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_style_inheritance_walk_refuses_depth_limit() {
+    style_graph_refuses("step_presentation_style_inheritance_walk", true, |exchange, ctx| {
+        super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_null_style_visited_refuses_collection_limit() {
+    style_graph_refuses("step_presentation_null_style_visited", false, |exchange, ctx| {
+        super::super::contains_null_style(&crate::parse::Value::Reference(5), exchange, &mut BTreeSet::new(), 0, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_null_style_walk_refuses_depth_limit() {
+    style_graph_refuses("step_presentation_null_style_walk", true, |exchange, ctx| {
+        super::super::contains_null_style(&crate::parse::Value::Reference(5), exchange, &mut BTreeSet::new(), 0, Some(ctx)).map(|_| ())
+    });
+}
+
+#[test]
+fn presentation_predefined_color_matches_ascii_case_without_copy() {
+    assert_eq!(super::super::predefined("ReD"), super::super::predefined("red"));
+}
