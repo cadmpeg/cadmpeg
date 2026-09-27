@@ -2962,9 +2962,10 @@ pub(super) fn display_jt_vertex_coordinates(
 
 /// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
 pub(super) fn display_jt_polygon_meshes(
+    ctx: &DecodeContext<'_>,
     sequences: &[DisplayJtTopologyPacketSequence],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
-) -> Vec<DisplayJtPolygonMesh> {
+) -> Result<Vec<DisplayJtPolygonMesh>, CodecError> {
     let mut meshes = Vec::new();
     for sequence in sequences {
         let values = |role: TopologyPacketRole| {
@@ -2976,7 +2977,7 @@ pub(super) fn display_jt_polygon_meshes(
                 .as_deref()
         };
         let Some(valences) = values(TopologyPacketRole::VertexValences) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if valences.is_empty() {
             continue;
@@ -2985,28 +2986,41 @@ pub(super) fn display_jt_polygon_meshes(
             .iter()
             .find(|header| header.element == sequence.element)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_collection_items(8, "nx JT face degree lanes")?;
         let Some(degrees) = TopologyContext::ALL
             .into_iter()
             .map(|context| values(TopologyPacketRole::FaceDegrees(context)))
             .collect::<Option<Vec<_>>>()
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_collection_items(8, "nx JT attribute mask lanes")?;
         let Some(attribute_masks) = TopologyContext::ALL
             .into_iter()
             .map(|context| values(TopologyPacketRole::FaceAttributeMasks(context)))
             .collect::<Option<Vec<_>>>()
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(context_7_next_30) = values(TopologyPacketRole::FaceAttributeMasks7Next30) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(context_7_upper_4) = values(TopologyPacketRole::FaceAttributeMasks7Upper4) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        let large_lane_count = sequence
+            .packets
+            .iter()
+            .filter(|packet| {
+                matches!(
+                    packet.role,
+                    TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
+                )
+            })
+            .count();
+        ctx.charge_collection_items(large_lane_count as u64, "nx JT large mask lanes")?;
         let Some(large_lanes) = sequence
             .packets
             .iter()
@@ -3019,8 +3033,15 @@ pub(super) fn display_jt_polygon_meshes(
             .map(|packet| packet.values.as_deref())
             .collect::<Option<Vec<_>>>()
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        let Some(large_word_count) = large_lanes
+            .iter()
+            .try_fold(0usize, |sum, lane| sum.checked_add(lane.len()))
+        else {
+            return Ok(Vec::new());
+        };
+        ctx.charge_collection_items(large_word_count as u64, "nx JT large mask words")?;
         let large_words = large_lanes
             .into_iter()
             .flatten()
@@ -3030,9 +3051,10 @@ pub(super) fn display_jt_polygon_meshes(
             <[_; 8]>::try_from(degrees),
             <[_; 8]>::try_from(attribute_masks),
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(polygons) = crate::jt_topology::decode(
+            ctx,
             degrees,
             valences,
             values(TopologyPacketRole::VertexGroups).unwrap_or_default(),
@@ -3045,8 +3067,9 @@ pub(super) fn display_jt_polygon_meshes(
                 context_7_upper_4,
                 large_words: &large_words,
             },
-        ) else {
-            return Vec::new();
+        )?
+        else {
+            return Ok(Vec::new());
         };
         if polygons.iter().any(|polygon| {
             polygon
@@ -3054,7 +3077,7 @@ pub(super) fn display_jt_polygon_meshes(
                 .iter()
                 .any(|&(index, _)| index >= coordinate_header.unique_vertex_count)
         }) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mesh = DisplayJtPolygonMesh {
             id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
@@ -3063,9 +3086,10 @@ pub(super) fn display_jt_polygon_meshes(
             polygons,
             source_offset: sequence.source_offset,
         };
+        ctx.charge_collection_items(1, "nx JT polygon meshes")?;
         meshes.push(mesh);
     }
-    meshes
+    Ok(meshes)
 }
 
 /// Decode every complete JT 9 normal array following a coordinate array.
