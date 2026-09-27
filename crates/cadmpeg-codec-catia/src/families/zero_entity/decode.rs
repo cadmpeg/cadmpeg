@@ -687,22 +687,27 @@ pub(in crate::families) fn try_decode_zero_entity(
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     let preamble = container::outer_preamble_range(&scan.data)?;
-    let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
-        &scan.data,
-        preamble.clone(),
-        refusal,
-    );
+    let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
+        ctx, &scan.data, preamble.clone(), refusal,
+    ) {
+        Ok(surfaces) => surfaces,
+        Err(error) => return Some(Err(error)),
+    };
     if surfaces.is_empty() {
         return None;
     }
-    let support_runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
-        &scan.data,
-        preamble.clone(),
-        refusal,
-    );
-    let ownership_root = crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
-        &scan.data, preamble,
-    );
+    let support_runs = match crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+        ctx, &scan.data, preamble.clone(), refusal,
+    ) {
+        Ok(runs) => runs,
+        Err(error) => return Some(Err(error)),
+    };
+    let ownership_root = match crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
+        ctx, &scan.data, preamble,
+    ) {
+        Ok(root) => root,
+        Err(error) => return Some(Err(error)),
+    };
 
     let mut ir = CadIr::empty();
     let mut admission = FamilyEntityAdmission::new(ctx);

@@ -133,12 +133,16 @@ pub(super) fn validate_zero_entity_support_runs(
                                             })
                                             .collect::<Vec<_>>();
                                         let expected =
-                                            crate::families::zero_entity::records::
-                                                oriented_closed_model_endpoints(
-                                                    &endpoints,
-                                                    &loop_record.forward_senses,
-                                                )
-                                                .unwrap_or_default();
+                                            crate::test_support::with_service_context(|ctx| {
+                                                crate::families::zero_entity::records::
+                                                    oriented_closed_model_endpoints(
+                                                        ctx,
+                                                        &endpoints,
+                                                        &loop_record.forward_senses,
+                                                    )
+                                            })
+                                            .expect("native test endpoints fit the service profile")
+                                            .unwrap_or_default();
                                         loop_record.oriented_model_endpoints == expected
                                     }
                                     && loop_record.terminal_id == *terminal

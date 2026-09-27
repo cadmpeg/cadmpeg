@@ -1393,13 +1393,17 @@ pub(crate) fn scan_bytes<'a>(
         outer_container_declarations(&data, directory)
     });
 
-    let mut census = Census {
-        a9_records: outer_preamble_range(&data).map_or(0, |range| {
+    let a9_records = match outer_preamble_range(&data) {
+        Some(range) => {
             crate::families::zero_entity::records::zero_entity_record_inventory_in_range(
-                &data, range,
-            )
+                ctx, &data, range,
+            )?
             .len()
-        }),
+        }
+        None => 0,
+    };
+    let mut census = Census {
+        a9_records,
         e5_markers: outer_body
             .as_ref()
             .map_or(0, |body| count_subslice(body.bytes(), E5_MARKER)),
