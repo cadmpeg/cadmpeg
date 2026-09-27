@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -15,6 +16,7 @@ use crate::records::feature::{
 
 /// Project components and occurrences proven by local component history operations.
 pub(crate) fn project_local_components(
+    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), cadmpeg_core::CodecError> {
@@ -22,6 +24,7 @@ pub(crate) fn project_local_components(
     let mut occurrences = BTreeMap::new();
     let mut native_by_guid = BTreeMap::new();
     for occurrence in native_occurrences {
+        ctx.charge_collection_items(1, "f3d component native occurrence index")?;
         native_by_guid
             .entry(occurrence.occurrence_guid.as_str().to_ascii_lowercase())
             .and_modify(|candidate| *candidate = None)
@@ -46,6 +49,7 @@ pub(crate) fn project_local_components(
                     continue;
                 };
                 project_occurrence(
+                    ctx,
                     &mut components,
                     &mut occurrences,
                     &native_by_guid,
@@ -65,6 +69,7 @@ pub(crate) fn project_local_components(
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
+                ctx,
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
@@ -73,6 +78,7 @@ pub(crate) fn project_local_components(
                 operation.source_transform,
             )?;
             project_occurrence(
+                ctx,
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
@@ -83,6 +89,7 @@ pub(crate) fn project_local_components(
         }
         if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
+                ctx,
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
@@ -105,6 +112,7 @@ pub(crate) fn project_local_components(
         };
         for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
+                ctx,
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
@@ -115,13 +123,33 @@ pub(crate) fn project_local_components(
         }
     }
 
-    let mut occurrences = occurrences.into_values().collect::<Vec<_>>();
+    ctx.charge_collection_items(
+        u64::try_from(occurrences.len())
+            .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence output count", 0, 1))?,
+        "f3d component occurrence output",
+    )?;
+    let mut occurrence_output = Vec::new();
+    occurrence_output.try_reserve(occurrences.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component occurrence output allocation", 0, 1)
+    })?;
+    occurrence_output.extend(occurrences.into_values());
+    let mut occurrences = occurrence_output;
     for (ordinal, occurrence) in occurrences.iter_mut().enumerate() {
         occurrence.ordinal = u32::try_from(ordinal).map_err(|_| {
             cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32")
         })?;
     }
-    Ok((components.into_values().collect(), occurrences))
+    ctx.charge_collection_items(
+        u64::try_from(components.len())
+            .map_err(|_| ctx.refuse_codec_limit("f3d component output count", 0, 1))?,
+        "f3d component output",
+    )?;
+    let mut component_output = Vec::new();
+    component_output.try_reserve(components.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d component output allocation", 0, 1)
+    })?;
+    component_output.extend(components.into_values());
+    Ok((component_output, occurrences))
 }
 
 /// Project a proven local occurrence into a `DerivedInstance` feature.
@@ -220,6 +248,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
 }
 
 fn project_occurrence(
+    ctx: &DecodeContext<'_>,
     components: &mut BTreeMap<String, ProductDefinition>,
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
@@ -229,7 +258,8 @@ fn project_occurrence(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
     let transform = neutral_transform(transform)?;
-    project_component(components, component_guid);
+    project_component(ctx, components, component_guid)?;
+    ctx.charge_collection_items(1, "f3d component occurrence map entry")?;
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     occurrences
         .entry(occurrence_id.as_str().to_owned())
@@ -256,9 +286,11 @@ fn project_occurrence(
 }
 
 fn project_component(
+    ctx: &DecodeContext<'_>,
     components: &mut BTreeMap<String, ProductDefinition>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, "f3d component definition map entry")?;
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
         .entry(component_id.as_str().to_owned())
@@ -273,6 +305,7 @@ fn project_component(
             bodies: Vec::new(),
             native_ref: None,
         });
+    Ok(())
 }
 
 /// A millimetre placement projected from source centimetres.
@@ -306,6 +339,7 @@ mod tests {
         },
         scope::DesignParameterScope,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::products::PrototypeReference;
 
@@ -326,6 +360,89 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
+    }
+
+    fn one_component_refusal(maximum: u64) -> cadmpeg_core::CodecError {
+        const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
+        const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+        let mut scope = DesignParameterScope::empty(
+            "f3d:synthetic:design-parameter-scope#1",
+            crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
+            1,
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::DerivedInstance(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(DesignDerivedInstanceConstruction {
+                reference_record_index: 2,
+                relation_record_index: 3,
+                carrier_record_index: 4,
+                component_guid: COMPONENT.to_owned().try_into().unwrap(),
+                occurrence_guid: OCCURRENCE.to_owned().try_into().unwrap(),
+                transform: identity_matrix().try_into().unwrap(),
+                transform_offset: 0,
+            });
+        }
+        let occurrence = DesignComponentOccurrence::try_new(
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+                id: "f3d:synthetic:design-component-occurrence#4".into(),
+                class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
+                    .unwrap(),
+                record_index: 4,
+                byte_offset: 0,
+                component_record_index: 2,
+                component_guid: COMPONENT.to_owned().try_into().unwrap(),
+                occurrence_guid: OCCURRENCE.to_owned().try_into().unwrap(),
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+            },
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = maximum;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::project_local_components(&ctx, &[scope], &[occurrence])
+            .expect_err("one component exceeds the selected collection limit")
+    }
+
+    #[test]
+    fn native_occurrence_index_refuses_collection_limit() {
+        let error = one_component_refusal(0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d component native occurrence index"));
+    }
+
+    #[test]
+    fn component_definition_map_refuses_collection_limit() {
+        let error = one_component_refusal(1);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d component definition map entry"));
+    }
+
+    #[test]
+    fn component_occurrence_map_refuses_collection_limit() {
+        let error = one_component_refusal(2);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d component occurrence map entry"));
+    }
+
+    #[test]
+    fn component_occurrence_output_refuses_collection_limit() {
+        let error = one_component_refusal(3);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d component occurrence output"));
+    }
+
+    #[test]
+    fn component_definition_output_refuses_collection_limit() {
+        let error = one_component_refusal(4);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d component output"));
     }
 
     #[test]
@@ -376,8 +493,11 @@ mod tests {
             });
         }
 
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .unwrap();
         let (definitions, occurrences) =
-            super::project_local_components(&[scope], &native_occurrences).unwrap();
+            super::project_local_components(&ctx, &[scope], &native_occurrences).unwrap();
 
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 2);
@@ -427,8 +547,11 @@ mod tests {
             },
         )
         .unwrap();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .unwrap();
         let (definitions, occurrences) =
-            super::project_local_components(&[scope.clone()], &[native_occurrence]).unwrap();
+            super::project_local_components(&ctx, &[scope.clone()], &[native_occurrence]).unwrap();
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
