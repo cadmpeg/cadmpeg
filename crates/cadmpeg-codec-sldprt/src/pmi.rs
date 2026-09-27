@@ -3,7 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -519,10 +520,11 @@ enum ValueKind {
 /// [`SldprtLossCode::PmiSemanticRecordMalformed`] instead of shrinking the
 /// document silently. New losses are additive under sidecar v1.
 pub(crate) fn dimensions(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Vec<PmiDimension> {
+) -> Result<Vec<PmiDimension>, CodecError> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
     for source in scan.sections() {
@@ -533,6 +535,7 @@ pub(crate) fn dimensions(
             continue;
         }
         collect_dimensions(
+            ctx,
             source.payload(),
             source.source_stream(),
             source.native_id().as_str(),
@@ -540,22 +543,27 @@ pub(crate) fn dimensions(
             losses,
             &mut records,
             &mut seen,
-        );
+        )?;
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    Ok(records)
 }
 
 /// Parse PMI records from a raw `PMISemanticDataDB` payload.
 ///
 /// Used by focused tests and the `sldprt_pmi` fuzz target. Parent/section are
 /// placeholders; production decode supplies real block identities.
-pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<PmiDimension> {
+pub(crate) fn parse_payload(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<PmiDimension>, CodecError> {
     let mut annotations = Annotations::default();
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
     let stream = cadmpeg_ir::stream_name!("Contents/PMISemanticDataDB");
     collect_dimensions(
+        ctx,
         payload,
         &stream,
         "sldprt:block#pmi-payload",
@@ -563,12 +571,13 @@ pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<P
         losses,
         &mut records,
         &mut seen,
-    );
+    )?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    Ok(records)
 }
 
 fn collect_dimensions(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     stream: &cadmpeg_ir::StreamName,
     parent: &str,
@@ -576,12 +585,17 @@ fn collect_dimensions(
     losses: &mut Vec<LossNote>,
     records: &mut Vec<PmiDimension>,
     seen: &mut HashSet<String>,
-) {
+) -> Result<(), CodecError> {
+    ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
-        if !seen.insert(guid.clone()) {
+        let (mut normalized, _reservation) =
+            ctx.reserve_scoped_string(guid.len(), "normalize SLDPRT PMI candidate GUID")?;
+        normalized.push_str(guid);
+        normalized.make_ascii_lowercase();
+        if seen.contains(&normalized) {
             continue;
         }
-        match extract_dimension(payload, offset, &guid, parent) {
+        match extract_dimension(payload, offset, &normalized, parent) {
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
@@ -591,6 +605,7 @@ fn collect_dimensions(
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,
                 );
+                ctx.reserve_collection_vec(records, 1, "collect SLDPRT PMI dimensions")?;
                 records.push(record);
             }
             Ok(None) => {}
@@ -600,7 +615,13 @@ fn collect_dimensions(
                 )));
             }
         }
+        ctx.charge_retained(normalized.len() as u64, "retain SLDPRT PMI candidate GUID")?;
+        ctx.charge_collection_items(1, "index SLDPRT PMI candidate GUID")?;
+        seen.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("index SLDPRT PMI candidate GUID", u64::MAX - 1, u64::MAX))?;
+        seen.insert(normalized);
     }
+    Ok(())
 }
 
 /// `Ok(None)` — not a PMI dimension map. `Err` — PMI candidate that failed.
@@ -724,23 +745,24 @@ fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
 }
 
 /// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
-fn candidate_maps(payload: &[u8]) -> Vec<(String, usize)> {
-    let mut out = Vec::new();
-    for (offset, marker) in payload.iter().copied().enumerate() {
-        if !matches!(
-            Marker::from_u8(marker),
-            Marker::FixMap(_) | Marker::Map16 | Marker::Map32
-        ) {
-            continue;
-        }
-        if let Some(guid) = guid_before(payload, offset) {
-            out.push((guid, offset));
-        }
-    }
-    out
+fn candidate_maps(payload: &[u8]) -> impl Iterator<Item = (&str, usize)> {
+    payload
+        .iter()
+        .copied()
+        .enumerate()
+        .filter_map(|(offset, marker)| {
+            if matches!(
+                Marker::from_u8(marker),
+                Marker::FixMap(_) | Marker::Map16 | Marker::Map32
+            ) {
+                guid_before(payload, offset).map(|guid| (guid, offset))
+            } else {
+                None
+            }
+        })
 }
 
-fn guid_before(payload: &[u8], offset: usize) -> Option<String> {
+fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
     let start = offset.checked_sub(36)?;
     let guid = std::str::from_utf8(payload.get(start..offset)?).ok()?;
     let bytes = guid.as_bytes();
@@ -752,7 +774,7 @@ fn guid_before(payload: &[u8], offset: usize) -> Option<String> {
             .iter()
             .enumerate()
             .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
-    .then(|| guid.to_ascii_lowercase())
+    .then_some(guid)
 }
 
 fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<SpannedValue> {
