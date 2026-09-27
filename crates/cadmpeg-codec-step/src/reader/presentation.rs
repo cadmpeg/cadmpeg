@@ -969,6 +969,17 @@ fn clone_presentation_identity<T: From<Identity>>(
     ctx: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
+    let copy = clone_presentation_text(value, ctx, operation)?;
+    Identity::new(copy)
+        .map(T::from)
+        .map_err(|_| CodecError::malformed("presentation identity is invalid"))
+}
+
+fn clone_presentation_text(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     if let Some(ctx) = ctx {
         ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
     }
@@ -978,9 +989,7 @@ fn clone_presentation_identity<T: From<Identity>>(
         None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
     })?;
     copy.push_str(value);
-    Identity::new(copy)
-        .map(T::from)
-        .map_err(|_| CodecError::malformed("presentation identity is invalid"))
+    Ok(copy)
 }
 
 fn push_presentation_vec<T>(
@@ -1282,6 +1291,29 @@ enum ColorResolution {
 
 type CachedColor = Option<ColorResolution>;
 
+fn clone_color_resolution(
+    resolution: &CachedColor,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<CachedColor, CodecError> {
+    Ok(match resolution {
+        Some(ColorResolution::Candidate(candidate)) => Some(ColorResolution::Candidate(
+            ColorCandidate {
+                rank: candidate.rank,
+                id: candidate.id,
+                color: candidate.color,
+                name: candidate.name.as_deref()
+                    .map(|name| clone_presentation_text(name, ctx, operation))
+                    .transpose()?,
+            },
+        )),
+        Some(ColorResolution::Ambiguous { rank }) => {
+            Some(ColorResolution::Ambiguous { rank: *rank })
+        }
+        None => None,
+    })
+}
+
 impl ColorResolution {
     fn priority(&self) -> SurfaceSideRank {
         match self {
@@ -1375,7 +1407,7 @@ fn find_color(
         return Ok(None);
     }
     if let Some(result) = cache.get(&(id, domain)) {
-        return Ok(result.clone());
+        return clone_color_resolution(result, ctx, "step_presentation_color_cache_copy");
     }
     let Some(record) = exchange.records().get(&id) else {
         return Ok(None);
@@ -1383,9 +1415,13 @@ fn find_color(
     if is_presentation_style_by_context(record) {
         return Ok(None);
     }
-    if !active.insert(id) {
+    if active.contains(&id) {
         return Ok(None);
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_color_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_color_active")?;
     let transparency = if domain == StyleDomain::Surface {
         surface_transparency(id, record, exchange, losses, ctx)?
     } else {
@@ -1569,7 +1605,14 @@ fn find_color(
             None => {}
         }
     }
-    cache.insert((id, domain), result.clone());
+    let cached = clone_color_resolution(&result, ctx, "step_presentation_color_cache_value")?;
+    insert_presentation_map(
+        cache,
+        (id, domain),
+        cached,
+        ctx,
+        "step_presentation_color_cache_entries",
+    )?;
     Ok(result)
 }
 
