@@ -3,6 +3,7 @@
 
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::fmt;
 
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -92,6 +93,62 @@ fn insert_product_map<K: Ord, V>(
         }
     }
     Ok(values.insert(key, value))
+}
+
+fn join_product_references(
+    ids: impl IntoIterator<Item = u64>,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut text = String::new();
+    for id in ids {
+        let numbered = format!("#{id}");
+        let separator = if text.is_empty() { "" } else { ", " };
+        let additional = separator.len() + numbered.len();
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
+        }
+        text.try_reserve(additional).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        })?;
+        text.push_str(separator);
+        text.push_str(&numbered);
+    }
+    Ok(text)
+}
+
+fn join_product_texts<'a>(
+    values: impl IntoIterator<Item = &'a str>,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut text = String::new();
+    for value in values {
+        let separator = if text.is_empty() { "" } else { ", " };
+        let additional = separator.len() + value.len();
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
+        }
+        text.try_reserve(additional).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        })?;
+        text.push_str(separator);
+        text.push_str(value);
+    }
+    Ok(text)
+}
+
+fn format_product_text(
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    arguments: fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        None => Ok(arguments.to_string()),
+    }
 }
 
 fn claim_product_typed(
@@ -322,16 +379,19 @@ pub(super) fn decode(
             let mut bodies = definition
                 .and_then(|definition| shape_bindings.remove(&definition))
                 .unwrap_or_default();
-            let missing = bodies
-                .iter()
-                .filter(|body| {
-                    !ir.model
-                        .bodies
-                        .iter()
-                        .any(|candidate| candidate.id == **body)
-                })
-                .map(|body| body.as_str().to_owned())
-                .collect::<Vec<_>>();
+            let missing = join_product_texts(
+                bodies
+                    .iter()
+                    .filter(|body| {
+                        !ir.model
+                            .bodies
+                            .iter()
+                            .any(|candidate| candidate.id == **body)
+                    })
+                    .map(|body| body.as_str()),
+                ctx,
+                "step_missing_shape_body_text",
+            )?;
             bodies.retain(|body| {
                 ir.model
                     .bodies
@@ -346,10 +406,11 @@ pub(super) fn decode(
             );
             if !missing.is_empty() {
                 reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{owner} omitted uncommitted shape body reference(s): {}",
-                    missing.join(", ")
-                )));
+                losses.push(StepLossCode::DecodeWarning.note(format_product_text(
+                    ctx,
+                    "step_missing_shape_body_loss_text",
+                    format_args!("{owner} omitted uncommitted shape body reference(s): {missing}"),
+                )?));
             }
             if has_shape_binding && bodies.is_empty() {
                 reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
@@ -521,11 +582,11 @@ pub(super) fn decode(
         if competing_placements.contains_key(&usage_id) {
             continue;
         }
-        let records = source_ids
-            .iter()
-            .map(|id| format!("#{id}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let records = join_product_references(
+            source_ids.iter().copied(),
+            ctx,
+            "step_ambiguous_placement_source_text",
+        )?;
         let context_dependent = source_ids.iter().all(|id| {
             exchange.records().get(id).is_some_and(|record| {
                 record
@@ -539,20 +600,24 @@ pub(super) fn decode(
             "occurrence-owned mapped"
         };
         reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
-            "NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
-        )));
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format_product_text(
+            ctx,
+            "step_ambiguous_placement_loss_text",
+            format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
+        )?));
     }
     for (&usage_id, source_ids) in &competing_placements {
-        let records = source_ids
-            .iter()
-            .map(|id| format!("#{id}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let records = join_product_references(
+            source_ids.iter().copied(),
+            ctx,
+            "step_competing_placement_source_text",
+        )?;
         reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
-        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
-            "NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
-        )));
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format_product_text(
+            ctx,
+            "step_competing_placement_loss_text",
+            format_args!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"),
+        )?));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
     let mut missing_placement_reports = BTreeSet::new();
@@ -920,15 +985,17 @@ fn apply_body_placements(
             }
             [] => {}
             _ => {
-                let mapped_items = unique
-                    .iter()
-                    .map(|(id, _)| format!("#{id}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let mapped_items = join_product_references(
+                    unique.iter().map(|(id, _)| *id),
+                    ctx,
+                    "step_body_conflict_source_text",
+                )?;
                 reserve_product_items(losses, 1, ctx, "step_product_losses")?;
-                losses.push(StepLossCode::BodyConflictingMappedPlacements.note(format!(
-                        "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"
-                    )));
+                losses.push(StepLossCode::BodyConflictingMappedPlacements.note(format_product_text(
+                    ctx,
+                    "step_body_conflict_loss_text",
+                    format_args!("body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"),
+                )?));
             }
         }
     }

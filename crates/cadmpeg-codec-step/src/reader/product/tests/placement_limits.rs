@@ -124,3 +124,83 @@ fn competing_placement_groups_refuse_collection_limit() {
 fn fallback_occurrence_placements_refuse_collection_limit() {
     super::product_collection_refuses_source(MAPPED_SOURCE, "step_fallback_occurrence_placements");
 }
+
+#[test]
+fn ambiguous_placement_source_text_refuses_retained_limit() {
+    let source = duplicate_context_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_ambiguous_placement_source_text");
+}
+
+#[test]
+fn ambiguous_placement_loss_text_refuses_retained_limit() {
+    let source = duplicate_context_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_ambiguous_placement_loss_text");
+}
+
+#[test]
+fn competing_placement_source_text_refuses_retained_limit() {
+    let source = competing_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_competing_placement_source_text");
+}
+
+#[test]
+fn competing_placement_loss_text_refuses_retained_limit() {
+    let source = competing_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_competing_placement_loss_text");
+}
+
+#[test]
+fn body_conflict_source_text_refuses_retained_limit() {
+    let source = super::mapped_body_placement_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_body_conflict_source_text");
+}
+
+#[test]
+fn body_conflict_loss_text_refuses_retained_limit() {
+    let source = super::mapped_body_placement_source();
+    super::product_retained_refuses_source(source.as_bytes(), "step_body_conflict_loss_text");
+}
+
+#[test]
+fn missing_shape_body_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    assert!(matches!(
+        super::super::join_product_texts(
+            ["body-one", "body-two"],
+            Some(&ctx),
+            "step_missing_shape_body_text",
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_missing_shape_body_text"
+    ));
+}
+
+#[test]
+fn missing_shape_body_loss_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    assert!(matches!(
+        super::super::format_product_text(
+            Some(&ctx),
+            "step_missing_shape_body_loss_text",
+            format_args!("body omitted uncommitted shape body reference(s): {}", "body-one"),
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_missing_shape_body_loss_text"
+    ));
+}
