@@ -130,11 +130,68 @@ fn homogeneous_ruled_surface_refuses_control_and_knot_lanes() {
         "iges ruled homogeneous knots",
         "iges ruled surface controls",
         "iges ruled surface weights",
+        "iges ruled span pole rows",
+        "iges ruled span pole row controls",
+        "iges ruled span weight rows",
+        "iges ruled span weight row controls",
+        "iges ruled span v knots",
     ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
     let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
     assert!(!service.ir().model.surfaces.is_empty());
+}
+
+#[test]
+fn same_basis_ruled_surface_refuses_nested_poles_and_knots() {
+    let bytes = ruled_surface_file();
+    for operation in [
+        "iges ruled same-basis pole rows",
+        "iges ruled same-basis pole row controls",
+        "iges ruled same-basis u knots",
+        "iges ruled same-basis v knots",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(!service.ir().model.surfaces.is_empty());
+}
+
+#[test]
+fn same_basis_ruled_surface_refuses_nested_weight_rows() {
+    let rail = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).unwrap();
+    let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
+    let weights = [weight, weight];
+    super::same_basis_ruled_surface(&rail, &rail, &weights, None).unwrap();
+    for operation in [
+        "iges ruled same-basis weight rows",
+        "iges ruled same-basis weight row controls",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::same_basis_ruled_surface(&rail, &rail, &weights, Some(&ctx)) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("expected same-basis refusal at {operation}, but construction succeeded"),
+                Err(error) => panic!("expected same-basis refusal at {operation}: {error:?}"),
+            }
+        }
+        assert!(found, "same-basis refusal was not reached: {operation}");
+    }
 }
 fn type128_surface_with_closure(
     global: &[u8],
@@ -1804,9 +1861,9 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
     )
     .expect("valid rail");
     let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
-    let error = super::same_basis_ruled_surface(&rail, &rail, &[weight])
+    let error = super::same_basis_ruled_surface(&rail, &rail, &[weight], None)
         .expect_err("a weight lane one shorter than the pole lane is refused");
-    let reported = CodecError::from(error);
+    let reported = error;
     let CodecError::Malformed(message) = &reported else {
         panic!("expected a malformed refusal, got {reported:?}");
     };
