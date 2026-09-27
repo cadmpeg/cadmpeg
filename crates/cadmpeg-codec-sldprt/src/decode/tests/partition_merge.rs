@@ -412,8 +412,8 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     let deltas = bridge_owned(10, 120, 200, 700);
     let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
     let deltas_payload = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &deltas);
-    let partition_header = crate::parasolid::stream_header(&partition_payload).unwrap();
-    let deltas_header = crate::parasolid::stream_header(&deltas_payload).unwrap();
+    let partition_header = crate::parasolid::stream_header(&ctx, &partition_payload).unwrap().unwrap();
+    let deltas_header = crate::parasolid::stream_header(&ctx, &deltas_payload).unwrap().unwrap();
 
     let decoded = crate::brep::graph::decode_bodies(
         &ctx,
