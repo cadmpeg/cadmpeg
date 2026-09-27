@@ -18,7 +18,7 @@ pub fn curve_prototypes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::curve::prototypes(data);
+    let _probe = crate::curve::prototypes(ctx, data)?;
     let _probe = crate::curve::expression_records_with_model_name(ctx, data, None)?;
     Ok(())
 }

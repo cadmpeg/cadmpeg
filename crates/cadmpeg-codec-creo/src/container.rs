@@ -1480,10 +1480,13 @@ fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEn
     )
 }
 
-fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
-    collect_section_records(
+fn curve_prototypes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<CurvePrototype>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        curve::prototypes,
+        |bytes| curve::prototypes(ctx, bytes),
         |prototype, base| prototype.offset += base,
         |prototype| prototype.offset,
     )
@@ -1598,10 +1601,13 @@ fn cross_section_curve_rows(
     )
 }
 
-fn cross_section_curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
-    collect_section_records(
+fn cross_section_curve_prototypes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<CurvePrototype>, CodecError> {
+    collect_section_records_result(
         cross_sections(sections),
-        curve::prototypes,
+        |bytes| curve::prototypes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -2368,9 +2374,9 @@ pub(crate) fn scan_bytes<'a>(
     let mut prototype_refusals = crate::lane_refusal::LaneRefusals::new();
     let surface_prototype_records =
         surface_prototype_records(ctx, &model_geometry_sections, &mut prototype_refusals)?;
-    let nonvisible_curve_prototypes = curve_prototypes(&nonvisible_geometry_sections);
-    let curve_prototypes = curve_prototypes(&model_geometry_sections);
-    let cross_section_curve_prototypes = cross_section_curve_prototypes(&sections);
+    let nonvisible_curve_prototypes = curve_prototypes(ctx, &nonvisible_geometry_sections)?;
+    let curve_prototypes = curve_prototypes(ctx, &model_geometry_sections)?;
+    let cross_section_curve_prototypes = cross_section_curve_prototypes(ctx, &sections)?;
     let mut curve_expressions = curve_expressions(
         ctx,
         &sections,

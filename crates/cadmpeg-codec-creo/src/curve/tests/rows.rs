@@ -248,7 +248,8 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
     let payload = b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04\
                    crv_array\0crv_id\0\x80\x80type\0\x01";
     assert_eq!(
-        prototypes(payload),
+        crate::decode::with_test_decode_ctx(|ctx| prototypes(ctx, payload))
+            .expect("service profile admits curve prototypes"),
         vec![
             CurvePrototype {
                 id: 7,
@@ -270,7 +271,11 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
 
 #[test]
 fn ignores_incomplete_labeled_rows() {
-    assert!(prototypes(b"crv_array\0crv_id\0\x07").is_empty());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        prototypes(ctx, b"crv_array\0crv_id\0\x07")
+    })
+    .expect("service profile admits curve prototypes")
+    .is_empty());
 }
 
 #[test]
