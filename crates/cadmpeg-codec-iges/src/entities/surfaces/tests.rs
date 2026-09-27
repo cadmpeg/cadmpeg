@@ -103,6 +103,23 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
         assert_surface_collection_refusal(&rational, operation);
     }
 }
+
+#[test]
+fn interval_certified_ruled_rails_refuse_coordinate_arrays() {
+    let bytes = interval_certified_linear_bezier_ruled_surface_file();
+    for operation in [
+        "iges ruled linear x values",
+        "iges ruled linear y values",
+        "iges ruled linear z values",
+        "iges ruled linear x uncertainties",
+        "iges ruled linear y uncertainties",
+        "iges ruled linear z uncertainties",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(!service.ir().model.surfaces.is_empty());
+}
 fn type128_surface_with_closure(
     global: &[u8],
     closed_u: i64,
