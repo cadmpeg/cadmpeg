@@ -2102,12 +2102,25 @@ fn feature_operations(
         },
         |record| record.offset,
     )?;
-    let mut current = records
-        .into_iter()
-        .map(|record| (record.feature_id, record))
-        .collect::<BTreeMap<_, _>>()
-        .into_values()
-        .collect::<Vec<_>>();
+    let mut by_feature = BTreeMap::new();
+    for record in records {
+        match by_feature.entry(record.feature_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo current feature operation nodes")?;
+                entry.insert(record);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(record);
+            }
+        }
+    }
+    let mut current = Vec::new();
+    ctx.try_reserve_items(
+        &mut current,
+        by_feature.len(),
+        "creo current feature operation order",
+    )?;
+    current.extend(by_feature.into_values());
     current.sort_by_key(|record| record.offset);
     Ok(current)
 }
