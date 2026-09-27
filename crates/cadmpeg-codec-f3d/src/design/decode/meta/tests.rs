@@ -16,6 +16,38 @@ use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
 #[test]
+fn bulk_metadata_reuses_the_parsed_type_table() {
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let meta = design_metastream_with_records(
+        &[(
+            "11111111-2222-3333-4444-555555555555",
+            "21F379C8-CAFD-4985-B461-767673A4C502",
+            0,
+            "Component",
+            &[17],
+        )],
+        &[],
+    );
+    let bulk_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(bulk_name, stored).unwrap();
+    zip.write_all(&[]).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    with_scan(&bytes, |scan| {
+        let first = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
+        let second = super::metadata_for_bulk_stream(scan, bulk_name)?.unwrap();
+        assert!(std::rc::Rc::ptr_eq(&first, &second));
+        assert_eq!(first.types.len(), 1);
+        assert_eq!(first.types[0].entities.values().copied().collect::<Vec<_>>(), [17]);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    }).unwrap();
+}
+
+#[test]
 fn design_primary_frames_charge_registration_and_frame_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

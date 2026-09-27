@@ -229,16 +229,18 @@ pub(crate) fn decode_component_naming_spaces(
 pub(crate) fn metadata_for_bulk_stream(
     scan: &ContainerScan,
     bulk_entry_name: &str,
-) -> Result<Option<crate::metastream::MetaStream>, CodecError> {
+) -> Result<Option<std::rc::Rc<crate::metastream::MetaStream>>, CodecError> {
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
-    let meta_name = format!("{prefix}MetaStream.dat");
-    if !scan.entries.iter().any(|entry| entry.name == meta_name) {
+    let Some(meta_entry) = scan
+        .entries
+        .iter()
+        .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
+    else {
         return Ok(None);
-    }
-    scan.parsed_metastream(&meta_name)
-        .map(|meta| Some((*meta).clone()))
+    };
+    scan.parsed_metastream(&meta_entry.name).map(Some)
 }
 
 /// One live Design record selected by the primary index and resolved through
