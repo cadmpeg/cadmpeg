@@ -727,41 +727,33 @@ fn transfer_neutral_presentation(
             cadmpeg_ir::identity_key!("0"),
         ));
         presentation.schema_version = neutral_schema_version;
-        presentation.native_ref = Some(document.id.clone());
+        presentation.native_ref = Some(retained_string(ctx, &document.id, "FCStd presentation document reference")?);
+        let mut states = collection_vec(ctx, document.states.len(), "FCStd presentation states")?;
+        for (order, state) in document.states.iter().enumerate() {
+            let (attributes, refused) = gui_named_entries(
+                ctx,
+                || retained_join(ctx, &["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name"),
+                state.attributes.iter().map(|(name, value)| (name.as_str(), value.as_str())),
+            )?;
+            charge_refused_gui_keys(ctx, &mut state_losses, &refused)?;
+            let kind = if state.kind == "Camera" {
+                PresentationStateKind::Camera(camera_state_value(ctx, state, &mut state_losses)?)
+            } else {
+                PresentationStateKind::Native(retained_string(ctx, &state.kind, "FCStd presentation state kind")?)
+            };
+            let mut assets = collection_vec(ctx, state.side_entries.len(), "FCStd presentation assets")?;
+            assets.extend(state.side_entries.iter().map(|entry| crate::native::native_id("entry", entry)));
+            states.push(PresentationState {
+                kind,
+                order: u32::try_from(order)
+                    .map_err(|_| CodecError::malformed("GUI state order exceeds u32"))?,
+                attributes,
+                assets,
+            });
+        }
+        ctx.charge_work(states.len() as u64, "FCStd presentation state order")?;
         presentation
-            .set_states(
-                document
-                    .states
-                    .iter()
-                    .enumerate()
-                    .map(|(order, state)| {
-                        let (attributes, refused) = gui_named_entries(
-                            ctx,
-                            || retained_join(ctx, &["the gui ", state.kind.as_str(), " state"], "", "FCStd GUI state record name"),
-                            state.attributes.iter().map(|(name, value)| (name.as_str(), value.as_str())),
-                        )?;
-                        charge_refused_gui_keys(ctx, &mut state_losses, &refused)?;
-                        Ok(PresentationState {
-                            kind: if state.kind == "Camera" {
-                                PresentationStateKind::Camera(camera_state_value(
-                                    ctx,
-                                    state,
-                                    &mut state_losses,
-                                )?)
-                            } else {
-                                PresentationStateKind::Native(state.kind.clone())
-                            },
-                            order: order as u32,
-                            attributes,
-                            assets: state
-                                .side_entries
-                                .iter()
-                                .map(|entry| crate::native::native_id("entry", entry))
-                                .collect(),
-                        })
-                    })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
-            )
+            .set_states(states)
             .map_err(CodecError::malformed)?;
         reserve_vec_items(ctx, &mut plan.presentation_documents, 1, "FCStd presentation documents")?;
         plan.presentation_documents.push(presentation);
