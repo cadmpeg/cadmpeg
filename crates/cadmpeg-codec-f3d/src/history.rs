@@ -138,8 +138,12 @@ pub(crate) fn decode(
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
     let history_offset = preamble_offset.unwrap_or(0);
-    let history_id =
-        crate::ids::native_scoped_id(stream, "asm-history", format_args!("{history_offset:010}"));
+    let history_id = crate::ids::native_scoped_id_charged(
+        ctx,
+        stream,
+        "asm-history",
+        format_args!("{history_offset:010}"),
+    )?;
     let mut delta_offsets = Vec::new();
     let mut search = 0usize;
     while let Some(relative) = bytes[search..]
@@ -156,8 +160,12 @@ pub(crate) fn decode(
     }
     let mut states = Vec::new();
     for (ordinal, &offset) in delta_offsets.iter().enumerate() {
-        let state_record_id =
-            crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"));
+        let state_record_id = crate::ids::native_scoped_id_charged(
+            ctx,
+            stream,
+            "asm-delta-state",
+            format_args!("{offset:010}"),
+        )?;
         let mut position = offset + DELTA.len();
         let Some((
             state_id,
@@ -200,9 +208,21 @@ pub(crate) fn decode(
             &state_record_id,
             width,
         )?;
+        ctx.charge_collection_items(1, "admit F3D ASM delta state")?;
+        states.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("admit F3D ASM delta state", 0, 1)
+        })?;
+        let history_id_len = u64::try_from(history_id.len())
+            .map_err(|_| ctx.refuse_codec_limit("copy F3D ASM history parent", 0, u64::MAX))?;
+        ctx.charge_retained(history_id_len, "copy F3D ASM history parent")?;
+        let mut parent = String::new();
+        parent.try_reserve(history_id.len()).map_err(|_| {
+            ctx.refuse_codec_limit("copy F3D ASM history parent", 0, history_id_len)
+        })?;
+        parent.push_str(&history_id);
         states.push(AsmDeltaState {
             id: state_record_id,
-            parent: history_id.clone(),
+            parent,
             byte_offset: offset as u64,
             state_id,
             version_flag,
