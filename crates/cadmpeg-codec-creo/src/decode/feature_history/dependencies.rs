@@ -6,6 +6,8 @@ use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;
 use crate::feature::rows::agreed_feature_affected_ids;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
@@ -317,6 +319,7 @@ fn agreed_feature_parent_ids(
 }
 
 pub(in super::super) fn surface_prototype_feature_dependencies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
@@ -335,25 +338,39 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
         let crate::surface::SurfaceNamedValue::CompactIntArray(consumers) = &field.value else {
             continue;
         };
-        add_surface_prototype_feature_dependencies(&mut dependencies, row.feature_id, consumers);
+        add_surface_prototype_feature_dependencies(
+            ctx,
+            &mut dependencies,
+            row.feature_id,
+            consumers,
+        )?;
     }
     Ok(dependencies)
 }
 
 pub(in super::super) fn add_surface_prototype_feature_dependencies(
+    ctx: &DecodeContext<'_>,
     dependencies: &mut BTreeMap<u32, Vec<u32>>,
     producer: u32,
     consumers: &[u32],
-) {
+) -> Result<(), CodecError> {
     for &consumer in consumers {
         if consumer == 0 || consumer == producer {
             continue;
         }
-        let producers = dependencies.entry(consumer).or_default();
+        let producers = match dependencies.entry(consumer) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo prototype dependency consumers")?;
+                entry.insert(Vec::new())
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
         if !producers.contains(&producer) {
+            ctx.try_reserve_items(producers, 1, "creo prototype dependency producers")?;
             producers.push(producer);
         }
     }
+    Ok(())
 }
 
 pub(in super::super) fn agreed_feature_replay_geometry_ids(
@@ -572,3 +589,6 @@ fn agreed_ids<'a>(mut values: impl Iterator<Item = &'a [u32]>) -> Option<&'a [u3
     let first = values.next()?;
     values.all(|value| value == first).then_some(first)
 }
+
+#[cfg(test)]
+mod tests;
