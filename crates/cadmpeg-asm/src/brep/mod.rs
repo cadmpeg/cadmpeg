@@ -560,7 +560,6 @@ pub fn decode_with_header(
         .count();
     let definition_slots = u64::try_from(definition_count)
         .map_err(|_| ctx.refuse_codec_limit("ASM subtype index", u64::MAX, u64::MAX))?;
-    ctx.charge_collection_items(definition_slots, "index ASM subtype definitions")?;
     let definition_slot_bytes = u64::try_from(std::mem::size_of::<(
         std::sync::Arc<[crate::sab::Token]>,
         usize,
@@ -571,7 +570,7 @@ pub fn decode_with_header(
         .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
     let _subtype_index_reservation =
         ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
-    let token_table = nurbs::toks::SubtypeTable::from_records(records).with_save_format_version(
+    let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?.with_save_format_version(
         header
             .as_ref()
             .and_then(|header| header.save_format_version),
@@ -586,7 +585,7 @@ pub fn decode_with_header(
         .and_then(|count| i64::try_from(count).ok());
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
-    let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records);
+    let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(ctx, records)?;
     let mut reach = Reachable::default();
 
     keep_faces_and_carriers(
@@ -636,9 +635,10 @@ pub fn decode_with_header(
         format,
     )?;
     emit_pcurves(ctx, &mut out, records, &mut carriers, &reach, format)?;
-    emit_points(&mut out, records, &reach, format)?;
+    emit_points(ctx, &mut out, records, &reach, format)?;
     emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
+        ctx,
         &mut out,
         records,
         &by_index,
@@ -657,15 +657,16 @@ pub fn decode_with_header(
         &reach,
         format,
     )?;
-    emit_loops(&mut out, records, &by_index, &reach, format);
+    emit_loops(ctx, &mut out, records, &by_index, &reach, format)?;
     emit_faces(
+        ctx,
         &mut out,
         records,
         &by_index,
         &reach,
         &inward_normal_surfaces,
         format,
-    );
+    )?;
     emit_containers(
         ctx,
         &mut out,

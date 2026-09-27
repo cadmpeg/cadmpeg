@@ -928,7 +928,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
 #[test]
 fn analytic_carrier_decode_covers_each_shape() {
-    use cadmpeg_asm::brep::geometry::{decode_curve, decode_surface};
+    use cadmpeg_asm::brep::geometry;
     use cadmpeg_asm::sab::{Record, Token};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -942,6 +942,11 @@ fn analytic_carrier_decode_covers_each_shape() {
             len: 0,
         }
     }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let decode_surface = |record: &Record| geometry::decode_surface(&ctx, record).transpose().unwrap();
+    let decode_curve = |record: &Record| geometry::decode_curve(&ctx, record).transpose().unwrap();
     let refn = || Token::Ref(-1);
     let base = || vec![refn(), Token::Long(-1), refn()];
 

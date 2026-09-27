@@ -53,7 +53,7 @@ pub(super) fn cyl_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["cyl_spl_sur", "cylsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let scope = toks::subtype_span(toks, start)?;
     let span = scope.tokens();
     let mut cur = Cur::at(span, 2);
@@ -119,8 +119,8 @@ pub(super) fn cyl_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache = scope
-            .owned_marker_positions()
+        let cache = propagate_resource!(scope
+            .owned_marker_positions(ctx))
             .into_iter()
             .rev()
             .find_map(|at| surface_block(ctx, span, at));
@@ -1142,7 +1142,7 @@ pub(super) fn var_blend_spl_sur(
         "sfcv_free_bl_spl_sur",
         "sfcvfreeblndsur",
     ];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let subtype = match name {
         "var_blend_spl_sur" | "varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
@@ -1549,7 +1549,7 @@ pub(super) fn vertex_blend_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["VBL_SURF", "vertexblendsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
@@ -1616,7 +1616,7 @@ pub(super) fn full_rb_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_
         "sss_blend_spl_sur",
         "sssblndsur",
     ];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -1704,7 +1704,7 @@ pub(super) fn full_rb_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_
 /// searched by token kind.
 pub(super) fn compact_rb_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];

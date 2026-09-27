@@ -16,6 +16,13 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashSet;
 
+fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    nurbs::toks::SubtypeTable::from_records(&ctx, records).unwrap()
+}
+
 #[test]
 fn emitted_vertex_blend_boundaries_refuse_collection_limit() {
     use crate::nurbs::proc_surface::{
@@ -167,20 +174,24 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
             .iter()
             .map(|record| (record.index as i64, record))
             .collect();
-        let (_, inward) = super::super::topology::decode_analytic_carriers(&records);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (_, inward) = super::super::topology::decode_analytic_carriers(&ctx, &records).unwrap();
         let reach = Reachable {
             faces: HashSet::from([0]),
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
         emit_faces(
+            &ctx,
             &mut out,
             &records,
             &by_index,
             &reach,
             &inward,
             crate::asm_format!("f3d"),
-        );
+        ).unwrap();
         assert_eq!(out.faces.len(), 1);
         assert_eq!(out.face_sidedness.len(), 1);
         assert_eq!(out.faces[0].sense, normalized);
@@ -247,7 +258,7 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             offset: 0,
             len: 0,
         }];
-        let table = nurbs::toks::SubtypeTable::from_records(&records);
+        let table = subtype_table(&records);
         let reach = Reachable {
             coedges: HashSet::from([0]),
             edges: HashSet::from([1]),
@@ -299,7 +310,7 @@ fn tolerant_coedge_source_refuses_nonfinite_interval() {
         offset: 0,
         len: 0,
     }];
-    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let table = subtype_table(&records);
     let reach = Reachable {
         coedges: HashSet::from([0]),
         edges: HashSet::from([1]),
@@ -508,7 +519,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             .iter()
             .map(|record| (record.index as i64, record))
             .collect();
-        let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
+        let table = subtype_table(&records);
         let parsed =
             crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx, &records[4].tokens, &table).transpose().expect("resource allocation did not fail")
                 .unwrap();
