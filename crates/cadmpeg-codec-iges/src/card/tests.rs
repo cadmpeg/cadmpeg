@@ -13,6 +13,74 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]
+fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = point_file();
+    let scan = super::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let primary =
+        || crate::dialect::classify(crate::representation::Representation::FixedAscii, &global);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summarize(&scan, primary(), &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == scan.lines.len() as u64 * 5
+                && limit.operation == "iges card summary section scans"
+    ));
+
+    for (cap, operation) in [
+        (0, "iges card summary entries"),
+        (1, "iges card summary attributes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::summarize(&scan, primary(), &ctx);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summarize(&scan, primary(), &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges card summary card count"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let summary = super::summarize(&scan, primary(), &ctx).unwrap();
+    assert_eq!(summary.entries[0].name, "start");
+    assert_eq!(summary.entries[0].attributes["cards"], "1");
+    assert_eq!(summary.notes, [format!("source_bytes={}", bytes.len())]);
+}
+
+#[test]
 fn physical_card_payload_refuses_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

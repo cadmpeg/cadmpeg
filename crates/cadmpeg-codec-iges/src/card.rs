@@ -3,6 +3,9 @@
 
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, push_formatted_note, reserve_vec_growth,
+};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -12,6 +15,7 @@ use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub(crate) const CARD_WIDTH: usize = 80;
 
@@ -57,15 +61,6 @@ enum LineEnding {
 }
 
 impl LineEnding {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Lf => "lf",
-            Self::CrLf => "crlf",
-            Self::Cr => "cr",
-            Self::None => "none",
-        }
-    }
-
     fn bytes(self) -> &'static [u8] {
         match self {
             Self::Lf => b"\n",
@@ -383,9 +378,9 @@ fn physical_lines(
             } else {
                 LineEnding::None
             };
-            lines.try_reserve(1).map_err(|_| {
-                refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1)
-            })?;
+            lines
+                .try_reserve(1)
+                .map_err(|_| refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1))?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: u64::try_from(card_start).map_err(|_| {
@@ -404,9 +399,9 @@ fn physical_lines(
         if card_start != payload_end {
             charge_line(ctx)?;
             let payload = copy_card_payload(&source[card_start..payload_end], ctx)?;
-            lines.try_reserve(1).map_err(|_| {
-                refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1)
-            })?;
+            lines
+                .try_reserve(1)
+                .map_err(|_| refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1))?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: u64::try_from(card_start).map_err(|_| {
@@ -591,10 +586,7 @@ fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
 }
 
-fn copy_card_payload(
-    bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<u8>, CodecError> {
+fn copy_card_payload(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Vec<u8>, CodecError> {
     match ctx {
         Some(ctx) => ctx.copy_retained(bytes, "iges physical card payload"),
         None => {
@@ -612,10 +604,55 @@ fn copy_card_payload(
     }
 }
 
+struct EndingSummary([usize; 4]);
+
+impl fmt::Display for EndingSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (name, count) in ["cr", "crlf", "lf", "none"].into_iter().zip(self.0) {
+            if count == 0 {
+                continue;
+            }
+            if !first {
+                formatter.write_str(",")?;
+            }
+            write!(formatter, "{name}:{count}")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+fn summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    let key = format_retained(
+        ctx,
+        format_args!("{key}"),
+        "iges card summary attribute key",
+    )?;
+    insert_optional_btree_map(
+        Some(ctx),
+        attributes,
+        key,
+        value,
+        "iges card summary attributes",
+    )?;
+    Ok(())
+}
+
 pub(crate) fn summarize(
     scan: &CardScan<'_>,
     primary: cadmpeg_core::dialect::DialectMatch,
-) -> ContainerSummary {
+    ctx: &DecodeContext<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let section_scan_work = u64_from_index(scan.lines.len())
+        .checked_mul(5)
+        .ok_or_else(|| refuse_local_limit("iges card summary section scans", u64::MAX, 1))?;
+    ctx.charge_work(section_scan_work, "iges card summary section scans")?;
     let sections = [
         Section::Start,
         Section::Global,
@@ -623,43 +660,66 @@ pub(crate) fn summarize(
         Section::Parameter,
         Section::Terminate,
     ];
-    let mut entries = sections
-        .into_iter()
-        .filter_map(|section| {
-            let lines = scan
-                .section(section)
-                .map(|(_, line)| line)
-                .collect::<Vec<_>>();
-            if lines.is_empty() {
-                return None;
-            }
-            let mut endings = BTreeMap::<&str, usize>::new();
-            for line in &lines {
-                *endings.entry(line.ending.name()).or_default() += 1;
-            }
-            let mut attributes = BTreeMap::new();
-            attributes.insert("cards".into(), lines.len().to_string());
-            attributes.insert(
-                "line_endings".into(),
-                endings
-                    .into_iter()
-                    .map(|(name, count)| format!("{name}:{count}"))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            let size = lines.iter().fold(0_u64, |size, line| {
-                size.saturating_add(u64_from_index(
+    let mut entries = Vec::new();
+    for section in sections {
+        let mut line_count = 0_usize;
+        let mut size = 0_u64;
+        let mut endings = [0_usize; 4];
+        for (_, line) in scan.section(section) {
+            line_count += 1;
+            size = size
+                .checked_add(u64_from_index(
                     line.payload.len() + line.ending.bytes().len(),
                 ))
-            });
-            Some(ContainerEntry {
-                name: section.name().into(),
-                role: ContainerRole::Section,
-                storage: EntryStorage::verbatim(VerbatimLabel::None, size),
-                attributes,
-            })
-        })
-        .collect::<Vec<_>>();
+                .ok_or_else(|| refuse_local_limit("iges card summary section size", u64::MAX, 1))?;
+            let index = match line.ending {
+                LineEnding::Cr => 0,
+                LineEnding::CrLf => 1,
+                LineEnding::Lf => 2,
+                LineEnding::None => 3,
+            };
+            endings[index] += 1;
+        }
+        if line_count == 0 {
+            continue;
+        }
+        reserve_vec_growth(ctx, &mut entries, 1, "iges card summary entries")?;
+        let mut attributes = BTreeMap::new();
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "cards",
+            format_retained(
+                ctx,
+                format_args!("{line_count}"),
+                "iges card summary card count",
+            )?,
+        )?;
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "line_endings",
+            format_retained(
+                ctx,
+                format_args!("{}", EndingSummary(endings)),
+                "iges card summary line endings",
+            )?,
+        )?;
+        entries.push(ContainerEntry {
+            name: format_retained(
+                ctx,
+                format_args!("{}", section.name()),
+                "iges card summary section name",
+            )?,
+            role: ContainerRole::Section,
+            storage: EntryStorage::verbatim(VerbatimLabel::None, size),
+            attributes,
+        });
+    }
+    ctx.charge_work(
+        u64_from_index(scan.lines.len()),
+        "iges card summary terminate scan",
+    )?;
     let terminate_index = scan.lines.iter().position(|line| {
         matches!(
             line,
@@ -673,26 +733,59 @@ pub(crate) fn summarize(
         .and_then(|index| scan.lines.get(index + 1..))
         .unwrap_or_default();
     if !post_terminate.is_empty() {
-        let size = post_terminate.iter().fold(0_u64, |size, line| {
+        ctx.charge_work(
+            u64_from_index(post_terminate.len()),
+            "iges card summary trailing scan",
+        )?;
+        let mut size = 0_u64;
+        for line in post_terminate {
             let line = line.physical();
-            size.saturating_add(u64_from_index(
-                line.payload.len() + line.ending.bytes().len(),
-            ))
-        });
+            size = size
+                .checked_add(u64_from_index(
+                    line.payload.len() + line.ending.bytes().len(),
+                ))
+                .ok_or_else(|| {
+                    refuse_local_limit("iges card summary trailing size", u64::MAX, 1)
+                })?;
+        }
+        reserve_vec_growth(ctx, &mut entries, 1, "iges card summary entries")?;
+        let mut attributes = BTreeMap::new();
+        summary_attribute(
+            ctx,
+            &mut attributes,
+            "records",
+            format_retained(
+                ctx,
+                format_args!("{}", post_terminate.len()),
+                "iges card summary trailing count",
+            )?,
+        )?;
         entries.push(ContainerEntry {
-            name: "post-terminate".into(),
+            name: format_retained(
+                ctx,
+                format_args!("post-terminate"),
+                "iges card summary section name",
+            )?,
             role: ContainerRole::RetainedTrailingRecords,
             storage: EntryStorage::verbatim(VerbatimLabel::None, size),
-            attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
+            attributes,
         });
     }
-    ContainerSummary::classified(
+    let mut notes = Vec::new();
+    push_formatted_note(
+        ctx,
+        &mut notes,
+        format_args!("source_bytes={}", scan.source.len()),
+        "iges card summary notes",
+        "iges card summary note text",
+    )?;
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         cadmpeg_ir::ContainerKind::FixedAscii,
         entries,
         Vec::new(),
-        vec![format!("source_bytes={}", scan.source.len())],
-    )
+        notes,
+    ))
 }
 
 impl CardScan<'_> {
