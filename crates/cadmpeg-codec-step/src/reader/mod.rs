@@ -533,12 +533,7 @@ fn decode_exchange_mode(
     session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
-        DecodeMode::Inspect => exchange
-            .records()
-            .iter()
-            .filter(|(id, _)| !session.typed_records.contains(id))
-            .map(|(_, record)| record.span.start)
-            .collect(),
+        DecodeMode::Inspect => inspect_opaque_offsets(exchange, &session.typed_records, session.ctx)?,
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
@@ -1632,9 +1627,28 @@ fn references(value: &Value) -> Vec<u64> {
 }
 
 fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
-    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
+    let suffix = identity
+        .strip_prefix("step:data:")?
+        .strip_prefix(kind)?
+        .strip_prefix('#')?;
     let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
     suffix.split('-').next()?.parse().ok()
+}
+
+fn inspect_opaque_offsets(
+    exchange: &Exchange,
+    typed_records: &HashSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<usize>, CodecError> {
+    let mut offsets = BTreeSet::new();
+    for (id, record) in exchange.records() {
+        if typed_records.contains(id) || offsets.contains(&record.span.start) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "step_inspect_opaque_offsets")?;
+        offsets.insert(record.span.start);
+    }
+    Ok(offsets)
 }
 
 #[cfg(test)]
