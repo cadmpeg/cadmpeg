@@ -369,7 +369,17 @@ pub(crate) fn project_assembly_joints(
             joint
         });
     }
-    Ok(joints.into_values().collect())
+    let mut projected = Vec::new();
+    if let Some(ctx) = ctx {
+        let count = u64::try_from(joints.len())
+            .map_err(|_| ctx.refuse_codec_limit("f3d assembly joint output count", 0, 1))?;
+        ctx.charge_collection_items(count, "f3d assembly joint output")?;
+        projected.try_reserve(joints.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d assembly joint output allocation", 0, 1)
+        })?;
+    }
+    projected.extend(joints.into_values());
+    Ok(projected)
 }
 
 fn project_qualified_operands(
@@ -653,8 +663,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn assembly_joint_map_refuses_collection_limit() {
+    fn one_joint_scopes() -> Vec<DesignParameterScope> {
         use crate::records::feature::{
             assembly::{
                 DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
@@ -705,6 +714,12 @@ mod tests {
             })
             .unwrap();
         scopes.push(joint_scope);
+        scopes
+    }
+
+    #[test]
+    fn assembly_joint_map_refuses_collection_limit() {
+        let scopes = one_joint_scopes();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
@@ -716,6 +731,23 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "f3d assembly joint map entry"
+        ));
+    }
+
+    #[test]
+    fn assembly_joint_output_refuses_collection_limit() {
+        let scopes = one_joint_scopes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+            .expect_err("the output vector needs one item after its map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly joint output"
         ));
     }
 
