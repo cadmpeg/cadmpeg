@@ -153,6 +153,21 @@ fn product_definition_group_members_refuse_collection_limit() {
 }
 
 #[test]
+fn product_child_definitions_refuse_collection_limit() {
+    product_collection_refuses("step_product_child_definitions");
+}
+
+#[test]
+fn product_usage_parent_groups_refuse_collection_limit() {
+    product_collection_refuses("step_product_usage_parent_groups");
+}
+
+#[test]
+fn product_usage_parent_members_refuse_collection_limit() {
+    product_collection_refuses("step_product_usage_parent_members");
+}
+
+#[test]
 fn product_definition_descriptions_refuse_collection_limit() {
     product_collection_refuses("step_product_definition_descriptions");
 }
