@@ -2,9 +2,41 @@
 //! Charged text reads shared by Design record decoders.
 
 use std::ops::RangeInclusive;
+use std::fmt::Write;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+
+pub(in crate::design::decode) fn design_record_id_charged(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    suffix: &'static str,
+    offset: u64,
+    charge_operation: &'static str,
+    allocation_operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut id = super::sketch::native_scope_charged(ctx, stream)?;
+    let digits = usize::try_from(offset.checked_ilog10().unwrap_or(0) + 1).map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    let additional = suffix.len().checked_add(digits).ok_or_else(|| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    ctx.charge_retained(
+        u64::try_from(additional).map_err(|_| {
+            ctx.refuse_codec_limit(allocation_operation, 0, 1)
+        })?,
+        charge_operation,
+    )?;
+    id.try_reserve(additional).map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    id.push_str(suffix);
+    write!(id, "{offset}").map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    Ok(id)
+}
 
 pub(super) fn lp_utf16_bounded_charged(
     ctx: &DecodeContext<'_>,

@@ -5,13 +5,14 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
+use crate::design::decode::text::design_record_id_charged;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
     IndexedRecordOffsets,
 };
-use crate::ids::{native_design_surface_trim_operation_id, native_stream};
+use crate::ids::native_stream;
 use crate::records::feature::{
     scope::DesignParameterScope,
     surface_ops::{
@@ -215,7 +216,18 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
-        operation.id = native_design_surface_trim_operation_id(&entry.name, scope.byte_offset());
+        operation.id = design_record_id_charged(
+            ctx,
+            &entry.name,
+            ":design-surface-trim-operation#",
+            scope.byte_offset(),
+            "f3d surface-trim operation identifier",
+            "f3d surface-trim operation identifier allocation",
+        )?;
+        ctx.charge_collection_items(1, "f3d surface-trim operations")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d surface-trim operations allocation", 0, 1)
+        })?;
         out.push(operation);
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));
