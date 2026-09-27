@@ -706,3 +706,225 @@ fn curve_expression_dependency_validation_charges_comparisons() {
             && limit.operation == "validate Creo curve-expression dependency uniqueness")
     );
 }
+
+fn with_retained_limit<T>(
+    limit: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("small input is admitted");
+    run(&ctx)
+}
+
+#[test]
+fn curve_expression_external_dependency_text_refuses_before_copy() {
+    let names = vec!["outside".to_string()];
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::joined_dependency_names(
+            ctx,
+            &names,
+            |_| Ok(true),
+            "creo curve-expression external dependency text",
+        ))
+        .expect("service profile admits the property"),
+        Some("outside".to_string())
+    );
+    let error = with_retained_limit(6, |ctx| {
+        super::joined_dependency_names(
+            ctx,
+            &names,
+            |_| Ok(true),
+            "creo curve-expression external dependency text",
+        )
+    })
+    .expect_err("seven property bytes exceed the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression external dependency text"
+    ));
+}
+
+#[test]
+fn curve_expression_ambiguous_dependency_text_refuses_before_copy() {
+    let names = vec!["ambiguous".to_string()];
+    let error = with_retained_limit(8, |ctx| {
+        super::joined_dependency_names(
+            ctx,
+            &names,
+            |_| Ok(true),
+            "creo curve-expression ambiguous dependency text",
+        )
+    })
+    .expect_err("nine property bytes exceed the limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression ambiguous dependency text"
+    ));
+}
+
+#[test]
+fn curve_expression_intrinsic_dependency_text_refuses_before_copy() {
+    let names = vec!["t".to_string(), "T".to_string()];
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::joined_dependency_names(
+            ctx,
+            &names,
+            |name| Ok(name.eq_ignore_ascii_case("t")),
+            "creo curve-expression intrinsic dependency text",
+        ))
+        .expect("service profile admits the property"),
+        Some("t,T".to_string())
+    );
+    let error = with_retained_limit(2, |ctx| {
+        super::joined_dependency_names(
+            ctx,
+            &names,
+            |_| Ok(true),
+            "creo curve-expression intrinsic dependency text",
+        )
+    })
+    .expect_err("the separator is a retained byte");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression intrinsic dependency text"
+    ));
+}
+
+#[test]
+fn curve_expression_cyclic_dependency_text_refuses_before_copy() {
+    let names = ["alpha", "beta"];
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::join_cyclic_dependency_names(ctx, &names))
+            .expect("service profile admits the joined text"),
+        "alpha,beta"
+    );
+    let error = with_retained_limit(9, |ctx| super::join_cyclic_dependency_names(ctx, &names))
+        .expect_err("the joined names need ten bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression cyclic dependency text"
+    ));
+}
+
+#[test]
+fn curve_expression_property_node_refuses_before_tree_insert() {
+    let error = with_collection_limit(0, |ctx| {
+        let mut properties = std::collections::BTreeMap::new();
+        super::insert_curve_expression_property(ctx, &mut properties, "source_name", "x".into())
+    })
+    .expect_err("the property node needs one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression property nodes"
+    ));
+}
+
+#[test]
+fn curve_expression_source_text_refuses_before_join() {
+    let lines = [
+        crate::curve::CurveExpressionLine {
+            text: "alpha".to_string(),
+            offset: 0,
+        },
+        crate::curve::CurveExpressionLine {
+            text: "beta".to_string(),
+            offset: 6,
+        },
+    ];
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_source_text(ctx, &lines))
+            .expect("service profile admits source text"),
+        "alpha\nbeta"
+    );
+    let error = with_retained_limit(9, |ctx| super::curve_expression_source_text(ctx, &lines))
+        .expect_err("the joined lines need ten bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression feature source text"
+    ));
+}
+
+#[test]
+fn curve_expression_named_properties_refuse_before_second_tree() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let assignment = &record.assignments[0];
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#a")
+        .expect("valid parameter id");
+    let assignment_indices = std::collections::BTreeMap::new();
+    let unique_indices = std::collections::BTreeMap::new();
+    let dimensions = std::collections::BTreeMap::new();
+    let edges = std::collections::HashSet::new();
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_properties(
+            ctx,
+            assignment,
+            0,
+            "a",
+            &parameter_id,
+            &assignment_indices,
+            &unique_indices,
+            &dimensions,
+            &edges,
+        ))
+        .expect("service profile admits both property maps")
+        .len(),
+        2
+    );
+    let error = with_collection_limit(2, |ctx| {
+        super::curve_expression_properties(
+            ctx,
+            assignment,
+            0,
+            "a",
+            &parameter_id,
+            &assignment_indices,
+            &unique_indices,
+            &dimensions,
+            &edges,
+        )
+    })
+    .expect_err("the second tree needs two more nodes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression named properties"
+    ));
+}
+
+#[test]
+fn curve_expression_native_parameters_refuse_before_tree_creation() {
+    let dimensions = std::collections::BTreeMap::new();
+    assert_eq!(
+        transfer_with_limits(
+            &["a=1"],
+            &dimensions,
+            cadmpeg_core::decode::DecodePolicy::service()
+        )
+        .expect("service profile admits native feature fallback"),
+        1
+    );
+    let mut limited = cadmpeg_core::decode::DecodePolicy::service();
+    limited.limits.max_collection_items = 14;
+    let error = transfer_with_limits(&["a=1"], &dimensions, limited)
+        .expect_err("the native parameter tree needs two more items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression native parameters"
+    ));
+}
