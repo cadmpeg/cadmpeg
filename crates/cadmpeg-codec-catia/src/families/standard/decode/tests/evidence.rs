@@ -844,9 +844,9 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     };
     let records = vec![plane(10), plane(20), plane(30)];
 
-    assert!(standard_plane_normals_from_face_frames(&records, &[None, None, None]).is_empty());
+    assert!(crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, &records, &[None, None, None])).expect("service resource budget").is_empty());
     assert_eq!(
-        standard_plane_normals_from_face_frames(
+        crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, 
             &records,
             &[
                 Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
@@ -855,7 +855,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
                     0.0, 0.0, -1.0
                 ]))
             ],
-        ),
+        )).expect("service resource budget"),
         HashMap::from([
             (
                 10,
@@ -869,7 +869,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     );
 
     let conflicting = vec![plane(10), plane(10)];
-    assert!(standard_plane_normals_from_face_frames(
+    assert!(crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, 
         &conflicting,
         &[
             Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
@@ -877,8 +877,35 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
                 0.0, 0.0, -1.0
             ]))
         ],
-    )
+    )).expect("service resource budget")
     .is_empty());
+}
+
+#[test]
+fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
+    let records = [StandardSurfaceRecord::Analytic(SurfacePrefix {
+        pos: 0,
+        target: 10,
+        kind: AnalyticSurfaceKind::Plane,
+    })];
+    let frames = [Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]))];
+    let normals = crate::test_support::with_service_context(|ctx| {
+        standard_plane_normals_from_face_frames(ctx, &records, &frames)
+    })
+    .expect("service resource budget");
+    assert_eq!(normals.len(), 1);
+    for (cap, operation) in [
+        (0, "catia_plane_normal_candidates"),
+        (1, "catia_plane_normals"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                standard_plane_normals_from_face_frames(ctx, &records, &frames)
+            }),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == operation
+        ));
+    }
 }
 
 #[test]

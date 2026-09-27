@@ -1881,15 +1881,14 @@ fn try_decode_standard_population(
             )
         })
         .count();
-    let freeform_tags = records
-        .iter()
-        .filter_map(|record| match record {
-            crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } => {
-                Some(*tag)
+    let mut freeform_tags = HashSet::new();
+    for record in &records {
+        if let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } = record {
+            if let Err(error) = crate::resource::insert_set(ctx, &mut freeform_tags, *tag, "catia_standard_freeform_tags") {
+                return Some(Err(error));
             }
-            crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
-        })
-        .collect::<HashSet<_>>();
+        }
+    }
     let standard_edge_count = if let Some(selection) = selection {
         (!selection.supports.is_empty()).then_some(selection.supports.len())
     } else {
@@ -1917,10 +1916,12 @@ fn try_decode_standard_population(
             Err(error) => return Some(Err(error)),
         }
     };
-    let edge_tags = curve_supports
-        .iter()
-        .map(|support| support.tag)
-        .collect::<HashSet<_>>();
+    let mut edge_tags = HashSet::new();
+    for support in &curve_supports {
+        if let Err(error) = crate::resource::insert_set(ctx, &mut edge_tags, support.tag, "catia_standard_edge_tags") {
+            return Some(Err(error));
+        }
+    }
     let object_evidence = match standard_object_evidence(
         ctx,
         scan,
@@ -1942,9 +1943,9 @@ fn try_decode_standard_population(
         Ok(vectors) => vectors,
         Err(error) => return Some(Err(error)),
     };
-    let mut curved_surfaces = records
-        .iter()
-        .map(|record| match record {
+    let mut curved_surfaces = Vec::new();
+    for record in &records {
+        let surface = match record {
             crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
                 if prefix.kind != AnalyticSurfaceKind::Plane =>
             {
@@ -1952,14 +1953,20 @@ fn try_decode_standard_population(
             }
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_)
             | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
-        })
-        .collect::<Vec<_>>();
+        };
+        if let Err(error) = crate::resource::push(ctx, &mut curved_surfaces, surface, "catia_standard_curved_surfaces") {
+            return Some(Err(error));
+        }
+    }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(
         &scan.data,
         &consolidated_records,
         &mut curved_surfaces,
     );
-    let plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
+    let plane_normals = match standard_plane_normals_from_face_frames(ctx, &records, &face_frame_vectors) {
+        Ok(normals) => normals,
+        Err(error) => return Some(Err(error)),
+    };
     let plane_rows = match crate::families::standard::records::plane_params(ctx, brep, &plane_normals) {
         Ok(planes) => planes,
         Err(error) => return Some(Err(error)),
@@ -1970,10 +1977,13 @@ fn try_decode_standard_population(
             return Some(Err(error));
         }
     }
-    let face_bounds = records
-        .iter()
-        .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
-        .collect::<Vec<_>>();
+    let mut face_bounds = Vec::new();
+    for record in &records {
+        let bounds = crate::families::standard::records::standard_face_bounds(brep, record);
+        if let Err(error) = crate::resource::push(ctx, &mut face_bounds, bounds, "catia_standard_face_bounds") {
+            return Some(Err(error));
+        }
+    }
     let mut freeform_geometries = object_evidence.surface_geometries.clone();
     let e5_freeform_geometries =
         associate_standard_freeform_e5_surfaces(&records, &scan.data, refusal);
@@ -6811,9 +6821,10 @@ fn same_cone_generator_pair(
 /// stored normal's signed sense. A target with conflicting frame vectors stays
 /// unresolved.
 fn standard_plane_normals_from_face_frames(
+    ctx: &DecodeContext<'_>,
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_frame_vectors: &[Option<FiniteVector<3>>],
-) -> HashMap<u32, FiniteVector<3>> {
+) -> Result<HashMap<u32, FiniteVector<3>>, CodecError> {
     let mut candidates = HashMap::<u32, Option<FiniteVector<3>>>::new();
     for (face, record) in records.iter().enumerate() {
         let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
@@ -6826,19 +6837,21 @@ fn standard_plane_normals_from_face_frames(
         let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
             continue;
         };
-        candidates
-            .entry(prefix.target)
-            .and_modify(|stored| {
-                if stored.is_some_and(|stored| stored != normal) {
-                    *stored = None;
-                }
-            })
-            .or_insert(Some(normal));
+        if let Some(stored) = candidates.get_mut(&prefix.target) {
+            if stored.is_some_and(|stored| stored != normal) {
+                *stored = None;
+            }
+        } else {
+            crate::resource::insert_map(ctx, &mut candidates, prefix.target, Some(normal), "catia_plane_normal_candidates")?;
+        }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(target, normal)| normal.map(|normal| (target, normal)))
-        .collect()
+    let mut normals = HashMap::new();
+    for (target, normal) in candidates {
+        if let Some(normal) = normal {
+            crate::resource::insert_map(ctx, &mut normals, target, normal, "catia_plane_normals")?;
+        }
+    }
+    Ok(normals)
 }
 
 fn face_surface<'a>(
