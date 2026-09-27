@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
 use crate::container::ContainerScan;
-use crate::ids::{self, native_stream};
+use crate::ids::native_stream;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION},
     recipes::DesignComponentNamingSpace,
@@ -54,6 +54,38 @@ impl<'a> MetaStreamEntry<'a> {
             prefix: entry.name.strip_suffix("MetaStream.dat")?,
         })
     }
+}
+
+fn paired_bulk_entry_name<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+    prefix: &str,
+) -> Result<&'a str, CodecError> {
+    if let Some(entry) = scan
+        .entries
+        .iter()
+        .find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat"))
+    {
+        return Ok(&entry.name);
+    }
+    let length = "entry ".len()
+        .checked_add(prefix.len())
+        .and_then(|length| length.checked_add("BulkStream.dat not found".len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1))?;
+    ctx.charge_retained(
+        u64::try_from(length).map_err(|_| {
+            ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1)
+        })?,
+        "f3d missing Design BulkStream error",
+    )?;
+    let mut message = String::new();
+    message.try_reserve(length).map_err(|_| {
+        ctx.refuse_codec_limit("f3d missing Design BulkStream error allocation", 0, 1)
+    })?;
+    message.push_str("entry ");
+    message.push_str(prefix);
+    message.push_str("BulkStream.dat not found");
+    Err(CodecError::Malformed(message))
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
@@ -244,30 +276,7 @@ pub(crate) fn decode_component_naming_spaces(
         if component_entities.is_empty() {
             continue;
         }
-        let prefix = meta_entry.prefix;
-        let bulk_name = scan.entries.iter()
-            .find(|entry| entry.name.strip_prefix(prefix) == Some("BulkStream.dat"))
-            .map(|entry| entry.name.as_str());
-        let Some(bulk_name) = bulk_name else {
-            let length = "entry ".len()
-                .checked_add(prefix.len())
-                .and_then(|length| length.checked_add("BulkStream.dat not found".len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("f3d missing component bulk name length", 0, 1))?;
-            ctx.charge_retained(
-                u64::try_from(length).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d missing component bulk name length", 0, 1)
-                })?,
-                "f3d missing component BulkStream error",
-            )?;
-            let mut message = String::new();
-            message.try_reserve(length).map_err(|_| {
-                ctx.refuse_codec_limit("f3d missing component BulkStream error allocation", 0, 1)
-            })?;
-            message.push_str("entry ");
-            message.push_str(prefix);
-            message.push_str("BulkStream.dat not found");
-            return Err(CodecError::Malformed(message));
-        };
+        let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
@@ -818,43 +827,16 @@ fn parse_feature_timeline_record(
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);
     };
-    let id_bytes = stream
-        .chars()
-        .try_fold("f3d:".len(), |length, character| {
-            let bytes = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                character.len_utf8().checked_mul(3)?
-            } else {
-                character.len_utf8()
-            };
-            length.checked_add(bytes)
-        })
-        .and_then(|scope| {
-            let digits = usize::try_from(source_start.checked_ilog10().unwrap_or(0) + 1).ok()?;
-            let retained = scope
-                .checked_add(":design-feature-timeline#".len())?
-                .checked_add(digits)?;
-            Some((scope, retained))
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
-        })?;
-    let temporary = id_bytes.0.checked_add(id_bytes.1).ok_or_else(|| {
-        ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
-    })?;
-    let _id_reservation = ctx.reserve_scoped(
-        u64::try_from(temporary).map_err(|_| {
-            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
-        })?,
-        "format F3D timeline identity",
-    )?;
-    ctx.charge_retained(
-        u64::try_from(id_bytes.1).map_err(|_| {
-            ctx.refuse_codec_limit("F3D timeline identity length", u64::MAX - 1, u64::MAX)
-        })?,
+    let id = design_record_id_charged(
+        ctx,
+        stream,
+        ":design-feature-timeline#",
+        frame_start,
         "retain F3D timeline identity",
+        "F3D timeline identity allocation",
     )?;
     Ok(DesignFeatureTimeline::try_new(
-        ids::native_design_feature_timeline_id(stream, source_start),
+        id,
         frame,
         class_tag,
         record_index,
@@ -917,21 +899,8 @@ pub(crate) fn decode_feature_timelines(
                 "Design MetaStream record offsets are not strictly increasing".into(),
             ));
         }
-        let prefix = meta_entry.prefix;
-        let bulk_name_len = prefix
-            .len()
-            .checked_add("BulkStream.dat".len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("F3D timeline bulk name", u64::MAX - 1, u64::MAX)
-            })?;
-        let _bulk_name_reservation = ctx.reserve_scoped(
-            u64::try_from(bulk_name_len).map_err(|_| {
-                ctx.refuse_codec_limit("F3D timeline bulk name", u64::MAX - 1, u64::MAX)
-            })?,
-            "build F3D timeline bulk name",
-        )?;
-        let bulk_name = format!("{prefix}BulkStream.dat");
-        let bytes = scan.entry_bytes(&bulk_name)?;
+        let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
+        let bytes = scan.entry_bytes(bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {
