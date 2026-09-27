@@ -32,6 +32,67 @@ fn application_records_refuse_on_collection_limit() {
 }
 
 #[test]
+fn application_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = crate::native::native_id("application", &object.name).len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::wire_records(&ctx, &[object], &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native identity"));
+}
+
+#[test]
+fn application_property_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Owner".into(),
+        name: "Owner".into(),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Owner:Value".into(),
+        owner: object.id.clone(),
+        name: "Value".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = crate::native::native_child_id(
+        "application-property", &object.id, &property.name).len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::wire_records(&ctx, &[object], &[property], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native child identity"));
+}
+
+#[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5" Dependencies="1">

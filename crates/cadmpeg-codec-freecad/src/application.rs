@@ -152,7 +152,7 @@ fn wire_records<'a>(
                     }
                 }
                 property_records.push(ApplicationPropertyWire {
-                    id: crate::native::native_child_id("application-property", &object.id, &property.name),
+                    id: crate::native::native_child_id_charged(ctx, "application-property", &object.id, &property.name)?,
                     object: &object.id,
                     property: &property.id,
                     type_name: &property.type_name,
@@ -169,7 +169,7 @@ fn wire_records<'a>(
                 });
             }
             records.push(ApplicationRecordWire {
-                id: crate::native::native_id("application", &object.name),
+                id: crate::native::native_id_charged(ctx, "application", &object.name)?,
                 object: &object.id,
                 type_name: &object.type_name,
                 domain: object

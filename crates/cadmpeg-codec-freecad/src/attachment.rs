@@ -157,7 +157,7 @@ pub(crate) fn transfer(
                 continue;
             }
             let record = AttachmentRecord::try_new(
-                crate::native::native_id("attachment", &object.name),
+                crate::native::native_id_charged(ctx, "attachment", &object.name)?,
                 retained_string(ctx, &object.id, "FreeCAD attachment object")?,
                 support.map(|property| support_links(ctx, property)).transpose()?.unwrap_or_default(),
                 mode.map(map_mode_value).transpose()?,
