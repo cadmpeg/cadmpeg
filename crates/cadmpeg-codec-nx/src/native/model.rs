@@ -666,9 +666,11 @@ pub(crate) fn terminal_feature_body_ids(
         let _prefix_reservation = ctx.reserve_scoped(prefix_len, "nx terminal body prefix")?;
         let mut prefix = String::new();
         prefix
-            .try_reserve_exact(cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(
-                || ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len),
-            )?)
+            .try_reserve_exact(
+                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
+                })?,
+            )
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
         write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
