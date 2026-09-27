@@ -33,9 +33,40 @@ use super::OccurrencePlacement;
 
 const EPS_PLACEMENT_TRANSLATION: f64 = 1.0e-12;
 
+fn redirections_limit_context<'a>(
+    arena: &'a cadmpeg_core::decode::DecodeArena,
+    max_collection_items: u64,
+) -> cadmpeg_core::decode::DecodeContext<'a> {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+        .unwrap()
+        .0
+}
+
+#[test]
+fn redirections_design_collection_refuses_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D xref designs"));
+}
+
+#[test]
+fn redirections_reference_collection_refuses_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 2);
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D xref references"));
+}
+
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
-    let table = super::parse(
+    let table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
     )
     .expect("redirections JSON");
@@ -53,7 +84,7 @@ fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[]}]}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"NUMBER"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
     ] {
-        assert!(super::parse(bytes).is_err(), "malformed table admitted: {bytes:?}");
+        assert!(super::parse(&cadmpeg_test_support::service_decode_context(), bytes).is_err(), "malformed table admitted: {bytes:?}");
     }
 }
 
@@ -107,7 +138,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
         ("wrong type", format!("[{{{role}}},{{\"neutronData\":{{\"value\":\"independent\",\"dataType\":\"NUMBER\"}}}}]"), false),
     ] {
         let json = format!(r#"{prefix},"references":[{{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":{properties}}}]}}"#);
-        assert_eq!(super::parse(json.as_bytes()).is_ok(), valid, "{label}");
+        assert_eq!(super::parse(&cadmpeg_test_support::service_decode_context(), json.as_bytes()).is_ok(), valid, "{label}");
         let document = f3d_with_redirections_json("assembly-design", json.as_bytes());
         for container_only in [false, true] {
             let decoded = EditableDecodeResult::from(F3dCodec.decode(
@@ -192,7 +223,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
 
 #[test]
 fn external_reference_admission_and_projection_check_affine_transforms() {
-    let mut table = super::parse(
+    let mut table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"STRING"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
     ).unwrap();
     let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
@@ -1137,7 +1168,7 @@ fn part_without_brep_keeps_blocking_losses() {
 
 #[test]
 fn redirections_leaf_form_parses_empty_object_references() {
-    let table = crate::xref::parse(
+    let table = crate::xref::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"part.f3d","displayName":"part","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{}}"#,
     )
     .unwrap();

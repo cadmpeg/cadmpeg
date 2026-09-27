@@ -2834,7 +2834,7 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.has_topology_assignments,
                 );
                 annotate_docstruct(&mut self.source_attributes, scan);
-                match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
+                match crate::xref::decode_with_scopes(self.ctx, scan, &self.native.design_parameter_scopes) {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(&mut self.report, &table);
                         report_xref_placement_overrides(&mut self.report, &table);
@@ -2848,6 +2848,7 @@ impl<'a> F3dDecodeSession<'a> {
                         self.native.xref_references = table.references;
                     }
                     Ok(None) => {}
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => self.report.losses.push(xref_parse_loss(&error)),
                 }
                 FinalizePath::Geometry(index)
@@ -2862,8 +2863,14 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(&mut self.source_attributes, scan);
-                let xref_table =
-                    crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
+                let xref_table = match crate::xref::decode_with_scopes(
+                    self.ctx,
+                    scan,
+                    &self.native.design_parameter_scopes,
+                ) {
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    other => other,
+                };
                 if let Ok(Some(table)) = &xref_table {
                     report_xref_placement_failures(&mut self.report, table);
                     report_xref_placement_overrides(&mut self.report, table);
@@ -2963,6 +2970,7 @@ impl<'a> F3dDecodeSession<'a> {
                         apply_assembly_classification(&mut self.report, scan, &table);
                     }
                     Ok(None) => {}
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => self.report.losses.push(xref_parse_loss(&error)),
                 }
                 let mut admitted_entities = self.admitted_entities;
@@ -3075,9 +3083,10 @@ fn decode_scanned_document<'a>(
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             container_losses(scan),
         );
-        match crate::xref::decode(scan) {
+        match crate::xref::decode(ctx, scan) {
             Ok(Some(table)) => apply_assembly_classification(&mut report, scan, &table),
             Ok(None) => {}
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => report.losses.push(xref_parse_loss(&error)),
         }
         return decode_result(
