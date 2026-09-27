@@ -20,7 +20,7 @@ pub(super) fn validate_configuration_projection(
     native: &F3dNative,
 ) -> Result<(), CodecError> {
     let mut projected =
-        crate::design::configurations::project_configurations(&native.design_configurations)?;
+        crate::design::configurations::project_configurations(None, &native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut projected,
         &target.model.parameters,
