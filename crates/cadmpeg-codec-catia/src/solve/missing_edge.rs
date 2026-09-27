@@ -4062,20 +4062,16 @@ impl PortCandidateSearchMode {
     }
 }
 
-fn port_candidate_key(candidate: &[[usize; 2]]) -> Vec<[usize; 2]> {
-    candidate
-        .iter()
-        .map(|pair| {
-            if pair[0] <= pair[1] {
-                *pair
-            } else {
-                [pair[1], pair[0]]
-            }
-        })
-        .collect()
+fn port_candidate_pair_key(pair: [usize; 2]) -> [usize; 2] {
+    if pair[0] <= pair[1] {
+        pair
+    } else {
+        [pair[1], pair[0]]
+    }
 }
 
-struct PortCandidateSearch<'a> {
+struct PortCandidateSearch<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
     ports: &'a [[u32; 2]],
     candidates: &'a [Vec<[usize; 2]>],
     port_points: HashMap<u32, usize>,
@@ -4086,41 +4082,68 @@ struct PortCandidateSearch<'a> {
     mode: PortCandidateSearchMode,
 }
 
-impl PortCandidateSearch<'_> {
-    fn compatible(&self, edge: usize, pair: [usize; 2]) -> Vec<[usize; 2]> {
-        let mut oriented = vec![pair];
-        if pair[0] != pair[1] {
-            oriented.push([pair[1], pair[0]]);
+impl PortCandidateSearch<'_, '_> {
+    fn compatible(&self, edge: usize, pair: [usize; 2]) -> [Option<[usize; 2]>; 2] {
+        let mut oriented = [
+            Some(pair),
+            (pair[0] != pair[1]).then_some([pair[1], pair[0]]),
+        ];
+        for option in &mut oriented {
+            let Some(points) = option else {
+                continue;
+            };
+            let compatible = (self.ports[edge][0] == self.ports[edge][1])
+                == (points[0] == points[1])
+                && self.ports[edge]
+                    .iter()
+                    .zip(points.iter().copied())
+                    .all(|(&port, point)| {
+                        self.port_points
+                            .get(&port)
+                            .is_none_or(|stored| *stored == point)
+                            && (!self.mode.enforces_point_bijection()
+                                || self
+                                    .point_ports
+                                    .get(&point)
+                                    .is_none_or(|stored| *stored == port))
+                    });
+            if !compatible {
+                *option = None;
+            }
         }
-        oriented.retain(|points| {
-            (self.ports[edge][0] == self.ports[edge][1]) == (points[0] == points[1])
-                && self.ports[edge].iter().zip(points).all(|(&port, point)| {
-                    self.port_points
-                        .get(&port)
-                        .is_none_or(|stored| *stored == *point)
-                        && (!self.mode.enforces_point_bijection()
-                            || self
-                                .point_ports
-                                .get(point)
-                                .is_none_or(|stored| *stored == port))
-                })
-        });
         oriented
     }
 
-    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Vec<(u32, usize)> {
+    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<Vec<(u32, usize)>, CodecError> {
         let mut inserted = Vec::new();
         for (&port, point) in self.ports[edge].iter().zip(points) {
-            if let std::collections::hash_map::Entry::Vacant(entry) = self.port_points.entry(port) {
-                entry.insert(point);
+            if !self.port_points.contains_key(&port) {
+                crate::resource::insert_map(
+                    self.ctx,
+                    &mut self.port_points,
+                    port,
+                    point,
+                    "catia_port_search_points",
+                )?;
                 if self.mode.enforces_point_bijection() {
-                    self.point_ports.insert(point, port);
+                    crate::resource::insert_map(
+                        self.ctx,
+                        &mut self.point_ports,
+                        point,
+                        port,
+                        "catia_port_search_reverse_points",
+                    )?;
                 }
-                inserted.push((port, point));
+                crate::resource::push(
+                    self.ctx,
+                    &mut inserted,
+                    (port, point),
+                    "catia_port_search_inserted",
+                )?;
             }
         }
         self.edge_pairs[edge] = Some(points);
-        inserted
+        Ok(inserted)
     }
 
     fn unassign(&mut self, edge: usize, inserted: Vec<(u32, usize)>) {
@@ -4139,15 +4162,17 @@ impl PortCandidateSearch<'_> {
         }
     }
 
-    fn search(&mut self) {
+    fn search(&mut self) -> Result<(), CodecError> {
         // Native-port binding precedes geometric incidence fallback but can
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
+        let _depth = self.ctx.enter_nested("catia_port_candidate_search")?;
+        self.ctx.charge_work(1, "catia_port_candidate_search")?;
         if self.outcome.is_closed()
             || (!self.mode.requires_unique() && matches!(self.outcome, SearchOutcome::Solved(_)))
         {
-            return;
+            return Ok(());
         }
         let mut propagated = Vec::new();
         let branch = loop {
@@ -4161,10 +4186,10 @@ impl PortCandidateSearch<'_> {
                 incomplete = true;
                 let mut options = self.candidates[edge]
                     .iter()
-                    .flat_map(|pair| self.compatible(edge, *pair));
+                    .flat_map(|pair| self.compatible(edge, *pair).into_iter().flatten());
                 let Some(first) = options.next() else {
                     self.rollback(propagated);
-                    return;
+                    return Ok(());
                 };
                 if options.next().is_some() {
                     let count = 2 + options.count();
@@ -4173,8 +4198,13 @@ impl PortCandidateSearch<'_> {
                     }
                     continue;
                 }
-                let inserted = self.assign(edge, first);
-                propagated.push((edge, inserted));
+                let inserted = self.assign(edge, first)?;
+                crate::resource::push(
+                    self.ctx,
+                    &mut propagated,
+                    (edge, inserted),
+                    "catia_port_search_propagated",
+                )?;
                 progress = true;
             }
             if !incomplete {
@@ -4186,23 +4216,43 @@ impl PortCandidateSearch<'_> {
             break best.map(|(_, edge)| edge);
         };
         let Some(edge) = branch else {
-            let candidate = self.edge_pairs.iter().copied().collect::<Option<Vec<_>>>();
-            if let Some(candidate) = candidate {
+            let mut candidate = Vec::new();
+            let mut complete = true;
+            for pair in &self.edge_pairs {
+                let Some(pair) = *pair else {
+                    complete = false;
+                    break;
+                };
+                crate::resource::push(
+                    self.ctx,
+                    &mut candidate,
+                    pair,
+                    "catia_port_search_solution",
+                )?;
+            }
+            if complete {
                 self.outcome.record_solved(candidate, |previous, next| {
-                    port_candidate_key(previous) == port_candidate_key(next)
+                    previous.len() == next.len()
+                        && previous.iter().zip(next).all(|(&left, &right)| {
+                            port_candidate_pair_key(left) == port_candidate_pair_key(right)
+                        })
                 });
             }
             self.rollback(propagated);
-            return;
+            return Ok(());
         };
         if self.states >= MAX_STATES {
             self.outcome.exhaust();
         } else {
             self.states += 1;
             'candidates: for candidate in 0..self.candidates[edge].len() {
-                for points in self.compatible(edge, self.candidates[edge][candidate]) {
-                    let inserted = self.assign(edge, points);
-                    self.search();
+                for points in self
+                    .compatible(edge, self.candidates[edge][candidate])
+                    .into_iter()
+                    .flatten()
+                {
+                    let inserted = self.assign(edge, points)?;
+                    self.search()?;
                     self.unassign(edge, inserted);
                     if !self.mode.requires_unique()
                         && matches!(self.outcome, SearchOutcome::Solved(_))
@@ -4213,6 +4263,7 @@ impl PortCandidateSearch<'_> {
             }
         }
         self.rollback(propagated);
+        Ok(())
     }
 }
 
@@ -4306,79 +4357,116 @@ fn edge_port_candidate_assignment(
     require_unique: bool,
     enforce_point_bijection: bool,
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    (|| -> Option<Result<Vec<[usize; 2]>, CodecError>> {
-        if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
-            return None;
+    if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
+        return Ok(None);
+    }
+    let mode = match (require_unique, enforce_point_bijection) {
+        (false, true) => PortCandidateSearchMode::FirstNative,
+        (true, true) => PortCandidateSearchMode::UniqueNative,
+        (true, false) => PortCandidateSearchMode::UniqueMesh,
+        (false, false) => return Ok(None),
+    };
+    let mut dependencies = UnionFind::charged(ctx, ports.len(), "catia_port_dependency_union")?;
+    let mut edge_by_port = HashMap::new();
+    let mut edge_by_point = HashMap::new();
+    for edge in 0..ports.len() {
+        for port in ports[edge] {
+            if let Some(previous) = crate::resource::insert_map(
+                ctx,
+                &mut edge_by_port,
+                port,
+                edge,
+                "catia_port_dependency_ports",
+            )? {
+                dependencies.union(previous, edge);
+            }
         }
-        let mut dependencies = UnionFind::new(ports.len());
-        let mut edge_by_port = HashMap::new();
-        let mut edge_by_point = HashMap::new();
-        for edge in 0..ports.len() {
-            for port in ports[edge] {
-                if let Some(previous) = edge_by_port.insert(port, edge) {
+        if enforce_point_bijection {
+            for point in candidates[edge].iter().flatten() {
+                if let Some(previous) = crate::resource::insert_map(
+                    ctx,
+                    &mut edge_by_point,
+                    *point,
+                    edge,
+                    "catia_port_dependency_points",
+                )? {
                     dependencies.union(previous, edge);
                 }
             }
-            if enforce_point_bijection {
-                for point in candidates[edge].iter().flatten() {
-                    if let Some(previous) = edge_by_point.insert(*point, edge) {
-                        dependencies.union(previous, edge);
-                    }
-                }
-            }
         }
-        let mut components = HashMap::<usize, Vec<usize>>::new();
-        for edge in 0..ports.len() {
-            components
-                .entry(dependencies.find(edge))
-                .or_default()
-                .push(edge);
+    }
+    let mut groups = HashMap::<usize, Vec<usize>>::new();
+    for edge in 0..ports.len() {
+        let root = dependencies.find(edge);
+        if let Some(group) = groups.get_mut(&root) {
+            crate::resource::push(ctx, group, edge, "catia_port_component_edges")?;
+        } else {
+            let mut group = Vec::new();
+            crate::resource::push(ctx, &mut group, edge, "catia_port_component_edges")?;
+            crate::resource::insert_map(
+                ctx,
+                &mut groups,
+                root,
+                group,
+                "catia_port_component_roots",
+            )?;
         }
-        let mut components = components.into_values().collect::<Vec<_>>();
-        components.sort_by_key(|component| component[0]);
-        let mut solution = match ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution") {
-            Ok(solution) => solution,
-            Err(error) => return Some(Err(error)),
+    }
+    let mut components = Vec::new();
+    for group in groups.into_values() {
+        crate::resource::push(ctx, &mut components, group, "catia_port_components")?;
+    }
+    components.sort_by_key(|component| component[0]);
+    let mut solution = ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution")?;
+    for component in components {
+        let mut component_ports = Vec::new();
+        let mut component_candidates = Vec::new();
+        for &edge in &component {
+            crate::resource::push(
+                ctx,
+                &mut component_ports,
+                ports[edge],
+                "catia_port_component_ports",
+            )?;
+            let pairs = crate::resource::copy_slice(
+                ctx,
+                &candidates[edge],
+                "catia_port_component_candidate_pairs",
+            )?;
+            crate::resource::push(
+                ctx,
+                &mut component_candidates,
+                pairs,
+                "catia_port_component_candidates",
+            )?;
+        }
+        let mut search = PortCandidateSearch {
+            ctx,
+            ports: &component_ports,
+            candidates: &component_candidates,
+            port_points: HashMap::new(),
+            point_ports: HashMap::new(),
+            edge_pairs: ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs")?,
+            outcome: SearchOutcome::Open,
+            states: 0,
+            mode,
         };
-        for component in components {
-            let component_ports = component
-                .iter()
-                .map(|edge| ports[*edge])
-                .collect::<Vec<_>>();
-            let component_candidates = component
-                .iter()
-                .map(|edge| candidates[*edge].clone())
-                .collect::<Vec<_>>();
-            let mode = match (require_unique, enforce_point_bijection) {
-                (false, true) => PortCandidateSearchMode::FirstNative,
-                (true, true) => PortCandidateSearchMode::UniqueNative,
-                (true, false) => PortCandidateSearchMode::UniqueMesh,
-                (false, false) => return None,
-            };
-            let mut search = PortCandidateSearch {
-                ports: &component_ports,
-                candidates: &component_candidates,
-                port_points: HashMap::new(),
-                point_ports: HashMap::new(),
-                edge_pairs: match ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs") {
-                    Ok(pairs) => pairs,
-                    Err(error) => return Some(Err(error)),
-                },
-                outcome: SearchOutcome::Open,
-                states: 0,
-                mode,
-            };
-            search.search();
-            let SearchOutcome::Solved(component_solution) = search.outcome else {
-                return None;
-            };
-            for (&edge, pair) in component.iter().zip(component_solution) {
-                solution[edge] = Some(pair);
-            }
+        search.search()?;
+        let SearchOutcome::Solved(component_solution) = search.outcome else {
+            return Ok(None);
+        };
+        for (&edge, pair) in component.iter().zip(component_solution) {
+            solution[edge] = Some(pair);
         }
-        Some(Ok(solution.into_iter().collect::<Option<Vec<_>>>()?))
-    })()
-    .transpose()
+    }
+    let mut result = Vec::new();
+    for pair in solution {
+        let Some(pair) = pair else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut result, pair, "catia_port_assignment_result")?;
+    }
+    Ok(Some(result))
 }
 
 pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
