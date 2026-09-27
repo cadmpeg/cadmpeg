@@ -22,6 +22,7 @@ use cadmpeg_ir::report::{
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 fn source_meta(
     ctx: &DecodeContext<'_>,
@@ -113,21 +114,27 @@ fn append_summary_notes(
     Ok(())
 }
 
-fn occurrence_loss(
+fn push_occurrence_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
     code: IgesLossCode,
-    message: impl Into<String>,
+    message: fmt::Arguments<'_>,
     source_sequence: u32,
     directory: &[directory::DirectoryEntry],
-) -> LossNote {
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, losses, 1, "iges occurrence loss slots")?;
+    let message = format_retained(ctx, message, "iges occurrence loss message")?;
+    ctx.charge_retained(4 + code.code().len() as u64, "iges occurrence loss kind")?;
     let note = code.note(message);
     if let Some(entry) = directory
         .iter()
         .find(|entry| entry.sequence == source_sequence)
     {
-        note.with_provenance(entry.loss_provenance())
+        losses.push(note.with_provenance(entry.admitted_loss_provenance(ctx)?));
     } else {
-        note
+        losses.push(note);
     }
+    Ok(())
 }
 
 fn attributed_sequences(
@@ -222,6 +229,55 @@ fn source_fidelity(
     let mut fidelity = SourceFidelity::default();
     fidelity.insert_retained_record(id, RetainedSourceRecord::whole(owner, retained_source))?;
     Ok(fidelity)
+}
+
+fn append_generic_losses(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    directory: &[directory::DirectoryEntry],
+    projection: &entities::geometry::Projection,
+    attributed: &BTreeSet<u32>,
+    global_table: global::GlobalTable,
+) -> Result<(), CodecError> {
+    for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let admitted =
+            crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
+        if admitted
+            && (projection.decoded.contains(&entry.sequence)
+                || projection.consumed.contains(&entry.sequence)
+                || attributed.contains(&entry.sequence))
+        {
+            continue;
+        }
+        reserve_vec_growth(ctx, losses, 1, "iges generic loss slots")?;
+        let (code, message) = if admitted {
+            (
+                IgesLossCode::EntityRetainedUnprojected,
+                format_retained(
+                    ctx,
+                    format_args!(
+                        "IGES entity type {} form {} retained without neutral projection",
+                        entry.entity_type, entry.form
+                    ),
+                    "iges generic loss message",
+                )?,
+            )
+        } else {
+            (
+                IgesLossCode::EntityOutsideEnvelope,
+                format_retained(ctx, format_args!(
+                    "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
+                    entry.entity_type, entry.form
+                ), "iges generic loss message")?,
+            )
+        };
+        ctx.charge_retained(4 + code.code().len() as u64, "iges generic loss kind")?;
+        losses.push(
+            code.note(message)
+                .with_provenance(entry.admitted_loss_provenance(ctx)?),
+        );
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -533,11 +589,28 @@ fn decode_with_occurrence_limits(
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
         })
     {
-        losses.push(IgesLossCode::GlobalSemanticContextSubstituted.note(
-            "minimum resolution must be positive and finite; the default linear tolerance is used",
-        ));
+        reserve_vec_growth(ctx, &mut losses, 1, "iges substituted context loss slot")?;
+        let message = format_retained(
+            ctx,
+            format_args!(
+            "minimum resolution must be positive and finite; the default linear tolerance is used"
+        ),
+            "iges substituted context loss message",
+        )?;
+        let code = IgesLossCode::GlobalSemanticContextSubstituted;
+        ctx.charge_retained(
+            4 + code.code().len() as u64,
+            "iges substituted context loss kind",
+        )?;
+        losses.push(code.note(message));
     }
-    losses.extend(projection.losses);
+    reserve_vec_growth(
+        ctx,
+        &mut losses,
+        projection.losses.len(),
+        "iges combined projection losses",
+    )?;
+    losses.extend(std::mem::take(&mut projection.losses));
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
     reserve_vec_growth(
         ctx,
@@ -555,36 +628,42 @@ fn decode_with_occurrence_limits(
     )?;
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(
+            ctx,
+            &mut losses,
             IgesLossCode::OccurrenceExpansionOutputTruncated,
-            "IGES product occurrence expansion reached its configured output limit",
+            format_args!("IGES product occurrence expansion reached its configured output limit"),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     if let Some(source_sequence) = product_occurrence_expansion.depth_truncated_at {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(
+            ctx,
+            &mut losses,
             IgesLossCode::OccurrenceExpansionDepthTruncated,
-            "IGES product occurrence expansion reached its configured nesting-depth limit",
+            format_args!(
+                "IGES product occurrence expansion reached its configured nesting-depth limit"
+            ),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     for source_sequence in product_occurrence_expansion.malformed_definition_sequences {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
-            "IGES product occurrence root inference was suppressed because a definition member list is malformed",
+            format_args!("IGES product occurrence root inference was suppressed because a definition member list is malformed"),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     for source_sequence in product_occurrence_expansion.malformed_placement_sequences {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
-            "IGES product occurrence expansion omitted an instance or member with malformed placement data",
+            format_args!("IGES product occurrence expansion omitted an instance or member with malformed placement data"),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     for native::AmbiguousParameterBoundary {
         sequence: source_sequence,
@@ -595,70 +674,51 @@ fn decode_with_occurrence_limits(
             native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
             native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
         };
-        losses.push(occurrence_loss(
+        push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterBoundaryAmbiguous,
-            format!(
+            format_args!(
                 "IGES Parameter Data has {candidate_count} {kind} trailing pointer-group boundaries; primary parameters and pointer ownership were not guessed"
             ),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     for (source_sequence, crate::parameter::OverdeclaredCount { declared, present }) in
         overdeclared_counts
     {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
-            format!(
+            format_args!(
                 "IGES entity D{source_sequence} declares a counted list of {declared} items; its Parameter Data record holds {present} in whole or in part, so the list was not read"
             ),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     for (source_sequence, refusal) in unstatable_attribute_tables {
-        losses.push(occurrence_loss(
+        push_occurrence_loss(
+            ctx,
+            &mut losses,
             IgesLossCode::AttributeTableCountUnstatable,
-            format!(
+            format_args!(
                 "IGES attribute table instance D{source_sequence} {}, so no attribute row was read",
                 refusal.reason()
             ),
             source_sequence,
             &parse.directory,
-        ));
+        )?;
     }
     let global_table = parse.global.global_table();
     if !ctx.container_only() {
         let attributed_before_generic = attributed_sequences(&losses, ctx)?;
-        let generic_losses = parse
-            .directory
-            .iter()
-            .filter(|entry| entry.entity_type != 0)
-            .filter(|entry| {
-                if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
-                    return true;
-                }
-                !projection.decoded.contains(&entry.sequence)
-                    && !projection.consumed.contains(&entry.sequence)
-                    && !attributed_before_generic.contains(&entry.sequence)
-            })
-            .map(|entry| {
-                let note = if crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
-                {
-                    IgesLossCode::EntityRetainedUnprojected.note(format!(
-                        "IGES entity type {} form {} retained without neutral projection",
-                        entry.entity_type, entry.form
-                    ))
-                } else {
-                    IgesLossCode::EntityOutsideEnvelope.note(format!(
-                        "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
-                        entry.entity_type, entry.form
-                    ))
-                };
-                note.with_provenance(entry.loss_provenance())
-            })
-            .collect::<Vec<_>>();
-        losses.extend(generic_losses);
+        append_generic_losses(
+            ctx,
+            &mut losses,
+            &parse.directory,
+            &projection,
+            &attributed_before_generic,
+            global_table,
+        )?;
         charge_work(
             ctx,
             ir.model.entity_count() as u64,
