@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeSet;
 
 fn set_refuses(operation: &'static str) {
     let arena = DecodeArena::new();
@@ -34,6 +35,38 @@ fn index_refuses(operation: &'static str, retained: bool) {
         result,
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })
+                && refusal.operation == operation
+    ));
+}
+
+fn ordered_set_refuses(operation: &'static str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let mut values = BTreeSet::new();
+    let result = super::super::insert_presentation_set(&mut values, 1_u64, Some(&ctx), operation);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == operation
+    ));
+}
+
+fn vector_refuses(operation: &'static str) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let mut values = Vec::new();
+    let result = super::super::push_presentation_vec(&mut values, 1_u64, Some(&ctx), operation);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == operation
     ));
 }
@@ -96,4 +129,44 @@ fn presentation_pmi_ids_refuse_collection_limit() {
 #[test]
 fn presentation_tessellation_ids_refuse_collection_limit() {
     set_refuses("step_presentation_tessellation_ids");
+}
+
+#[test]
+fn presentation_hidden_layer_ids_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_hidden_layer_ids");
+}
+
+#[test]
+fn presentation_invisibility_layer_targets_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_invisibility_layer_targets");
+}
+
+#[test]
+fn presentation_hidden_style_ids_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_hidden_style_ids");
+}
+
+#[test]
+fn presentation_invisibility_style_targets_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_invisibility_style_targets");
+}
+
+#[test]
+fn presentation_style_ids_refuse_collection_limit() {
+    vector_refuses("step_presentation_style_ids");
+}
+
+#[test]
+fn presentation_overridden_styles_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_overridden_styles");
+}
+
+#[test]
+fn presentation_style_references_refuse_collection_limit() {
+    vector_refuses("step_presentation_style_references");
+}
+
+#[test]
+fn presentation_context_style_ids_refuse_collection_limit() {
+    ordered_set_refuses("step_presentation_context_style_ids");
 }

@@ -82,8 +82,8 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| record.partial("PRESENTATION_LAYER_ASSIGNMENT").is_some())
             {
-                hidden_layer_ids.insert(target);
-                layer_targets.insert(target);
+                insert_presentation_set(&mut hidden_layer_ids, target, ctx, "step_presentation_hidden_layer_ids")?;
+                insert_presentation_set(&mut layer_targets, target, ctx, "step_presentation_invisibility_layer_targets")?;
                 continue;
             }
             if exchange
@@ -91,8 +91,8 @@ pub(super) fn decode(
                 .get(&target)
                 .is_some_and(|record| styled_item_parts(record).is_some())
             {
-                hidden_style_ids.insert(target);
-                style_targets.insert(target);
+                insert_presentation_set(&mut hidden_style_ids, target, ctx, "step_presentation_hidden_style_ids")?;
+                insert_presentation_set(&mut style_targets, target, ctx, "step_presentation_invisibility_style_targets")?;
                 continue;
             }
             if exchange
@@ -204,15 +204,18 @@ pub(super) fn decode(
         });
         typed.insert(layer_id);
     }
-    let mut styles = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| styled_item_parts(record).map(|_| id))
-        .collect::<Vec<_>>();
-    let overridden_styles = styles
-        .iter()
-        .filter_map(|id| overridden_style(&exchange.records()[id]))
-        .collect::<BTreeSet<_>>();
+    let mut styles = Vec::new();
+    for (&id, record) in exchange.records() {
+        if styled_item_parts(record).is_some() {
+            push_presentation_vec(&mut styles, id, ctx, "step_presentation_style_ids")?;
+        }
+    }
+    let mut overridden_styles = BTreeSet::new();
+    for id in &styles {
+        if let Some(overridden) = overridden_style(&exchange.records()[id]) {
+            insert_presentation_set(&mut overridden_styles, overridden, ctx, "step_presentation_overridden_styles")?;
+        }
+    }
     styles.sort_by_key(|id| style_application_order(*id, exchange, graph_limit));
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for style_id in styles {
@@ -239,23 +242,16 @@ pub(super) fn decode(
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
         let mut invalid_surface_sides = BTreeSet::new();
-        let style_references = parts
-            .styles
-            .list()
-            .into_iter()
-            .flatten()
-            .flat_map(references)
-            .collect::<Vec<_>>();
-        let context_style_ids = style_references
-            .iter()
-            .copied()
-            .filter(|reference| {
-                exchange
-                    .records()
-                    .get(reference)
-                    .is_some_and(is_presentation_style_by_context)
-            })
-            .collect::<BTreeSet<_>>();
+        let mut style_references = Vec::new();
+        for reference in parts.styles.list().into_iter().flatten().flat_map(references) {
+            push_presentation_vec(&mut style_references, reference, ctx, "step_presentation_style_references")?;
+        }
+        let mut context_style_ids = BTreeSet::new();
+        for reference in &style_references {
+            if exchange.records().get(reference).is_some_and(is_presentation_style_by_context) {
+                insert_presentation_set(&mut context_style_ids, *reference, ctx, "step_presentation_context_style_ids")?;
+            }
+        }
         if !context_style_ids.is_empty() {
             let contexts = context_style_ids
                 .iter()
@@ -905,6 +901,38 @@ fn collect_borrowed_identity_set<'a>(
         }
     }
     Ok(result)
+}
+
+fn insert_presentation_set<T: Ord>(
+    values: &mut BTreeSet<T>,
+    value: T,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&value) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        values.insert(value);
+    }
+    Ok(())
+}
+
+fn push_presentation_vec<T>(
+    values: &mut Vec<T>,
+    value: T,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    values.push(value);
+    Ok(())
 }
 
 fn collect_identity_indices<'a>(
