@@ -234,7 +234,12 @@ where
             pending.pop();
             continue;
         };
-        if !seen.insert(index) {
+        if !propagate_resource!(crate::decode_alloc::insert_hash_set(
+            ctx,
+            &mut seen,
+            index,
+            "ASM subtype search visited",
+        )) {
             continue;
         }
         // The doc states what the index means. `docs/formats/asm.md`: "A named
@@ -594,6 +599,25 @@ mod tests {
         let error = cache_from_subtype_refs::<(), _>(&ctx, &[], &table, |_, _| None)
             .expect("stack allocation must refuse")
             .expect_err("stack allocation must refuse");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    }
+
+    #[test]
+    fn subtype_search_visited_refuses_collection_limit() {
+        use crate::sab::Token;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let table = SubtypeTable::from_records(&ctx, &[]).unwrap();
+        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+        let error = cache_from_subtype_refs::<(), _>(&ctx, &tokens, &table, |_, _| None)
+            .expect("visited allocation must refuse")
+            .expect_err("visited allocation must refuse");
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };
