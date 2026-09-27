@@ -631,11 +631,11 @@ fn native_endpoint_evidence_rejects_directed_pair_conflicts() {
     let graph = [Some([0, 1]), None];
     let roster = [Some([0, 1]), Some([2, 3])];
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))).expect("service budget"),
         Ok(Some(vec![Some([0, 1]), Some([2, 3])]))
     );
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&[Some([1, 0]), None])),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&[Some([1, 0]), None]))).expect("service budget"),
         Err("conflicting native endpoint evidence")
     );
 }
@@ -653,8 +653,38 @@ fn complete_vertex_roster_supersedes_partial_graph_coordinates() {
     let graph = [Some([4, 5]), None];
     let roster = [Some([0, 1]), Some([2, 3])];
     assert_eq!(
-        merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+        crate::test_support::with_service_context(|ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))).expect("service budget"),
         Ok(Some(roster.to_vec()))
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_roster_evidence_copy"
+    ));
+}
+
+#[test]
+fn native_endpoint_evidence_refuses_before_merge_and_copy() {
+    use cadmpeg_core::CodecError;
+
+    let graph = [Some([0, 1]), None];
+    let roster = [Some([0, 1]), Some([2, 3])];
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, Some(&graph), Some(&[None, None]))),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_merged_evidence"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| merge_native_endpoint_evidence(ctx, None, Some(&roster))),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_evidence_copy"
+    ));
+    let raw = Some(vec![Some([0, 1]), None]);
+    let mesh = Some(vec![None, Some([2, 3])]);
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| combine_propagated_endpoint_pairs(ctx, raw, mesh)),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_propagated_pair_merge"
+    ));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(ctx, Some(vec![Some([0, 1]), None]), Some(vec![None, Some([2, 3])]))).expect("service budget"),
+        Some(vec![Some([0, 1]), Some([2, 3])])
     );
 }
 
@@ -663,7 +693,7 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
     let raw = Some(vec![Some([0, 1]), Some([2, 3])]);
     let mesh = Some(vec![Some([0, 1]), Some([1, 2])]);
     assert_eq!(
-        combine_propagated_endpoint_pairs(raw, mesh),
+        crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(ctx, raw, mesh)).expect("service budget"),
         Some(vec![Some([0, 1]), Some([1, 2])])
     );
 }
@@ -672,7 +702,7 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
 fn propagated_endpoint_sources_reject_mismatched_edge_counts() {
     let raw = Some(vec![Some([0, 1]), None]);
     let mesh = Some(vec![None]);
-    assert_eq!(combine_propagated_endpoint_pairs(raw, mesh), None);
+    assert_eq!(crate::test_support::with_service_context(|ctx| combine_propagated_endpoint_pairs(ctx, raw, mesh)).expect("service budget"), None);
 }
 
 #[test]
@@ -698,11 +728,17 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
         object_id: 7,
         point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
     }];
-    let ambiguous = unique_native_identity_points(&vertices, 2, &tolerances, &points);
+    let ambiguous = crate::test_support::with_service_context(|ctx| unique_native_identity_points(ctx, &vertices, 2, &tolerances, &points))
+        .expect("service budget");
     assert!(ambiguous.is_empty());
 
-    let exact = unique_native_identity_points(&vertices, 2, &BTreeMap::new(), &points);
+    let exact = crate::test_support::with_service_context(|ctx| unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points))
+        .expect("service budget");
     assert_eq!(exact.get(&7), Some(&0));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| unique_native_identity_points(ctx, &vertices, 2, &BTreeMap::new(), &points)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == "catia_native_identity_points"
+    ));
 }
 
 #[test]

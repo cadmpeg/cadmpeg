@@ -4484,11 +4484,12 @@ fn attach_standard_topology(
         }
     }
     let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
+        ctx,
         topology_graph.as_ref(),
         &supports,
         &native_edges,
         &ir.model.points,
-    );
+    ).map_err(StandardTopologyError::Resource)?;
     let mut native_port_options = Vec::new();
     crate::resource::reserve_vec(ctx, &mut native_port_options, supports.len(), "catia_native_port_options")
         .map_err(StandardTopologyError::Resource)?;
@@ -4534,9 +4535,10 @@ fn attach_standard_topology(
         .map_err(StandardTopologyError::Resource)?;
     native_supports_by_row.extend(native_support_edge_ids.iter().map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge))));
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
+        ctx,
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
-    ) else {
+    ).map_err(StandardTopologyError::Resource)? else {
         return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
     };
     diagnostics.native_endpoint_pairs = native_endpoint_evidence
@@ -5112,9 +5114,10 @@ fn attach_standard_topology(
         None
     };
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
+        ctx,
         propagated_endpoint_pairs,
         mesh_propagated_endpoint_pairs,
-    );
+    ).map_err(StandardTopologyError::Resource)?;
     let mut constrained_endpoint_options = if let Some(options) = endpoint_options.as_ref() {
         let mut copied = Vec::new();
         for (edge, pairs) in options.iter().enumerate() {
@@ -6505,30 +6508,30 @@ fn standard_circle_endpoint_candidates(
 
 /// Resolve standard-row endpoints from equal standard and native edge identities.
 fn standard_native_graph_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    let graph = graph?;
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    let Some(graph) = graph else { return Ok(None) };
     let identity_points = unique_native_identity_points(
+        ctx,
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
         &graph.vertex_tolerances,
         points,
-    );
-    Some(
-        supports
-            .iter()
-            .map(|support| {
-                let [start_identity, end_identity] = native_edges.get(&support.tag)?;
-                Some([
-                    *identity_points.get(start_identity)?,
-                    *identity_points.get(end_identity)?,
-                ])
-            })
-            .collect(),
-    )
+    )?;
+    let mut pairs = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut pairs, supports.len(), "catia_graph_endpoint_pairs")?;
+    pairs.extend(supports.iter().map(|support| {
+        let [start_identity, end_identity] = native_edges.get(&support.tag)?;
+        Some([
+            *identity_points.get(start_identity)?,
+            *identity_points.get(end_identity)?,
+        ])
+    }));
+    Ok(Some(pairs))
 }
 
 /// Bind standard rows to ordered coordinate rows through the file-global
@@ -6626,59 +6629,63 @@ fn include_native_endpoint_pairs(ctx: &DecodeContext<'_>, candidates: &mut [Vec<
 }
 
 fn combine_propagated_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     raw: Option<Vec<Option<[usize; 2]>>>,
     mesh: Option<Vec<Option<[usize; 2]>>>,
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     let pairs = match (raw, mesh) {
-        (Some(raw), Some(mesh)) if raw.len() != mesh.len() => return None,
+        (Some(raw), Some(mesh)) if raw.len() != mesh.len() => return Ok(None),
         (_, Some(mesh)) if mesh.iter().all(Option::is_some) => mesh,
         (Some(raw), _) if raw.iter().all(Option::is_some) => raw,
-        (Some(raw), Some(mesh)) => raw
-            .into_iter()
-            .zip(mesh)
-            .map(|(raw, mesh)| match (raw, mesh) {
+        (Some(raw), Some(mesh)) => {
+            let mut merged = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut merged, raw.len(), "catia_propagated_pair_merge")?;
+            merged.extend(raw.into_iter().zip(mesh).map(|(raw, mesh)| match (raw, mesh) {
                 (Some(raw), Some(mesh)) if raw == mesh || raw == [mesh[1], mesh[0]] => Some(raw),
                 (Some(_), Some(_)) => None,
                 (Some(pair), None) | (None, Some(pair)) => Some(pair),
                 (None, None) => None,
-            })
-            .collect(),
+            }));
+            merged
+        }
         (Some(pairs), None) | (None, Some(pairs)) => pairs,
-        (None, None) => return None,
+        (None, None) => return Ok(None),
     };
-    (!pairs.is_empty()).then_some(pairs)
+    Ok((!pairs.is_empty()).then_some(pairs))
 }
 
 fn merge_native_endpoint_evidence(
+    ctx: &DecodeContext<'_>,
     graph: Option<&[Option<[usize; 2]>]>,
     roster: Option<&[Option<[usize; 2]>]>,
-) -> Result<Option<Vec<Option<[usize; 2]>>>, &'static str> {
+) -> Result<Result<Option<Vec<Option<[usize; 2]>>>, &'static str>, CodecError> {
     match (graph, roster) {
         (Some(graph), Some(roster)) => {
             if graph.len() != roster.len() {
-                return Err("native endpoint evidence length mismatch");
+                return Ok(Err("native endpoint evidence length mismatch"));
             }
             // The roster is the standard BREP's serialized identity-to-point
             // relation. Graph coordinates are reconstructed from independent
             // object records and only supply identities absent from the roster.
             if roster.iter().all(Option::is_some) {
-                return Ok(Some(roster.to_vec()));
+                return Ok(Ok(Some(crate::resource::copy_retained_slice(ctx, roster, "catia_native_roster_evidence_copy")?)));
             }
-            graph
-                .iter()
-                .zip(roster)
-                .map(|(graph, roster)| match (graph, roster) {
+            let mut merged = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut merged, graph.len(), "catia_native_endpoint_merged_evidence")?;
+            for (graph, roster) in graph.iter().zip(roster) {
+                let pair = match (graph, roster) {
                     (Some(graph), Some(roster)) if graph != roster => {
-                        Err("conflicting native endpoint evidence")
+                        return Ok(Err("conflicting native endpoint evidence"));
                     }
-                    (Some(pair), _) | (_, Some(pair)) => Ok(Some(*pair)),
-                    (None, None) => Ok(None),
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(Some)
+                    (Some(pair), _) | (_, Some(pair)) => Some(*pair),
+                    (None, None) => None,
+                };
+                merged.push(pair);
+            }
+            Ok(Ok(Some(merged)))
         }
-        (Some(pairs), None) | (None, Some(pairs)) => Ok(Some(pairs.to_vec())),
-        (None, None) => Ok(None),
+        (Some(pairs), None) | (None, Some(pairs)) => Ok(Ok(Some(crate::resource::copy_retained_slice(ctx, pairs, "catia_native_endpoint_evidence_copy")?))),
+        (None, None) => Ok(Ok(None)),
     }
 }
 
@@ -6765,39 +6772,46 @@ fn corroborate_successor_endpoint_points(
 }
 
 fn unique_native_identity_points(
+    ctx: &DecodeContext<'_>,
     vertices: &[crate::families::b5::graph::B5LogicalVertex],
     raw_point_count: usize,
     tolerances: &BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal>,
     points: &[Point],
-) -> HashMap<u32, usize> {
+) -> Result<HashMap<u32, usize>, CodecError> {
     const MATCH_TOLERANCE: f64 = 2e-3;
 
-    vertices
-        .iter()
-        .enumerate()
-        .filter_map(|(rank, vertex)| {
+    let mut matches = HashMap::new();
+    for (rank, vertex) in vertices.iter().enumerate() {
+            let row = raw_point_count.checked_add(rank)
+                .ok_or_else(|| ctx.refuse_codec_limit("catia_native_vertex_tolerance_row", u64::MAX, u64::MAX))?;
             let tolerance = tolerances
-                .get(&(raw_point_count + rank))
+                .get(&row)
                 .map_or(MATCH_TOLERANCE, |tolerance| tolerance.get())
                 .max(MATCH_TOLERANCE);
-            let matches = points
-                .iter()
-                .enumerate()
-                .filter_map(|(index, point)| {
-                    (point
+            let mut matched = None;
+            let mut ambiguous = false;
+            for (index, point) in points.iter().enumerate() {
+                ctx.charge_work(1, "catia_native_identity_point_match")?;
+                if point
                         .position()
                         .get()
                         .distance_squared(vertex.point.get())
                         .sqrt()
-                        <= tolerance)
-                        .then_some(index)
-                })
-                .collect::<Vec<_>>();
-            <[usize; 1]>::try_from(matches)
-                .ok()
-                .map(|[point]| (vertex.object_id, point))
-        })
-        .collect()
+                        <= tolerance {
+                    if matched.is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                    matched = Some(index);
+                }
+            }
+            if !ambiguous {
+                if let Some(point) = matched {
+                    crate::resource::insert_map(ctx, &mut matches, vertex.object_id, point, "catia_native_identity_points")?;
+                }
+            }
+    }
+    Ok(matches)
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
