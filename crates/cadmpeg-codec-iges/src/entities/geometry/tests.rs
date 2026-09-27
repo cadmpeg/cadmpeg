@@ -571,6 +571,35 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
 }
 
 #[test]
+fn transform_preflight_admits_directory_index_and_walk_path() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let directory = [transform_entry(1, 3), transform_entry(3, 0)];
+    for (cap, operation) in [
+        (0, "iges transform preflight directory index"),
+        (2, "iges transform preflight path"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = enforce_transform_depth(&directory, Some(&ctx));
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(enforce_transform_depth(&directory, Some(&ctx)).is_ok());
+}
+
+#[test]
 fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     let result = IgesCodec
         .decode(

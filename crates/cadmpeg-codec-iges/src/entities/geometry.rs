@@ -2,6 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
+use crate::decode_resource::{insert_optional_btree_map, insert_optional_btree_set};
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -810,10 +811,16 @@ pub(crate) fn enforce_transform_depth(
         .map_or(MAX_TRANSFORM_DEPTH, |policy| {
             policy.min(MAX_TRANSFORM_DEPTH)
         });
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges transform preflight directory index",
+        )?;
+    }
 
     for entry in directory {
         let Some(mut sequence) = u32::try_from(entry.transform)
@@ -832,7 +839,15 @@ pub(crate) fn enforce_transform_depth(
                     depth.saturating_add(1) as u64,
                 ));
             }
-            if !path.insert(sequence) {
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "iges transform preflight walk")?;
+            }
+            if !insert_optional_btree_set(
+                ctx,
+                &mut path,
+                sequence,
+                "iges transform preflight path",
+            )? {
                 break;
             }
             depth += 1;
