@@ -900,6 +900,39 @@ fn resolved_object_identities_refuse_collection_limit() {
 }
 
 #[test]
+fn malformed_attribute_userdata_diagnostic_refuses_collection_limit() {
+    let bytes = [0_u8];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let refusal = crate::objects::parse_attribute_userdata(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("one degradation diagnostic exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        crate::chunks::FramingError::Resource(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let mut warnings = Diagnostics::new();
+    crate::objects::parse_attribute_userdata(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        &mut warnings,
+    )
+    .expect("service profile retains malformed userdata warning");
+    assert_eq!(warnings.iter().count(), 1);
+}
+
+#[test]
 pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     let mut malformed = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &[0x10]);
     let mut valid_body = vec![0x10];

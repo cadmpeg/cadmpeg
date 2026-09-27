@@ -1382,21 +1382,21 @@ pub(crate) fn parse_attribute_userdata(
         let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
-                warnings.push(format!("attribute userdata degraded at {offset}: {error}"));
+                warnings.push_admitted(ctx, format_args!("attribute userdata degraded at {offset}: {error}"))?;
                 break;
             }
         };
         if item.typecode == CLASS_END {
             if let Err(error) = require_short_zero(&item, CLASS_END) {
-                warnings.push(format!("attribute userdata end degraded: {error}"));
+                warnings.push_admitted(ctx, format_args!("attribute userdata end degraded: {error}"))?;
             }
             break;
         }
         if item.typecode != CLASS_USERDATA || item.short() {
-            warnings.push(format!(
+            warnings.push_admitted(ctx, format_args!(
                 "unknown attribute userdata chunk {:#x} at {}",
                 item.typecode, item.header_start
-            ));
+            ))?;
             crate::chunks::reserve_admitted_vec(
                 ctx,
                 &mut result,
@@ -1442,10 +1442,10 @@ pub(crate) fn parse_attribute_userdata(
                     )?;
                     result.push(AttributeUserdataDescriptor::Unknown { range });
                 }
-                Err(error) => warnings.push(format!(
+                Err(error) => warnings.push_admitted(ctx, format_args!(
                     "attribute userdata at {} degraded: {error}",
                     item.header_start
-                )),
+                ))?,
             }
         }
         offset = item.next_offset();
@@ -1721,7 +1721,7 @@ pub(crate) fn parse_object_record(
     require_long(&uuid_chunk, CLASS_UUID)?;
     let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
     }
     let class_uuid = Uuid::from_wire(class_uuid_bytes);
     offset = uuid_chunk.next_offset();
@@ -1800,7 +1800,7 @@ pub(crate) fn parse_object_record(
                     (None, None) => checksum_warning_excluding(bytes, &item, &[])?,
                 };
                 if let Some(note) = checksum {
-                    warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
                 }
                 history = Some(descriptor);
                 phase = 3;
@@ -1843,10 +1843,10 @@ pub(crate) fn parse_object_record(
             Ok(value) => AttributeState::Parsed(Box::new(value)),
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
-                warnings.push(format!(
+                warnings.push_admitted(ctx, format_args!(
                     "object attributes at {} degraded: {error}",
                     chunk.body().start
-                ));
+                ))?;
                 AttributeState::Degraded
             }
         }
@@ -1859,7 +1859,7 @@ pub(crate) fn parse_object_record(
             .and_then(|value| value.rendering_range.clone());
         let children = rendering_range.as_slice();
         if let Some(note) = checksum_warning_excluding(bytes, item, children)? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
         }
     }
     let attributes_userdata = attributes_userdata_body_range
