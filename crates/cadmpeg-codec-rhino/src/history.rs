@@ -1071,9 +1071,9 @@ fn extended_geometry_json(
             "kind": "hatch",
             "plane": {
                 "origin": origin,
-                "xaxis": plane.xaxis,
-                "yaxis": plane.yaxis,
-                "zaxis": plane.zaxis,
+                "xaxis": plane.xaxis.get(),
+                "yaxis": plane.yaxis.get(),
+                "zaxis": plane.zaxis.get(),
                 "equation": [
                     plane.equation[0],
                     plane.equation[1],
@@ -1380,6 +1380,7 @@ fn structured_value_properties(
 /// Returns counts for untyped values, failed geometry, later dependencies, and
 /// repaired optional geometry channels. The caller reports these counts.
 pub(crate) fn project(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[HistoryRecord],
     geometry_context: Option<(
         crate::mesh::MeshExpand<'_>,
@@ -1598,8 +1599,16 @@ pub(crate) fn project(
         .collect::<Result<Vec<_>, String>>()?;
     ir.native
         .namespace_mut("rhino")
-        .set_arena("history_records", &native)
-        .map_err(|error| error.to_string())?;
+        .set_arena(ctx, "history_records", &native)
+        .map_err(|error| {
+            let detail = error.to_string();
+            match cadmpeg_core::CodecError::from(error) {
+                resource @ cadmpeg_core::CodecError::ResourceLimit(_) => {
+                    ProjectionError::Codec(resource)
+                }
+                _ => ProjectionError::Admission(detail),
+            }
+        })?;
     Ok((
         sink.untyped,
         sink.failed,

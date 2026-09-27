@@ -187,15 +187,19 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
             Some(placement) => {
-                let source = placement.transform.rows();
+                let source = placement.transform.checked_rows();
                 let mut rows = [source[0], source[1], source[2]];
-                for row in &mut rows {
-                    row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
-                }
-                let Some(transform) = (source[3] == [0.0, 0.0, 0.0, 1.0])
-                    .then(|| Transform::affine(rows))
-                    .flatten()
-                else {
+                let Some(transform) = (source[3].map(cadmpeg_ir::scalar::FiniteReal::get)
+                    == [0.0, 0.0, 0.0, 1.0])
+                .then(|| {
+                    for row in &mut rows {
+                        row[3] = cadmpeg_ir::scalar::FiniteReal::new(
+                            row[3].get() * INVENTOR_LENGTH_TO_MILLIMETRES,
+                        )?;
+                    }
+                    Some(Transform::from_finite_rows(rows))
+                })
+                .flatten() else {
                     count_unresolved(
                         ctx,
                         &mut unresolved_placements,
@@ -312,6 +316,7 @@ pub(crate) fn inventory<'a>(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
+                ctx.charge_entities(1, "admit Inventor assembly issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor assembly issue detail")?;
                 ctx.charge_retained(
                     segment.pair.token.as_str().len() as u64,
@@ -540,7 +545,12 @@ impl<'a> Cursor<'a> {
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
-        let matrix = CompactMatrix::try_new(set, zero, |_| Ok(self.source.req_f64_le()?))?;
+        let matrix = CompactMatrix::try_new(set, zero, |index| {
+            let value = self.source.req_f64_le()?;
+            cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
+            })
+        })?;
         Ok((prefixed, matrix))
     }
 
@@ -797,6 +807,30 @@ mod tests {
                     && limit.operation == "admit Inventor assembly issue"
                     && limit.used == 0
         ));
+    }
+
+    #[test]
+    fn assembly_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor assembly issue"
+        ));
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::AmDc,
+                OCCURRENCE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("service issue")
+            .2
+            .len(),
+            1
+        );
     }
 
     #[test]

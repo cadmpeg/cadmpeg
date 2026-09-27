@@ -3,12 +3,13 @@
 
 use crate::loss::Diagnostics;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::ops::Range;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -211,10 +212,10 @@ fn serialize_material_textures<S: serde::Serializer>(
 struct PhysicallyBasedMaterialRecord {
     #[serde(flatten)]
     revision: PhysicallyBasedMaterialRevision,
-    base_color: [f32; 4],
+    base_color: [FiniteBinary32; 4],
     brdf: i32,
     subsurface: FiniteReal,
-    subsurface_scattering_color: [f32; 4],
+    subsurface_scattering_color: [FiniteBinary32; 4],
     subsurface_scattering_radius: FiniteReal,
     metallic: FiniteReal,
     specular: FiniteReal,
@@ -229,7 +230,7 @@ struct PhysicallyBasedMaterialRecord {
     opacity_ior: FiniteReal,
     opacity: FiniteReal,
     opacity_roughness: FiniteReal,
-    emission: [f32; 4],
+    emission: [FiniteBinary32; 4],
 }
 
 #[derive(Debug)]
@@ -513,24 +514,56 @@ impl Serialize for DimensionStyleDetails {
             Self::V5 { extra, .. } => extra.as_ref(),
             Self::Modern { .. } => None,
         };
-        let mut controls = self.controls().clone();
-        if let Some(extra) = extra {
-            controls.insert(
-                "v5_extra_dimension_scale".to_string(),
-                serde_json::json!(extra.dimension_scale),
-            );
-            controls.insert(
-                "v5_extra_dimension_scale_source".to_string(),
-                serde_json::json!(extra.dimension_scale_source),
-            );
-        }
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("parent_style_uuid", &self.parent_style_uuid())?;
-        map.serialize_entry("controls", &controls)?;
+        map.serialize_entry(
+            "controls",
+            &DimensionStyleControls {
+                controls: self.controls(),
+                extra,
+            },
+        )?;
         if let Some(extra) = extra {
             map.serialize_entry("v5_extra", extra)?;
         }
         map.end()
+    }
+}
+
+struct DimensionStyleControls<'a> {
+    controls: &'a BTreeMap<String, serde_json::Value>,
+    extra: Option<&'a V5DimensionStyleExtraRecord>,
+}
+
+impl Serialize for DimensionStyleControls<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+        for (key, value) in self.controls {
+            if self.extra.is_some()
+                && (key == "v5_extra_dimension_scale" || key == "v5_extra_dimension_scale_source")
+            {
+                continue;
+            }
+            map.serialize_entry(key, value)?;
+        }
+        if let Some(extra) = self.extra {
+            map.serialize_entry("v5_extra_dimension_scale", &extra.dimension_scale)?;
+            map.serialize_entry(
+                "v5_extra_dimension_scale_source",
+                &extra.dimension_scale_source,
+            )?;
+        }
+        map.end()
+    }
+}
+
+struct DisplayRef<'a, T: Display>(&'a T);
+
+impl<T: Display> Serialize for DisplayRef<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self.0)
     }
 }
 
@@ -764,14 +797,14 @@ struct DisplacementRecord {
     on: bool,
     texture: Option<String>,
     channel: i32,
-    black_point: f64,
-    white_point: f64,
+    black_point: FiniteReal,
+    white_point: FiniteReal,
     sweep_pitch: i32,
     refine_steps: i32,
-    refine_sensitivity: f64,
+    refine_sensitivity: FiniteReal,
     face_count_limit_enabled: bool,
     face_count_limit: i32,
-    post_weld_angle: f64,
+    post_weld_angle: FiniteReal,
     mesh_memory_limit: i32,
     fairing_enabled: bool,
     fairing_amount: i32,
@@ -787,8 +820,8 @@ struct DisplacementSubItemRecord {
     on: bool,
     texture: Option<String>,
     channel: i32,
-    black_point: f64,
-    white_point: f64,
+    black_point: FiniteReal,
+    white_point: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -796,11 +829,11 @@ struct DisplacementSubItemRecord {
 struct EdgeSofteningRecord {
     xml_version: i32,
     on: bool,
-    softening: f64,
+    softening: FiniteReal,
     chamfer: bool,
     faceted: bool,
     force_softening: bool,
-    edge_angle_threshold: f64,
+    edge_angle_threshold: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -811,7 +844,7 @@ struct ThickeningRecord {
     solid: bool,
     both_sides: bool,
     offset_only: bool,
-    distance: f64,
+    distance: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
@@ -819,7 +852,7 @@ struct ThickeningRecord {
 struct CurvePipingRecord {
     xml_version: i32,
     on: bool,
-    radius: f64,
+    radius: FiniteReal,
     segments: i32,
     faceted: bool,
     accuracy: i32,
@@ -841,7 +874,7 @@ struct ShutLiningRecord {
 #[allow(clippy::struct_excessive_bools)]
 struct ShutLiningCurveRecord {
     uuid: Option<String>,
-    radius: f64,
+    radius: FiniteReal,
     profile: i32,
     enabled: bool,
     pull: bool,
@@ -960,7 +993,7 @@ impl Serialize for settings::LayerPerViewportSettings {
         use serde::ser::SerializeStruct;
 
         let mut record = serializer.serialize_struct("LayerPerViewportPresentationRecord", 7)?;
-        record.serialize_field("viewport_uuid", &self.viewport_id.to_string())?;
+        record.serialize_field("viewport_uuid", &DisplayRef(&self.viewport_id))?;
         record.serialize_field("settings_mask", &self.settings_mask())?;
         record.serialize_field("color", &self.color)?;
         record.serialize_field("plot_color", &self.plot_color)?;
@@ -1276,16 +1309,19 @@ fn object_attributes_presentation(
     }
 }
 
-fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4], FramingError> {
+fn read_color_f32(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<[FiniteBinary32; 4], FramingError> {
     let offset = reader.position();
     let color = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
-    color
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(color)
-        .ok_or_else(|| {
-            FramingError::structural(offset, format!("{label} contains a non-finite component"))
-        })
+    let [Some(red), Some(green), Some(blue), Some(alpha)] = color.map(FiniteBinary32::new) else {
+        return Err(FramingError::structural(
+            offset,
+            format!("{label} contains a non-finite component"),
+        ));
+    };
+    Ok([red, green, blue, alpha])
 }
 
 fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
@@ -4243,7 +4279,11 @@ fn retain_unbound_presentation_record(
     });
 }
 
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<NativeInstall, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups = Vec::new();
@@ -4750,18 +4790,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
         group.links.sort();
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("groups", &groups)?;
-    namespace.set_arena("materials", &materials)?;
-    namespace.set_arena("lights", &lights)?;
-    namespace.set_arena("linetypes", &linetypes)?;
-    namespace.set_arena("hatch_patterns", &hatch_patterns)?;
-    namespace.set_arena("dimension_styles", &dimension_styles)?;
-    namespace.set_arena("embedded_images", &images)?;
-    namespace.set_arena("windows_bitmaps", &windows_bitmaps)?;
-    namespace.set_arena("texture_mappings", &texture_mappings)?;
-    namespace.set_arena("text_styles", &text_styles)?;
-    namespace.set_arena("layers", &layers)?;
-    namespace.set_arena("object_presentation", &object_presentation)?;
+    namespace.set_arena(ctx, "groups", &groups)?;
+    namespace.set_arena(ctx, "materials", &materials)?;
+    namespace.set_arena(ctx, "lights", &lights)?;
+    namespace.set_arena(ctx, "linetypes", &linetypes)?;
+    namespace.set_arena(ctx, "hatch_patterns", &hatch_patterns)?;
+    namespace.set_arena(ctx, "dimension_styles", &dimension_styles)?;
+    namespace.set_arena(ctx, "embedded_images", &images)?;
+    namespace.set_arena(ctx, "windows_bitmaps", &windows_bitmaps)?;
+    namespace.set_arena(ctx, "texture_mappings", &texture_mappings)?;
+    namespace.set_arena(ctx, "text_styles", &text_styles)?;
+    namespace.set_arena(ctx, "layers", &layers)?;
+    namespace.set_arena(ctx, "object_presentation", &object_presentation)?;
     Ok(NativeInstall {
         losses,
         opaque_records,

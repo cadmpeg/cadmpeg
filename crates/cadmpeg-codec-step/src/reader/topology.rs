@@ -8,7 +8,8 @@ use std::rc::Rc;
 
 use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
-use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
@@ -367,8 +368,8 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<StageOutcome<TopologyData>, cadmpeg_core::CodecError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<StageOutcome<TopologyData>, CodecError> {
     let mut commit_session = CommitSession::new(ir);
     let mut result = StageOutcome {
         value: TopologyData {
@@ -602,7 +603,8 @@ pub(super) fn decode(
             point_positions,
             scope_root,
             &mut losses,
-        );
+            ctx,
+        )?;
         let (built, failures) = outcome.into_parts();
         let failure_message = failures
             .as_ref()
@@ -763,7 +765,7 @@ pub(super) fn decode(
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
-            ctx,
+            Some(ctx),
         )?
         .is_empty();
         if has_body {
@@ -2147,9 +2149,10 @@ fn build(
     point_positions: &CarrierIndex,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
-) -> BuildOutcome {
+    ctx: &DecodeContext<'_>,
+) -> Result<BuildOutcome, CodecError> {
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
-        return BuildOutcome::Partial {
+        return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
                 count: NonZeroUsize::MIN,
@@ -2158,7 +2161,7 @@ fn build(
                     carrier_kind: CarrierKind::TopologyRootCarrier,
                 }),
             },
-        };
+        });
     };
     let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
         || root.partial("BREP_WITH_VOIDS").is_some()
@@ -2187,17 +2190,19 @@ fn build(
             scope_root,
             losses,
             &mut failure,
+            ctx,
         );
-        return match built {
-            Some(built) => BuildOutcome::Built(vec![built]),
-            None => BuildOutcome::Partial {
+        return Ok(match built {
+            Ok(built) => BuildOutcome::Built(vec![built]),
+            Err(BuildError::Absent) => BuildOutcome::Partial {
                 built: Vec::new(),
                 failures: BuildFailures {
                     count: NonZeroUsize::MIN,
                     first: failure,
                 },
             },
-        };
+            Err(BuildError::Resource(error)) => return Err(error),
+        });
     }
 
     let scoped = shell_steps.len() > 1;
@@ -2233,7 +2238,7 @@ fn build(
             kind!("region"),
             IdentityKey::from(id).with_tail(&suffix),
         ));
-        if let Some(value) = build_one(
+        match build_one(
             id,
             root,
             exchange,
@@ -2252,13 +2257,25 @@ fn build(
             scope_root,
             losses,
             &mut failure,
+            ctx,
         ) {
-            outcome.push(value);
-        } else {
-            outcome.fail(failure);
+            Ok(value) => outcome.push(value),
+            Err(BuildError::Absent) => outcome.fail(failure),
+            Err(BuildError::Resource(error)) => return Err(error),
         }
     }
-    outcome
+    Ok(outcome)
+}
+
+enum BuildError {
+    Absent,
+    Resource(CodecError),
+}
+
+impl From<CodecError> for BuildError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2281,7 +2298,8 @@ fn build_one(
     scope_root: bool,
     losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
-) -> Option<Built> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Built, BuildError> {
     let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
         || root.partial("BREP_WITH_VOIDS").is_some()
         || root.partial("FACETED_BREP").is_some();
@@ -2330,7 +2348,8 @@ fn build_one(
                 failure,
                 shell_reference,
                 CarrierKind::ShellCarrier,
-            )?
+            )
+            .ok_or(BuildError::Absent)?
         };
         if !used_shells.insert(shell_step) {
             continue;
@@ -2340,14 +2359,16 @@ fn build_one(
             failure,
             shell_step,
             CarrierKind::ShellRecord,
-        )?;
+        )
+        .ok_or(BuildError::Absent)?;
         let (shell_type, face_steps) = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
             let set_type = require_carrier(
                 connected_face_set_type(sr),
                 failure,
                 shell_step,
                 CarrierKind::ConnectedFaceSet,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             if set_type == "CONNECTED_FACE_SUB_SET"
                 && !validate_subset_parent(shell_step, sr, set_type, exchange, losses)
             {
@@ -2358,7 +2379,8 @@ fn build_one(
                 failure,
                 shell_step,
                 CarrierKind::ConnectedFaceSetMemberList,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             (set_type, members)
         } else {
             let shell_type = require_carrier(
@@ -2366,18 +2388,20 @@ fn build_one(
                 failure,
                 shell_step,
                 CarrierKind::ShellType,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let members = require_carrier(
                 named_refs(sr, shell_type, 1),
                 failure,
                 shell_step,
                 CarrierKind::ShellFaceList,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             (shell_type, members)
         };
         if face_steps.is_empty() {
             note_failure(failure, shell_step, CarrierKind::ShellFaceList);
-            return None;
+            return Err(BuildError::Absent);
         }
         let sid = shell_identity(id, shell_step, scope_root);
         let mut face_ids = vec![];
@@ -2390,17 +2414,19 @@ fn build_one(
                 failure,
                 face_step,
                 CarrierKind::FaceRecord,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             if !is_face_record(fr) {
                 note_failure(failure, face_step, CarrierKind::FaceCarrier);
-                return None;
+                return Err(BuildError::Absent);
             }
             let face_info = require_carrier(
                 face_attributes(face_step, fr, exchange, &mut BTreeSet::new()),
                 failure,
                 face_step,
                 CarrierKind::FaceAttributes,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let outer_bound_count = face_info
                 .bounds
                 .iter()
@@ -2425,7 +2451,7 @@ fn build_one(
                     ),
                 );
                 note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
-                return None;
+                return Err(BuildError::Absent);
             }
             typed.extend(face_info.typed);
             let face_suffix = if scope_faces {
@@ -2466,7 +2492,8 @@ fn build_one(
                             failure,
                             face_step,
                             CarrierKind::ImplicitFacePlane,
-                        )?,
+                        )
+                        .ok_or(BuildError::Absent)?,
                         source_object: None,
                     });
                 }
@@ -2495,28 +2522,31 @@ fn build_one(
                     failure,
                     bound_step,
                     CarrierKind::FaceBound,
-                )?;
+                )
+                .ok_or(BuildError::Absent)?;
                 if br.partial("FACE_BOUND").is_none() && br.partial("FACE_OUTER_BOUND").is_none() {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundCarrier);
-                    return None;
+                    return Err(BuildError::Absent);
                 }
                 let is_outer_bound = br.partial("FACE_OUTER_BOUND").is_some();
                 let Some(bound_type) = face_bound_attribute_type(br) else {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundAttributes);
-                    return None;
+                    return Err(BuildError::Absent);
                 };
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
                     bound_step,
                     CarrierKind::BoundLoopReference,
-                )?;
+                )
+                .ok_or(BuildError::Absent)?;
                 let lr = require_carrier(
                     exchange.records().get(&loop_step),
                     failure,
                     loop_step,
                     CarrierKind::LoopRecord,
-                )?;
+                )
+                .ok_or(BuildError::Absent)?;
                 let lid = LoopId::from(ids::data(
                     kind!("loop"),
                     IdentityKey::from(loop_step)
@@ -2530,13 +2560,14 @@ fn build_one(
                         failure,
                         loop_step,
                         CarrierKind::VertexLoopReference,
-                    )?;
+                    )
+                    .ok_or(BuildError::Absent)?;
                     if !vdefs
                         .get(&vertex_step)
                         .is_some_and(|vertex| point_positions.contains_key(vertex.point))
                     {
                         note_failure(failure, vertex_step, CarrierKind::VertexPoint);
-                        return None;
+                        return Err(BuildError::Absent);
                     }
                     loops.push(Loop {
                         id: lid.clone(),
@@ -2563,7 +2594,8 @@ fn build_one(
                         failure,
                         bound_step,
                         CarrierKind::BoundOrientation,
-                    )?;
+                    )
+                    .ok_or(BuildError::Absent)?;
                     let bound_forward = if face_info.reverse_bound_orientation {
                         !bound_forward
                     } else {
@@ -2574,7 +2606,8 @@ fn build_one(
                         failure,
                         loop_step,
                         CarrierKind::PolyLoopPointList,
-                    )?;
+                    )
+                    .ok_or(BuildError::Absent)?;
                     if points.first() == points.last() {
                         points.pop();
                     }
@@ -2586,7 +2619,7 @@ fn build_one(
                             .any(|point| !point_positions.contains_key(*point))
                     {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
-                        return None;
+                        return Err(BuildError::Absent);
                     }
                     if !bound_forward {
                         points.reverse();
@@ -2637,7 +2670,7 @@ fn build_one(
                     let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                     else {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
-                        return None;
+                        return Err(BuildError::Absent);
                     };
                     loops.push(Loop {
                         id: lid.clone(),
@@ -2650,14 +2683,15 @@ fn build_one(
                 }
                 if lr.partial("EDGE_LOOP").is_none() {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
-                    return None;
+                    return Err(BuildError::Absent);
                 }
                 let bound_forward = require_carrier(
                     named_logical(br, bound_type, 2, 0),
                     failure,
                     bound_step,
                     CarrierKind::BoundOrientation,
-                )?;
+                )
+                .ok_or(BuildError::Absent)?;
                 let bound_forward = if face_info.reverse_bound_orientation {
                     !bound_forward
                 } else {
@@ -2668,13 +2702,14 @@ fn build_one(
                     failure,
                     loop_step,
                     CarrierKind::EdgeLoopMemberList,
-                )?;
+                )
+                .ok_or(BuildError::Absent)?;
                 if !bound_forward {
                     uses.reverse();
                 }
                 if uses.is_empty() {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopMember);
-                    return None;
+                    return Err(BuildError::Absent);
                 }
                 let mut coedge_ids = vec![];
                 for use_step in uses {
@@ -2683,13 +2718,15 @@ fn build_one(
                         failure,
                         use_step,
                         CarrierKind::OrientedEdgeDefinition,
-                    )?;
+                    )
+                    .ok_or(BuildError::Absent)?;
                     let edge = require_carrier(
                         edefs.get(&o.edge),
                         failure,
                         o.edge,
                         CarrierKind::EdgeDefinition,
-                    )?;
+                    )
+                    .ok_or(BuildError::Absent)?;
                     let cid = CoedgeId::from(ids::data(
                         kind!("coedge"),
                         IdentityKey::from(use_step)
@@ -2809,7 +2846,8 @@ fn build_one(
                                         .note(format!("coedge pcurve parameter_range: {error}")),
                                 );
                             })
-                            .ok()?,
+                            .ok()
+                            .ok_or(BuildError::Absent)?,
                         use_curve: None,
                     });
                     radial
@@ -2834,7 +2872,7 @@ fn build_one(
                 }
                 let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()) else {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
-                    return None;
+                    return Err(BuildError::Absent);
                 };
                 loops.push(Loop {
                     id: lid.clone(),
@@ -2904,7 +2942,7 @@ fn build_one(
             );
         }
         let components =
-            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices)?;
+            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices, ctx)?;
         if components.len() > 1 {
             let note = StepLossCode::ShellDisconnectedFaces.note(format!(
                     "source {shell_type} #{shell_step} contains {} disconnected face components across {} faces",
@@ -2927,7 +2965,7 @@ fn build_one(
                 && component_index > 0
             {
                 note_failure(failure, shell_step, CarrierKind::ConnectedOuterShell);
-                return None;
+                return Err(BuildError::Absent);
             }
             let component_shell = if component_index == 0 {
                 sid.clone()
@@ -2969,7 +3007,7 @@ fn build_one(
                             StepLossCode::DecodeWarning
                                 .note(format!("{shell_type} #{shell_step}: {error}")),
                         );
-                        return None;
+                        return Err(BuildError::Absent);
                     }
                 },
             );
@@ -2983,7 +3021,8 @@ fn build_one(
             failure,
             edge_id,
             CarrierKind::EdgeDefinition,
-        )?;
+        )
+        .ok_or(BuildError::Absent)?;
         let (start, end) = e.curve_vertices();
         edges.push(Edge {
             id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
@@ -3010,13 +3049,15 @@ fn build_one(
             failure,
             vertex_id,
             CarrierKind::VertexDefinition,
-        )?;
+        )
+        .ok_or(BuildError::Absent)?;
         require_carrier(
             point_positions.get(v.point),
             failure,
             v.point,
             CarrierKind::VertexPoint,
-        )?;
+        )
+        .ok_or(BuildError::Absent)?;
         vertices.push(Vertex {
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), v.point)),
@@ -3030,7 +3071,8 @@ fn build_one(
             failure,
             point_id,
             CarrierKind::PolyVertexPoint,
-        )?;
+        )
+        .ok_or(BuildError::Absent)?;
         vertices.push(Vertex {
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), point_id)),
@@ -3064,25 +3106,29 @@ fn build_one(
                 failure,
                 loop_source,
                 CarrierKind::Coedge,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let next = require_carrier(
                 coedge_by_id.get(next_id),
                 failure,
                 loop_source,
                 CarrierKind::Coedge,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let current_edge = require_carrier(
                 edge_by_id.get(&current.edge),
                 failure,
                 loop_source,
                 CarrierKind::CoedgeEdge,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let next_edge = require_carrier(
                 edge_by_id.get(&next.edge),
                 failure,
                 loop_source,
                 CarrierKind::CoedgeEdge,
-            )?;
+            )
+            .ok_or(BuildError::Absent)?;
             let current_end = match current.sense {
                 Sense::Forward => &current_edge.end,
                 Sense::Reversed => &current_edge.start,
@@ -3093,7 +3139,7 @@ fn build_one(
             };
             if current_end != next_start {
                 note_failure(failure, loop_source, CarrierKind::EdgeLoopContinuity);
-                return None;
+                return Err(BuildError::Absent);
             }
         }
     }
@@ -3105,7 +3151,8 @@ fn build_one(
         failure,
         id,
         CarrierKind::TopologyDraft,
-    )?;
+    )
+    .ok_or(BuildError::Absent)?;
     built.pcurve_admissions = admissions;
     for &shell_reference in shell_steps {
         let shell_step = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
@@ -3118,12 +3165,13 @@ fn build_one(
                 failure,
                 shell_reference,
                 CarrierKind::ShellCarrier,
-            )?
+            )
+            .ok_or(BuildError::Absent)?
             .0
         };
         built.shell_sources.insert(shell_step);
     }
-    Some(built)
+    Ok(built)
 }
 
 /// Partition a source shell into connected IR shells before committing it.
@@ -3138,23 +3186,25 @@ fn connected_face_components(
     loops: &[Loop],
     coedges: &[Coedge],
     edge_vertices: &BTreeMap<String, (String, String)>,
-) -> Option<Vec<Vec<usize>>> {
-    let face_indices = face_ids
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let coedge_edges = coedges
-        .iter()
-        .map(|coedge| {
-            (
-                coedge.id.as_str().to_owned(),
-                coedge.edge.as_str().to_owned(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut faces_by_edge = BTreeMap::<String, BTreeSet<usize>>::new();
-    let mut faces_by_vertex = BTreeMap::<String, BTreeSet<usize>>::new();
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut neighbors = ctx.alloc_filled(
+        face_ids.len(),
+        BTreeSet::new(),
+        "STEP connected-face neighbors",
+    )?;
+    let mut face_indices = BTreeMap::new();
+    for (index, face) in face_ids.iter().enumerate() {
+        ctx.charge_collection_items(1, "STEP connected-face indices")?;
+        face_indices.insert(face.as_str(), index);
+    }
+    let mut coedge_edges = BTreeMap::new();
+    for coedge in coedges {
+        ctx.charge_collection_items(1, "STEP connected-face coedge edges")?;
+        coedge_edges.insert(coedge.id.as_str(), coedge.edge.as_str());
+    }
+    let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
+    let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
     for loop_ in loops {
         let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
             continue;
@@ -3163,60 +3213,91 @@ fn connected_face_components(
             let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
                 continue;
             };
-            faces_by_edge
-                .entry(edge_id.clone())
-                .or_default()
-                .insert(face_index);
-            if let Some((start, end)) = edge_vertices.get(edge_id) {
-                faces_by_vertex
-                    .entry(start.clone())
-                    .or_default()
-                    .insert(face_index);
-                faces_by_vertex
-                    .entry(end.clone())
-                    .or_default()
-                    .insert(face_index);
+            insert_connected_face_group(&mut faces_by_edge, edge_id, face_index, ctx)?;
+            if let Some((start, end)) = edge_vertices.get(*edge_id) {
+                insert_connected_face_group(&mut faces_by_vertex, start, face_index, ctx)?;
+                insert_connected_face_group(&mut faces_by_vertex, end, face_index, ctx)?;
             }
         }
         for vertex in loop_.vertices() {
-            faces_by_vertex
-                .entry(vertex.as_str().to_owned())
-                .or_default()
-                .insert(face_index);
+            insert_connected_face_group(&mut faces_by_vertex, vertex.as_str(), face_index, ctx)?;
         }
     }
 
-    let mut neighbors = alloc_filled(
-        face_ids.len(),
-        BTreeSet::new(),
-        "STEP connected-face neighbors",
-    )
-    .ok()?;
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for &face in group {
-            neighbors[face].extend(group.iter().copied().filter(|other| *other != face));
+            for &other in group {
+                if other != face && !neighbors[face].contains(&other) {
+                    ctx.charge_collection_items(1, "STEP connected-face links")?;
+                    neighbors[face].insert(other);
+                }
+            }
         }
     }
-    let mut reached = BTreeSet::new();
+    let mut reached = ctx.alloc_filled(face_ids.len(), false, "STEP connected-face reached")?;
     let mut components = Vec::new();
     for start in 0..face_ids.len() {
-        if !reached.insert(start) {
+        if reached[start] {
             continue;
         }
+        reached[start] = true;
         let mut component = Vec::new();
-        let mut pending = vec![start];
+        let mut pending = Vec::new();
+        push_connected_face_item(&mut pending, start, ctx, "STEP connected-face pending")?;
         while let Some(face) = pending.pop() {
-            component.push(face);
+            push_connected_face_item(&mut component, face, ctx, "STEP connected-face component")?;
             for &neighbor in &neighbors[face] {
-                if reached.insert(neighbor) {
-                    pending.push(neighbor);
+                if !reached[neighbor] {
+                    reached[neighbor] = true;
+                    push_connected_face_item(
+                        &mut pending,
+                        neighbor,
+                        ctx,
+                        "STEP connected-face pending",
+                    )?;
                 }
             }
         }
         component.sort_unstable();
-        components.push(component);
+        push_connected_face_item(
+            &mut components,
+            component,
+            ctx,
+            "STEP connected-face components",
+        )?;
     }
-    Some(components)
+    Ok(components)
+}
+
+fn insert_connected_face_group<'a>(
+    groups: &mut BTreeMap<&'a str, BTreeSet<usize>>,
+    key: &'a str,
+    face: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(key) {
+        ctx.charge_collection_items(1, "STEP connected-face groups")?;
+    }
+    let group = groups.entry(key).or_default();
+    if !group.contains(&face) {
+        ctx.charge_collection_items(1, "STEP connected-face group faces")?;
+        group.insert(face);
+    }
+    Ok(())
+}
+
+fn push_connected_face_item<T>(
+    values: &mut Vec<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::decode::refuse_local_limit(operation, u64_from_index(values.len()), 1)
+    })?;
+    values.push(value);
+    Ok(())
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {

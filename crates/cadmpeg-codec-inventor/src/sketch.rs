@@ -15,8 +15,9 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{DesignParameter, ParameterId},
-    scalar::{Angle, Length},
+    scalar::{Angle, FiniteReal, Length, PositiveReal},
 };
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
@@ -100,7 +101,7 @@ pub(crate) struct PmDcConstraintHeader {
     pub(crate) parameter: PmDcReference,
 }
 
-type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<f64>;
+type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,7 +201,7 @@ pub(crate) struct PmDcSketchEntityPayload {
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchEntityKind {
     Point {
-        position: [f64; 2],
+        position: [FiniteReal; 2],
         endpoint_of: PmDcReferenceList,
         center_of: PmDcReferenceList,
         #[serde(flatten)]
@@ -209,36 +210,61 @@ pub(crate) enum PmDcSketchEntityKind {
     Line {
         points: PmDcReferenceList,
         auxiliary: Vec<PmDcReferenceList>,
-        origin: [f64; 2],
-        direction: [f64; 2],
+        origin: [FiniteReal; 2],
+        direction: [FiniteReal; 2],
     },
     Circle {
         points: PmDcReferenceList,
         auxiliary: Vec<PmDcReferenceList>,
         center: PmDcReference,
-        radius: f64,
+        radius: PositiveReal,
         state: u8,
     },
     Ellipse {
         points: PmDcReferenceList,
         auxiliary: Vec<PmDcReferenceList>,
         center: PmDcReference,
-        major_direction: [f64; 2],
-        major_radius: f64,
-        minor_radius: f64,
+        major_direction: [FiniteReal; 2],
+        major_radius: PositiveReal,
+        minor_radius: PositiveReal,
         state: u8,
     },
 }
 
 /// The absent or complete state and association tail of a sketch point.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "PointTailWire", into = "PointTailWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PointTailWire")]
 pub(crate) enum PointTail {
     Absent,
     Present {
         state: u32,
         associations: PmDcReferenceList,
     },
+}
+
+#[derive(Serialize)]
+struct PointTailRef<'a> {
+    state: Option<u32>,
+    associations: Option<&'a PmDcReferenceList>,
+}
+
+impl Serialize for PointTail {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let wire = match self {
+            Self::Absent => PointTailRef {
+                state: None,
+                associations: None,
+            },
+            Self::Present {
+                state,
+                associations,
+            } => PointTailRef {
+                state: Some(*state),
+                associations: Some(associations),
+            },
+        };
+        wire.serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -282,16 +308,27 @@ impl TryFrom<PointTailWire> for PointTail {
 
 const TRANSFORM_PREFIX: u32 = 0x203;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "PmDcTransformPayloadWire",
-    into = "PmDcTransformPayloadWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PmDcTransformPayloadWire")]
 pub(crate) struct PmDcTransformPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) prefix_present: bool,
     pub(crate) matrix: CompactMatrix,
+}
+
+impl Serialize for PmDcTransformPayload {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(6))?;
+        let (value_mask, zero_mask) = self.matrix.masks();
+        map.serialize_entry("save_version_major", &self.save_version_major)?;
+        map.serialize_entry("header", &self.header)?;
+        map.serialize_entry("prefix", &self.prefix_present.then_some(TRANSFORM_PREFIX))?;
+        map.serialize_entry("value_mask", &value_mask)?;
+        map.serialize_entry("zero_mask", &zero_mask)?;
+        map.serialize_entry("matrix", &self.matrix.rows())?;
+        map.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -337,9 +374,9 @@ pub(crate) struct PmDcDirectionPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) entity_flags: u32,
-    pub(crate) parameter: f64,
+    pub(crate) parameter: FiniteReal,
     pub(crate) extension: Option<u32>,
-    pub(crate) direction: [f64; 3],
+    pub(crate) direction: [FiniteReal; 3],
 }
 
 pub(crate) fn inventory(
@@ -446,6 +483,7 @@ pub(crate) fn inventory(
                     return Err(error);
                 }
                 ctx.charge_collection_items(1, "admit Inventor PmDc sketch issue")?;
+                ctx.charge_entities(1, "admit Inventor PmDc sketch issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor PmDc sketch issue detail")?;
                 ctx.charge_retained(32, "retain Inventor PmDc sketch issue type id")?;
                 ctx.charge_retained(
@@ -600,14 +638,14 @@ fn parse_entity(
     })
 }
 
-fn point2(cursor: &mut Cursor<'_>, field: &str) -> Result<[f64; 2], CodecError> {
+fn point2(cursor: &mut Cursor<'_>, field: &str) -> Result<[FiniteReal; 2], CodecError> {
     Ok([
         cursor.f64(&format!("{field} u"))?,
         cursor.f64(&format!("{field} v"))?,
     ])
 }
 
-fn point3(cursor: &mut Cursor<'_>, field: &str) -> Result<[f64; 3], CodecError> {
+fn point3(cursor: &mut Cursor<'_>, field: &str) -> Result<[FiniteReal; 3], CodecError> {
     Ok([
         cursor.f64(&format!("{field} x"))?,
         cursor.f64(&format!("{field} y"))?,
@@ -714,11 +752,9 @@ fn parse_circle(
     let center = cursor.reference("circle center reference")?;
     let radius = cursor.f64("circle radius")?;
     let state = cursor.u8("circle state")?;
-    if radius <= 0.0 {
-        return Err(CodecError::Malformed(
-            "Inventor PmDc circle radius is not positive".into(),
-        ));
-    }
+    let radius = PositiveReal::new(radius.get()).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc circle radius is not positive".into())
+    })?;
     Ok(PmDcSketchEntityKind::Circle {
         points,
         auxiliary,
@@ -738,11 +774,12 @@ fn parse_ellipse(
     let major_radius = cursor.f64("ellipse major radius")?;
     let minor_radius = cursor.f64("ellipse minor radius")?;
     let state = cursor.u8("ellipse state")?;
-    if major_radius <= 0.0 || minor_radius <= 0.0 {
-        return Err(CodecError::Malformed(
-            "Inventor PmDc ellipse radius is not positive".into(),
-        ));
-    }
+    let major_radius = PositiveReal::new(major_radius.get()).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc ellipse radius is not positive".into())
+    })?;
+    let minor_radius = PositiveReal::new(minor_radius.get()).ok_or_else(|| {
+        CodecError::Malformed("Inventor PmDc ellipse radius is not positive".into())
+    })?;
     Ok(PmDcSketchEntityKind::Ellipse {
         points,
         auxiliary,
@@ -1838,7 +1875,12 @@ fn project_geometry(
                 entities,
             )?;
             let end = resolve_point(entity.identity.segment_token.as_str(), end.index, entities)?;
-            if !line_carrier_matches(*origin, *direction, start, end) {
+            if !line_carrier_matches(
+                origin.map(FiniteReal::get),
+                direction.map(FiniteReal::get),
+                start.map(FiniteReal::get),
+                end.map(FiniteReal::get),
+            ) {
                 return None;
             }
             Some(
@@ -1858,7 +1900,7 @@ fn project_geometry(
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
-                    radius: Length::new(radius * 10.0)?,
+                    radius: Length::new(radius.get() * 10.0)?,
                 })
                 .ok()?,
             )
@@ -1875,16 +1917,20 @@ fn project_geometry(
                 center.index,
                 entities,
             )?;
-            let norm = major_direction[0].hypot(major_direction[1]);
+            let norm = major_direction[0].get().hypot(major_direction[1].get());
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
             }
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: neutral_point(center),
-                    major_angle: Angle::new(major_direction[1].atan2(major_direction[0]))?,
-                    major_radius: Length::new(major_radius * 10.0)?,
-                    minor_radius: Length::new(minor_radius * 10.0)?,
+                    major_angle: Angle::new(
+                        major_direction[1].get().atan2(major_direction[0].get()),
+                    )?,
+                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                        major_radius: Length::new(major_radius.get() * 10.0)?,
+                        minor_radius: Length::new(minor_radius.get() * 10.0)?,
+                    },
                     bounds: None,
                 })
                 .ok()?,
@@ -1969,7 +2015,7 @@ fn resolve_point(
     token: &str,
     reference: u32,
     entities: &HashMap<(&str, u32), &PmDcSketchEntity>,
-) -> Option<[f64; 2]> {
+) -> Option<[FiniteReal; 2]> {
     let entity = entities.get(&(token, reference.checked_sub(1)?))?;
     let PmDcSketchEntityKind::Point { position, .. } = entity.kind else {
         return None;
@@ -1977,8 +2023,8 @@ fn resolve_point(
     Some(position)
 }
 
-fn neutral_point(value: [f64; 2]) -> Point2 {
-    Point2::new(value[0] * 10.0, value[1] * 10.0)
+fn neutral_point(value: [FiniteReal; 2]) -> Point2 {
+    Point2::new(value[0].get() * 10.0, value[1].get() * 10.0)
 }
 
 fn entity_endpoint_refs(
@@ -2036,9 +2082,9 @@ fn project_placement(
     let v_axis = Vector3::new(matrix[0][1], matrix[1][1], matrix[2][1]).unit()?;
     let normal = Vector3::new(matrix[0][2], matrix[1][2], matrix[2][2]).unit()?;
     let stored_direction = Vector3::new(
-        direction.direction[0],
-        direction.direction[1],
-        direction.direction[2],
+        direction.direction[0].get(),
+        direction.direction[1].get(),
+        direction.direction[2].get(),
     )
     .unit()?;
     if u_axis.dot(v_axis).abs() > EPS_SKETCH_PROJECT_PLACEMENT_E10
@@ -2324,7 +2370,12 @@ mod tests {
     use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::sketches::SketchPlacement;
+
+    fn real(value: f64) -> FiniteReal {
+        FiniteReal::new(value).expect("finite test scalar")
+    }
 
     #[test]
     fn profile_builder_refuses_collection_limit_before_source_index() {
@@ -2788,6 +2839,25 @@ mod tests {
     }
 
     #[test]
+    fn sketch_parse_issue_refuses_entity_limit_before_push() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit Inventor PmDc sketch issue"
+        ));
+        assert_eq!(
+            inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
+                .expect("service issue")
+                .issues
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn sketch_parse_issue_copies_refuse_retained_limits_before_creation() {
         let detail_len = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
             .expect("truncated transform becomes an issue")
@@ -2951,9 +3021,9 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchEntityKind::Point {
-                position: [1.25, -2.5],
+                position,
                 ..
-            }
+            } if position.map(FiniteReal::get) == [1.25, -2.5]
         ));
 
         let line = line_bytes(2, 3, [4, 5]);
@@ -2977,7 +3047,7 @@ mod tests {
         });
         assert!(matches!(
             parsed.kind,
-            PmDcSketchEntityKind::Circle { radius: 2.5, .. }
+            PmDcSketchEntityKind::Circle { radius, .. } if radius.get() == 2.5
         ));
 
         let mut ellipse = entity_prefix(4, 3, 0);
@@ -2995,10 +3065,10 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcSketchEntityKind::Ellipse {
-                major_radius: 3.0,
-                minor_radius: 2.0,
+                major_radius,
+                minor_radius,
                 ..
-            }
+            } if major_radius.get() == 3.0 && minor_radius.get() == 2.0
         ));
     }
 
@@ -3176,8 +3246,8 @@ mod tests {
             else {
                 unreachable!("generated line")
             };
-            *origin = start;
-            *direction = [end[0] - start[0], end[1] - start[1]];
+            *origin = start.map(real);
+            *direction = [real(end[0] - start[0]), real(end[1] - start[1])];
             entities.push(line);
         }
         transform.header.source_index = 0;
@@ -3414,4 +3484,6 @@ mod tests {
             [1e12 + 1., 12e12 + 13.]
         ));
     }
+
+    mod serialization;
 }

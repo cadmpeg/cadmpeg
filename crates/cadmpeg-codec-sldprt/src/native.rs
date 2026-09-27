@@ -37,11 +37,12 @@ type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, 
 
 #[allow(clippy::needless_pass_by_value)]
 fn emit_owned<T: Serialize>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: Vec<T>,
     row: &SldprtFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    namespace.set_arena(row.arena, &records)
+    namespace.set_arena(ctx, row.arena, &records)
 }
 
 macro_rules! lane_family {
@@ -50,8 +51,9 @@ macro_rules! lane_family {
             arena: $arena,
             exactness: (),
             phase: Phase::ArenaOnly,
-            emit: |model, row, namespace| {
+            emit: |ctx, model, row, namespace| {
                 emit_owned(
+                    ctx,
                     model
                         .feature_input_lanes
                         .iter()
@@ -78,8 +80,9 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         arena: "feature_histories",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
+        emit: |ctx, model, row, namespace| {
             emit_owned(
+                ctx,
                 model
                     .feature_histories
                     .iter()
@@ -101,7 +104,9 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         arena: "pmi_dimensions",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| emit_owned(model.pmi_dimensions.clone(), row, namespace),
+        emit: |ctx, model, row, namespace| {
+            emit_owned(ctx, model.pmi_dimensions.clone(), row, namespace)
+        },
         len: |model| model.pmi_dimensions.len(),
         counts_toward_emptiness: true,
     },
@@ -109,8 +114,9 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         arena: "configurations",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
+        emit: |ctx, model, row, namespace| {
             emit_owned(
+                ctx,
                 model
                     .feature_histories
                     .iter()
@@ -133,8 +139,9 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         arena: "features",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
+        emit: |ctx, model, row, namespace| {
             emit_owned(
+                ctx,
                 model
                     .feature_histories
                     .iter()
@@ -157,8 +164,9 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         arena: "feature_input_lanes",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
+        emit: |ctx, model, row, namespace| {
             emit_owned(
+                ctx,
                 model
                     .feature_input_lanes
                     .iter()
@@ -808,6 +816,7 @@ impl SldprtNative {
 
     pub(crate) fn store(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
         // Load admits every record against the lane payload it is derived from;
@@ -1079,16 +1088,6 @@ impl SldprtNative {
                     record.id()
                 )));
             }
-            if let Some(record) = lane.sketch_entities.iter().find(|record| {
-                record
-                    .coordinates_m
-                    .is_some_and(|values| !values.iter().all(|value| value.is_finite()))
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "sketch input entity {} has non-finite coordinates",
-                    record.id()
-                )));
-            }
             for record in &lane.sketch_entities {
                 for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
@@ -1132,7 +1131,7 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
-        SLDPRT_CATALOGUE.emit_all(self, namespace)?;
+        SLDPRT_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
 }

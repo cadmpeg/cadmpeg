@@ -99,7 +99,11 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     edited
         .native
         .namespace_mut("fcstd")
-        .set_arena("applications", &altered)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "applications",
+            &altered,
+        )
         .unwrap();
     assert!(crate::validate_native(&edited).iter().any(|finding| {
         finding
@@ -123,7 +127,14 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
         data: None,
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-    super::install(&mut namespace, &objects, &[], &[]).unwrap();
+    super::install(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut namespace,
+        &objects,
+        &[],
+        &[],
+    )
+    .unwrap();
     assert!(objects[0].data.is_none());
     let records = namespace
         .arena_as::<serde_json::Value>("applications")

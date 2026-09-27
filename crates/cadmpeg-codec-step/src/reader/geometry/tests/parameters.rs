@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -670,9 +670,15 @@ ENDSEC;END-ISO-10303-21;",
     )
     .expect("parse plane-angle units");
     let mut active = BTreeSet::new();
-    assert_eq!(unit_scale_radians(1, &exchange, &mut active), Some(1.0e-3));
+    assert_eq!(
+        unit_scale_radians(1, &exchange, &mut active).map(PositiveReal::get),
+        Some(1.0e-3)
+    );
     assert!(active.is_empty());
-    assert_eq!(unit_scale_radians(2, &exchange, &mut active), Some(1.0));
+    assert_eq!(
+        unit_scale_radians(2, &exchange, &mut active).map(PositiveReal::get),
+        Some(1.0)
+    );
     assert!(active.is_empty());
 }
 
@@ -690,9 +696,15 @@ ENDSEC;END-ISO-10303-21;",
     )
     .expect("parse conversion-based plane-angle units");
     let mut active = BTreeSet::new();
-    assert_eq!(unit_scale_radians(3, &exchange, &mut active), Some(2.0e-3));
+    assert_eq!(
+        unit_scale_radians(3, &exchange, &mut active).map(PositiveReal::get),
+        Some(2.0e-3)
+    );
     assert!(active.is_empty());
-    assert_eq!(unit_scale_radians(6, &exchange, &mut active), Some(2.0));
+    assert_eq!(
+        unit_scale_radians(6, &exchange, &mut active).map(PositiveReal::get),
+        Some(2.0)
+    );
     assert!(active.is_empty());
 }
 
@@ -756,7 +768,10 @@ fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
         ),
         Value::Real(0.25),
     ]);
-    assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    assert_eq!(
+        pcurve_trim_parameter(&value).map(FiniteReal::get),
+        Some(0.25)
+    );
 }
 
 #[test]
@@ -765,7 +780,10 @@ fn pcurve_trim_select_prefers_parameter_value() {
         Value::Real(17.0),
         Value::Typed("PARAMETER_VALUE".into(), Box::new(Value::Real(0.25))),
     ]);
-    assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    assert_eq!(
+        pcurve_trim_parameter(&value).map(FiniteReal::get),
+        Some(0.25)
+    );
 }
 
 #[test]

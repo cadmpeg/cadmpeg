@@ -190,6 +190,16 @@ impl FiniteVector3 {
         })
     }
 
+    /// Use admitted vector coordinates as a finite point.
+    #[must_use]
+    pub const fn as_point(self) -> FinitePoint3 {
+        FinitePoint3(Point3 {
+            x: self.0.x,
+            y: self.0.y,
+            z: self.0.z,
+        })
+    }
+
     /// Reverse all components.
     #[must_use]
     pub fn negated(self) -> Self {
@@ -294,6 +304,27 @@ impl FeatureDirection3 {
     #[must_use]
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+
+    /// Canonicalize a unit input by replacing components of magnitude at most
+    /// `1e-12` with positive zero. A unit vector has a component above one
+    /// half in magnitude, so the result keeps a finite nonzero squared norm.
+    #[must_use]
+    pub fn from_unit_without_small_components(direction: UnitVector3) -> Self {
+        const EPS_CANONICAL_COMPONENT: f64 = 1.0e-12;
+        let component = |value: f64| {
+            if value.abs() <= EPS_CANONICAL_COMPONENT {
+                0.0
+            } else {
+                value
+            }
+        };
+        let value = direction.as_raw();
+        Self(Vector3::new(
+            component(value.x),
+            component(value.y),
+            component(value.z),
+        ))
     }
 }
 
@@ -430,6 +461,13 @@ impl FeatureCoordinateFrame {
     pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
         let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
         let z_axis = UnitVector3::new(z_axis)?;
+        Self::from_parts(plane, z_axis)
+    }
+
+    /// Build a frame from admitted axes and an admitted plane origin.
+    pub fn from_parts(plane: FeatureUnitPlaneFrame, z_axis: UnitVector3) -> Option<Self> {
+        let x_axis = *plane.u_axis().as_raw();
+        let y_axis = *plane.v_axis().as_raw();
         let z = *z_axis.as_raw();
         (x_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
             && y_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
@@ -541,6 +579,10 @@ macro_rules! checked_feature_plane_frame {
                 let origin = FinitePoint3::new(origin)?;
                 let normal = FeatureDirection3::new(normal)?;
                 let u_axis = FeatureDirection3::new(u_axis)?;
+                Self::from_parts(origin, normal, u_axis)
+            }
+            /// Build a plane frame from admitted parts; only perpendicularity remains to check.
+            pub fn from_parts(origin: FinitePoint3, normal: FeatureDirection3, u_axis: FeatureDirection3) -> Option<Self> {
                 let $normal_length = normal.norm();
                 let $u_length = u_axis.norm();
                 if normal.dot(u_axis.get()).abs() > $bound { return None; }
@@ -612,6 +654,11 @@ impl FeatureLineSegment {
     pub fn new(start: Point3, end: Point3) -> Option<Self> {
         let start = FinitePoint3::new(start)?;
         let end = FinitePoint3::new(end)?;
+        Self::from_parts(start, end)
+    }
+
+    /// Build a line from admitted endpoints, checking only that they differ.
+    pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }
 
@@ -655,16 +702,24 @@ struct FeaturePolylineWire {
 impl FeaturePolyline {
     /// Admit a finite chain with at least two points, or three when closed.
     pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
-        if points.len() < 2
-            || (closed && points.len() < 3)
-            || points.windows(2).any(|pair| pair[0] == pair[1])
-        {
+        if points.len() < 2 || (closed && points.len() < 3) {
             return None;
         }
         let points = points
             .into_iter()
             .map(FinitePoint3::new)
             .collect::<Option<Vec<_>>>()?;
+        Self::from_parts(points, closed)
+    }
+
+    /// Build a polyline from finite points if its chain is admissible.
+    pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
         Some(Self { points, closed })
     }
 

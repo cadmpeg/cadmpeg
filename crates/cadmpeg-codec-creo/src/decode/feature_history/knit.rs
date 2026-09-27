@@ -416,7 +416,8 @@ pub(in super::super) fn thicken_plane_offset(
             .iter()
             .map(|offset| offset.abs())
             .collect::<Vec<_>>(),
-    )?;
+    )?
+    .get();
     let tolerance = EPS_OFFSET_AGREEMENT * magnitude.max(1.0);
     let side = if offsets
         .iter()

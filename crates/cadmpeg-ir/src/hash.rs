@@ -8,7 +8,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
-use crate::native::{arena_from, Native, NativeConvertError, NativeRecord};
+use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
 pub mod digest;
@@ -203,13 +203,24 @@ fn reduced_unknowns(
     format: &str,
     source_image_id: &str,
 ) -> Result<Vec<NativeRecord>, NativeConvertError> {
-    arena_from(
-        ir.native_unknowns_iter(format)
-            .filter(|record| match record {
-                Ok(record) => record.id.as_str() != source_image_id,
-                Err(_) => true,
-            }),
-    )
+    let mut reduced = Vec::new();
+    for (ordinal, record) in ir
+        .native_unknowns_iter(format)
+        .filter(|record| match record {
+            Ok(record) => record.id.as_str() != source_image_id,
+            Err(_) => true,
+        })
+        .enumerate()
+    {
+        reduced.push(NativeRecord::from_typed(&record?).map_err(|source| {
+            NativeConvertError::WriteRecord {
+                ordinal,
+                source: Box::new(source),
+            }
+        })?);
+    }
+    reduced.sort_by(|left, right| left.id().cmp(right.id()));
+    Ok(reduced)
 }
 
 /// A document as the semantic digest sees it.

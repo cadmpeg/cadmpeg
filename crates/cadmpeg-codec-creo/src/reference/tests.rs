@@ -40,6 +40,26 @@ fn decodes_complete_positional_line_rows() {
 }
 
 #[test]
+fn diameter_arc_center_uses_finite_midpoint_for_large_endpoints() {
+    let first = f64::MAX * 0.75;
+    let second = f64::from_bits(first.to_bits() + 2);
+    let radius = (second - first) * 0.5;
+    let mut body = Vec::new();
+    for value in [radius, first, 0.0, 0.0, second, 0.0, 0.0] {
+        body.push(0xed);
+        body.extend_from_slice(&value.to_be_bytes());
+    }
+
+    let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 7)
+        .expect("diameter-compressed circle");
+    assert_eq!(
+        <[f64; 3]>::from(circle.center.get()),
+        [f64::midpoint(first, second), 0.0, 0.0]
+    );
+    assert!(!circle.center_stored);
+}
+
+#[test]
 fn decodes_named_conic_fields_without_classifying_the_conic() {
     let local_body = b"\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6";
     assert!(conic_local_system(local_body, &ScalarCache::from_section(local_body)).is_some());
@@ -63,9 +83,20 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
     assert_eq!(conic.flip, 1);
     assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
-    assert_eq!(conic.parameter_start, Some(0.0));
-    assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
-    assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+    assert_eq!(
+        conic
+            .parameter_start
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(std::f64::consts::PI)
+    );
+    assert_eq!(
+        [conic.coefficient_1.get(), conic.coefficient_2.get()],
+        [-1.0, 1.0]
+    );
     assert_eq!(
         conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -172,9 +203,20 @@ fn decodes_positional_conic_with_an_opposite_endpoint_parameter() {
     assert_eq!(conic.type_id, ConicType::Ellipse);
     assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
-    assert_eq!(conic.parameter_start, Some(0.0));
-    assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
-    assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
+    assert_eq!(
+        conic
+            .parameter_start
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(std::f64::consts::PI)
+    );
+    assert_eq!(
+        [conic.coefficient_1.get(), conic.coefficient_2.get()],
+        [-1.0, 1.0]
+    );
     assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
 }
 
@@ -227,8 +269,8 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         end: cadmpeg_ir::features::FinitePoint3::new([2.0, 4.0, 4.0].into()).expect("finite end"),
         parameter_start: None,
         parameter_end: None,
-        coefficient_1: -5.0,
-        coefficient_2: 2.0,
+        coefficient_1: cadmpeg_ir::scalar::FiniteReal::new(-5.0).expect("finite coefficient"),
+        coefficient_2: cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite coefficient"),
         local_system: cadmpeg_ir::units::FiniteVector::new([
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0,
         ]),
@@ -383,7 +425,7 @@ fn decodes_arc_z_diameter_rows() {
     let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
     assert_eq!(circle.entity_id, 7);
-    assert_eq!(circle.center, [0.0; 3]);
+    assert_eq!(<[f64; 3]>::from(circle.center.get()), [0.0; 3]);
     assert_eq!(circle.radius.get(), 1.0);
     assert_eq!(<[f64; 3]>::from(circle.start.get()), [1.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(circle.end.get()), [-1.0, 0.0, 0.0]);
@@ -395,7 +437,7 @@ fn decodes_arc_z_explicit_center_rows() {
             \x2f\x00\x00\x2f\x16\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
-    assert_eq!(circle.center, [3.5, 10.0, -4.0]);
+    assert_eq!(<[f64; 3]>::from(circle.center.get()), [3.5, 10.0, -4.0]);
     assert_eq!(circle.radius.get(), 2.0);
     assert_eq!(<[f64; 3]>::from(circle.start.get()), [5.5, 10.0, -4.0]);
     assert_eq!(<[f64; 3]>::from(circle.end.get()), [3.5, 8.0, -4.0]);
@@ -410,7 +452,7 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
             \x9f\x6b\xf0\x6f\x95\x50\xb9\xa0\xff\x43\xd5\xa5\xa5\x6c";
     let cache = ScalarCache::from_section(body);
     let circle = arc_z_fields(body, &cache, 9).expect("general arc");
-    assert_eq!(circle.center[0], -30.0);
+    assert_eq!(circle.center.get().x, -30.0);
     assert_eq!(circle.start.get().x, -30.0);
     assert_eq!(circle.end.get().x, -30.0);
     assert!((circle.axis.as_raw().x.abs() - 1.0).abs() < 1.0e-12);
@@ -436,7 +478,7 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
 
     let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
         .expect("tabulated-cylinder first-coordinate lane circle");
-    assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.center.get()), [-2.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(circle.start.get()), [-3.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(circle.end.get()), [-2.0, 1.0, 0.0]);
     assert_eq!(
@@ -466,7 +508,10 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.circles.len(), 1);
-    assert_eq!(scan.references.circles[0].center, [0.0; 3]);
+    assert_eq!(
+        <[f64; 3]>::from(scan.references.circles[0].center.get()),
+        [0.0; 3]
+    );
     assert_eq!(scan.references.circles[0].radius.get(), 1.0);
 
     let result = EditableDecodeResult::from(

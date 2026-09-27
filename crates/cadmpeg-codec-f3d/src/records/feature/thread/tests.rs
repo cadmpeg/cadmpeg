@@ -9,6 +9,25 @@ fn thread_wire() -> serde_json::Value {
 }
 
 #[test]
+fn thread_construction_native_writer_refuses_retained_limit_before_record_completion() {
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        construction: &'a DesignThreadConstruction,
+    }
+
+    let construction: DesignThreadConstruction = serde_json::from_value(thread_wire()).unwrap();
+    let record = Record {
+        id: "f3d:design:thread#1",
+        construction: &construction,
+    };
+    cadmpeg_test_support::native_serialization::assert_native_limit(
+        &record,
+        serde_json::json!({"id": record.id, "construction": thread_wire()}),
+    );
+}
+
+#[test]
 fn thread_diameters_require_strict_order_and_positive_finite_values() {
     assert!(DesignThreadDiameters::new(1.0, 0.5, 0.75).is_some());
     for (major, minor, pitch) in [(1.0, 1.0, 1.0), (1.0, 0.75, 0.5), (0.75, 0.5, 1.0)] {

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
 use super::geometry::{
@@ -240,7 +240,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .iter()
         .filter(|table| table.has_complete_bucket_frame())
         .flat_map(|table| &table.rows)
-        .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
+        .filter_map(|vertex| {
+            let point = vertex.section_coordinates?.get();
+            Some((vertex.vertex_id, [point.u, point.v]))
+        })
         .collect::<Vec<_>>();
     for trim in definition
         .trim_entities
@@ -253,10 +256,10 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         let Some(segment) = segments.unique_segment(external_id) else {
             continue;
         };
-        let Some(([center_u, center_v], radius)) = saved_section_arc_carrier(definition, segment)
-        else {
+        let Some(carrier) = saved_section_arc_carrier(definition, segment) else {
             continue;
         };
+        let ([center_u, center_v], radius) = carrier.raw();
         let Some(arc) = saved_section_arc_record(definition, segment) else {
             continue;
         };
@@ -267,9 +270,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             let candidate = [u, v];
             let candidate_radius = (u - center_u).hypot(v - center_v);
             let radial_scale = radius.max(candidate_radius);
-            if !radius.is_finite()
-                || radius <= 0.0
-                || !candidate_radius.is_finite()
+            if !candidate_radius.is_finite()
                 || (candidate_radius - radius).abs() / radial_scale
                     > EPS_SKETCH_INTERSECTION_GEOMETRY
             {
@@ -554,18 +555,17 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         {
             return None;
         }
-    } else if let Some(([center_u, center_v], radius)) =
+    } else if let Some(carrier) =
         section_arc_carrier(&resolved_section_radii(definition), points, segment)
             .or_else(|| saved_section_arc_carrier(definition, segment))
     {
+        let ([center_u, center_v], radius) = carrier.raw();
         let first = [start[0] - center_u, start[1] - center_v];
         let second = [end[0] - center_u, end[1] - center_v];
         let first_radius = first[0].hypot(first[1]);
         let second_radius = second[0].hypot(second[1]);
         let scale = radius.max(first_radius).max(second_radius);
-        if !radius.is_finite()
-            || radius <= 0.0
-            || !first_radius.is_finite()
+        if !first_radius.is_finite()
             || !second_radius.is_finite()
             || (first_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
             || (second_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
@@ -577,9 +577,9 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         while end_angle <= start_angle {
             end_angle += std::f64::consts::TAU;
         }
-        return SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length::new(radius)?,
+        return SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+            center: carrier.center,
+            radius: carrier.radius,
             start_angle: Angle::new(start_angle)?,
             end_angle: Angle::new(end_angle)?,
         })

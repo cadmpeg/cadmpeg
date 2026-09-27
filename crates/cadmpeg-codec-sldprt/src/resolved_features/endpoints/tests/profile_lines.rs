@@ -92,14 +92,15 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
     payload[80..84].copy_from_slice(&4u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, object_index, coordinates_m, kind| {
+    let entity = |id: &str, object_index, coordinates_m: Option<[f64; 2]>, kind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -164,14 +165,15 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
 
 #[test]
 fn legacy_compact_84_curves_use_complete_coordinate_roster() {
-    let entity = |id: &str, offset, coordinates_m, kind| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -317,7 +319,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
 fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     let payload = legacy_140_relation_payload([12, 13]);
 
-    let entity = |id: &str, offset, object_index, coordinates_m, kind| {
+    let entity = |id: &str, offset, object_index, coordinates_m: Option<[f64; 2]>, kind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -325,7 +327,8 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -414,7 +417,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     let mut point_roster = relation_roster.clone();
     for marker in point_roster.iter_mut().skip(1) {
         marker.reclassify(SketchInputKind::Point);
-        marker.coordinates_m = Some([0.0, 0.0]);
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     }
     let point_markers = point_roster.iter().collect::<Vec<_>>();
     assert!(!relation_reference_curve_record(
@@ -528,7 +531,8 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -606,7 +610,8 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -679,14 +684,15 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
     payload[138..142].copy_from_slice(&17u32.to_le_bytes());
     payload[142..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, coordinates_m| {
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -734,7 +740,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, object_index, coordinates_m| {
+    let entity = |id: &str, offset, kind, object_index, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -742,7 +748,8 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -797,7 +804,7 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
     payload[80..84].copy_from_slice(&6u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    let entity = |id: &str, offset, kind, object_index, coordinates_m| {
+    let entity = |id: &str, offset, kind, object_index, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
@@ -805,7 +812,8 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -893,14 +901,15 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
     payload[80..84].copy_from_slice(&2u32.to_le_bytes());
     payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let entity = |id: &str, offset, coordinates_m, kind| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>, kind| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1038,7 +1047,8 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1103,7 +1113,8 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1246,7 +1257,8 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1403,7 +1415,8 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1496,7 +1509,8 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1567,14 +1581,15 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
         payload[length..].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload
     };
-    let entity = |id: &str, offset, kind, coordinates_m| {
+    let entity = |id: &str, offset, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1662,7 +1677,8 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };
@@ -1751,7 +1767,8 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

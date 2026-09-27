@@ -7,6 +7,23 @@ use crate::records::references::DesignClassTag;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+std::thread_local! {
+    pub(crate) static WORK_GEOMETRY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct WorkGeometryCloneProbe;
+
+#[cfg(test)]
+impl Clone for WorkGeometryCloneProbe {
+    fn clone(&self) -> Self {
+        WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
 cadmpeg_core::named_optional_field!(
     deserialize_carrier,
     Box<DesignWorkPointInputCarrierWire>,
@@ -60,12 +77,11 @@ pub(crate) struct DesignWorkAxisConstruction {
 }
 
 /// One source-record reference used by a `WorkPoint` construction rule.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignWorkPointInputWire",
-    into = "DesignWorkPointInputWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignWorkPointInputWire")]
 pub(crate) struct DesignWorkPointInput {
+    #[cfg(test)]
+    clone_probe: WorkGeometryCloneProbe,
     /// Referenced Design record index.
     record_index: u32,
     /// Byte offset of the serialized reference target.
@@ -92,6 +108,8 @@ impl DesignWorkPointInput {
             return Err("carrier record indices overflow input record_index".into());
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: WorkGeometryCloneProbe,
             record_index,
             reference_offset,
             carrier,
@@ -245,9 +263,11 @@ impl DesignVertexResolution {
 }
 
 /// Exact persistent `vertex_recipe_data` envelope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DesignVertexRecipeWire", into = "DesignVertexRecipeWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignVertexRecipeWire")]
 pub(crate) struct DesignVertexRecipe {
+    #[cfg(test)]
+    clone_probe: WorkGeometryCloneProbe,
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
@@ -295,6 +315,8 @@ impl DesignVertexRecipe {
             0,
         )?;
         let value = Self {
+            #[cfg(test)]
+            clone_probe: WorkGeometryCloneProbe,
             frame,
             class_tag: draft.class_tag,
             paired_byte_offset: draft.paired_byte_offset,
@@ -533,12 +555,11 @@ pub(crate) struct DesignEdgeTreatmentVertexOperand {
 }
 
 /// Plane through three persistent B-rep vertices.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignWorkPlaneConstructionWire",
-    into = "DesignWorkPlaneConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignWorkPlaneConstructionWire")]
 pub(crate) struct DesignWorkPlaneConstruction {
+    #[cfg(test)]
+    clone_probe: WorkGeometryCloneProbe,
     /// Solved placement-frame record named by the scope.
     pub(crate) placement_record_index: u32,
     /// Persistent vertex inputs in source order.
@@ -553,6 +574,8 @@ impl DesignWorkPlaneConstruction {
     ) -> Result<Self, String> {
         validate_three_point_resolutions(inputs.each_ref().map(|input| input.resolution))?;
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: WorkGeometryCloneProbe,
             placement_record_index,
             inputs,
         })
@@ -907,10 +930,16 @@ pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
 }
 
 /// Construction rule whose input arity and decoded carrier roles agree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DesignWorkPointRuleForm", into = "DesignWorkPointRuleForm")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignWorkPointRuleForm")]
 pub(crate) struct DesignWorkPointRule {
     form: DesignWorkPointRuleForm,
+}
+
+impl Serialize for DesignWorkPointRule {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.form.serialize(serializer)
+    }
 }
 
 impl DesignWorkPointRule {
@@ -1001,12 +1030,6 @@ impl DesignWorkPointRule {
                 _ => None,
             }
         })
-    }
-}
-
-impl From<DesignWorkPointRule> for DesignWorkPointRuleForm {
-    fn from(value: DesignWorkPointRule) -> Self {
-        value.form
     }
 }
 
@@ -1132,3 +1155,5 @@ impl DesignWorkPointInput {
         Ok(())
     }
 }
+
+mod serialize;

@@ -1448,8 +1448,8 @@ pub(super) fn doubled_profile_distance_loci(
     if !center_is_distance_handle {
         return None;
     }
-    let [line_u, line_v] = line_marker.coordinates_m?;
-    let [center_u, center_v] = center_marker.coordinates_m?;
+    let [line_u, line_v] = line_marker.coordinates_m?.get();
+    let [center_u, center_v] = center_marker.coordinates_m?.get();
     let has_half_dimension = [
         (center_u - line_u).abs() * NATIVE_TO_IR * 2.0,
         (center_v - line_v).abs() * NATIVE_TO_IR * 2.0,
@@ -3725,7 +3725,10 @@ pub(super) fn profile_loci_by_marker(
                 if qualified_point && sketch.as_str().contains("sketch#compact:") {
                     continue;
                 }
-                let Some([u, v]) = marker.coordinates_m else {
+                let Some([u, v]) = marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                else {
                     continue;
                 };
                 let primary_geometry_locus = usize::try_from(marker.offset())
@@ -4062,7 +4065,10 @@ pub(super) fn marker_transform_candidates_by_feature(
             }
             let mut directly_bound = HashMap::<GridPoint, HashSet<GridPoint>>::new();
             for marker in &markers {
-                let Some([u, v]) = marker.coordinates_m else {
+                let Some([u, v]) = marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                else {
                     continue;
                 };
                 let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
@@ -4093,7 +4099,10 @@ pub(super) fn marker_transform_candidates_by_feature(
                     ) {
                         continue;
                     }
-                    let Some([u, v]) = marker.coordinates_m else {
+                    let Some([u, v]) = marker
+                        .coordinates_m
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                    else {
                         continue;
                     };
                     if primary_only

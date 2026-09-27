@@ -1,14 +1,13 @@
 //! Direct face and body edit inputs.
 
-use super::axes::{
-    canonical_unit_direction, compact_line_reference_directions, declared_line_reference_directions,
-};
+use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::BTreeMap;
 
 const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9: f64 = 1.0e-9;
@@ -19,7 +18,7 @@ const EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12: f64 = 1.0e-12;
 pub(super) struct MoveBodyTranslationRecord {
     pub(super) selection_offset: usize,
     pub(super) local_body_ids: Vec<u32>,
-    translation_m: Vector3,
+    translation_m: FiniteVector3,
 }
 
 pub(super) fn move_body_translation_record(
@@ -37,7 +36,7 @@ pub(super) fn move_body_translation_record(
     }
     let scalar = |offset: usize| {
         let value = View::f64_le_at(payload, offset)?;
-        value.is_finite().then_some(value)
+        FiniteReal::new(value)
     };
     let mut candidates = Vec::new();
     for selection_offset in data_class_offset..end.saturating_sub(TRAILER_OFFSET + 20) {
@@ -78,13 +77,13 @@ pub(super) fn move_body_translation_record(
             .iter()
             .zip([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
             .any(|(actual, expected)| {
-                (*actual - expected).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
+                (actual.get() - expected).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
             })
             || payload.get(matrix_offset + 72..matrix_offset + 80)
                 != Some(1u64.to_le_bytes().as_slice())
             || (0..3).any(|index| scalar(matrix_offset + 80 + index * 8).is_none())
             || scalar(matrix_offset + 104).is_none_or(|value| {
-                (value - 1.0).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
+                (value.get() - 1.0).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
             })
         {
             continue;
@@ -96,16 +95,15 @@ pub(super) fn move_body_translation_record(
         ) else {
             continue;
         };
-        let mut translation_m = Vector3::new(x, y, z);
-        for component in [
-            &mut translation_m.x,
-            &mut translation_m.y,
-            &mut translation_m.z,
-        ] {
-            if component.abs() <= EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12 {
-                *component = 0.0;
+        let canonical = |component: FiniteReal| {
+            if component.get().abs() <= EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12 {
+                FiniteReal::ZERO
+            } else {
+                component
             }
-        }
+        };
+        let translation_m =
+            FiniteVector3::from_components(canonical(x), canonical(y), canonical(z));
         let Some(ids) = payload.get(ids_start..ids_end) else {
             continue;
         };
@@ -140,7 +138,7 @@ pub(crate) fn enrich_history_move_face_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<Vector3>>>::new();
+    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FeatureDirection3>>>::new();
     for lane in lanes {
         let mut starts =
             histories
@@ -228,7 +226,10 @@ pub(crate) fn enrich_history_move_face_translations(
                 &excluded_handles,
             ));
             let mut unique = Vec::new();
-            for direction in directions.into_iter().map(canonical_unit_direction) {
+            for direction in directions
+                .into_iter()
+                .map(FeatureDirection3::from_unit_without_small_components)
+            {
                 if !unique.contains(&direction) {
                     unique.push(direction);
                 }
@@ -248,6 +249,8 @@ pub(crate) fn enrich_history_move_face_translations(
         };
         if rest.iter().any(|candidate| {
             candidate.is_none_or(|candidate| {
+                let candidate = candidate.get();
+                let first = first.get();
                 (candidate.x - first.x).abs()
                     > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
                     || (candidate.y - first.y).abs()
@@ -264,7 +267,7 @@ pub(crate) fn enrich_history_move_face_translations(
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
         feature.properties.insert(
             cadmpeg_core::nonblank_literal!("Direction"),
-            format!("{},{},{}", first.x, first.y, first.z),
+            format!("{},{},{}", first.get().x, first.get().y, first.get().z),
         );
     }
 }
@@ -274,7 +277,7 @@ pub(crate) fn enrich_history_move_body_translations(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<Vector3>>>::new();
+    let mut candidates = BTreeMap::<(usize, usize), Vec<Option<FiniteVector3>>>::new();
     for lane in lanes {
         let mut starts =
             histories
@@ -341,6 +344,7 @@ pub(crate) fn enrich_history_move_body_translations(
         if rest.iter().any(|candidate| *candidate != Some(first)) {
             continue;
         }
+        let first = first.get();
         histories[history_index].features[feature_index]
             .properties
             .insert(
@@ -370,8 +374,8 @@ mod tests {
     };
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
-        features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation},
-        scalar::Length,
+        features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
+        scalar::{FiniteReal, Length},
     };
     use std::collections::BTreeMap;
 
@@ -464,7 +468,7 @@ mod tests {
                 offset: 128,
                 object_id: 8,
                 name: "d1-name".into(),
-                value: 0.005,
+                value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
 
                 operands: Vec::new(),
@@ -564,7 +568,11 @@ mod tests {
             Some(MoveBodyTranslationRecord {
                 selection_offset,
                 local_body_ids: vec![17, 23],
-                translation_m: Vector3::new(0.01, -0.02, 0.03),
+                translation_m: FiniteVector3::from_components(
+                    FiniteReal::new(0.01).expect("finite x"),
+                    FiniteReal::new(-0.02).expect("finite y"),
+                    FiniteReal::new(0.03).expect("finite z"),
+                ),
             })
         );
         let mut rotated = payload.clone();

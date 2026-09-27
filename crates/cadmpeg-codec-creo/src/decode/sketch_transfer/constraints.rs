@@ -37,6 +37,7 @@ use crate::decode::sketch_transfer::loci::{
     section_point_locus, section_skamp_active, section_skamp_locus,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchDistancePair, SketchEntityId, SketchId, SketchLocus, SketchNativeOperand,
@@ -800,7 +801,9 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
                 return Vec::new();
             };
             if dimension.dimension_type != 3
-                || !approximately_equal(dimension_value, equation.value)
+                || !(FiniteReal::new(dimension_value))
+                    .zip(FiniteReal::new(equation.value.get()))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
             {
                 return Vec::new();
             }
@@ -926,7 +929,9 @@ fn section_equation_radius_dimension_parameters(
         if dimension.dimension_type != 3
             || !dimension_value.is_finite()
             || dimension_value <= 0.0
-            || !approximately_equal(dimension_value, equation.value)
+            || !(FiniteReal::new(dimension_value))
+                .zip(FiniteReal::new(equation.value.get()))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
         {
             continue;
         }
@@ -951,7 +956,10 @@ fn section_equation_dimension_parameter(
     let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
         return None;
     };
-    approximately_equal(*dimension_value, value).then(|| parameter.clone())
+    (FiniteReal::new(*dimension_value))
+        .zip(FiniteReal::new(value))
+        .is_some_and(|(first, second)| approximately_equal(first, second))
+        .then(|| parameter.clone())
 }
 
 pub(in super::super) fn section_equation_function_six_distance_constraints(
@@ -1226,20 +1234,17 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .into_iter()
         .filter_map(|equation| {
             let distance = equation.radius_value?;
-            if !distance.is_finite() || distance < 0.0 {
-                return None;
-            }
-            let angle = if distance <= EPS_POLAR_ZERO {
+            let angle = if distance.get() <= EPS_POLAR_ZERO {
                 None
             } else {
-                Some(Angle::new(equation.angle_value?)?)
+                Some(equation.angle_value?)
             };
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
             let distance_parameter = section_equation_dimension_parameter(
                 &dimension_parameters,
                 equation.radius,
-                distance,
+                distance.get(),
             );
             Some((
                 SketchConstraint {
@@ -1252,7 +1257,7 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
                         SketchConstraintDefinitionInput::PolarDistance {
                             first,
                             second,
-                            distance: Length::new(distance)?,
+                            distance: distance.into(),
                             angle,
                             distance_parameter,
                         },
@@ -1573,7 +1578,9 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         if !matches!(dimension.dimension_type, 1..=5)
             || !dimension_value.is_finite()
             || dimension_value < 0.0
-            || !approximately_equal(dimension_value, equation.value)
+            || !(FiniteReal::new(dimension_value))
+                .zip(FiniteReal::new(equation.value))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
         {
             return None;
         }

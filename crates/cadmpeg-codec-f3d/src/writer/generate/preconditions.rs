@@ -855,16 +855,6 @@ pub(super) fn validate_source_less_design_links(
                 parameters.coedge
             )));
         }
-        if parameters
-            .parameter_range
-            .iter()
-            .any(|value| !value.is_finite())
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D tolerant-coedge metadata {} has non-finite parameters",
-                parameters.id()
-            )));
-        }
         match &parameters.extension {
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
@@ -899,9 +889,7 @@ pub(super) fn validate_source_less_design_links(
                     )));
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
-                if effective_range.iter().any(|value| !value.is_finite())
-                    || use_curve.parameter_range.endpoints() != effective_range
-                {
+                if use_curve.parameter_range.endpoints() != effective_range.get() {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
                         parameters.id()
@@ -1027,15 +1015,11 @@ pub(super) fn validate_source_less_design_links(
         "tolerant-vertex",
         [id()],
         |tail, vertex| {
-            if tail
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
-                || vertex.tolerance.is_some()
-                    != matches!(
-                        tail.evaluated_slot,
-                        EvaluatedToleranceSlot::Evaluated { .. }
-                    )
+            if vertex.tolerance.is_some()
+                != matches!(
+                    tail.evaluated_slot,
+                    EvaluatedToleranceSlot::Evaluated { .. }
+                )
             {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
@@ -1316,7 +1300,10 @@ mod tests {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
                 record_index: 0,
                 vertex: target.model.vertices[0].id.clone(),
-                leading_tolerances: [-1.0, -1.0],
+                leading_tolerances: [
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+                ],
                 evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
             }],
             ..F3dNative::default()

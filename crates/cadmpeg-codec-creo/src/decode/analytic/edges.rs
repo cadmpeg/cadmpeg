@@ -336,7 +336,7 @@ fn degree_one_nurbs_point_parameter(
     for span in 1..nurbs.control_points().len() {
         let lower = nurbs.knots()[span];
         let upper = nurbs.knots()[span + 1];
-        if !lower.is_finite() || !upper.is_finite() || upper <= lower {
+        if upper <= lower {
             continue;
         }
         let first = nurbs.control_points()[span - 1];
@@ -515,12 +515,7 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
     };
     (dot(normal, x_axis).abs() <= EPS_AGREE).then_some(())?;
     let y_axis = normalize(cross(normal, x_axis))?;
-    (origin.into_iter().all(f64::is_finite)
-        && x_scale > 0.0
-        && x_scale.is_finite()
-        && y_scale > 0.0
-        && y_scale.is_finite())
-    .then_some(())?;
+    (y_scale > 0.0 && y_scale.is_finite()).then_some(())?;
     Some(NonperiodicConicFrame {
         origin,
         normal,
@@ -561,11 +556,7 @@ pub(in crate::decode) fn periodic_conic_frame(
     };
     (dot(axis, x_axis).abs() <= EPS_AGREE).then_some(())?;
     let y_axis = normalize(cross(axis, x_axis))?;
-    (center.into_iter().all(f64::is_finite)
-        && radii
-            .into_iter()
-            .all(|radius| radius > 0.0 && radius.is_finite()))
-    .then_some(PeriodicConicFrame {
+    Some(PeriodicConicFrame {
         center,
         normal: axis,
         x_axis,

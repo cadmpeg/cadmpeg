@@ -485,6 +485,11 @@ fn parse_extended_record_trailer(
                 cursor.skip(len, "record trailer byte array")?;
             }
             value => {
+                crate::record_issue::admit_formatted(
+                    ctx,
+                    format_args!("RSe record trailer property type {value} is not implemented"),
+                    "retain RSe record trailer property diagnostic",
+                )?;
                 return Err(CodecError::NotImplemented(format!(
                     "RSe record trailer property type {value} is not implemented"
                 )));
@@ -645,7 +650,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use super::{
         frame_bulk_records, parse_extended_record_trailer, parse_meta_tables,
@@ -655,6 +660,29 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
+
+    #[test]
+    fn record_trailer_type_diagnostic_refuses_retained_limit_before_format() {
+        let mut bytes = vec![1_u8];
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 99);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("synthetic trailer fits policy");
+        assert!(matches!(
+            parse_extended_record_trailer(&limited, &mut Cursor::new(view)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+        ));
+        with_view(&bytes, |ctx, view| {
+            let error = parse_extended_record_trailer(ctx, &mut Cursor::new(view))
+                .expect_err("unsupported trailer type");
+            assert!(error.to_string().contains("property type 99"));
+        });
+    }
 
     #[test]
     fn metadata_tables_frame_forward_and_backward_sections() {

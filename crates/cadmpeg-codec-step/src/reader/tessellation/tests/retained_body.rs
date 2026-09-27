@@ -19,9 +19,16 @@ fn decode_with_body(policy: DecodePolicy) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty();
     let geometry = super::super::super::geometry::decode(&exchange, &mut ir).value;
     let index = super::super::super::index::CarrierIndex::from_ir(&ir);
-    let mut topology = super::super::super::topology::decode(&exchange, &mut ir, &index, None)
-        .expect("test topology decodes")
-        .value;
+    let topology_arena = DecodeArena::new();
+    let (topology_ctx, _) = DecodeContext::from_root_bytes(
+        source.as_bytes(),
+        &topology_arena,
+        &DecodePolicy::service(),
+    )?;
+    let mut topology =
+        super::super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
+            .expect("test topology decodes")
+            .value;
     topology.body_by_root.insert(
         10,
         vec![BodyId::try_from("step:data:body#10").expect("test body id")],

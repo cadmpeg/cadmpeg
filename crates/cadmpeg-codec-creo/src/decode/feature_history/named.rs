@@ -33,10 +33,13 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(in super::super) fn named_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if let Some(definition) = name_only_feature_definition(scan, ir, feature_id, kind) {
+    if let Some(definition) =
+        name_only_feature_definition(scan, ir, source_carriers, feature_id, kind)
+    {
         return Ok(Some(definition));
     }
     let schema_class = match kind {
@@ -47,7 +50,15 @@ pub(in super::super) fn named_feature_definition(
         "Draft" | "Schräge" => SchemaClass::Draft,
         _ => return Ok(None),
     };
-    schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind).map(Some)
+    schema_feature_definition(
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        Some(schema_class),
+        kind,
+    )
+    .map(Some)
 }
 
 /// The definition a feature name alone establishes, before the schema class
@@ -58,6 +69,7 @@ pub(in super::super) fn named_feature_definition(
 fn name_only_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
@@ -87,6 +99,7 @@ fn name_only_feature_definition(
         return Some(extrude_feature_definition_with_profile(
             scan,
             ir,
+            source_carriers,
             feature_id,
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
@@ -138,7 +151,11 @@ fn name_only_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Some(extrude_feature_definition_with_profile(
-            scan, ir, feature_id, op,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
         ));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
@@ -150,7 +167,11 @@ fn name_only_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Some(revolve_feature_definition_with_profile(
-            scan, ir, feature_id, op,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
         ));
     }
     None
@@ -159,10 +180,12 @@ fn name_only_feature_definition(
 pub(in super::super) fn named_or_referenced_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if let Some(definition) = named_feature_definition(scan, ir, feature_id, kind)? {
+    if let Some(definition) = named_feature_definition(scan, ir, source_carriers, feature_id, kind)?
+    {
         return Ok(Some(definition));
     }
     if kind == "Native Feature"
@@ -176,12 +199,13 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     else {
         return Ok(None);
     };
-    named_feature_definition(scan, ir, feature_id, &reference_name)
+    named_feature_definition(scan, ir, source_carriers, feature_id, &reference_name)
 }
 
 pub(super) fn extrude_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
@@ -196,24 +220,25 @@ pub(super) fn extrude_feature_definition_with_profile(
     } else {
         op
     };
-    let (direction, extent) = linear_extrusion_extent_and_direction(scan, ir, feature_id).map_or(
-        (
-            ExtrudeDirection::ProfileNormal {},
-            unresolved_extrude_extent(),
-        ),
-        |(extent, direction)| {
+    let (direction, extent) =
+        linear_extrusion_extent_and_direction(scan, ir, source_carriers, feature_id).map_or(
             (
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)).map_or(
-                    ExtrudeDirection::Unresolved {},
-                    |vector| ExtrudeDirection::Explicit {
-                        vector,
-                        source: None,
-                    },
-                ),
-                extent,
-            )
-        },
-    );
+                ExtrudeDirection::ProfileNormal {},
+                unresolved_extrude_extent(),
+            ),
+            |(extent, direction)| {
+                (
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)).map_or(
+                        ExtrudeDirection::Unresolved {},
+                        |vector| ExtrudeDirection::Explicit {
+                            vector,
+                            source: None,
+                        },
+                    ),
+                    extent,
+                )
+            },
+        );
     IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         profile,
         direction,
@@ -231,6 +256,7 @@ pub(super) fn extrude_feature_definition_with_profile(
 fn revolve_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
@@ -238,7 +264,13 @@ fn revolve_feature_definition_with_profile(
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
         .and_then(|profile| profile.planar().cloned());
-    let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
+    let axis = feature_revolution_axis_for_transfer(
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        extent.as_ref(),
+    );
     let solid = sweep_solid(output_kind);
     IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
         construction: match (profile, axis, extent) {

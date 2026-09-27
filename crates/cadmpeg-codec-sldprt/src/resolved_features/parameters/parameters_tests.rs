@@ -255,7 +255,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             offset: 128,
             object_id: 1739,
             name: "d1-name".into(),
-            value: 0.007_137_4,
+            value: cadmpeg_ir::scalar::FiniteReal::new(0.007_137_4).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands: Vec::new(),
@@ -283,6 +283,6 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
     )
     .expect("explicit scalar owner is writable");
-    assert_eq!(lane.scalars[0].value, 0.008);
+    assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
 }

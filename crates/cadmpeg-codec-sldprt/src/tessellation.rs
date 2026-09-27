@@ -354,14 +354,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
         usize::try_from(b.count()).ok(),
         usize::try_from(d.count()).ok(),
     );
-    let payload_lengths = channels.iter().all(|channel| {
-        usize::try_from(channel.item_size())
-            .ok()
-            .and_then(|size| usize::try_from(channel.count()).ok()?.checked_mul(size))
-            == Some(channel.data().len())
-    });
-    payload_lengths
-        && (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
+    (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
         && usize::try_from(c.count()).ok() == Some(strips.len())
         && stored_list_c_matches
         && b.data()

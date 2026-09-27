@@ -17,6 +17,7 @@ use super::records::double_xar::CreoDoubleXarTableRecord;
 use super::records::{expanded_section_records, CreoPrimitiveScalarArrayRecord};
 
 pub(super) fn attach_expanded_sections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -29,6 +30,7 @@ pub(super) fn attach_expanded_sections(
         return Ok(());
     }
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "expanded_sections",
@@ -52,6 +54,7 @@ pub(super) fn attach_expanded_sections(
         })
         .collect::<Vec<_>>();
     emit_uniform(
+        ctx,
         ir,
         annotations,
         "double_xar_tables",
@@ -78,7 +81,7 @@ pub(super) fn attach_expanded_sections(
             values: array.values.iter().map(|value| value.get()).collect(),
         })
         .collect::<Vec<_>>();
-    store_arena(ir, "primitive_scalar_arrays", &primitive_arrays)?;
+    store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
     Ok(())
 }
 

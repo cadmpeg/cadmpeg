@@ -62,7 +62,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
             );
             constructed_marker.feature_ref = Some(feature.into());
             constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-            constructed_marker.coordinates_m = Some([0.001, 0.002]);
+            constructed_marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker
         }],

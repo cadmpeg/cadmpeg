@@ -25,6 +25,7 @@ use cadmpeg_ir::sketches::{
     SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchLocus,
 };
+use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
 
 const EPS_NONDEGENERATE_LINE: f64 = 0.000_000_000_001_f64;
@@ -594,7 +595,7 @@ pub(super) fn section_skamp_same_coordinate(
         let point = |source| {
             Some(match source {
                 SectionPointSource::Point(point_id) => *points.get(&point_id)?,
-                SectionPointSource::Value(point) => point,
+                SectionPointSource::Value(point) => point.get(),
             })
         };
         if let (Some(first_point), Some(second_point)) = (point(first_source), point(second_source))
@@ -1029,16 +1030,16 @@ pub(in super::super) fn section_skamp_line_midpoint_sources(
             .into_iter()
             .map(f64::abs)
             .fold(1.0, f64::max);
-        let midpoint = [
+        let midpoint = FiniteVector::new([
             f64::midpoint(first_u, second_u),
             f64::midpoint(first_v, second_v),
-        ];
-        (midpoint.iter().all(|value| value.is_finite())
-            && (second_u - first_u).hypot(second_v - first_v) > EPS_NONDEGENERATE_LINE * scale)
-            .then_some([
+        ])?;
+        ((second_u - first_u).hypot(second_v - first_v) > EPS_NONDEGENERATE_LINE * scale).then_some(
+            [
                 SectionPointSource::Value(midpoint),
                 SectionPointSource::Value(midpoint),
-            ])
+            ],
+        )
     };
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_incidence_point(definition, item)
@@ -1057,7 +1058,7 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
     definition: &crate::feature::definitions::FeatureDefinition,
     skamp: &crate::feature::definitions::FeatureSkamp,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<(SectionPointSource, [f64; 2])> {
+) -> Option<(SectionPointSource, FiniteVector<2>)> {
     let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
     };
@@ -1081,7 +1082,7 @@ fn section_skamp_arc_midpoint(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         if !matches!(
             segment.kind,
@@ -1116,7 +1117,9 @@ fn complete_section_coordinate(
     Some([u, v])
 }
 
-fn saved_arc_midpoint(arc: &crate::feature::definitions::FeatureSavedArc) -> Option<[f64; 2]> {
+fn saved_arc_midpoint(
+    arc: &crate::feature::definitions::FeatureSavedArc,
+) -> Option<FiniteVector<2>> {
     let [Some(center_u), Some(center_v), _] = arc.center else {
         return None;
     };
@@ -1137,7 +1140,7 @@ fn oriented_arc_midpoint(
     first: [f64; 2],
     second: [f64; 2],
     stored_radius: Option<f64>,
-) -> Option<[f64; 2]> {
+) -> Option<FiniteVector<2>> {
     let first_offset = [first[0] - center[0], first[1] - center[1]];
     let second_offset = [second[0] - center[0], second[1] - center[1]];
     let first_radius = first_offset[0].hypot(first_offset[1]);
@@ -1162,7 +1165,7 @@ fn oriented_arc_midpoint(
         end += std::f64::consts::TAU;
     }
     let angle = f64::midpoint(start, end);
-    Some([
+    FiniteVector::new([
         center[0] + radius * angle.cos(),
         center[1] + radius * angle.sin(),
     ])
@@ -1191,10 +1194,11 @@ pub(in super::super) fn active_complete_section_skamps(
 #[cfg(test)]
 mod tests {
     use super::{
-        section_point_locus, section_skamp_arc_midpoint_source, section_skamp_curve_entity,
-        section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point,
-        section_skamp_line_midpoint_sources, section_skamp_locus, section_skamp_point_locus,
-        section_skamp_same_coordinate_sources, section_skamp_tangent_loci,
+        oriented_arc_midpoint, section_point_locus, section_skamp_arc_midpoint_source,
+        section_skamp_curve_entity, section_skamp_is_arc, section_skamp_is_line,
+        section_skamp_is_point, section_skamp_line_midpoint_sources, section_skamp_locus,
+        section_skamp_point_locus, section_skamp_same_coordinate_sources,
+        section_skamp_tangent_loci,
     };
     use crate::decode::sketch::skamp::SectionPointSource;
     use crate::decode::sketch_transfer::profiles::{
@@ -1203,6 +1207,17 @@ mod tests {
     use cadmpeg_ir::sketches::SketchEntityId;
     use cadmpeg_ir::sketches::{SketchId, SketchLocus};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn arc_midpoint_overflow_is_not_a_coordinate_source() {
+        assert!(oriented_arc_midpoint(
+            [f64::MAX, 0.0],
+            [f64::MAX, f64::MAX],
+            [f64::MAX, -f64::MAX],
+            None,
+        )
+        .is_none());
+    }
 
     #[test]
     fn standalone_point_rows_supply_point_loci() {

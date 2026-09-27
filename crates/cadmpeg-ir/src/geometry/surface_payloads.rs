@@ -15,7 +15,7 @@ use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::IncreasingParameterInterval;
-use crate::units::{FiniteVector, UnitVector3};
+use crate::units::{DirectionAboveEpsilon, FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -400,6 +400,16 @@ pub fn admit_revolution_axis(
         FinitePoint3::new(origin).ok_or(INVALID_REVOLUTION_AXIS)?,
         direction,
     ))
+}
+
+/// Admit a revolution axis from a source point and direction whose
+/// coordinates are already finite. Only unit length remains to check.
+pub fn admit_revolution_axis_from_parts(
+    origin: FinitePoint3,
+    direction: FiniteVector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
+    let direction = UnitVector3::new(direction.get()).ok_or(INVALID_REVOLUTION_AXIS)?;
+    Ok((origin, direction))
 }
 
 fn admit_revolution_interval(
@@ -867,24 +877,42 @@ impl SubsetSurfaceConstruction {
         v_sense: Option<bool>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        Ok(Self {
-            cache,
+        let parameter_ranges = [
+            DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+            DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+        ];
+        Ok(Self::from_parts(
             support,
-            parameter_ranges: [
-                DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-                DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-            ],
+            parameter_ranges,
             u_sense,
             v_sense,
-        })
+            cache,
+        ))
+    }
+
+    /// Build a subset from admitted directed ranges.
+    pub fn from_parts(
+        support: SurfaceId,
+        parameter_ranges: [DirectedParameterRange; 2],
+        u_sense: Option<bool>,
+        v_sense: Option<bool>,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            support,
+            parameter_ranges,
+            u_sense,
+            v_sense,
+            cache,
+        }
     }
     /// Return the support.
     pub fn support(&self) -> &SurfaceId {
@@ -983,17 +1011,6 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     }
 }
 
-/// A finite sweep vector whose norm exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-struct SweepDirectionAboveEpsilon(FiniteVector3);
-
-impl SweepDirectionAboveEpsilon {
-    fn new(direction: Vector3) -> Option<Self> {
-        let direction = FiniteVector3::new(direction)?;
-        (direction.as_raw().norm() > f64::EPSILON).then_some(Self(direction))
-    }
-}
-
 /// Admitted unbounded linear sweep parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1006,7 +1023,7 @@ pub struct LinearSweepSurfaceConstruction {
     /// Curve swept along `direction`.
     directrix: CurveId,
     /// Length-bearing sweep vector.
-    direction: SweepDirectionAboveEpsilon,
+    direction: DirectionAboveEpsilon,
 }
 
 #[derive(Deserialize)]
@@ -1025,7 +1042,7 @@ impl LinearSweepSurfaceConstruction {
         directrix: CurveId,
         direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction = SweepDirectionAboveEpsilon::new(direction).ok_or(
+        let direction = DirectionAboveEpsilon::new(direction).ok_or(
             ProceduralGeometryError::Payload("invalid linear-sweep direction"),
         )?;
         Ok(Self {
@@ -1038,8 +1055,8 @@ impl LinearSweepSurfaceConstruction {
         &self.directrix
     }
     /// Return the direction.
-    pub fn direction(&self) -> &FiniteVector3 {
-        &self.direction.0
+    pub fn direction(&self) -> &DirectionAboveEpsilon {
+        &self.direction
     }
 }
 
@@ -1080,6 +1097,18 @@ struct AxisRevolutionSurfaceConstructionWire {
 }
 
 impl AxisRevolutionSurfaceConstruction {
+    /// Build a construction from an admitted axis point and unit direction.
+    pub fn from_parts(
+        directrix: CurveId,
+        axis_origin: FinitePoint3,
+        axis_direction: UnitVector3,
+    ) -> Self {
+        Self {
+            directrix,
+            axis_origin,
+            axis_direction,
+        }
+    }
     /// Admit the construction parameters.
     pub fn try_new(
         directrix: CurveId,
@@ -1087,11 +1116,7 @@ impl AxisRevolutionSurfaceConstruction {
         axis_direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
         let (axis_origin, axis_direction) = admit_revolution_axis(axis_origin, axis_direction)?;
-        Ok(Self {
-            directrix,
-            axis_origin,
-            axis_direction,
-        })
+        Ok(Self::from_parts(directrix, axis_origin, axis_direction))
     }
     /// Return the directrix.
     pub fn directrix(&self) -> &CurveId {
@@ -1244,6 +1269,23 @@ impl ExactSurfacePayload {
                 "exact spline surface parameter fields are invalid",
             ))?;
         Ok(Self { spline })
+    }
+
+    /// Build a legacy construction from admitted U and V parameter intervals.
+    #[must_use]
+    pub fn from_legacy_intervals(
+        u: IncreasingParameterInterval,
+        v: IncreasingParameterInterval,
+        extension: i64,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            spline: ExactSpline::Legacy {
+                ranges: [u.finite_endpoints(), v.finite_endpoints()],
+                extension,
+                cache,
+            },
+        }
     }
     /// Return the spline.
     pub fn spline(&self) -> &ExactSpline<FiniteReal> {

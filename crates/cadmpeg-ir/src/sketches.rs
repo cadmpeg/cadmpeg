@@ -486,7 +486,17 @@ impl std::ops::Deref for ReferenceLineDirection {
     }
 }
 
-/// A positive ellipse major radius that is at least its minor radius.
+/// An ellipse's radii before their numeric relationship is admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct EllipseRadii<L> {
+    /// Semi-major radius.
+    pub major_radius: L,
+    /// Semi-minor radius.
+    pub minor_radius: L,
+}
+
+/// Positive ellipse radii with a major radius at least the minor radius.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrderedMajorRadius {
     major: PositiveLength,
@@ -500,19 +510,23 @@ impl OrderedMajorRadius {
     }
 
     /// Return the major radius.
-    pub fn major(self) -> PositiveLength {
+    pub const fn major(self) -> PositiveLength {
         self.major
     }
 
-    /// Return the major radius in document length units.
-    pub fn get(self) -> f64 {
-        self.major.get()
+    /// Return the minor radius.
+    pub const fn minor(self) -> PositiveLength {
+        self.minor
     }
 }
 
 impl Serialize for OrderedMajorRadius {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.major.serialize(serializer)
+        use serde::ser::SerializeStruct;
+        let mut radii = serializer.serialize_struct("EllipseRadii", 2)?;
+        radii.serialize_field("major_radius", &self.major)?;
+        radii.serialize_field("minor_radius", &self.minor)?;
+        radii.end()
     }
 }
 
@@ -582,15 +596,13 @@ impl SketchGeometry {
             Definition::Ellipse {
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                radii,
                 bounds,
             } => Definition::Ellipse {
                 center,
                 major_angle,
-                major_radius: OrderedMajorRadius::new(major_radius, minor_radius)
+                radii: OrderedMajorRadius::new(radii.major_radius, radii.minor_radius)
                     .ok_or("sketch ellipse major_radius must be at least minor_radius")?,
-                minor_radius,
                 bounds,
             },
             Definition::Hyperbola {
@@ -725,14 +737,15 @@ impl
             Self::Ellipse {
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                radii,
                 bounds,
             } => Definition::Ellipse {
                 center: center.get(),
                 major_angle: *major_angle,
-                major_radius: Length::from(major_radius.major()),
-                minor_radius: Length::from(*minor_radius),
+                radii: EllipseRadii {
+                    major_radius: Length::from(radii.major()),
+                    minor_radius: Length::from(radii.minor()),
+                },
                 bounds: *bounds,
             },
             Self::Hyperbola {
@@ -867,8 +880,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
             Definition::Ellipse {
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                radii,
                 bounds,
             } => {
                 const RADII: &str = "sketch ellipse radii must be positive and finite";
@@ -878,8 +890,10 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                         "sketch ellipse center and major_angle must be finite",
                     )?,
                     major_angle,
-                    major_radius: admit_sketch_length(major_radius, RADII)?,
-                    minor_radius: admit_sketch_length(minor_radius, RADII)?,
+                    radii: EllipseRadii {
+                        major_radius: admit_sketch_length(radii.major_radius, RADII)?,
+                        minor_radius: admit_sketch_length(radii.minor_radius, RADII)?,
+                    },
                     bounds,
                 }
             }
@@ -979,7 +993,14 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 #[serde(bound(
     deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>, D: Deserialize<'de>, M: Deserialize<'de>"
 ))]
-pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64, D = P, M = L> {
+pub enum SketchGeometryDefinition<
+    P = Point2,
+    L = Length,
+    R = f64,
+    W = f64,
+    D = P,
+    M = EllipseRadii<L>,
+> {
     /// Isolated point.
     Point {
         /// Solved point position.
@@ -1023,10 +1044,9 @@ pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64, D = 
         center: P,
         /// Major-axis angle in sketch coordinates.
         major_angle: Angle,
-        /// Semi-major radius.
-        major_radius: M,
-        /// Semi-minor radius.
-        minor_radius: L,
+        /// Semi-major and semi-minor radii.
+        #[serde(flatten)]
+        radii: M,
         /// Parameter bounds for an arc; absent for a full ellipse.
         #[serde(
             default,
@@ -1883,6 +1903,22 @@ impl SpatialSketchGeometry {
         &self,
     ) -> &SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> {
         &self.0
+    }
+
+    /// Build a line from admitted endpoints. Only their separation is checked.
+    pub fn try_line_from_parts(
+        start: FinitePoint3,
+        end: FinitePoint3,
+    ) -> Result<Self, &'static str> {
+        let start_point = start.get();
+        let end_point = end.get();
+        let distance = (end_point.x - start_point.x)
+            .hypot(end_point.y - start_point.y)
+            .hypot(end_point.z - start_point.z);
+        if distance <= EPS_SPATIAL_LINE_LENGTH {
+            return Err("spatial sketch line endpoints must be finite and separated");
+        }
+        Ok(Self(SpatialSketchGeometryDefinition::Line { start, end }))
     }
 }
 

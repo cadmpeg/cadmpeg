@@ -1334,6 +1334,16 @@ impl Tessellation {
         Ok(self)
     }
 
+    /// Set a source chordal deflection that was admitted before this call.
+    #[must_use]
+    pub fn with_admitted_chordal_deflection(
+        mut self,
+        chordal_deflection: Option<NonNegativeReal>,
+    ) -> Self {
+        self.chordal_deflection = chordal_deflection;
+        self
+    }
+
     /// Set the native source-object identity.
     #[must_use]
     pub fn with_source_object(mut self, source_object: Option<SourceObjectAssociation>) -> Self {

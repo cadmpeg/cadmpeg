@@ -123,18 +123,22 @@ pub fn transfer_into_ir<'ir>(
     )?;
 
     let namespace = ir.native.namespace_mut(native_format);
-    namespace.set_arena("edge_continuities", &edge_continuities)?;
-    namespace.set_arena("edge_ownerships", &edge_ownerships)?;
-    namespace.set_arena("vertex_ownerships", &vertex_ownerships)?;
-    namespace.set_arena("face_sidedness", &face_sidedness)?;
-    namespace.set_arena("face_native_keys", &face_native_keys)?;
-    namespace.set_arena("tolerant_vertex_tails", &tolerant_vertex_tails)?;
-    namespace.set_arena("tolerant_edge_tails", &tolerant_edge_tails)?;
-    namespace.set_arena("tolerant_coedge_parameters", &tolerant_coedge_parameters)?;
-    namespace.set_arena("mesh_surface_sentinels", &mesh_surface_sentinels)?;
-    namespace.set_arena("wire_topologies", &wire_topologies)?;
-    namespace.set_arena("transform_hints", &transform_hints)?;
-    namespace.set_arena("body_native_keys", &body_native_keys)?;
+    namespace.set_arena(ctx, "edge_continuities", &edge_continuities)?;
+    namespace.set_arena(ctx, "edge_ownerships", &edge_ownerships)?;
+    namespace.set_arena(ctx, "vertex_ownerships", &vertex_ownerships)?;
+    namespace.set_arena(ctx, "face_sidedness", &face_sidedness)?;
+    namespace.set_arena(ctx, "face_native_keys", &face_native_keys)?;
+    namespace.set_arena(ctx, "tolerant_vertex_tails", &tolerant_vertex_tails)?;
+    namespace.set_arena(ctx, "tolerant_edge_tails", &tolerant_edge_tails)?;
+    namespace.set_arena(
+        ctx,
+        "tolerant_coedge_parameters",
+        &tolerant_coedge_parameters,
+    )?;
+    namespace.set_arena(ctx, "mesh_surface_sentinels", &mesh_surface_sentinels)?;
+    namespace.set_arena(ctx, "wire_topologies", &wire_topologies)?;
+    namespace.set_arena(ctx, "transform_hints", &transform_hints)?;
+    namespace.set_arena(ctx, "body_native_keys", &body_native_keys)?;
 
     Ok((
         namespace,
@@ -184,6 +188,7 @@ mod tests {
         ir.native
             .namespace_mut("test")
             .set_arena(
+                &ctx,
                 "body_native_keys",
                 &[HeldRecord {
                     id: "sat:test:held#0".into(),

@@ -248,7 +248,7 @@ fn declared_entity_handle_circular_carriers(
             carriers
                 .entry(relation.feature_ref.clone())
                 .or_default()
-                .push((coordinates, encoded_radius));
+                .push((coordinates.get(), encoded_radius));
         }
     }
     carriers
@@ -377,7 +377,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 })
                 .filter_map(|relation| relation.parameter_scalar_ref())
                 .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
-                .map(|scalar| scalar.value * NATIVE_TO_IR)
+                .map(|scalar| scalar.value.get() * NATIVE_TO_IR)
                 .collect::<Vec<_>>();
             let dimensioned_rectangle = addresses
                 .is_none()
@@ -499,7 +499,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let points = markers
                     .iter()
                     .filter_map(|marker| {
-                        let [u, v] = marker.coordinates_m?;
+                        let [u, v] = marker.coordinates_m?.get();
                         let native =
                             quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                         let point = transform.apply(native)?;
@@ -580,7 +580,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 (region_addresses.as_deref(), chain_addresses.as_deref())
             {
                 let project = |marker: &SketchInputEntity| {
-                    let [u, v] = marker.coordinates_m?;
+                    let [u, v] = marker.coordinates_m?.get();
                     let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                     let point = transform.apply(native)?;
                     Some(Point2::new(
@@ -729,7 +729,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 .iter()
                 .filter_map(|address| {
                     let marker = markers.get(usize::from(*address).checked_sub(1)?)?;
-                    let [u, v] = marker.coordinates_m?;
+                    let [u, v] = marker.coordinates_m?.get();
                     let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                     let point = transform.apply(native)?;
                     Some((
@@ -1073,7 +1073,7 @@ pub(crate) fn project_marker_backed_sketches(
                 );
                 let entity = (|| {
                     let project = |endpoint: &SketchInputEntity| {
-                        let [u, v] = endpoint.coordinates_m?;
+                        let [u, v] = endpoint.coordinates_m?.get();
                         let point = transform.apply(quantize(
                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
                             QUANTUM,
@@ -1216,12 +1216,18 @@ pub(crate) fn project_marker_backed_sketches(
                                         marker,
                                         &object_markers,
                                     )
+                                    .map(|endpoints| {
+                                        endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                    })
                                     .or_else(|| {
                                         extended_linked_inline_line_endpoints(
                                             &lane.native_payload,
                                             marker,
                                             &object_markers,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                     .or_else(|| {
                                         extended_identity_inline_line_endpoints(
@@ -1229,6 +1235,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             marker,
                                             &object_markers,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                     .or_else(|| {
                                         implicit_coordinate_roster_curve_endpoints(
@@ -1255,6 +1264,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             &lane.native_payload,
                                             index_from_u64(marker.offset())?,
                                         )
+                                        .map(|endpoints| {
+                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                        })
                                     })
                                 {
                                     let (Some(start), Some(end)) =
@@ -1357,8 +1369,10 @@ pub(crate) fn project_marker_backed_sketches(
                                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                                     center,
                                     major_angle: Angle::new((axis.1 as f64).atan2(axis.0 as f64))?,
-                                    major_radius: Length::new(major * NATIVE_TO_IR)?,
-                                    minor_radius: Length::new(minor * NATIVE_TO_IR)?,
+                                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                                        major_radius: Length::new(major * NATIVE_TO_IR)?,
+                                        minor_radius: Length::new(minor * NATIVE_TO_IR)?,
+                                    },
                                     bounds: None,
                                 })
                                 .ok()?
@@ -1368,9 +1382,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 })
                             {
                                 let (Some(center), Some(start), Some(end)) = (
-                                    project_coordinates(center),
-                                    project_coordinates(start),
-                                    project_coordinates(end),
+                                    project_coordinates(center.get()),
+                                    project_coordinates(start.get()),
+                                    project_coordinates(end.get()),
                                 ) else {
                                     return None;
                                 };
@@ -1448,8 +1462,8 @@ pub(crate) fn project_marker_backed_sketches(
                                         &lane.native_payload,
                                         offset,
                                     ) {
-                                        let [start_u, start_v] = endpoints[0].coordinates_m?;
-                                        let [end_u, end_v] = endpoints[1].coordinates_m?;
+                                        let [start_u, start_v] = endpoints[0].coordinates_m?.get();
+                                        let [end_u, end_v] = endpoints[1].coordinates_m?.get();
                                         let roster_center = coordinate_roster_arc_center(
                                             &lane.native_payload,
                                             marker,
@@ -1468,7 +1482,7 @@ pub(crate) fn project_marker_backed_sketches(
                                                     && candidate.id() != endpoints[1].id()
                                             })
                                             .filter_map(|candidate| {
-                                                let [u, v] = candidate.coordinates_m?;
+                                                let [u, v] = candidate.coordinates_m?.get();
                                                 Some(Point2::new(
                                                     u * NATIVE_TO_IR,
                                                     v * NATIVE_TO_IR,
@@ -1531,8 +1545,8 @@ pub(crate) fn project_marker_backed_sketches(
                                     let [start_marker, end_marker] = endpoints.as_slice() else {
                                         return None;
                                     };
-                                    let [start_u, start_v] = start_marker.coordinates_m?;
-                                    let [end_u, end_v] = end_marker.coordinates_m?;
+                                    let [start_u, start_v] = start_marker.coordinates_m?.get();
+                                    let [end_u, end_v] = end_marker.coordinates_m?.get();
                                     let candidates = object_markers
                                         .iter()
                                         .copied()
@@ -1541,7 +1555,7 @@ pub(crate) fn project_marker_backed_sketches(
                                                 && candidate.id() != end_marker.id()
                                         })
                                         .filter_map(|candidate| {
-                                            let [u, v] = candidate.coordinates_m?;
+                                            let [u, v] = candidate.coordinates_m?.get();
                                             Some(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR))
                                         })
                                         .collect::<Vec<_>>();
@@ -1763,6 +1777,7 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                     let Some([u, v]) =
                         legacy_extended_rectangle_diagonal_endpoint(&lane.native_payload, marker)
+                            .map(cadmpeg_ir::units::FiniteVector::get)
                     else {
                         continue;
                     };
@@ -2346,14 +2361,15 @@ fn transform_sketch_block_geometry(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => SketchGeometry::from_parts(SketchGeometryDefinition::Ellipse {
             center: finite_point(center.get())?,
             major_angle: angle(*major_angle)?,
-            major_radius: major_radius.major(),
-            minor_radius: *minor_radius,
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: radii.major(),
+                minor_radius: radii.minor(),
+            },
             bounds: match bounds {
                 Some([start, end]) => Some([angle(*start)?, angle(*end)?]),
                 None => None,
@@ -2650,7 +2666,7 @@ fn legacy_config_hex_sketch(
     {
         return None;
     }
-    let point = |marker: &SketchInputEntity| project(marker.coordinates_m?);
+    let point = |marker: &SketchInputEntity| project(marker.coordinates_m?.get());
     let center = point(circle)?;
     let circle_radius = {
         let radial = point(circle_radial)?;
@@ -2813,13 +2829,13 @@ fn legacy_config_collinear_sketch(
         .iter()
         .copied()
         .filter(|marker| matches!(marker.object_index(), Some(18 | 19 | 21)))
-        .filter_map(|marker| Some((marker, marker.coordinates_m?)))
+        .filter_map(|marker| Some((marker, marker.coordinates_m?.get())))
         .collect::<Vec<_>>();
     let origin = markers
         .iter()
         .copied()
         .filter(|marker| marker.object_index().is_none())
-        .filter_map(|marker| Some((marker, marker.coordinates_m?)))
+        .filter_map(|marker| Some((marker, marker.coordinates_m?.get())))
         .min_by_key(|(marker, _)| marker.offset())?;
     chain.push(origin);
     chain.sort_by(|left, right| left.1[0].total_cmp(&right.1[0]));
@@ -2875,7 +2891,7 @@ fn legacy_config_collinear_sketch(
     let mut points = markers
         .iter()
         .copied()
-        .filter_map(|marker| Some((Some(marker), marker.coordinates_m?)))
+        .filter_map(|marker| Some((Some(marker), marker.coordinates_m?.get())))
         .chain(std::iter::once((None, negative)))
         .collect::<Vec<_>>();
     points.sort_by(|left, right| {
@@ -2995,7 +3011,8 @@ mod detached_legacy_sketch_tests {
             constructed_marker.feature_ref = Some("feature".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
             constructed_marker.state_value = None;
-            constructed_marker.coordinates_m = coordinates_m;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             constructed_marker.links = None;
             constructed_marker
         }

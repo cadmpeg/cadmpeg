@@ -57,7 +57,10 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
-        .store(&mut namespace)
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
         .unwrap();
     let board = crate::history_records::AsmBulletinBoard {
         id: "f3d:native:bulletin#1".into(),
@@ -69,7 +72,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     };
     namespace.arenas_mut().insert(
         "asm_bulletin_boards".into(),
-        cadmpeg_ir::native::arena_from([Ok::<_, cadmpeg_ir::NativeConvertError>(board)]).unwrap(),
+        cadmpeg_ir::native::arena_from(
+            &cadmpeg_test_support::service_decode_context(),
+            [Ok::<_, cadmpeg_ir::NativeConvertError>(board)],
+        )
+        .unwrap(),
     );
     let error = crate::native::F3dNative::load(&namespace).unwrap_err();
     let message = error.to_string();
@@ -100,7 +107,12 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
-    typed.store(&mut round_trip).unwrap();
+    typed
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut round_trip,
+        )
+        .unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
@@ -134,7 +146,10 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
 fn store_emits_every_pinned_arena_name() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
-        .store(&mut namespace)
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
         .unwrap();
     assert_eq!(
         namespace
@@ -200,7 +215,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         f3d_native(decoded.ir())
             .tolerant_coedge_parameters
             .iter()
-            .map(|parameters| parameters.parameter_range)
+            .map(|parameters| parameters.parameter_range.get())
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
@@ -214,7 +229,8 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir_mut(), |native| {
-        native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
+        native.tolerant_coedge_parameters[0].parameter_range =
+            cadmpeg_ir::units::FiniteVector::new([-1.5, 2.25]).expect("finite interval");
     });
     let mut edited = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut edited)
@@ -227,7 +243,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .get(),
         [-1.5, 2.25]
     );
 }
@@ -254,7 +272,9 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             },
         ),
         (
@@ -344,7 +364,9 @@ fn tolerant_coedge_extension_ignores_payload_identifiers() {
                 target: None,
                 curve_reversed: true,
                 payload_token_count: 1,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             };
             3
         ]
@@ -486,12 +508,15 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             ),
             coedge: tolerant_coedge,
             record_index: 0,
-            parameter_range: [0.0, 1.0],
+            parameter_range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
+                .expect("finite interval"),
             extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: false,
                 payload_token_count: 0,
-                parameter_range: Some([-2.0, 3.0]),
+                parameter_range: Some(
+                    cadmpeg_ir::units::FiniteVector::new([-2.0, 3.0]).expect("finite interval"),
+                ),
             },
         }];
     let mut generated = Vec::new();

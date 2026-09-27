@@ -87,6 +87,7 @@ pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
@@ -113,7 +114,7 @@ pub(super) fn emit_model_features(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model features")?;
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: None,
@@ -134,7 +135,8 @@ pub(super) fn emit_model_features(
                 },
             ),
             native_ref: None,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
     }
     let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
     let mut geometry_generator_feature_count = 0;
@@ -153,7 +155,7 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         );
         ctx.charge_entities(1, "admit Creo model features")?;
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: None,
@@ -174,6 +176,7 @@ pub(super) fn emit_model_features(
                     schema_feature_definition(
                         scan,
                         ir,
+                        source_carriers,
                         feature_id,
                         Some(SchemaClass::Round),
                         "Fillet",
@@ -186,7 +189,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
         geometry_generator_feature_count += 1;
     }
@@ -217,6 +221,7 @@ pub(super) fn emit_model_features(
                         schema_feature_definition(
                             scan,
                             ir,
+                            source_carriers,
                             operation.feature_id,
                             None,
                             operation.kind.as_str(),
@@ -227,6 +232,7 @@ pub(super) fn emit_model_features(
                             named_or_referenced_feature_definition(
                                 scan,
                                 ir,
+                                source_carriers,
                                 operation.feature_id,
                                 operation.kind.as_str(),
                             )
@@ -234,7 +240,13 @@ pub(super) fn emit_model_features(
                         })
                     })
                     .or_else(|| {
-                        unbounded_feature_plane_definition(scan, ir, operation.feature_id).map(Ok)
+                        unbounded_feature_plane_definition(
+                            scan,
+                            ir,
+                            source_carriers,
+                            operation.feature_id,
+                        )
+                        .map(Ok)
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
@@ -252,6 +264,7 @@ pub(super) fn emit_model_features(
                 schema_feature_definition(
                     scan,
                     ir,
+                    source_carriers,
                     operation.feature_id,
                     Some(schema_class),
                     operation.kind.as_str(),
@@ -318,7 +331,7 @@ pub(super) fn emit_model_features(
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 );
             if upgrade_legacy_round {
-                existing.evaluation.set_definition(definition);
+                source_carriers.replace_feature_definition(existing, definition)?;
             }
             if name.is_some() {
                 existing.name = name;
@@ -369,7 +382,7 @@ pub(super) fn emit_model_features(
             operation_annotation_kind,
             operation_exactness,
         );
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
@@ -390,7 +403,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref,
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for feature_id in row_feature_ids {
@@ -428,9 +442,9 @@ pub(super) fn emit_model_features(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || match named_feature_definition(scan, ir, feature_id, kind)?
-                .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
-            {
+            || match named_feature_definition(scan, ir, source_carriers, feature_id, kind)?.or_else(
+                || unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id),
+            ) {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.into(),
@@ -441,7 +455,14 @@ pub(super) fn emit_model_features(
                 })),
             },
             |schema_class| {
-                schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
+                schema_feature_definition(
+                    scan,
+                    ir,
+                    source_carriers,
+                    feature_id,
+                    Some(schema_class),
+                    kind,
+                )
             },
         )?;
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
@@ -467,7 +488,7 @@ pub(super) fn emit_model_features(
             );
         }
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
-        ir.model.features.push(Feature {
+        let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
             name: Some(
@@ -497,7 +518,8 @@ pub(super) fn emit_model_features(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(scan, feature_id),
-        });
+        };
+        source_carriers.admit_feature(ir, feature)?;
         refresh_feature_outputs(scan, ir)?;
     }
     for (child, parent) in regeneration_edges {
@@ -514,6 +536,7 @@ pub(super) fn finish_feature_transfers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir);
@@ -526,9 +549,15 @@ pub(super) fn finish_feature_transfers(
         .map(|state| state.edges().len())
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
-        transfer_feature_dimensions(ctx, scan, ir, annotations)?;
-    let transferred_curve_expression_parameter_count =
-        transfer_curve_expression_features(ctx, scan, ir, annotations, &dimension_parameters)?;
+        transfer_feature_dimensions(ctx, scan, ir, annotations, source_carriers)?;
+    let transferred_curve_expression_parameter_count = transfer_curve_expression_features(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        &dimension_parameters,
+        source_carriers,
+    )?;
     {
         let active_expressions = scan
             .curves

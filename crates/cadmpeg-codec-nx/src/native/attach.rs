@@ -422,8 +422,8 @@ pub(super) fn attach(
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
     NATIVE_CATALOGUE
-        .emit_all(model, namespace)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        .emit_all(ctx, model, namespace)
+        .map_err(CodecError::from)?;
     Ok(())
 }
 

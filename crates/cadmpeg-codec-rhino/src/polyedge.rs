@@ -7,6 +7,8 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::mesh::MeshExpand;
 
@@ -28,24 +30,24 @@ const SEGMENT_CLASS: Uuid = Uuid::from_canonical([
 ]);
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Segment<R> {
+pub(crate) struct Segment<R, D = [f64; 2]> {
     pub(crate) reference: R,
     pub(crate) reversed: bool,
-    pub(crate) domain: [f64; 2],
-    pub(crate) proxy_domain: [f64; 2],
+    pub(crate) domain: D,
+    pub(crate) proxy_domain: D,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EdgeDomains {
-    pub(crate) edge: [f64; 2],
-    pub(crate) trim: [f64; 2],
+pub(crate) struct EdgeDomains<D = [f64; 2]> {
+    pub(crate) edge: D,
+    pub(crate) trim: D,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PersistentReference {
     pub(crate) object_id: Uuid,
     component: [i32; 2],
-    domains: EdgeDomains,
+    domains: EdgeDomains<FiniteVector<2>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,10 +58,12 @@ pub(crate) struct HistoryReference {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PolyEdge<R> {
-    pub(crate) parameters: Vec<f64>,
-    pub(crate) segments: Vec<Segment<R>>,
+pub(crate) struct PolyEdge<R, P = f64, D = [f64; 2]> {
+    pub(crate) parameters: Vec<P>,
+    pub(crate) segments: Vec<Segment<R, D>>,
 }
+
+pub(crate) type PersistentPolyEdge = PolyEdge<PersistentReference, FiniteReal, FiniteVector<2>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryPolyEdge {
@@ -133,17 +137,11 @@ fn counted(
     Ok((count, bound))
 }
 
-fn interval(view: &mut View<'_>) -> Result<[f64; 2], FramingError> {
+fn interval(view: &mut View<'_>) -> Result<FiniteVector<2>, FramingError> {
     let offset = view.position();
     let value = [req_f64(view)?, req_f64(view)?];
-    if value.iter().all(|value| value.is_finite()) {
-        Ok(value)
-    } else {
-        Err(FramingError::structural(
-            offset,
-            "polyedge interval is not finite",
-        ))
-    }
+    FiniteVector::new(value)
+        .ok_or_else(|| FramingError::structural(offset, "polyedge interval is not finite"))
 }
 
 fn segment(
@@ -151,7 +149,7 @@ fn segment(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Segment<PersistentReference>, FramingError> {
+) -> Result<Segment<PersistentReference, FiniteVector<2>>, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
@@ -200,7 +198,7 @@ pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<PolyEdge<PersistentReference>, FramingError> {
+) -> Result<PersistentPolyEdge, FramingError> {
     let data = expand.data();
     let mut body = expand
         .root()
@@ -221,13 +219,19 @@ pub(crate) fn decode(
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
-    let mut reserved =
-        ExactVec::<f64>::new(parameter_bound).map_err(|error| refused(body.position(), &error))?;
-    let mut previous: Option<f64> = None;
+    let mut reserved = ExactVec::<FiniteReal>::new(parameter_bound)
+        .map_err(|error| refused(body.position(), &error))?;
+    let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
         let value = req_f64(&mut body)?;
-        if !value.is_finite() || previous.is_some_and(|last| value <= last) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(FramingError::structural(
+                offset,
+                "invalid polyedge parameter",
+            ));
+        };
+        if previous.is_some_and(|last| value.get() <= last.get()) {
             return Err(FramingError::structural(
                 offset,
                 "invalid polyedge parameter",
@@ -242,8 +246,9 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments = ExactVec::<Segment<PersistentReference>>::new(segment_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut segments =
+        ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(segment_bound)
+            .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
@@ -284,7 +289,7 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn semantic_json(polyedge: &PolyEdge<PersistentReference>) -> Option<String> {
+pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
     let segments = polyedge
         .segments
         .iter()

@@ -6,8 +6,8 @@ use crate::om::state_message::StateMessage;
 use crate::om::state_status::{StateStatus, StateStatusPayload};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Wire", into = "Wire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Wire")]
 pub(in crate::native) struct OmOperationStateStatus {
     pub(in crate::native) id: String,
     section_link: String,
@@ -15,6 +15,40 @@ pub(in crate::native) struct OmOperationStateStatus {
     body: StateStatus<String, Vec<u8>>,
     source_entry: String,
     source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct WireView<'a> {
+    id: &'a str,
+    section_link: &'a str,
+    ordinal: u32,
+    status_code: u32,
+    raw_status_code: &'a [u8],
+    object_index: u32,
+    raw_object_index: &'a [u8],
+    payload: &'a StateStatusPayload<String, Vec<u8>>,
+    source_entry: &'a str,
+    source_offset: u64,
+    end_offset: u64,
+}
+
+impl Serialize for OmOperationStateStatus {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        WireView {
+            id: &self.id,
+            section_link: &self.section_link,
+            ordinal: self.ordinal,
+            status_code: self.body.status_code.value(),
+            raw_status_code: self.body.status_code.raw(),
+            object_index: self.body.object_index.value(),
+            raw_object_index: self.body.object_index.raw(),
+            payload: &self.body.payload,
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+            end_offset: self.end_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl OmOperationStateStatus {
@@ -48,7 +82,7 @@ impl OmOperationStateStatus {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct Wire {
     id: String,
     section_link: String,
@@ -61,25 +95,6 @@ struct Wire {
     source_entry: String,
     source_offset: u64,
     end_offset: u64,
-}
-
-impl From<OmOperationStateStatus> for Wire {
-    fn from(value: OmOperationStateStatus) -> Self {
-        let end_offset = value.end_offset();
-        Self {
-            id: value.id,
-            section_link: value.section_link,
-            ordinal: value.ordinal,
-            status_code: value.body.status_code.value(),
-            raw_status_code: value.body.status_code.raw().to_vec(),
-            object_index: value.body.object_index.value(),
-            raw_object_index: value.body.object_index.raw().to_vec(),
-            payload: value.body.payload,
-            source_entry: value.source_entry,
-            source_offset: value.source_offset,
-            end_offset,
-        }
-    }
 }
 
 impl TryFrom<Wire> for OmOperationStateStatus {
@@ -108,7 +123,7 @@ impl TryFrom<Wire> for OmOperationStateStatus {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 enum PayloadWire {
     Plain,
     Linked {
@@ -122,17 +137,31 @@ enum PayloadWire {
     },
 }
 
-impl From<StateStatusPayload<String, Vec<u8>>> for PayloadWire {
-    fn from(value: StateStatusPayload<String, Vec<u8>>) -> Self {
+#[derive(Serialize)]
+enum PayloadView<'a> {
+    Plain,
+    Linked {
+        link_code: crate::om::state_link::StateLinkCode,
+        object_index: u32,
+        raw_object_index: &'a [u8],
+    },
+    Diagnostic(&'a StateMessage<String>),
+    Opaque {
+        raw: &'a [u8],
+    },
+}
+
+impl<'a> From<&'a StateStatusPayload<String, Vec<u8>>> for PayloadView<'a> {
+    fn from(value: &'a StateStatusPayload<String, Vec<u8>>) -> Self {
         match value {
             StateStatusPayload::Plain => Self::Plain,
             StateStatusPayload::Linked {
                 link_code,
                 object_index,
             } => Self::Linked {
-                link_code,
+                link_code: *link_code,
                 object_index: object_index.value(),
-                raw_object_index: object_index.raw().to_vec(),
+                raw_object_index: object_index.raw(),
             },
             StateStatusPayload::Diagnostic(value) => Self::Diagnostic(value),
             StateStatusPayload::Opaque { raw } => Self::Opaque { raw },
@@ -162,7 +191,7 @@ impl TryFrom<PayloadWire> for StateStatusPayload<String, Vec<u8>> {
 
 impl Serialize for StateStatusPayload<String, Vec<u8>> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        PayloadWire::from(self.clone()).serialize(serializer)
+        PayloadView::from(self).serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for StateStatusPayload<String, Vec<u8>> {
@@ -174,6 +203,19 @@ impl<'de> Deserialize<'de> for StateStatusPayload<String, Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::OmOperationStateStatus;
+
+    #[test]
+    fn om_status_payload_streams_once_with_native_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "nx:om:status#1", "section_link": "section", "ordinal": 0,
+            "status_code": 65, "raw_status_code": [65],
+            "object_index": 1, "raw_object_index": [1],
+            "payload": {"Opaque":{"raw":[2,1,17]}},
+            "source_entry": "om", "source_offset": 0, "end_offset": 5
+        });
+        let record: OmOperationStateStatus = serde_json::from_value(expected.clone()).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+    }
 
     #[test]
     fn wire_ends_follow_each_payload_form() {

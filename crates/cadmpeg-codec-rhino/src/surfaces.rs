@@ -4,7 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -133,9 +133,9 @@ pub(crate) enum DecodedProceduralSurface {
     Revolution {
         children: Box<[DecodedCurve; 1]>,
         /// Scaled axis origin.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Unit axis direction.
-        axis_direction: Vector3,
+        axis_direction: Option<UnitVector3>,
         /// Native angular interval.
         angular_interval: [f64; 2],
         /// Native revolution parameter interval.
@@ -175,14 +175,14 @@ impl DecodedProceduralSurface {
                 let [directrix] = *children;
                 let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        axis_origin,
-                        axis_direction,
-                    )
-                    .and_then(|axis| {
+                    axis_direction
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                    ))
+                    .and_then(|axis_direction| {
                         cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                             directrix,
-                            axis,
+                            (axis_origin, axis_direction),
                             angular_interval,
                             None,
                             Some(parameter_interval),
@@ -421,8 +421,7 @@ fn read_revolution(
         ));
     }
     let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
-        .get();
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
@@ -465,18 +464,20 @@ fn read_revolution(
     if !axis_length.is_finite() || axis_length <= 0.0 {
         return Err(error(reader.position(), "revolution axis is invalid"));
     }
-    let axis_direction = Vector3::new(
+    let axis_direction =
+        UnitVector3::normalized_with_length(axis_delta).map(|(direction, _)| direction);
+    let raw_axis_direction = Vector3::new(
         axis_delta.x / axis_length,
         axis_delta.y / axis_length,
         axis_delta.z / axis_length,
     );
     let child = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
-    let profile = exact_nurbs(&child, version_offset)?;
+    let profile = exact_nurbs(ctx, &child, version_offset)?;
     let geometry = revolution_nurbs(
         ctx,
         &profile,
-        from,
-        axis_direction,
+        from.get(),
+        raw_axis_direction,
         RevolutionIntervals {
             angle: angular_interval,
             parameter: parameter_interval,
@@ -528,8 +529,8 @@ fn read_sum(
     bbox(reader)?;
     let first = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let second = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
-    let first_nurbs = exact_nurbs(&first, version_offset)?;
-    let second_nurbs = exact_nurbs(&second, version_offset)?;
+    let first_nurbs = exact_nurbs(ctx, &first, version_offset)?;
+    let second_nurbs = exact_nurbs(ctx, &second, version_offset)?;
     let geometry = sum_nurbs(ctx, &first_nurbs, &second_nurbs, basepoint, version_offset)?;
     reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
@@ -649,7 +650,7 @@ fn revolution_nurbs(
     let profile_points = profile.control_points();
     let profile_weights = match profile.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
+        None => ctx.alloc_filled(profile_count, 1.0, "Rhino revolution profile weights")?,
     };
     let mut control_points = Vec::new();
     control_points
@@ -779,11 +780,11 @@ fn sum_nurbs(
     let second_points = second.control_points();
     let first_weights = match first.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights")?,
+        None => ctx.alloc_filled(u_count, 1.0, "Rhino sum-surface first weights")?,
     };
     let second_weights = match second.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
+        None => ctx.alloc_filled(v_count, 1.0, "Rhino sum-surface second weights")?,
     };
     let mut control_points = Vec::new();
     control_points
@@ -1003,7 +1004,7 @@ fn admit_nurbs_pole_conversion(
 pub(crate) fn extrusion_nurbs(
     start: &NurbsCurve,
     end: &NurbsCurve,
-    path_domain: [f64; 2],
+    path_domain: FiniteVector<2>,
     transposed: bool,
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
@@ -1012,7 +1013,6 @@ pub(crate) fn extrusion_nurbs(
         || start.control_points().len() != end.control_points().len()
         || start.weights() != end.weights()
         || start.periodic() != end.periodic()
-        || !path_domain.iter().all(|value| value.is_finite())
         || path_domain[0] >= path_domain[1]
     {
         return Err(error(offset, "extrusion tensor inputs are incompatible"));
@@ -1041,18 +1041,12 @@ pub(crate) fn extrusion_nurbs(
         weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
     .and_then(|poles| {
+        let [path_start, path_end] = path_domain.finite_components();
+        let path_knots =
+            KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])?;
         NurbsSurface::new(
             NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
-            NurbsSurfaceAxis::new(
-                1,
-                vec![
-                    path_domain[0],
-                    path_domain[0],
-                    path_domain[1],
-                    path_domain[1],
-                ],
-                false,
-            ),
+            NurbsSurfaceAxis::new(1, path_knots, false),
             poles,
             false,
         )
@@ -1142,16 +1136,17 @@ fn read_nurbs_curve_inner(
     if minor >= 1 {
         reader.bool()?;
     }
-    let periodic = periodic_knots(&knots, order, cv_count);
+    let periodic = periodic_knots_checked(&knots, order, cv_count);
     admit_reconstructed_knots(ctx, stored_knot_count)?;
-    let full_knots = reconstruct_knots(&knots, order, cv_count)?;
+    let full_knots = reconstruct_checked_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsCurve::from_lanes(
+    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::new(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
-        control_points,
-        weights,
+        poles,
         periodic,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1217,8 +1212,8 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let v_knots = read_knots(ctx, reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
-    let u_periodic = periodic_knots(&u_knots, u_order, u_count);
-    let v_periodic = periodic_knots(&v_knots, v_order, v_count);
+    let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
+    let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
     let stored_cv_count = crate::wire::element_count(reader, (dimension + rational) as usize * 8)?;
     let expected_cv_count = u_count
         .checked_mul(v_count)
@@ -1235,9 +1230,9 @@ pub(crate) fn read_nurbs_surface_prefix(
         scale,
     )?;
     admit_reconstructed_knots(ctx, u_knot_count)?;
-    let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
+    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
     admit_reconstructed_knots(ctx, v_knot_count)?;
-    let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
+    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
     let row_len = v_count;
     let point_rows = copy_rows(
         ctx,
@@ -1250,7 +1245,9 @@ pub(crate) fn read_nurbs_surface_prefix(
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsSurface::from_lanes(
+    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1263,7 +1260,7 @@ pub(crate) fn read_nurbs_surface_prefix(
             v_knots,
             v_periodic,
         ),
-        NurbsSurfaceLanes::new(point_rows, weight_rows),
+        poles,
         false,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1282,7 +1279,7 @@ fn read_plane_surface_with_parameterization(
         ));
     }
     let native_plane = plane(reader)?;
-    validate_plane(native_plane, reader.position())?;
+    let frame = validate_plane(native_plane, reader.position())?;
     let domain = increasing_interval(interval(reader)?.0, reader.position(), "plane U domain")?;
     let v_domain = increasing_interval(interval(reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
@@ -1294,14 +1291,11 @@ fn read_plane_surface_with_parameterization(
         (domain, v_domain)
     };
     let geometry = TypedSurface::Plane {
-        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            crate::wire::scaled_point(native_plane.origin, scale)
-                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?
-                .get(),
-            vector(native_plane.zaxis),
-            vector(native_plane.xaxis),
-        )
-        .map_err(|message| error(reader.position(), message))?,
+        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+            crate::wire::scaled_point(native_plane.origin.get(), scale)
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+            frame,
+        ),
         parameterization: PlaneParameterization {
             u_domain: domain,
             v_domain,
@@ -1352,7 +1346,7 @@ fn read_knots(
     ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     count: usize,
-) -> Result<Vec<f64>, GeometryError> {
+) -> Result<Vec<FiniteReal>, GeometryError> {
     let count_u64 = u64::try_from(count)
         .map_err(|_| GeometryError::not_implemented("NURBS knot count exceeds address space"))?;
     let bytes = count_u64
@@ -1367,7 +1361,10 @@ fn read_knots(
     for _ in 0..count {
         let knot_offset = reader.position();
         let value = reader.f64()?;
-        if !value.is_finite() || knots.last().is_some_and(|last| value < *last) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(error(knot_offset, "NURBS knots are invalid"));
+        };
+        if knots.last().is_some_and(|last| value < *last) {
             return Err(error(knot_offset, "NURBS knots are invalid"));
         }
         knots.push(value);
@@ -1400,7 +1397,7 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
     let count_u64 = u64::try_from(count)
         .map_err(|_| GeometryError::not_implemented("NURBS pole count exceeds address space"))?;
     let point_bytes = count_u64
@@ -1446,7 +1443,7 @@ fn read_poles(
             let Some(weight) = NonZeroReal::new(weight) else {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             };
-            target.push(weight.get());
+            target.push(weight);
             FiniteReal::from(weight)
         } else {
             FiniteReal::ONE
@@ -1455,10 +1452,10 @@ fn read_poles(
             cadmpeg_ir::math::multiply_divide(value, scale.real(), weight)
                 .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
         };
-        points.push(Point3::new(
-            coordinate(x)?.get(),
-            coordinate(y)?.get(),
-            coordinate(z)?.get(),
+        points.push(FinitePoint3::from_coordinates(
+            coordinate(x)?,
+            coordinate(y)?,
+            coordinate(z)?,
         ));
     }
     Ok((points, weights))
@@ -1470,25 +1467,65 @@ pub(crate) fn reconstruct_knots(
     order: usize,
     cv_count: usize,
 ) -> Result<Vec<f64>, GeometryError> {
+    let ([start, end], capacity, allocation_bytes) =
+        reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
+    let mut result = Vec::new();
+    result.try_reserve_exact(capacity).map_err(|_| {
+        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
+    })?;
+    result.push(start.get());
+    result.extend_from_slice(knots);
+    result.push(end.get());
+    Ok(result)
+}
+
+fn reconstruct_checked_knots(
+    knots: &[FiniteReal],
+    order: usize,
+    cv_count: usize,
+) -> Result<KnotVector, GeometryError> {
+    let ([start, end], capacity, allocation_bytes) =
+        reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
+    let mut result = Vec::new();
+    result.try_reserve_exact(capacity).map_err(|_| {
+        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
+    })?;
+    result.push(start);
+    result.extend_from_slice(knots);
+    result.push(end);
+    KnotVector::from_finite_lanes(result)
+        .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
+}
+
+fn reconstructed_endpoints(
+    knot_count: usize,
+    order: usize,
+    cv_count: usize,
+    knot: impl Fn(usize) -> f64,
+) -> Result<([FiniteReal; 2], usize, u64), GeometryError> {
     let m = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
         .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
-    if knots.len() != m || order < 2 || cv_count < order {
+    if knot_count != m || order < 2 || cv_count < order {
         return Err(GeometryError::unpositioned(
             "NURBS knot reconstruction input is invalid",
         ));
     }
-    let mut start = knots[0];
-    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knots[0] < knots[order - 2] {
-        start = knots[0] - (knots[cv_count - order + 1] - knots[cv_count - order]);
+    let mut start = knot(0);
+    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knot(0) < knot(order - 2) {
+        start = knot(0) - (knot(cv_count - order + 1) - knot(cv_count - order));
     }
-    let mut end = knots[m - 1];
-    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knots[cv_count - 1] < knots[m - 1]
-    {
-        end = knots[m - 1] + (knots[order + 1] - knots[order]);
+    let mut end = knot(m - 1);
+    if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knot(cv_count - 1) < knot(m - 1) {
+        end = knot(m - 1) + (knot(order + 1) - knot(order));
     }
-    if !start.is_finite() || !end.is_finite() || start > knots[0] || end < knots[m - 1] {
+    let (Some(start), Some(end)) = (FiniteReal::new(start), FiniteReal::new(end)) else {
+        return Err(GeometryError::unpositioned(
+            "NURBS reconstructed knots are invalid",
+        ));
+    };
+    if start.get() > knot(0) || end.get() < knot(m - 1) {
         return Err(GeometryError::unpositioned(
             "NURBS reconstructed knots are invalid",
         ));
@@ -1502,17 +1539,24 @@ pub(crate) fn reconstruct_knots(
         .ok_or_else(|| {
             GeometryError::not_implemented("NURBS reconstructed knot bytes exceed address space")
         })?;
-    let mut result = Vec::new();
-    result.try_reserve_exact(capacity).map_err(|_| {
-        crate::curves::allocation_failed("Rhino NURBS reconstructed knots", allocation_bytes)
-    })?;
-    result.push(start);
-    result.extend_from_slice(knots);
-    result.push(end);
-    Ok(result)
+    Ok(([start, end], capacity, allocation_bytes))
 }
 
 pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
+    periodic_knots_by(knots, order, cv_count, |value| *value, true)
+}
+
+fn periodic_knots_checked(knots: &[FiniteReal], order: usize, cv_count: usize) -> bool {
+    periodic_knots_by(knots, order, cv_count, |value| value.get(), false)
+}
+
+fn periodic_knots_by<T>(
+    knots: &[T],
+    order: usize,
+    cv_count: usize,
+    value: impl Fn(&T) -> f64,
+    require_source_finite: bool,
+) -> bool {
     // This is ON_IsKnotVectorPeriodic over the stored, zero-based knot array.
     if order < 3 || cv_count < order || (order <= 4 && cv_count < order + 2) {
         return false;
@@ -1522,11 +1566,14 @@ pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bo
     }
     let scale = knots
         .iter()
-        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-    if scale == 0.0 || !scale.is_finite() || knots.iter().any(|knot| !knot.is_finite()) {
+        .fold(0.0_f64, |scale, knot| scale.max(value(knot).abs()));
+    if scale == 0.0
+        || !scale.is_finite()
+        || require_source_finite && knots.iter().any(|knot| !value(knot).is_finite())
+    {
         return false;
     }
-    let knot = |index: usize| knots[index] / scale;
+    let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
     tolerance = tolerance.max((knot(cv_count - 1) - knot(order - 2)).abs() * f64::EPSILON.sqrt());
     let mut paired = 2 * (order - 2);
@@ -1544,7 +1591,7 @@ pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bo
 }
 
 fn validate_stored_domain(
-    knots: &[f64],
+    knots: &[FiniteReal],
     order: usize,
     cv_count: usize,
     offset: usize,
@@ -1576,15 +1623,11 @@ fn increasing_interval(
     }
 }
 
-fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
-    let x = vector(value.xaxis);
-    let y = vector(value.yaxis);
-    let z = vector(value.zaxis);
-    if ![value.origin[0], value.origin[1], value.origin[2]]
-        .into_iter()
-        .chain(value.equation)
-        .all(f64::is_finite)
-        || (x.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
+fn validate_plane(value: Plane, offset: usize) -> Result<OrthonormalFrame3, GeometryError> {
+    let x = vector(value.xaxis.get());
+    let y = vector(value.yaxis.get());
+    let z = vector(value.zaxis.get());
+    if (x.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || (y.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || (z.norm() - 1.0).abs() > EPS_SURFACE_DEGENERATE
         || x.dot(y).abs() > EPS_SURFACE_DEGENERATE
@@ -1597,7 +1640,8 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
             "plane frame is not orthonormal and right-handed",
         ));
     }
-    Ok(())
+    OrthonormalFrame3::new(z, x)
+        .ok_or_else(|| error(offset, "plane frame is not orthonormal and right-handed"))
 }
 
 #[cfg(test)]

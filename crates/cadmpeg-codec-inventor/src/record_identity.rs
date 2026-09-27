@@ -67,6 +67,7 @@ pub(crate) fn push_record<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
+    ctx.charge_entities(1, operation)?;
     ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
     ctx.charge_retained(
         segment_token.as_str().len() as u64,
@@ -104,7 +105,7 @@ impl<T> std::ops::Deref for Located<T> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct LocatedWire<T> {
     id: String,
     type_id: String,
@@ -114,12 +115,49 @@ struct LocatedWire<T> {
     value: T,
 }
 
+struct LocatedId<'a, T: RecordPayload> {
+    identity: &'a RecordIdentity,
+    payload: std::marker::PhantomData<T>,
+}
+
+impl<T: RecordPayload> std::fmt::Display for LocatedId<'_, T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "inventor:pmdc:{}#{}-{}",
+            T::KIND,
+            self.identity.segment_token,
+            self.identity.record_ordinal
+        )
+    }
+}
+
+impl<T: RecordPayload> Serialize for LocatedId<'_, T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(bound(serialize = "T: Serialize"))]
+struct LocatedWireView<'a, T: RecordPayload> {
+    id: LocatedId<'a, T>,
+    type_id: &'a str,
+    segment_token: &'a str,
+    record_ordinal: u32,
+    #[serde(flatten)]
+    value: &'a T,
+}
+
 impl<T: RecordPayload + Serialize> Serialize for Located<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        LocatedWire {
-            id: self.id(),
-            type_id: self.identity.type_id.clone(),
-            segment_token: self.identity.segment_token.as_str().to_owned(),
+        LocatedWireView {
+            id: LocatedId {
+                identity: &self.identity,
+                payload: std::marker::PhantomData,
+            },
+            type_id: &self.identity.type_id,
+            segment_token: self.identity.segment_token.as_str(),
             record_ordinal: self.identity.record_ordinal,
             value: &self.payload,
         }
@@ -144,5 +182,75 @@ impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
             ));
         }
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn located_record_id_streams_once_with_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Payload {
+            value: u32,
+        }
+
+        impl super::RecordPayload for Payload {
+            const KIND: &'static str = "test";
+        }
+
+        let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+        let record = super::Located::new(Payload { value: 7 }, "type".into(), &token, 1);
+        assert_native_limit(
+            &record,
+            serde_json::json!({
+                "id": "inventor:pmdc:test#segment-1", "type_id": "type",
+                "segment_token": "segment", "record_ordinal": 1,
+                "value": 7
+            }),
+        );
+    }
+
+    #[test]
+    fn parsed_record_refuses_entity_limit_before_collection_push() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
+        let mut records = Vec::new();
+        assert!(matches!(
+            super::push_record(
+                &limited,
+                &mut records,
+                7_u32,
+                [0; 16],
+                &token,
+                1,
+                "admit parsed record",
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "admit parsed record"
+        ));
+        assert!(records.is_empty());
+
+        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        super::push_record(
+            &service,
+            &mut records,
+            7_u32,
+            [0; 16],
+            &token,
+            1,
+            "admit parsed record",
+        )
+        .expect("service admission");
+        assert_eq!(records.len(), 1);
     }
 }

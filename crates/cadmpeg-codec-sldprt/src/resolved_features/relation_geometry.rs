@@ -512,9 +512,12 @@ pub(crate) fn project_relation_point_geometry(
             {
                 continue;
             }
-            let (Some(feature), Some([u, v])) =
-                (marker.feature_ref.as_deref(), marker.coordinates_m)
-            else {
+            let (Some(feature), Some([u, v])) = (
+                marker.feature_ref.as_deref(),
+                marker
+                    .coordinates_m
+                    .map(cadmpeg_ir::units::FiniteVector::get),
+            ) else {
                 continue;
             };
             let Some(sketch) = sketches_by_feature.get(feature) else {
@@ -988,7 +991,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 if resolved.is_some() {
                     return resolved;
                 }
-                let [u, v] = marker.coordinates_m?;
+                let [u, v] = marker.coordinates_m?.get();
                 let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
                 let candidates = transforms
                     .get(relation.feature_ref.as_str())
@@ -1029,7 +1032,8 @@ pub(crate) fn project_relation_solved_line_geometry(
             };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
-                    marker.coordinates_m.map(|[u, v]| {
+                    marker.coordinates_m.map(|coordinates| {
+                        let [u, v] = coordinates.get();
                         quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM)
                     })
                 });
@@ -1654,8 +1658,8 @@ pub(super) fn implicit_circle_marker<'a>(
                         && marker.coordinates_m.is_some()
                 })
                 .min_by_key(|marker| marker.offset())?;
-            let [cu, cv] = center.coordinates_m?;
-            let [ru, rv] = radial.coordinates_m?;
+            let [cu, cv] = center.coordinates_m?.get();
+            let [ru, rv] = radial.coordinates_m?.get();
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
             same_dimension_length(radius, expected_radius).then_some((center, radius))
         })
@@ -1692,8 +1696,8 @@ pub(super) fn implicit_circle_marker<'a>(
                 .copied()
                 .filter(|marker| marker.local_id().is_some() && marker.offset() < radial.offset())
             {
-                let [cu, cv] = center.coordinates_m?;
-                let [ru, rv] = radial.coordinates_m?;
+                let [cu, cv] = center.coordinates_m?.get();
+                let [ru, rv] = radial.coordinates_m?.get();
                 let radius = (ru - cu).hypot(rv - cv) * 1000.0;
                 if same_dimension_length(radius, expected_radius) {
                     terminal_pairs.push((center, radius));
@@ -1736,8 +1740,8 @@ pub(super) fn implicit_circle_marker<'a>(
     let [center, radial] = pair else {
         return None;
     };
-    let [cu, cv] = center.coordinates_m?;
-    let [ru, rv] = radial.coordinates_m?;
+    let [cu, cv] = center.coordinates_m?.get();
+    let [ru, rv] = radial.coordinates_m?.get();
     let radius = (ru - cu).hypot(rv - cv) * 1000.0;
     same_dimension_length(radius, expected_radius).then_some((*center, radius))
 }
@@ -1882,11 +1886,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         (false, true) => second,
         _ => return None,
     };
-    let coordinates = center.coordinates_m?;
-    coordinates
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some((marker, center))
+    center.coordinates_m?;
+    Some((marker, center))
 }
 
 /// Resolve the indexed point-pair form of a circular dimension.
@@ -1947,8 +1948,8 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
         return None;
     }
     let [center, radial] = *pairs.get(usize::from(operand.entity_index))?;
-    let [cu, cv] = center.coordinates_m?;
-    let [ru, rv] = radial.coordinates_m?;
+    let [cu, cv] = center.coordinates_m?.get();
+    let [ru, rv] = radial.coordinates_m?.get();
     let radius = (ru - cu).hypot(rv - cv) * 1000.0;
     same_dimension_length(radius, expected_radius).then_some(center)
 }
@@ -2056,8 +2057,8 @@ pub(super) fn direct_point_dimension_center<'a>(
         .into_iter()
         .filter(|[_, radial]| radial.id() == marker.id())
     {
-        let [cu, cv] = center.coordinates_m?;
-        let [ru, rv] = radial.coordinates_m?;
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
         if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, expected_radius) {
             return None;
         }
@@ -2095,8 +2096,8 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
                 return None;
             }
             if let Some([center, radial]) = candidate {
-                let [cu, cv] = center.coordinates_m?;
-                let [ru, rv] = radial.coordinates_m?;
+                let [cu, cv] = center.coordinates_m?.get();
+                let [ru, rv] = radial.coordinates_m?.get();
                 let radius = (ru - cu).hypot(rv - cv) * 1000.0;
                 return same_dimension_length(radius, expected_radius).then_some((center, radius));
             }
@@ -2115,8 +2116,8 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
             return None;
         }
         let [center, radial] = *child_pair;
-        let [cu, cv] = center.coordinates_m?;
-        let [ru, rv] = radial.coordinates_m?;
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
         let radius = (ru - cu).hypot(rv - cv) * 1000.0;
         return same_dimension_length(radius, expected_radius).then_some((center, radius));
     }
@@ -2124,8 +2125,8 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         return None;
     }
     let mut candidates = pairs.into_iter().filter_map(|[center, radial]| {
-        let [cu, cv] = center.coordinates_m?;
-        let [ru, rv] = radial.coordinates_m?;
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
         let radius = (ru - cu).hypot(rv - cv) * 1000.0;
         same_dimension_length(radius, expected_radius).then_some((center, radius))
     });
@@ -2747,10 +2748,10 @@ fn relation_parameter_matches_display_scalar(
     match family {
         FeatureInputRelationFamily::Angle => match parameter.value.as_ref() {
             Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => {
-                same_dimension_angle(value.get(), scalar.value)
+                same_dimension_angle(value.get(), scalar.value.get())
             }
             Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                same_dimension_angle(value.get(), scalar.value)
+                same_dimension_angle(value.get(), scalar.value.get())
             }
             _ => false,
         },
@@ -2762,16 +2763,17 @@ fn relation_parameter_matches_display_scalar(
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
             match parameter.value.as_ref() {
                 Some(cadmpeg_ir::features::ParameterValue::Length(value)) => {
-                    same_dimension_length(value.get(), scalar.value * 1000.0)
+                    same_dimension_length(value.get(), scalar.value.get() * 1000.0)
                 }
                 Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
-                    crate::history::parameters::eval::exact_integer_f64(*value)
-                        .is_some_and(|value| same_dimension_length(value, scalar.value * 1000.0))
+                    crate::history::parameters::eval::exact_integer_f64(*value).is_some_and(
+                        |value| same_dimension_length(value, scalar.value.get() * 1000.0),
+                    )
                 }
                 // An untyped native real is still in the source scalar's SI
                 // units until relation typing applies the family unit.
                 Some(cadmpeg_ir::features::ParameterValue::Real(value)) => {
-                    same_dimension_length(value.get(), scalar.value)
+                    same_dimension_length(value.get(), scalar.value.get())
                 }
                 _ => false,
             }
@@ -2910,11 +2912,11 @@ mod relation_geometry_tests {
             ),
             native_ref: Some("feature-native".into()),
         };
-        let marker = |id: &str, ordinal: u32, offset: u64, coordinates_m| {
+        let marker = |id: &str, ordinal: u32, offset: u64, coordinates_m: Option<[f64; 2]>| {
             let mut marker =
                 SketchInputEntity::new(id, "lane#test", ordinal, offset, SketchInputKind::Point);
             marker.feature_ref = Some("feature-native".into());
-            marker.coordinates_m = coordinates_m;
+            marker.coordinates_m = coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
             marker
         };
         let operand = |offset: u64, entity_index: u16| FeatureInputOperand {
@@ -2933,7 +2935,7 @@ mod relation_geometry_tests {
                 offset,
                 object_id: 0,
                 name: "distance".into(),
-                value,
+                value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
 
                 operands,
@@ -3105,7 +3107,7 @@ mod relation_geometry_tests {
             let mut marker =
                 SketchInputEntity::new(id, LANE, ordinal, offset, SketchInputKind::Point);
             marker.feature_ref = Some(FEATURE.into());
-            marker.coordinates_m = Some([u / 1000.0, v / 1000.0]);
+            marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u / 1000.0, v / 1000.0]);
             marker
         };
         let mut first_start = point("first-start", 2, 10, 0.0, 0.0);
@@ -3192,7 +3194,7 @@ mod relation_geometry_tests {
                 offset: 30,
                 object_id: 0,
                 name: "distance".into(),
-                value: 0.005,
+                value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
 
                 operands: relation.operands.clone(),
@@ -3490,7 +3492,7 @@ mod relation_geometry_tests {
             offset: 600,
             object_id: 0,
             name: "distance".into(),
-            value: 0.0065,
+            value: cadmpeg_ir::scalar::FiniteReal::new(0.0065).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands: Vec::new(),

@@ -16,23 +16,25 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         entity_index: 0,
         entity_ref: None,
     };
-    let marker = |id: &str, offset, marker_kind, object_index, local_id, coordinates_m| {
-        let marker_id: String = id.into();
-        let marker_parent: String = "lane".into();
-        let mut constructed_marker = SketchInputEntity::new(
-            marker_id,
-            marker_parent,
-            u32::try_from(offset).unwrap(),
-            offset,
-            marker_kind,
-        );
-        constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = None;
-        constructed_marker.coordinates_m = coordinates_m;
-        constructed_marker.links = None;
-        constructed_marker
-    };
+    let marker =
+        |id: &str, offset, marker_kind, object_index, local_id, coordinates_m: Option<[f64; 2]>| {
+            let marker_id: String = id.into();
+            let marker_parent: String = "lane".into();
+            let mut constructed_marker = SketchInputEntity::new(
+                marker_id,
+                marker_parent,
+                u32::try_from(offset).unwrap(),
+                offset,
+                marker_kind,
+            );
+            constructed_marker.feature_ref = Some("feature".into());
+            constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
+            constructed_marker.state_value = None;
+            constructed_marker.coordinates_m =
+                coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
+            constructed_marker.links = None;
+            constructed_marker
+        };
     let center = marker(
         "unrelated-center",
         10,

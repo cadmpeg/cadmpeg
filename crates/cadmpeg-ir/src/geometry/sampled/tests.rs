@@ -207,6 +207,195 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
 }
 
 #[test]
+fn scaled_deflection_constructors_preserve_output_and_refusal_order() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
+    use crate::scalar::{NonNegativeReal, PositiveReal};
+
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    assert_eq!(
+        PolygonalSurface::from_scaled_deflection(
+            vertices.clone(),
+            vec![[0, 1, 2]],
+            deflection,
+            scale
+        )
+        .unwrap(),
+        PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.5).unwrap()
+    );
+    let samples = PolylineSamples::Unparameterized {
+        points: vertices[..2].to_vec().try_into().unwrap(),
+    };
+    let checked_samples = PolylineSamples::Unparameterized {
+        points: vertices[..2]
+            .iter()
+            .copied()
+            .map(|point| FinitePoint3::new(point).expect("finite point"))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+    };
+    assert_eq!(
+        PolylineCurve::from_scaled_deflection(checked_samples, deflection, scale).unwrap(),
+        PolylineCurve::new(samples, 0.5).unwrap()
+    );
+
+    let overflow = PositiveReal::new(f64::MAX).unwrap();
+    let deflection = NonNegativeReal::new(2.0).unwrap();
+    let error = PolygonalSurface::from_scaled_deflection(
+        vec![Point3::new(f64::NAN, 0.0, 0.0)],
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("at least three vertices"));
+    let error =
+        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, overflow)
+            .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("chordal_deflection must be finite and non-negative"));
+}
+
+#[test]
+fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::PolygonalSurface;
+    use crate::scalar::{NonNegativeReal, PositiveReal};
+
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let admitted = vertices
+        .iter()
+        .copied()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect::<Vec<_>>();
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolygonalSurface::from_admitted_scaled_deflection(
+            admitted.clone(),
+            vec![[0, 1, 2]],
+            deflection,
+            scale,
+        )
+        .unwrap(),
+        PolygonalSurface::from_scaled_deflection(vertices, vec![[0, 1, 2]], deflection, scale)
+            .unwrap()
+    );
+    let overflow = PositiveReal::new(f64::MAX).unwrap();
+    let deflection = NonNegativeReal::new(2.0).unwrap();
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted.clone(),
+        vec![[0, 1, 3]],
+        deflection,
+        overflow,
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("out-of-range triangle index"));
+    assert!(PolygonalSurface::from_admitted_scaled_deflection(
+        admitted,
+        vec![[0, 1, 2]],
+        deflection,
+        overflow,
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("chordal_deflection must be finite and non-negative"));
+}
+
+#[test]
+fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{
+        GeometryLayoutError, PolylineCurve, PolylineSamples, PolylineVertex,
+    };
+    use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+
+    let raw = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: 0.0,
+                point: Point3::new(0.0, 0.0, 0.0),
+            },
+            PolylineVertex {
+                parameter: 1.0,
+                point: Point3::new(1.0, 0.0, 0.0),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let admitted = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ONE,
+                point: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolylineCurve::from_scaled_deflection(admitted.clone(), deflection, scale).unwrap(),
+        PolylineCurve::new(raw, deflection.scaled(scale).unwrap().get()).unwrap(),
+    );
+
+    let mut edited = admitted.clone();
+    let error = edited
+        .edit_admitted_points(|point| {
+            if point.x == 1.0 {
+                Err(GeometryLayoutError::EditRefused(
+                    "refused second point".to_owned(),
+                ))
+            } else {
+                Ok(FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap())
+            }
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("refused second point"));
+    assert_eq!(edited, admitted);
+
+    let duplicate = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    assert!(
+        PolylineCurve::from_scaled_deflection(duplicate, deflection, scale)
+            .unwrap_err()
+            .to_string()
+            .contains("strictly monotonic")
+    );
+}
+
+#[test]
 fn a_polyline_holds_its_admitted_samples() {
     use crate::features::FinitePoint3;
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
@@ -250,4 +439,44 @@ fn a_polyline_holds_its_admitted_samples() {
         .unwrap_err();
     assert_eq!(error.to_string(), "points must be finite");
     assert_eq!(polyline, PolylineCurve::new(samples, 0.0).unwrap());
+}
+
+#[test]
+fn checked_polyline_samples_keep_parameter_order_and_deflection_rules() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use crate::scalar::FiniteReal;
+
+    let point = |x| FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("finite point");
+    let parameter = |value| FiniteReal::new(value).expect("finite parameter");
+    let samples = |last| PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: parameter(1.0),
+                point: point(0.0),
+            },
+            PolylineVertex {
+                parameter: parameter(last),
+                point: point(1.0),
+            },
+        ]
+        .try_into()
+        .expect("nonempty samples"),
+    };
+    assert_eq!(
+        PolylineCurve::from_checked_samples(samples(2.0), 0.25).expect("ordered samples"),
+        PolylineCurve::new(samples(2.0).to_raw(), 0.25).expect("same raw samples")
+    );
+    assert_eq!(
+        PolylineCurve::from_checked_samples(samples(1.0), 0.25)
+            .expect_err("equal parameters are refused")
+            .to_string(),
+        "parameters must be finite and strictly monotonic"
+    );
+    assert_eq!(
+        PolylineCurve::from_checked_samples(samples(2.0), -0.25)
+            .expect_err("negative deviation is refused")
+            .to_string(),
+        "chordal_deflection must be finite and non-negative"
+    );
 }
