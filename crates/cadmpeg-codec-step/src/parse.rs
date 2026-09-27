@@ -499,8 +499,11 @@ fn parse_inner(
     input: &[u8],
     budget: Option<&DecodeContext<'_>>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let mut lexer = Lexer::new(input);
-    lexer.set_context(budget);
+    let lexer = if let Some(ctx) = budget {
+        Lexer::with_context(input, ctx)
+    } else {
+        Lexer::new(input)
+    };
     let mut parser = Parser {
         current: None,
         lexer,
