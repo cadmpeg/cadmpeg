@@ -2120,17 +2120,18 @@ fn parse_constraints(
             }
             resolve_operand(entity, position, entities)
         };
-        let mut resolved = operands
-            .iter()
-            .filter_map(|(entity, position)| resolve(*entity, *position))
-            .collect::<Vec<_>>();
+        let mut resolved = collection_vec(ctx, operands.len(), "fcstd resolved constraint operands")?;
+        resolved.extend(operands.iter().filter_map(|(entity, position)| resolve(*entity, *position)));
         let all_resolved = resolved.len() == operands.len();
         if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
                 .iter()
                 .find(|entity| entity.id().as_str().ends_with(":reference-root-point"))
             {
-                resolved.insert(0, SketchLocus::Entity(root.id().clone()));
+                reserve_vec_items(ctx, &mut resolved, 1, "fcstd resolved constraint operands")?;
+                resolved.insert(0, SketchLocus::Entity(SketchEntityId::mint(retained_string(
+                    ctx, root.id().as_str(), "fcstd constraint root entity",
+                )?).map_err(CodecError::malformed)?));
             }
         }
         let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
@@ -2260,26 +2261,21 @@ fn parse_constraints(
             || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
         let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
-        let native_operands = operands
-            .iter()
-            .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none())
-            .map(|(entity, position)| {
-                cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "{} constraint {} has an empty source operand kind",
-                            property.id,
-                            index + 1
-                        ))
-                    })
-                    .map(|native_kind| SketchNativeOperand {
-                        native_kind,
-                        field: None,
-                        object_index: u32::try_from(*entity).ok(),
-                        native_ref: None,
-                    })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+        let mut native_operands = Vec::new();
+        for (entity, position) in operands.iter()
+            .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none()) {
+            let native_kind = cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
+                .ok_or_else(|| CodecError::malformed(format_args!(
+                    "{} constraint {} has an empty source operand kind", property.id, index + 1
+                )))?;
+            reserve_vec_items(ctx, &mut native_operands, 1, "fcstd native constraint operands")?;
+            native_operands.push(SketchNativeOperand {
+                native_kind,
+                field: None,
+                object_index: u32::try_from(*entity).ok(),
+                native_ref: None,
+            });
+        }
         let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()
@@ -2299,15 +2295,17 @@ fn parse_constraints(
                 parameter,
                 operands: native_operands,
             });
+        reserve_vec_items(ctx, &mut constraints, 1, "fcstd sketch constraints")?;
         constraints.push(SketchConstraint {
             id: SketchConstraintId::compose(
                 &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-constraint"),
                 object_key(object)?.colon(index + 1),
             ),
-            sketch: sketch.clone(),
+            sketch: SketchId::mint(retained_string(ctx, sketch.as_str(), "fcstd constraint sketch identity")?)
+                .map_err(CodecError::malformed)?,
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            name: nonempty_attr(node, "Name"),
+            name: nonempty_attr(ctx, node, "Name")?,
             driving: bool_attr(node, "IsDriving"),
             active: bool_attr(node, "IsActive"),
             virtual_space: bool_attr(node, "IsInVirtualSpace"),
@@ -2317,8 +2315,8 @@ fn parse_constraints(
                 .and_then(|value| value.parse().ok()),
             label_distance: label_attr(node, "LabelDistance"),
             label_position: label_attr(node, "LabelPosition"),
-            metadata: nonempty_attr(node, "MetaData"),
-            native_ref: Some(property.id.clone()),
+            metadata: nonempty_attr(ctx, node, "MetaData")?,
+            native_ref: Some(retained_string(ctx, &property.id, "fcstd constraint native reference")?),
         });
     }
     Ok((constraints, parameters))
@@ -2383,10 +2381,10 @@ fn label_attr(
         .and_then(|value| cadmpeg_ir::sketches::SketchLabelValue::try_from(value).ok())
 }
 
-fn nonempty_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
-    node.attribute(name)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
+fn nonempty_attr(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>, name: &str) -> Result<Option<String>, CodecError> {
+    node.attribute(name).filter(|value| !value.is_empty())
+        .map(|value| retained_string(ctx, value, "fcstd constraint attribute"))
+        .transpose()
 }
 
 fn expression_binding(
