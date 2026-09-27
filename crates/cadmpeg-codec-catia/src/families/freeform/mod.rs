@@ -2284,15 +2284,7 @@ fn append_resolved_consolidated_surface_curves(
                     }),
             )
         });
-        let attachment = attachment.and_then(|(identity, reversed)| -> Option<
-            Result<
-                (
-                    (usize, usize, CurveId, [SurfaceId; 2]),
-                    Option<ConsolidatedStandardFaceBinding>,
-                ),
-                cadmpeg_core::decode::ResourceLimit,
-            >,
-        > {
+        let attachment = attachment.and_then(|(identity, reversed)| {
             if reversed {
                 let reversed_pcurves = sides
                     .iter()

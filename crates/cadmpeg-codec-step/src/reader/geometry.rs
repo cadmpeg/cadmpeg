@@ -119,32 +119,45 @@ pub(super) fn infer_edge_parameter_ranges(
     }
 
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
-    let inferred = candidates
-        .into_iter()
-        .try_fold(Vec::new(), |mut inferred, (edge_index, curve, start, end)| {
-            let Some(geometry) = model_index.curves(curve.as_str()).map(|curve| &curve.geometry) else {
+    let inferred = candidates.into_iter().try_fold(
+        Vec::new(),
+        |mut inferred, (edge_index, curve, start, end)| {
+            let Some(geometry) = model_index
+                .curves(curve.as_str())
+                .map(|curve| &curve.geometry)
+            else {
                 return Ok(inferred);
             };
-            let Some(solved) = geometry.solved() else { return Ok(inferred); };
+            let Some(solved) = geometry.solved() else {
+                return Ok(inferred);
+            };
             let start_seed = curve_endpoint_seed(solved, false, 0.0);
-            let Some(start_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &model_index,
-                &curve,
-                start,
-                start_seed,
-            )? else { return Ok(inferred); };
+            let Some(start_parameter) =
+                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                    &model_index,
+                    &curve,
+                    start,
+                    start_seed,
+                )?
+            else {
+                return Ok(inferred);
+            };
             let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
             let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 end,
                 end_seed,
-            )? else { return Ok(inferred); };
+            )?
+            else {
+                return Ok(inferred);
+            };
             if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
                 inferred.push((edge_index, range));
             }
             Ok::<_, CodecError>(inferred)
-        })?;
+        },
+    )?;
     drop(model_index);
 
     for (index, range) in inferred {
@@ -339,7 +352,10 @@ fn source_curve_parameter_scale(
     scale
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> Result<StageOutcome<GeometryData>, CodecError> {
+pub(super) fn decode(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+) -> Result<StageOutcome<GeometryData>, CodecError> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
@@ -3637,7 +3653,10 @@ fn string_value(value: &Value) -> Option<String> {
     crate::strings::decode(bytes).ok()
 }
 
-fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+fn trim_parameter(
+    value: &Value,
+    context: &mut TrimParameterContext<'_>,
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let (parameter, cartesian) = match value {
         Value::List(values) => (
             values.iter().find(|value| is_parameter_trim_value(value)),
@@ -3715,12 +3734,19 @@ fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Op
     }
 }
 
-fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+fn trim_cartesian_parameter(
+    value: &Value,
+    context: &TrimParameterContext<'_>,
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let Value::Reference(id) = value else {
         return Ok(None);
     };
-    let Some(point) = context.points.get(id) else { return Ok(None); };
-    let Some(geometry) = context.geometry.solved() else { return Ok(None); };
+    let Some(point) = context.points.get(id) else {
+        return Ok(None);
+    };
+    let Some(geometry) = context.geometry.solved() else {
+        return Ok(None);
+    };
     curve_parameter_at_point(geometry, point.get(), context.tolerance)
 }
 
@@ -3914,13 +3940,21 @@ fn curve_parameter_at_point(
             ))
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            let Some(domain) = nurbs_curve_parameter_domain(curve).map(|domain| domain.endpoints()) else { return Ok(None); };
+            let Some(domain) = nurbs_curve_parameter_domain(curve)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+            else {
+                return Ok(None);
+            };
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
                 .map(|parameter| parameter.map(FiniteReal::get))
         }
         SolvedCurveGeometry::Transformed(placed) => {
-            let Some(inverse) = placed.transform().try_inverse_affine().ok() else { return Ok(None); };
-            let Some(mapped) = inverse.apply_point(point) else { return Ok(None); };
+            let Some(inverse) = placed.transform().try_inverse_affine().ok() else {
+                return Ok(None);
+            };
+            let Some(mapped) = inverse.apply_point(point) else {
+                return Ok(None);
+            };
             curve_parameter_at_point(placed.basis(), mapped.get(), tolerance)
         }
         _ => Ok(None),

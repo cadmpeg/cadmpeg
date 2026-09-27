@@ -1224,7 +1224,6 @@ fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeG
 /// A carrier binds only when record identity or chart geometry determines one
 /// solution. Ambiguous candidates, including matches from different analytic
 /// families, remain unresolved.
-#[must_use]
 #[cfg(test)]
 fn resolve_consolidated_edge_blocks(
     data: &[u8],
@@ -1264,8 +1263,8 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         .into_iter()
         .map(|block| {
             let mut supports = [None, None];
-            for side in 0..2 {
-                supports[side] = (|| -> Result<
+            for (side, support) in supports.iter_mut().enumerate() {
+                *support = (|| -> Result<
                     Option<ConsolidatedSupportBinding>,
                     cadmpeg_core::decode::ResourceLimit,
                 > {
@@ -1568,7 +1567,10 @@ fn support_points(
                 .collect()
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let Some(surface) = carriers.nurbs_surfaces.iter().find(|surface| surface.pos == *pos)
+            let Some(surface) = carriers
+                .nurbs_surfaces
+                .iter()
+                .find(|surface| surface.pos == *pos)
             else {
                 return Ok(None);
             };
@@ -1802,7 +1804,8 @@ mod tests {
             &surface,
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
-        ).expect("evaluator allocation succeeds")
+        )
+        .expect("evaluator allocation succeeds")
         .expect("constant normal offset");
         assert_eq!(offset.get(), tiny);
 
@@ -1814,11 +1817,13 @@ mod tests {
                     Point3::new(0.25, 0.25, tiny),
                     Point3::new(0.75, 0.75, 2.0 * tiny),
                 ],
-            ).expect("evaluator allocation succeeds"),
+            )
+            .expect("evaluator allocation succeeds"),
             None
         );
         assert_eq!(
-            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],).expect("evaluator allocation succeeds"),
+            nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],)
+                .expect("evaluator allocation succeeds"),
             None
         );
         for invalid in [f64::NAN, f64::INFINITY] {
@@ -1830,7 +1835,8 @@ mod tests {
                         Point3::new(0.25, 0.25, tiny),
                         Point3::new(0.75, 0.75, invalid),
                     ],
-                ).expect("evaluator allocation succeeds"),
+                )
+                .expect("evaluator allocation succeeds"),
                 None
             );
         }
@@ -1951,11 +1957,13 @@ mod tests {
         };
         let binding = || Some(super::ConsolidatedSupportBinding::Plane { pos: 7 });
         assert_eq!(
-            super::resolved_support_loci(&block, &[None, binding()], &carriers).expect("evaluator allocation succeeds"),
+            super::resolved_support_loci(&block, &[None, binding()], &carriers)
+                .expect("evaluator allocation succeeds"),
             Some(vec![Point3::new(0.0, 0.0, 0.0); 2])
         );
         assert_eq!(
-            super::resolved_support_loci(&block, &[binding(), binding()], &carriers).expect("evaluator allocation succeeds"),
+            super::resolved_support_loci(&block, &[binding(), binding()], &carriers)
+                .expect("evaluator allocation succeeds"),
             None
         );
     }
