@@ -2616,8 +2616,13 @@ pub(super) fn law_expression(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur:
 /// law slots so an unknown operator in another law grammar remains a refusal.
 fn sweep_law_expression(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> Option<Result<EmbeddedLawExpression, cadmpeg_core::CodecError>> {
     if matches!(cur.peek(), Some(Token::Str(_))) {
+        let source = cur.take_str()?;
+        source.chars().any(|character| !character.is_whitespace()).then_some(())?;
+        let copied = propagate_resource!(crate::decode_alloc::copy_string(
+            ctx, source, "ASM sweep law text",
+        ));
         return Some(Ok(EmbeddedLawExpression::Text(
-            cadmpeg_core::text::NonBlankString::new(cur.take_str()?)?,
+            cadmpeg_core::text::NonBlankString::new(copied)?,
         )));
     }
     law_expression(ctx, cur, 0)
@@ -4732,7 +4737,7 @@ fn procedural_resolving_refs(
 
 #[cfg(test)]
 mod reference_allocation_tests {
-    use super::{bridge_token, copy_revision_discontinuities, g2_side, law_expression, law_formula, procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
+    use super::{bridge_token, copy_revision_discontinuities, g2_side, law_expression, law_formula, procedural_surface_resolving_refs, resolve_t_spline_subtransform, sweep_law_expression, t_spline_subtransform};
     use crate::nurbs::toks::{Cur, SubtypeTable};
     use crate::sab::{Record, Token};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -4845,6 +4850,18 @@ mod reference_allocation_tests {
         let tokens = [Token::Str("named".into())];
         let error = law_formula(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
         assert_refusal(error, ResourceDimension::RetainedBytes, "ASM law formula name");
+    }
+
+    #[test]
+    fn sweep_law_text_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("X".into())];
+        let error = sweep_law_expression(&ctx, &mut Cur::at(&tokens, 0))
+            .unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM sweep law text");
     }
 
     #[test]
