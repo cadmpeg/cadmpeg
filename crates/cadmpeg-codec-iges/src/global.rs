@@ -2,7 +2,9 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::{format_retained, lossy_retained, reserve_vec_growth};
+use crate::decode_resource::{
+    format_retained, lossy_retained, push_formatted_note, reserve_vec_growth,
+};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::{
@@ -1729,36 +1731,89 @@ impl ResolvedGlobal {
     /// effective Global table was not verified for the source declaration. In
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
-    pub(crate) fn summary_notes(&self) -> Vec<String> {
-        let mut notes = vec![
-            format!(
+    pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
+        let mut notes = Vec::new();
+        push_formatted_note(
+            ctx,
+            &mut notes,
+            format_args!(
                 "parameter_delimiter={}",
                 char::from(self.parameter_delimiter)
             ),
-            format!("record_delimiter={}", char::from(self.record_delimiter)),
-        ];
+            "iges global summary notes",
+            "iges global summary text",
+        )?;
+        push_formatted_note(
+            ctx,
+            &mut notes,
+            format_args!("record_delimiter={}", char::from(self.record_delimiter)),
+            "iges global summary notes",
+            "iges global summary text",
+        )?;
         if let Some(product) = self.sender_product() {
-            notes.push(format!("sender_product={product}"));
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!("sender_product={product}"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
         if self.global_table() == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
-                notes.push(format!("receiver_product={product}"));
+                push_formatted_note(
+                    ctx,
+                    &mut notes,
+                    format_args!("receiver_product={product}"),
+                    "iges global summary notes",
+                    "iges global summary text",
+                )?;
             }
         }
         if let Some(units) = self.units_name() {
-            notes.push(format!("units={units}"));
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!("units={units}"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
-            notes.push(format!("iges_version={}", self.version_name()));
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!("iges_version={}", self.version_name()),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         } else {
-            notes.push("iges_version=unverified".into());
-            notes.push(format!(
-                "iges_declared_version_flag={}",
-                self.declaration.declared_flag()
-            ));
-            notes.push(format!("iges_effective_version={}", self.version_name()));
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!("iges_version=unverified"),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!(
+                    "iges_declared_version_flag={}",
+                    self.declaration.declared_flag()
+                ),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
+            push_formatted_note(
+                ctx,
+                &mut notes,
+                format_args!("iges_effective_version={}", self.version_name()),
+                "iges global summary notes",
+                "iges global summary text",
+            )?;
         }
-        notes
+        Ok(notes)
     }
 }
 

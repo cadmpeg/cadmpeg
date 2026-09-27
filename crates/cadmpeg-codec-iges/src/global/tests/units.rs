@@ -71,7 +71,7 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         let (parsed, losses) = resolve_global_fields(&fields);
         assert!(parsed.length_context().is_none(), "{name}");
         assert_eq!(
-            parsed.units_name().as_deref(),
+            parsed.units_name(),
             Some(name.as_str()),
             "{name}"
         );
@@ -98,7 +98,7 @@ fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
         fields[13] = "3".into();
         fields[14] = units_name.into();
         let (parsed, losses) = resolve_global_fields(&fields);
-        assert_eq!(parsed.units_name().as_deref(), Some(&units_name[2..]));
+        assert_eq!(parsed.units_name(), Some(&units_name[2..]));
         let actual = parsed.length_context().unwrap().length_factor_mm();
         let tolerance = f64::EPSILON * 64.0 * expected.max(1.0);
         assert!(

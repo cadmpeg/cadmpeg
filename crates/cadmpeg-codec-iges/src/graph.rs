@@ -6,7 +6,8 @@ use expectation::{ExpectationLabel, ReferenceExpectation};
 
 use crate::card::{CardScan, Section};
 use crate::decode_resource::{
-    insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth,
+    insert_optional_btree_map, insert_optional_btree_set, push_formatted_note, reserve_vec,
+    reserve_vec_growth,
 };
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
@@ -689,15 +690,44 @@ pub(crate) fn resolved_structure_sequence(
         .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Structure))
 }
 
-pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {
-    let mut counts = BTreeMap::<&str, usize>::new();
+pub(crate) fn summary_notes(
+    graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<String>, CodecError> {
+    let mut counts = [0_usize; 6];
     for edge in graph.values().flatten() {
-        *counts.entry(edge.resolution.key()).or_default() += 1;
+        let index = match edge.resolution {
+            Resolution::Cyclic(_) => 0,
+            Resolution::Dangling => 1,
+            Resolution::EvenSequence(_) => 2,
+            Resolution::OutOfRange => 3,
+            Resolution::Resolved(_) => 4,
+            Resolution::WrongType(_) => 5,
+        };
+        counts[index] += 1;
     }
-    counts
-        .into_iter()
-        .map(|(resolution, count)| format!("references.{resolution}={count}"))
-        .collect()
+    let mut notes = Vec::new();
+    for (resolution, count) in [
+        "cyclic",
+        "dangling",
+        "even_sequence",
+        "out_of_range",
+        "resolved",
+        "wrong_type",
+    ]
+    .into_iter()
+    .zip(counts)
+    .filter(|(_, count)| *count > 0)
+    {
+        push_formatted_note(
+            ctx,
+            &mut notes,
+            format_args!("references.{resolution}={count}"),
+            "iges reference summary notes",
+            "iges reference summary text",
+        )?;
+    }
+    Ok(notes)
 }
 
 pub(crate) fn losses(

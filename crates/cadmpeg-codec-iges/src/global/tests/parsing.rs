@@ -316,7 +316,7 @@ fn global_hollerith_header_split_across_cards_is_a_field_defect() {
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), None);
-    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+    assert_eq!(parsed.native_file_name(), Some("part.igs"));
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(
         losses[0].code,
@@ -338,7 +338,7 @@ fn global_numeric_field_and_delimiter_must_share_a_card() {
     )
     .unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("p"));
+    assert_eq!(parsed.sender_product(), Some("p"));
     assert_eq!(
         losses
             .iter()
@@ -359,8 +359,8 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
     let (parsed, _) =
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("product"));
-    assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
+    assert_eq!(parsed.sender_product(), Some("product"));
+    assert_eq!(parsed.native_file_name(), Some("part.igs"));
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
     let (parsed, _) =
         crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
+    assert_eq!(parsed.sender_product(), Some("ab "));
 }
 
 #[test]
@@ -511,7 +511,7 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
 
         assert_eq!(parsed.parameter_delimiter, b',');
         assert_eq!(parsed.record_delimiter, b';');
-        assert_eq!(parsed.sender_product().as_deref(), Some("product"));
+        assert_eq!(parsed.sender_product(), Some("product"));
         assert!(losses.is_empty(), "{losses:#?}");
     }
 }

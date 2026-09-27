@@ -377,8 +377,8 @@ fn the_5_0_global_defaults_resolve_receiver_units_and_coordinate_metadata() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.receiver_product().as_deref(), Some("product"));
-    assert_eq!(parsed.units_name().as_deref(), Some("MM"));
+    assert_eq!(parsed.receiver_product(), Some("product"));
+    assert_eq!(parsed.units_name(), Some("MM"));
     assert!(losses.is_empty(), "{losses:#?}");
 }
 

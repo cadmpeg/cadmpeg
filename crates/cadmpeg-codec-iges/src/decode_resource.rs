@@ -32,6 +32,18 @@ pub(crate) fn format_retained(
     Ok(text)
 }
 
+pub(crate) fn push_formatted_note(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    args: fmt::Arguments<'_>,
+    slots_operation: &'static str,
+    text_operation: &'static str,
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, notes, 1, slots_operation)?;
+    notes.push(format_retained(ctx, args, text_operation)?);
+    Ok(())
+}
+
 pub(crate) fn lossy_retained(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],

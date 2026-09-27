@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::decode_resource::{format_retained, insert_optional_btree_map};
+use crate::decode_resource::{format_retained, insert_optional_btree_map, reserve_vec_growth};
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
@@ -98,6 +98,16 @@ fn insert_source_attribute(
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
     insert_optional_btree_map(Some(ctx), attributes, key, value, "iges source attributes")?;
+    Ok(())
+}
+
+fn append_summary_notes(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    additional: Vec<String>,
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, notes, additional.len(), "iges combined summary notes")?;
+    notes.extend(additional);
     Ok(())
 }
 
@@ -276,16 +286,22 @@ pub(crate) fn inspect(
     let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
     let mut summary = card::summarize(&parse.scan, primary);
-    summary.notes.extend(parse.global.summary_notes());
-    summary
-        .notes
-        .extend(directory::summary_notes(&parse.directory));
-    summary
-        .notes
-        .extend(parameter::summary_notes(&parse.parameters));
-    summary
-        .notes
-        .extend(graph::summary_notes(&parse.references));
+    append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
+    append_summary_notes(
+        ctx,
+        &mut summary.notes,
+        directory::summary_notes(&parse.directory, ctx)?,
+    )?;
+    append_summary_notes(
+        ctx,
+        &mut summary.notes,
+        parameter::summary_notes(&parse.parameters, ctx)?,
+    )?;
+    append_summary_notes(
+        ctx,
+        &mut summary.notes,
+        graph::summary_notes(&parse.references, ctx)?,
+    )?;
     summary.losses = losses;
     if representation != Representation::FixedAscii {
         summary.container_kind = representation.container_kind();
@@ -625,9 +641,17 @@ fn decode_with_occurrence_limits(
                 "IGES transfer ledger is inconsistent: {message}"
             ))
         })?;
-    let mut notes = directory::summary_notes(&parse.directory);
-    notes.extend(parameter::summary_notes(&parse.parameters));
-    notes.extend(graph::summary_notes(&parse.references));
+    let mut notes = directory::summary_notes(&parse.directory, ctx)?;
+    append_summary_notes(
+        ctx,
+        &mut notes,
+        parameter::summary_notes(&parse.parameters, ctx)?,
+    )?;
+    append_summary_notes(
+        ctx,
+        &mut notes,
+        graph::summary_notes(&parse.references, ctx)?,
+    )?;
     let document_digest =
         document_local_sha256_with_charge(&ir, "iges", crate::SOURCE_IMAGE_ID, |bytes| {
             ctx.charge_work(bytes, "iges_document_digest")

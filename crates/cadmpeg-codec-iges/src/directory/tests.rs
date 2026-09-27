@@ -16,6 +16,38 @@ use crate::IgesCodec;
 use super::{status, SourceStatus};
 
 #[test]
+fn directory_summary_refuses_group_and_note_limits_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let entries = [crate::test_support::directory_target(1, 116)];
+    for (cap, operation) in [
+        (0, "iges directory summary groups"),
+        (1, "iges directory summary notes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::summary_notes(&entries, &ctx);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&entries, &ctx).unwrap(),
+        ["entities=1", "entity.116.form.0=1"]
+    );
+}
+
+#[test]
 fn directory_entity_refuses_entity_limit_before_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -35,7 +67,8 @@ fn directory_entity_refuses_entity_limit_before_storage() {
     ));
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     assert!(super::parse(&scan, GlobalTable::V5Later, Some(&ctx)).is_ok());
 }
 
@@ -100,7 +133,8 @@ fn blank_directory_status_defaults_to_zero_fields() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -203,7 +237,8 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
         native.arenas()["directions"][0].fields()["physically_dependent"],
         true
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

@@ -2,7 +2,7 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use crate::decode_resource::{reserve_optional_vec_growth, reserve_vec};
+use crate::decode_resource::{push_formatted_note, reserve_optional_vec_growth, reserve_vec};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
@@ -449,7 +449,10 @@ fn quarantine(
         .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
         .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
     if let Some(ctx) = ctx {
-        ctx.charge_retained(u64_from_index(bytes_len), "iges quarantined directory bytes")?;
+        ctx.charge_retained(
+            u64_from_index(bytes_len),
+            "iges quarantined directory bytes",
+        )?;
     }
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(bytes_len).map_err(|_| {
@@ -483,7 +486,11 @@ pub(crate) fn parse(
     };
     if ctx.is_none() {
         lines.try_reserve_exact(line_count).map_err(|_| {
-            refuse_local_limit("iges directory lines", u64_from_index(line_count), u64_from_index(line_count))
+            refuse_local_limit(
+                "iges directory lines",
+                u64_from_index(line_count),
+                u64_from_index(line_count),
+            )
         })?;
     }
     lines.extend(scan.section(Section::Directory));
@@ -500,7 +507,12 @@ pub(crate) fn parse(
                 entries.push(entry);
             }
             Err(defect) => {
-                reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined directory entries")?;
+                reserve_optional_vec_growth(
+                    ctx,
+                    &mut quarantined,
+                    1,
+                    "iges quarantined directory entries",
+                )?;
                 quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
             }
         }
@@ -509,22 +521,51 @@ pub(crate) fn parse(
         if let Some(ctx) = ctx {
             ctx.charge_entities(1, "iges_directory_entries")?;
         }
-        reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined directory entries")?;
-        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard, ctx)?);
+        reserve_optional_vec_growth(
+            ctx,
+            &mut quarantined,
+            1,
+            "iges quarantined directory entries",
+        )?;
+        quarantined.push(quarantine(
+            *unpaired,
+            &[],
+            DirectoryDefect::UnpairedCard,
+            ctx,
+        )?);
     }
     Ok((entries, quarantined))
 }
 
-pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
+pub(crate) fn summary_notes(
+    entries: &[DirectoryEntry],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<String>, CodecError> {
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     for entry in entries {
+        if !census.contains_key(&(entry.entity_type, entry.form)) {
+            ctx.charge_collection_items(1, "iges directory summary groups")?;
+        }
         *census.entry((entry.entity_type, entry.form)).or_default() += 1;
     }
-    std::iter::once(format!("entities={}", entries.len()))
-        .chain(census.into_iter().map(|((entity_type, form), count)| {
-            format!("entity.{entity_type}.form.{form}={count}")
-        }))
-        .collect()
+    let mut notes = Vec::new();
+    push_formatted_note(
+        ctx,
+        &mut notes,
+        format_args!("entities={}", entries.len()),
+        "iges directory summary notes",
+        "iges directory summary text",
+    )?;
+    for ((entity_type, form), count) in census {
+        push_formatted_note(
+            ctx,
+            &mut notes,
+            format_args!("entity.{entity_type}.form.{form}={count}"),
+            "iges directory summary notes",
+            "iges directory summary text",
+        )?;
+    }
+    Ok(notes)
 }
 
 #[cfg(test)]
