@@ -168,6 +168,40 @@ impl Serialize for ReferenceEdge {
 }
 
 impl ReferenceEdge {
+    pub(crate) fn copy_for_native(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let expected = match &self.expected {
+            ReferenceExpectation::Named(label) => ReferenceExpectation::Named(*label),
+            ReferenceExpectation::Type { entity_type, forms } => {
+                let mut copied_forms =
+                    reserve_vec(ctx, forms.len(), "iges native reference forms")?;
+                copied_forms.extend_from_slice(forms);
+                ReferenceExpectation::Type {
+                    entity_type: *entity_type,
+                    forms: copied_forms,
+                }
+            }
+            ReferenceExpectation::AnyOf {
+                first,
+                second,
+                rest,
+            } => {
+                let mut copied_rest = reserve_vec(ctx, rest.len(), "iges native reference types")?;
+                copied_rest.extend_from_slice(rest);
+                ReferenceExpectation::AnyOf {
+                    first: *first,
+                    second: *second,
+                    rest: copied_rest,
+                }
+            }
+        };
+        Ok(Self {
+            origin: self.origin,
+            raw_pointer: self.raw_pointer,
+            resolution: self.resolution,
+            expected,
+        })
+    }
+
     pub(crate) fn target_sequence(&self) -> Option<u32> {
         self.resolution.target_sequence()
     }

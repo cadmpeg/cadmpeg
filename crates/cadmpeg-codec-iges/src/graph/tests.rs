@@ -677,3 +677,49 @@ fn reference_target_id_streams_once_with_native_retained_limit() {
         }),
     );
 }
+
+#[test]
+fn native_reference_copy_refuses_nested_forms_and_types() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for (expected, operation) in [
+        (
+            ReferenceExpectation::Type {
+                entity_type: 406,
+                forms: vec![1],
+            },
+            "iges native reference forms",
+        ),
+        (
+            ReferenceExpectation::AnyOf {
+                first: 212,
+                second: 312,
+                rest: vec![402],
+            },
+            "iges native reference types",
+        ),
+    ] {
+        let edge = ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Structure),
+            raw_pointer: 3,
+            resolution: Resolution::Resolved(3),
+            expected,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            edge.copy_for_native(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(edge.copy_for_native(&ctx).unwrap(), edge);
+    }
+}
