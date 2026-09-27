@@ -83,19 +83,18 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
 type DefinitionTable = HashMap<u16, Option<String>>;
 
 fn charge_items(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, operation)?;
-    }
+            ctx.charge_collection_items(count as u64, operation)?;
+
     Ok(())
 }
 
 /// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
 fn definition_candidates(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<HashMap<u16, Option<Vec<u8>>>, cadmpeg_core::CodecError> {
     let mut found = HashMap::<u16, Option<Vec<u8>>>::new();
@@ -141,9 +140,8 @@ fn definition_candidates(
         let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(text.len() as u64, "copy Parasolid attribute family")?;
-        }
+                    ctx.charge_retained(text.len() as u64, "copy Parasolid attribute family")?;
+
         let family = text.to_vec();
         match found.entry(definition) {
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -166,7 +164,7 @@ fn definition_candidates(
 
 /// Resolve the stream-local attribute-definition table.
 pub(super) fn definition_table(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<DefinitionTable, cadmpeg_core::CodecError> {
     let candidates = definition_candidates(ctx, buf)?;
@@ -189,7 +187,7 @@ pub(super) fn definition_table(
 /// Map definition-record node ids to the two supported native attribute
 /// families whose payload consumers are implemented here.
 fn definitions(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
     let definitions = definition_table(ctx, buf)?;
@@ -214,7 +212,7 @@ fn definitions(
 
 /// Read integer payload lists keyed by their node id.
 fn integer_lists(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<HashMap<u16, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
@@ -321,7 +319,7 @@ fn atom_payload<'a>(
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
 pub(super) fn scan(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<Vec<RawFaceAtom>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
@@ -396,7 +394,7 @@ pub(super) fn scan(
 
 /// Decode every body-level last-modifier binding carried by one stream body.
 pub(super) fn scan_body_modifiers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
 ) -> Result<Vec<BodyModifier>, cadmpeg_core::CodecError> {
     let definitions = definitions(ctx, buf)?;
@@ -534,7 +532,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = integer_lists(Some(&ctx), &bytes).expect_err("five values exceed four items");
+        let error = integer_lists(&ctx, &bytes).expect_err("five values exceed four items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -544,7 +542,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            integer_lists(Some(&ctx), &bytes)
+            integer_lists(&ctx, &bytes)
                 .expect("service scan")
                 .get(&300)
                 .map(Vec::len),
@@ -561,7 +559,7 @@ mod tests {
         policy.limits.max_retained_bytes = ATOM_ID.len() as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            definition_table(Some(&ctx), &bytes).expect_err("family copy exceeds retained limit");
+            definition_table(&ctx, &bytes).expect_err("family copy exceeds retained limit");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
@@ -578,7 +576,7 @@ mod tests {
                 policy.limits.max_collection_items = $limit;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let error = $route(Some(&ctx), &bytes)
+                let error = $route(&ctx, &bytes)
                     .expect_err("attribute collection exceeds the limit");
                 assert!(matches!(error,
                     cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -631,7 +629,7 @@ mod tests {
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         assert_eq!(
-            definitions(Some(&ctx), &bytes)
+            definitions(&ctx, &bytes)
                 .expect("definition fits three charged items")
                 .get(&16),
             Some(&ATOM_ID)
@@ -689,8 +687,12 @@ mod tests {
 
     #[test]
     fn atom_source_sentinels_have_no_identity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         for source in [0, u32::MAX] {
-            let atoms = scan(None, &stream(&[74, source, 1_390_698_820, 0, 3], 333))
+            let atoms = scan(&ctx, &stream(&[74, source, 1_390_698_820, 0, 3], 333))
                 .expect("attribute scan");
             assert_eq!(atoms.len(), 1);
             assert_eq!(atoms[0].face_attr, 333);
@@ -700,8 +702,12 @@ mod tests {
 
     #[test]
     fn instance_binds_face_to_producing_feature() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let atoms =
-            scan(None, &stream(&[74, 75, 1_390_698_820, 0, 3], 333)).expect("attribute scan");
+            scan(&ctx, &stream(&[74, 75, 1_390_698_820, 0, 3], 333)).expect("attribute scan");
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 333);
         assert_eq!(
@@ -718,7 +724,11 @@ mod tests {
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
-        let atoms = scan(None, &stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333))
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+        let atoms = scan(&ctx, &stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333))
             .expect("attribute scan");
         assert_eq!(atoms.len(), 1);
         assert_eq!(
@@ -729,50 +739,70 @@ mod tests {
 
     #[test]
     fn payload_with_a_nonzero_guard_position_is_not_a_face_identity() {
-        assert!(scan(None, &stream(&[74, 75, 1_390_698_820, 9, 3], 333))
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+        assert!(scan(&ctx, &stream(&[74, 75, 1_390_698_820, 9, 3], 333))
             .expect("attribute scan")
             .is_empty());
     }
 
     #[test]
     fn stream_without_the_family_declaration_yields_nothing() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body[8] = b'X';
-        assert!(scan(None, &body).expect("attribute scan").is_empty());
+        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
     }
 
     #[test]
     fn conflicting_definition_identity_is_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = Vec::new();
         append_definition(&mut body, ATOM_ID, 15, 16);
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
-        assert!(!definitions(None, &body)
+        assert!(!definitions(&ctx, &body)
             .expect("definitions")
             .contains_key(&16));
-        let table = definition_table(None, &body).expect("definition table");
+        let table = definition_table(&ctx, &body).expect("definition table");
         assert!(table.contains_key(&16));
         assert!(table.get(&16).is_some_and(Option::is_none));
     }
 
     #[test]
     fn definition_table_retains_unsupported_families() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = Vec::new();
         append_definition(&mut body, "SDL/TYSA_COLOUR", 15, 16);
 
         assert_eq!(
-            definition_table(None, &body)
+            definition_table(&ctx, &body)
                 .expect("definition table")
                 .get(&16)
                 .and_then(Option::as_deref),
             Some("SDL/TYSA_COLOUR")
         );
-        assert!(!definitions(None, &body)
+        assert!(!definitions(&ctx, &body)
             .expect("definitions")
             .contains_key(&16));
     }
 
     #[test]
     fn unsupported_and_truncated_integer_lists_are_not_candidates() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = Vec::new();
         body.extend([0x00, 0x52]);
         body.extend(2_u32.to_be_bytes());
@@ -783,13 +813,17 @@ mod tests {
         body.extend(5_u32.to_be_bytes());
         body.extend(301_u16.to_be_bytes());
         body.extend(1_u32.to_be_bytes());
-        assert!(integer_lists(None, &body)
+        assert!(integer_lists(&ctx, &body)
             .expect("integer lists")
             .is_empty());
     }
 
     #[test]
     fn conflicting_integer_list_identity_is_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = Vec::new();
         for value in [2_u32, 3] {
             body.extend([0x00, 0x52]);
@@ -797,37 +831,49 @@ mod tests {
             body.extend(300_u16.to_be_bytes());
             body.extend(value.to_be_bytes());
         }
-        assert!(!integer_lists(None, &body)
+        assert!(!integer_lists(&ctx, &body)
             .expect("integer lists")
             .contains_key(&300));
     }
 
     #[test]
     fn conflicting_face_identity_is_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body.extend(stream_with_list_node(
             &[74, 76, 1_390_698_820, 0, 4],
             333,
             310,
         ));
-        assert!(scan(None, &body).expect("attribute scan").is_empty());
+        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
     }
 
     #[test]
     fn conflicting_persistent_tail_is_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3, 10], 333);
         body.extend(stream_with_list_node(
             &[74, 75, 1_390_698_820, 0, 3, 11],
             333,
             310,
         ));
-        assert!(scan(None, &body).expect("attribute scan").is_empty());
+        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
     }
 
     #[test]
     fn body_modifier_binds_one_history_ordinal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let modifiers =
-            scan_body_modifiers(None, &body_modifier_stream(&[&[2]], 333)).expect("modifier scan");
+            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2]], 333)).expect("modifier scan");
         assert_eq!(modifiers.len(), 1);
         assert_eq!(modifiers[0].body_attr, 333);
         assert_eq!(modifiers[0].history_ordinal, 2);
@@ -835,18 +881,22 @@ mod tests {
 
     #[test]
     fn body_modifier_rejects_non_scalar_and_conflicting_payloads() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         assert!(
-            scan_body_modifiers(None, &body_modifier_stream(&[&[0]], 333))
+            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[0]], 333))
                 .expect("modifier scan")
                 .is_empty()
         );
         assert!(
-            scan_body_modifiers(None, &body_modifier_stream(&[&[2, 3]], 333))
+            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2, 3]], 333))
                 .expect("modifier scan")
                 .is_empty()
         );
         assert!(
-            scan_body_modifiers(None, &body_modifier_stream(&[&[2], &[3]], 333))
+            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2], &[3]], 333))
                 .expect("modifier scan")
                 .is_empty()
         );

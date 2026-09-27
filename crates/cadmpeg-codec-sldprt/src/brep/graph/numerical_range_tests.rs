@@ -133,8 +133,12 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
     out
 }
 fn derive_sphere(out: &mut Brep) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     derive_spherical_pcurves(
-        None,
+        &ctx,
         out,
         &mut AnnotationBuilder::new(),
         &StreamHandle::new(cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap()),

@@ -43,7 +43,7 @@ pub(crate) fn sketches(
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
             let brep = crate::brep::graph::decode(
-                Some(ctx),
+                ctx,
                 &stream.payload,
                 &stream.header,
                 source_stream,

@@ -19,7 +19,7 @@
 use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -384,8 +384,10 @@ fn decode_carrier_values(
 
 /// Return the typed curve carried by one stream-local attribute.
 pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
     Some(
-        scan_carriers(None, body)
+        scan_carriers(&ctx, body)
             .ok()?
             .curve(attr)?
             .carrier()
@@ -396,7 +398,11 @@ pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
 
 /// Replace the scalar run of one compact analytic carrier.
 pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
-    let Ok(carriers) = scan_carriers(None, body) else {
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()) else {
+        return false;
+    };
+    let Ok(carriers) = scan_carriers(&ctx, body) else {
         return false;
     };
     let Some(indexed) = carriers.curve(attr) else {
@@ -421,7 +427,11 @@ pub(crate) fn patch_nurbs_by_attr(
     attr: u16,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> bool {
-    let Ok(carriers) = scan_carriers(None, body) else {
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()) else {
+        return false;
+    };
+    let Ok(carriers) = scan_carriers(&ctx, body) else {
         return false;
     };
     let Some(indexed) = carriers.curve(attr) else {
@@ -533,6 +543,10 @@ mod tests {
 
     #[test]
     fn scan_does_not_skip_overlapping_carrier_starts() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         bytes.truncate(60);
         bytes.extend(compact_carrier(
@@ -541,7 +555,7 @@ mod tests {
             &[1.0, 2.0, 3.0, 0.0, 0.0, 1.0],
         ));
 
-        let carriers = scan_carriers(None, &bytes).expect("carrier scan");
+        let carriers = scan_carriers(&ctx, &bytes).expect("carrier scan");
 
         assert!(carriers.curve(7).is_some());
         assert!(carriers.curve(8).is_some());

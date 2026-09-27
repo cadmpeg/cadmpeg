@@ -61,7 +61,7 @@ fn attribute_slot_count(flo: u8) -> Option<usize> {
 }
 
 fn refs(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     at: usize,
     count: usize,
@@ -77,9 +77,8 @@ fn refs(
             let Some(value) = p.checked_add(1).and_then(|at| View::u16_be_at(body, at)) else {
                 return Ok(None);
             };
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "decode prefixed Parasolid entity references")?;
-            }
+                            ctx.charge_collection_items(1, "decode prefixed Parasolid entity references")?;
+
             out.push(value);
             let Some(next) = p.checked_add(3) else {
                 return Ok(None);
@@ -90,9 +89,8 @@ fn refs(
             return Ok(p.checked_add(1).map(|end| (out, end)));
         }
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, "decode Parasolid entity references")?;
-    }
+            ctx.charge_collection_items(count as u64, "decode Parasolid entity references")?;
+
     let mut refs = Vec::with_capacity(count);
     for index in 0..count {
         let Some(cell) = index.checked_mul(2).and_then(|delta| at.checked_add(delta)) else {
@@ -110,7 +108,7 @@ fn refs(
 }
 
 fn scan_entities(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     prefixed: bool,
 ) -> Result<Vec<EntityRecord>, cadmpeg_core::CodecError> {
@@ -150,9 +148,8 @@ fn scan_entities(
         let Some((refs, end)) = refs(ctx, body, p + entity_hdr::LEN, count, prefixed)? else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "collect Parasolid entity records")?;
-        }
+                    ctx.charge_collection_items(1, "collect Parasolid entity records")?;
+
         out.push(EntityRecord {
             attr,
             seq,
@@ -199,19 +196,18 @@ struct FramedColor {
 }
 
 fn linked_colors(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     entities: &[EntityRecord],
 ) -> Result<HashMap<(u16, u16), Vec<FramedColor>>, cadmpeg_core::CodecError> {
     let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
     for parent in entities {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(
+                    ctx.charge_collection_items(
                 parent.refs.len() as u64,
                 "collect Parasolid linked face references",
             )?;
             ctx.charge_collection_items(1, "collect Parasolid parent face reference")?;
-        }
+
         let mut linked_faces = parent.refs.iter().copied().collect::<HashSet<_>>();
         linked_faces.insert(parent.attr);
         let mut at = parent.end;
@@ -222,12 +218,11 @@ fn linked_colors(
                 parent_seq: parent.seq,
             };
             for face_attr in linked_faces.iter().copied().filter(|attr| *attr > 1) {
-                if let Some(ctx) = ctx {
-                    if !colors.contains_key(&(face_attr, color_attr)) {
+                                    if !colors.contains_key(&(face_attr, color_attr)) {
                         ctx.charge_collection_items(1, "collect Parasolid linked color groups")?;
                     }
                     ctx.charge_collection_items(1, "collect Parasolid linked colors")?;
-                }
+
                 colors
                     .entry((face_attr, color_attr))
                     .or_default()
@@ -257,7 +252,7 @@ fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
 /// Scan non-topology entity metadata without interpreting attribute chains as
 /// body membership. Typed Parasolid BODY/SHELL/REGION nodes own that relation.
 pub(crate) fn scan_metadata(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     prefixed: bool,
 ) -> Result<Facts, cadmpeg_core::CodecError> {
@@ -279,9 +274,8 @@ pub(crate) fn scan_metadata(
         if !named_face_color && !unnamed_face_color {
             continue;
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "collect Parasolid face color versions")?;
-        }
+                    ctx.charge_collection_items(1, "collect Parasolid face color versions")?;
+
         face_color_versions.push(FaceColorVersion {
             face_attr: face.attr,
             seq: face.seq,
@@ -313,9 +307,8 @@ pub(crate) fn scan_metadata(
         let Some((color_attr, framed)) = framed else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "collect Parasolid face colors")?;
-        }
+                    ctx.charge_collection_items(1, "collect Parasolid face colors")?;
+
         face_colors.push(FaceColor {
             face_attr: face.attr,
             color_attr,
@@ -409,6 +402,10 @@ mod tests {
 
     #[test]
     fn prefixed_entity_refs_end_at_the_zero_terminator() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = Vec::new();
         for reference in 2_u16..=8 {
             bytes.push(1);
@@ -417,7 +414,7 @@ mod tests {
         bytes.push(0);
 
         assert_eq!(
-            refs(None, &bytes, 0, 6, true).expect("references"),
+            refs(&ctx, &bytes, 0, 6, true).expect("references"),
             Some(((2_u16..=8).collect(), 22))
         );
     }
@@ -430,7 +427,7 @@ mod tests {
         policy.limits.max_collection_items = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            refs(Some(&ctx), &bytes, 0, 6, false).expect_err("six references exceed five items");
+            refs(&ctx, &bytes, 0, 6, false).expect_err("six references exceed five items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -440,7 +437,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            refs(Some(&ctx), &bytes, 0, 6, false)
+            refs(&ctx, &bytes, 0, 6, false)
                 .expect("service scan")
                 .map(|(values, _)| values.len()),
             Some(6)
@@ -456,7 +453,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            refs(Some(&ctx), &bytes, at, 0, true).expect_err("second reference exceeds one item");
+            refs(&ctx, &bytes, at, 0, true).expect_err("second reference exceeds one item");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -470,7 +467,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 6;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_entities(Some(&ctx), &bytes, false)
+        let error = scan_entities(&ctx, &bytes, false)
             .expect_err("entity insertion exceeds the limit");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -491,7 +488,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = linked_colors(Some(&ctx), &bytes, &entities)
+        let error = linked_colors(&ctx, &bytes, &entities)
             .expect_err("linked color collection exceeds the limit");
         assert!(
             matches!(error,
@@ -529,7 +526,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_metadata(Some(&ctx), &bytes, false)
+        let error = scan_metadata(&ctx, &bytes, false)
             .expect_err("face color collection exceeds the limit");
         assert!(
             matches!(error,
@@ -552,12 +549,16 @@ mod tests {
 
     #[test]
     fn face_color_requires_the_adjacent_record_boundary() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend_from_slice(&[0xaa, 0xbb]);
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert!(facts.face_colors.is_empty());
         assert_eq!(facts.unresolved_face_colors, 0);
@@ -565,11 +566,15 @@ mod tests {
 
     #[test]
     fn prefixed_face_color_uses_the_terminated_face_boundary() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(prefixed_entity(700, 4, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], true));
 
-        let facts = scan_metadata(None, &bytes, true).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, true).expect("metadata scan");
 
         assert_eq!(facts.face_colors.len(), 1);
         assert_eq!(facts.face_colors[0].face_attr, 700);
@@ -579,11 +584,15 @@ mod tests {
 
     #[test]
     fn named_face_color_uses_inline_record_when_link_is_null_like() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 1]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert_eq!(facts.face_colors.len(), 1);
         assert_eq!(facts.face_colors[0].color_attr, 900);
@@ -591,11 +600,15 @@ mod tests {
 
     #[test]
     fn named_non_face_definition_does_not_select_a_face_color_family() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = attribute_definition("OTHER_FAMILY", 0x15);
         bytes.extend(bare_entity(700, 1, 0x15, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert!(facts.face_colors.is_empty());
         assert!(facts.face_color_versions.is_empty());
@@ -603,12 +616,16 @@ mod tests {
 
     #[test]
     fn conflicting_definition_does_not_use_structural_color_fallback() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(attribute_definition("OTHER_FAMILY", 16));
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert!(facts.face_colors.is_empty());
         assert!(facts.face_color_versions.is_empty());
@@ -616,11 +633,15 @@ mod tests {
 
     #[test]
     fn unrelated_adjacent_color_does_not_replace_the_referenced_color() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(color(901, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert!(facts.face_colors.is_empty());
         assert_eq!(facts.unresolved_face_colors, 0);
@@ -628,12 +649,16 @@ mod tests {
 
     #[test]
     fn referenced_color_uses_a_framed_inline_face_link() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(bare_entity(701, 2, 16, &[0, 0, 0, 0, 700, 901]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert_eq!(facts.face_colors.len(), 1);
         assert_eq!(facts.face_colors[0].face_attr, 700);
@@ -642,13 +667,17 @@ mod tests {
 
     #[test]
     fn inline_face_link_frames_a_contiguous_color_run() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = face_color_definition(16);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]));
         bytes.extend(bare_entity(701, 2, 16, &[0, 0, 0, 0, 700, 901]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
         bytes.extend(color(901, [0.75, 0.5, 0.25], false));
 
-        let facts = scan_metadata(None, &bytes, false).expect("metadata scan");
+        let facts = scan_metadata(&ctx, &bytes, false).expect("metadata scan");
 
         assert_eq!(facts.face_colors.len(), 2);
         assert!(facts
@@ -663,6 +692,10 @@ mod tests {
 
     #[test]
     fn bare_attribute_slot_counts_use_flo_only() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let seven = bare_entity_slots(700, 1, 0x9999, 2, &[2, 3, 4, 5, 6, 7, 8]);
         let nine = bare_entity_slots(701, 2, 0x1a, 4, &[9, 10, 11, 12, 13, 14, 15, 16, 17]);
         let terminal = bare_entity_slots(702, 3, 0x06, 2, &[18, 19, 1, 1, 1, 1, 1]);
@@ -673,7 +706,7 @@ mod tests {
         bytes.extend_from_slice(&ten);
         bytes.extend([0; 16]);
 
-        let records = scan_entities(None, &bytes, false).expect("entity scan");
+        let records = scan_entities(&ctx, &bytes, false).expect("entity scan");
         assert_eq!(records.len(), 4);
         assert_eq!(records[0].refs.len(), 7);
         assert_eq!(records[0].end, seven.len());

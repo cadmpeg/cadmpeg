@@ -70,13 +70,12 @@ struct SurfaceDescriptor {
 const MAX_ARRAY_VALUES: usize = 1_000_000;
 
 fn charge_items(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, operation)?;
-    }
+            ctx.charge_collection_items(count as u64, operation)?;
+
     Ok(())
 }
 
@@ -182,7 +181,7 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
 }
 
 fn scan_arrays(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     compact_attrs: Option<&HashSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
@@ -264,7 +263,7 @@ fn scan_arrays(
 }
 
 fn compact_f64_arrays(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
     attr: u16,
@@ -300,7 +299,7 @@ fn compact_f64_arrays(
 }
 
 fn compact_u16_arrays(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
     attr: u16,
@@ -340,7 +339,7 @@ fn compact_u16_arrays(
 }
 
 fn exact_f64_array(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
     attr: u16,
@@ -358,7 +357,7 @@ fn exact_f64_array(
 }
 
 fn scan_curve_descriptors(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, CurveDescriptor>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
@@ -427,7 +426,7 @@ fn curve_descriptor<'a>(
 /// `Vec` before the post-hoc length check would discard it. Returns `None` the
 /// moment the accumulated length would exceed `expected`.
 fn expanded_knots(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     values: &[f64],
     multiplicities: &[u16],
     expected: usize,
@@ -712,7 +711,14 @@ pub(crate) fn patch_nurbs_curve(
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let descriptors = scan_curve_descriptors(None, bytes).ok()?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .ok()?;
+    let descriptors = scan_curve_descriptors(&ctx, bytes).ok()?;
     let descriptor = curve_descriptor(bytes, p, &descriptors)?;
     if descriptor.degree != old.degree()
         || descriptor.control_count != old.control_points().len()
@@ -755,12 +761,19 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let descriptors = scan_surface_descriptors(None, bytes).ok()?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .ok()?;
+    let descriptors = scan_surface_descriptors(&ctx, bytes).ok()?;
     let compact_attrs = descriptors
         .values()
         .flat_map(|descriptor| descriptor.refs)
         .collect();
-    let arrays = scan_arrays(None, bytes, Some(&compact_attrs)).ok()?;
+    let arrays = scan_arrays(&ctx, bytes, Some(&compact_attrs)).ok()?;
     let mut p = wrapper_offset + 2;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
@@ -813,7 +826,7 @@ pub(crate) fn patch_nurbs_surface(
 /// the attribute id it belongs to, so the decode reports it rather than
 /// deleting the carrier in silence.
 pub(crate) fn scan_curve_carriers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<HashMap<u16, CurveCarrier>, cadmpeg_core::CodecError> {
@@ -929,7 +942,7 @@ pub(crate) fn scan_curve_carriers(
 }
 
 fn scan_surface_descriptors(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<HashMap<u16, SurfaceDescriptor>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
@@ -968,7 +981,7 @@ struct SurfaceKnotValues {
 }
 
 fn surface_knot_values(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     arrays: &Arrays,
     knot_attr: u16,
@@ -1017,7 +1030,7 @@ fn surface_knot_values(
 ///
 /// `refusals` carries the same meaning as in [`scan_curve_carriers`].
 pub(crate) fn scan_surface_carriers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> Result<HashMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
@@ -1251,7 +1264,7 @@ mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            scan_arrays(Some(&ctx), &bytes, None).expect_err("three values exceed two items");
+            scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1261,7 +1274,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            scan_arrays(Some(&ctx), &bytes, None)
+            scan_arrays(&ctx, &bytes, None)
                 .expect("service scan")
                 .f64s
                 .get(&12)
@@ -1278,7 +1291,7 @@ mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            scan_arrays(Some(&ctx), &bytes, None).expect_err("three values exceed two items");
+            scan_arrays(&ctx, &bytes, None).expect_err("three values exceed two items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1292,7 +1305,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = expanded_knots(Some(&ctx), &[0.0, 1.0], &[2, 2], 4)
+        let error = expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4)
             .expect_err("four knots exceed three items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1303,7 +1316,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            expanded_knots(Some(&ctx), &[0.0, 1.0], &[2, 2], 4).expect("service expansion"),
+            expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("service expansion"),
             Some(vec![0.0, 0.0, 1.0, 1.0])
         );
     }
@@ -1315,7 +1328,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 17;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("three poles exceed the remaining items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1325,7 +1338,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert!(scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        assert!(scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect("service scan")
             .contains_key(&170));
     }
@@ -1337,7 +1350,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 18;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("two weights exceed the remaining items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1352,7 +1365,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 16;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("curve descriptor insertion exceeds the limit");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1367,7 +1380,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 29;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("curve carrier insertion exceeds the limit");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1382,7 +1395,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 24;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("weighted pole pairing exceeds the limit");
         assert!(
             matches!(error,
@@ -1400,7 +1413,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 26;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_curve_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("pole admission exceeds the limit");
         assert!(
             matches!(error,
@@ -1418,7 +1431,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 102;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_surface_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("four surface poles exceed the remaining items");
         assert!(
             matches!(error,
@@ -1431,7 +1444,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert!(scan_surface_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        assert!(scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect("service scan")
             .contains_key(&180));
     }
@@ -1443,7 +1456,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 119;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_surface_carriers(Some(&ctx), &bytes, &mut Vec::new())
+        let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("four surface weights exceed the remaining items");
         assert!(
             matches!(error,
@@ -1464,7 +1477,7 @@ mod tests {
                 policy.limits.max_collection_items = $limit;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let error = scan_surface_carriers(Some(&ctx), &bytes, &mut Vec::new())
+                let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
                     .expect_err("surface collection exceeds the limit");
                 assert!(matches!(error,
                     cadmpeg_core::CodecError::ResourceLimit(limit)

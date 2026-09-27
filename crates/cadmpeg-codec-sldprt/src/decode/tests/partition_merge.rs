@@ -404,6 +404,10 @@ fn deltas_full_record_overrides_partition_record() {
 
 #[test]
 fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let partition = triangle_body();
     let deltas = bridge_owned(10, 120, 200, 700);
     let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
@@ -412,7 +416,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     let deltas_header = crate::parasolid::stream_header(&deltas_payload).unwrap();
 
     let decoded = crate::brep::graph::decode_bodies(
-        None,
+        &ctx,
         &[
             (&deltas_payload, &deltas_header),
             (&partition_payload, &partition_header),

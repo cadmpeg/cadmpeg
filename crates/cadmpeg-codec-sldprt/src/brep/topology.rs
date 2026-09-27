@@ -374,7 +374,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
 fn parse_point(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     buf: &[u8],
     off: usize,
     prefixed: bool,
@@ -429,9 +429,8 @@ fn parse_point(
             return Ok(None);
         }
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(reference_count as u64, "copy Parasolid point references")?;
-    }
+            ctx.charge_collection_items(reference_count as u64, "copy Parasolid point references")?;
+
     Ok(Some(Point {
         attr,
         refs: references[..reference_count].to_vec(),
@@ -790,7 +789,13 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let Ok(mut tables) = scan(buf) else {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        buf, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ) else {
+        return false;
+    };
+    let Ok(mut tables) = scan(&ctx, buf) else {
         return false;
     };
     let Some(record) = tables.points.remove(&attr) else {
@@ -804,8 +809,8 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// enclosing payload. Family-specific framing gates reject payload coincidences.
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
-pub(crate) fn scan(body: &[u8]) -> Result<Tables, CodecError> {
-    scan_with_point_framing(None, body, false, None, None)
+pub(crate) fn scan(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<Tables, CodecError> {
+    scan_with_point_framing(ctx, body, false, None, None)
 }
 
 /// Scan a partition stream while admitting typed FACE offsets that carry a
@@ -814,7 +819,7 @@ pub(crate) fn scan(body: &[u8]) -> Result<Tables, CodecError> {
 /// separate compact bridge for the same attribute; a shared FACE/bridge record
 /// has a non-null loop field and is the topology record as well.
 pub(super) fn scan_with_curve_attrs_excluding(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
@@ -830,7 +835,7 @@ pub(super) fn scan_with_curve_attrs_excluding(
 
 /// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
 pub(super) fn scan_deltas_with_curve_attrs_excluding(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
@@ -845,7 +850,7 @@ pub(super) fn scan_deltas_with_curve_attrs_excluding(
 }
 
 fn scan_with_point_framing(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     prefixed_points: bool,
     curve_attrs: Option<&HashSet<u16>>,
@@ -959,7 +964,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = parse_point(Some(&ctx), &bytes, 0, false)
+        let error = parse_point(&ctx, &bytes, 0, false)
             .expect_err("four references exceed three items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -969,7 +974,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            parse_point(Some(&ctx), &bytes, 0, false)
+            parse_point(&ctx, &bytes, 0, false)
                 .expect("service parse")
                 .map(|point| point.refs.len()),
             Some(4)
@@ -992,7 +997,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = parse_point(Some(&ctx), &bytes, 0, true)
+        let error = parse_point(&ctx, &bytes, 0, true)
             .expect_err("four references exceed three items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1091,10 +1096,14 @@ mod tests {
 
     #[test]
     fn shared_typed_face_with_loop_remains_a_topology_bridge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let body = bridge_with_refs(&[1, 2, 3, 7, 8], false);
         let excluded = HashSet::from([0]);
 
-        let tables = scan_with_curve_attrs_excluding(None, &body, &HashSet::new(), &excluded)
+        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &HashSet::new(), &excluded)
             .expect("topology scan");
 
         assert_eq!(
@@ -1105,10 +1114,14 @@ mod tests {
 
     #[test]
     fn ownership_only_typed_face_does_not_replace_a_compact_bridge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let body = bridge_with_refs(&[1, 2, 0, 7, 8], false);
         let excluded = HashSet::from([0]);
 
-        let tables = scan_with_curve_attrs_excluding(None, &body, &HashSet::new(), &excluded)
+        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &HashSet::new(), &excluded)
             .expect("topology scan");
 
         assert!(tables.bridges.is_empty());
@@ -1184,7 +1197,11 @@ mod tests {
         body.extend(topology_edge_use(0x2b40, 0));
         body.extend(topology_vertex_use(50, 0));
 
-        let tables = scan(&body).expect("topology scan");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
+        let tables = scan(&ctx, &body).expect("topology scan");
         let coedge = tables.coedges.get(&30).expect("tripled coedge");
         assert_eq!(coedge.refs[1], 20);
         assert_eq!(coedge.refs[4], 50);
@@ -1198,13 +1215,21 @@ mod tests {
         body.extend(topology_edge_use(40, 0x0102_0304));
         body.extend(topology_vertex_use(50, 0x0506_0708));
 
-        let tables = scan(&body).expect("topology scan");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
+        let tables = scan(&ctx, &body).expect("topology scan");
         assert_eq!(tables.edge_uses[&40].sequence, 0x0102_0304);
         assert_eq!(tables.vertex_uses[&50].sequence, 0x0506_0708);
     }
 
     #[test]
     fn suffix_edge_use_frame_wins_when_first_reference_starts_with_one() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x10];
         bytes.extend(40_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1217,18 +1242,22 @@ mod tests {
         }
 
         assert!(
-            scan(&bytes).expect("topology scan").edge_uses.is_empty(),
+            scan(&ctx, &bytes).expect("topology scan").edge_uses.is_empty(),
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
         let tables =
-            scan_deltas_with_curve_attrs_excluding(None, &bytes, &curve_attrs, &HashSet::new())
+            scan_deltas_with_curve_attrs_excluding(&ctx, &bytes, &curve_attrs, &HashSet::new())
                 .expect("topology scan");
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
     }
 
     #[test]
     fn patch_point_uses_parsed_adjacent_coordinate_offset() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1247,7 +1276,7 @@ mod tests {
         ));
         assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
 
-        let point = parse_point(None, &bytes, 0, false)
+        let point = parse_point(&ctx, &bytes, 0, false)
             .expect("point parse")
             .expect("adjacent world point");
         assert_eq!(point.refs, vec![0, 0x0102, 0, 0]);

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -88,12 +89,21 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
+    let scanned_bytes = bodies
+        .iter()
+        .flat_map(|(bytes, _)| bytes.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let ctx = match DecodeContext::from_root_bytes(&scanned_bytes, &arena, &DecodePolicy::service()) {
+        Ok((ctx, _)) => ctx,
+        Err(error) => return Some(Err(error)),
+    };
     // A baseline the source states and this decoder refuses is a refusal, not
     // an absent patch: it travels the error channel this function already uses
     // below, so the caller's `.transpose()` reports the cause instead of "no
     // patch".
     let native = match crate::brep::graph::decode_bodies(
-        None,
+        &ctx,
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     ) {
@@ -389,7 +399,10 @@ fn patch_points(
             continue;
         }
         let offset = raw_annotation_offset(annotations, &old.id).ok()?;
-        let tables = crate::brep::topology::scan(payload.get(body_start..)?).ok()?;
+        let body = payload.get(body_start..)?;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
+        let tables = crate::brep::topology::scan(&ctx, body).ok()?;
         let point = tables
             .points()
             .values()
