@@ -12,6 +12,10 @@ impl<'a, T, U> SliceColumn<'a, T, U> {
     pub(crate) fn new(items: &'a [T], value: fn(&'a T) -> U) -> Self {
         Self { items, value }
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
 }
 
 impl<T, U: Serialize> Serialize for SliceColumn<'_, T, U> {
