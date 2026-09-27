@@ -855,8 +855,9 @@ fn decode_with_occurrence_limits(
             "quarantined parameter data retained; tokens were not recovered",
         )?;
     }
+    let verification_index = cadmpeg_ir::index::ModelIndex::try_new_for_decode(&ir, ctx)?;
     transfer_ledger
-        .verify(&cadmpeg_ir::index::ModelIndex::new(&ir))
+        .verify(&verification_index)
         .map_err(|message| {
             CodecError::malformed(format_args!(
                 "IGES transfer ledger is inconsistent: {message}"

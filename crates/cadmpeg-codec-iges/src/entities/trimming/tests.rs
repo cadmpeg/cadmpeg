@@ -128,6 +128,15 @@ fn boundary_carrier_index_and_selected_edge_refuse_unadmitted_storage() {
 }
 
 #[test]
+fn trimming_model_index_refuses_identity_storage_before_lookup() {
+    let bytes = bounded_plane_file();
+    assert_trimming_collection_refusal(&bytes, "model identity universe slots");
+    assert_trimming_collection_refusal(&bytes, "model identity index slots");
+    assert_trimming_retained_refusal(&bytes, "model identity universe text");
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn trimming_projection_refuses_retained_boundary_source_text() {
     let bytes = bounded_plane_file();
     for operation in [
