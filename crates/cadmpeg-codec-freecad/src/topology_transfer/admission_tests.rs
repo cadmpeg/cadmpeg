@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::{copy_shape_for_transfer, pcurve_geometry, transform_curve, transform_surface, Builder, PcurveGeometryError};
+use super::{copy_shape_for_transfer, pcurve_geometry, pcurve_loss, transform_curve, transform_surface, Builder, PcurveGeometryError};
 use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -13,6 +13,30 @@ use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::ids::{CurveId, RegionId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
+
+#[test]
+fn pcurve_loss_message_refuses_at_retained_limit() {
+    let payload_id = "fcstd:native:shape#Source";
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(pcurve_loss(&ctx, payload_id, 2, None).expect("loss note").message,
+        "payload fcstd:native:shape#Source curve2ds index 2 could not enter neutral geometry");
+    assert_retained_refusal_at(&[], "FreeCAD pcurve loss", |ctx| pcurve_loss(ctx, payload_id, 2, None));
+}
+
+#[test]
+fn pcurve_malformed_loss_message_refuses_at_retained_limit() {
+    let payload_id = "fcstd:native:shape#Source";
+    let error = PcurveGeometryError::Nurbs(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+        "knots must be non-decreasing".into()));
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(pcurve_loss(&ctx, payload_id, 2, Some(&error)).expect("loss note").message,
+        "payload fcstd:native:shape#Source curve2ds index 2 could not enter neutral geometry: knots must be non-decreasing");
+    assert_retained_refusal_at(&[], "FreeCAD pcurve loss", |ctx| pcurve_loss(ctx, payload_id, 2, Some(&error)));
+}
 
 #[test]
 fn placed_nurbs_curve_basis_refuses_at_collection_limit() {

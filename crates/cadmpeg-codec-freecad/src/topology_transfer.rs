@@ -381,11 +381,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     Err(PcurveGeometryError::Resource(error)) => return Err(error),
                     Err(error) => {
                         reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-                        self.losses
-                            .push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                                "payload {} curve2ds index {primary} could not enter neutral geometry: {error}",
-                                self.payload.id
-                            )));
+                        self.losses.push(pcurve_loss(self.ctx, &self.payload.id, primary, Some(&error))?);
                         continue;
                     }
                 };
@@ -393,11 +389,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
                     reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-                    self.losses
-                        .push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                            "payload {} curve2ds index {primary} could not enter neutral geometry",
-                            self.payload.id
-                        )));
+                    self.losses.push(pcurve_loss(self.ctx, &self.payload.id, primary, None)?);
                     continue;
                 };
                 let primary_range =
@@ -415,9 +407,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         Err(PcurveGeometryError::Resource(error)) => return Err(error),
                         Err(error) => {
                             reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-                            self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                                    "payload {} curve2ds index {secondary} could not enter neutral geometry: {error}", self.payload.id
-                                )));
+                            self.losses.push(pcurve_loss(self.ctx, &self.payload.id, secondary, Some(&error))?);
                             continue;
                         }
                     };
@@ -425,9 +415,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         transformed_pcurve_geometry(geometry, parameter_affine)
                     }) else {
                         reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-                        self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                            "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
-                        )));
+                        self.losses.push(pcurve_loss(self.ctx, &self.payload.id, secondary, None)?);
                         continue;
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
@@ -1671,21 +1659,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             Err(PcurveGeometryError::Resource(error)) => return Err(error),
             Err(error) => {
                 reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-                self.losses
-                    .push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                        "payload {} curve2ds index {curve_index} could not enter neutral geometry: {error}",
-                        self.payload.id
-                    )));
+                self.losses.push(pcurve_loss(self.ctx, &self.payload.id, curve_index, Some(&error))?);
                 return Ok(None);
             }
         };
         let Some(geometry) = read else {
             reserve_vec_items(self.ctx, &mut self.losses, 1, "FreeCAD pcurve losses")?;
-            self.losses
-                .push(FreecadLossCode::PcurveNotTransferred.note(format!(
-                    "payload {} curve2ds index {curve_index} could not enter neutral geometry",
-                    self.payload.id
-                )));
+            self.losses.push(pcurve_loss(self.ctx, &self.payload.id, curve_index, None)?);
             return Ok(None);
         };
         let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
@@ -1855,6 +1835,23 @@ fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
 pub(crate) enum PcurveGeometryError {
     Nurbs(NurbsError),
     Resource(CodecError),
+}
+
+fn pcurve_loss(
+    ctx: &DecodeContext<'_>,
+    payload_id: &str,
+    curve_index: usize,
+    error: Option<&PcurveGeometryError>,
+) -> Result<LossNote, CodecError> {
+    let message = match error {
+        Some(error) => retained_format(ctx, format_args!(
+            "payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry: {error}"
+        ), "FreeCAD pcurve loss")?,
+        None => retained_format(ctx, format_args!(
+            "payload {payload_id} curve2ds index {curve_index} could not enter neutral geometry"
+        ), "FreeCAD pcurve loss")?,
+    };
+    Ok(FreecadLossCode::PcurveNotTransferred.note(message))
 }
 
 impl std::fmt::Display for PcurveGeometryError {
