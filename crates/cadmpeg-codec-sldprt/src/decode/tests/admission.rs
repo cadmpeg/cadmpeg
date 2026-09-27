@@ -52,6 +52,26 @@ fn retained_refusal_at(
 }
 
 #[test]
+fn native_loss_validation_propagates_typed_load_retained_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "load typed native record");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "load typed native record"
+    ));
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect("service profile admits typed native loss validation");
+}
+
+#[test]
 fn direct_parasolid_stream_copy_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 

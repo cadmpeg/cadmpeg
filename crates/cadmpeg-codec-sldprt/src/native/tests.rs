@@ -16,7 +16,299 @@ use crate::test_support::history::sldprt_with_compact_relation_pair;
 use crate::test_support::history::sldprt_with_nested_sketch_profile;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
+use crate::test_support::pmi::pmi_semantic_payload;
 use crate::SldprtCodec;
+
+fn emitter_models() -> &'static [crate::native::SldprtNative] {
+    static MODELS: std::sync::OnceLock<Vec<crate::native::SldprtNative>> =
+        std::sync::OnceLock::new();
+    MODELS.get_or_init(|| {
+        let body = triangle_body();
+        let mut pmi_source = sldprt_with_body(&body);
+        pmi_source.extend(make_block(
+            0x49,
+            "Contents/PMISemanticDataDB",
+            &pmi_semantic_payload(),
+        ));
+        let mut models = [
+            sldprt_with_body_and_history(&body),
+            sldprt_with_body_and_resolved_features(&body, &[0, 1]),
+            sldprt_with_compact_relation_pair(&body),
+            sldprt_with_nested_sketch_profile(&body),
+            pmi_source,
+        ]
+        .into_iter()
+        .map(|source| {
+            let decoded = SldprtCodec
+                .decode(&mut Cursor::new(source), &DecodeOptions::default())
+                .unwrap();
+            sldprt_native(decoded.ir())
+        })
+        .collect::<Vec<_>>();
+        let lane = models
+            .iter_mut()
+            .flat_map(|model| &mut model.feature_input_lanes)
+            .next()
+            .unwrap();
+        let parent = lane.id.clone();
+        let feature_ref = "sldprt:native:feature#0".to_owned();
+        let object_name_ref = "sldprt:native:name#0".to_owned();
+        lane.body_selections
+            .push(crate::records::FeatureInputBodySelection {
+                id: "sldprt:native:body-selection#0".into(),
+                parent: parent.clone(),
+                ordinal: 0,
+                offset: 0,
+                object_name_ref: object_name_ref.clone(),
+                feature_ref: feature_ref.clone(),
+                local_body_ids: vec![1],
+                body_state_ids: Vec::new(),
+                mode: None,
+            });
+        lane.edge_selections
+            .push(crate::records::FeatureInputEdgeSelection {
+                id: "sldprt:native:edge-selection#0".into(),
+                parent: parent.clone(),
+                ordinal: 0,
+                offset: 0,
+                object_name_ref: object_name_ref.clone(),
+                feature_ref: feature_ref.clone(),
+                local_edge_ids: vec![1],
+                components: Vec::new(),
+                references: Vec::new(),
+                producer_feature_refs: Vec::new(),
+                terminal_feature_ref: None,
+            });
+        lane.surface_selections
+            .push(crate::records::FeatureInputSurfaceSelection {
+                id: "sldprt:native:surface-selection#0".into(),
+                parent: parent.clone(),
+                ordinal: 0,
+                offset: 0,
+                selector: 0,
+                kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
+                object_name_ref,
+                feature_ref: feature_ref.clone(),
+                producer_feature_refs: Vec::new(),
+                terminal_feature_ref: None,
+                components: Vec::new(),
+            });
+        lane.generated_surface_identities.push(
+            crate::records::FeatureInputGeneratedSurfaceIdentity {
+                id: "sldprt:native:generated-surface#0".into(),
+                parent: parent.clone(),
+                ordinal: 0,
+                offset: 0,
+                type_prefix: *b"FACE",
+                feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(1_u32)
+                    .unwrap(),
+                local_identity: 1,
+                components: Vec::new(),
+            },
+        );
+        lane.relation_instances
+            .push(crate::records::FeatureInputRelationInstance {
+                id: "sldprt:native:relation-instance#0".into(),
+                parent,
+                ordinal: 0,
+                offset: 0,
+                family: crate::records::FeatureInputRelationFamily::CircleDiameter,
+                class_ref: "sldprt:native:class#0".into(),
+                feature_ref,
+                scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                    vec!["sldprt:native:scalar#0".into()],
+                    None,
+                    None,
+                )
+                .unwrap(),
+                operands: Vec::new(),
+            });
+        models
+    })
+}
+
+#[test]
+fn native_child_emitter_fixtures_cover_each_populated_arena() {
+    let missing = super::SLDPRT_FAMILIES
+        .iter()
+        .filter(|row| {
+            !matches!(row.arena, "feature_histories" | "feature_input_lanes")
+                && emitter_models().iter().all(|model| (row.len)(model) == 0)
+        })
+        .map(|row| row.arena)
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty(),
+        "unpopulated emitter fixtures: {missing:?}"
+    );
+}
+
+fn assert_child_emitter_refuses_before_clone(arena_name: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let row = super::SLDPRT_FAMILIES
+        .iter()
+        .find(|row| row.arena == arena_name)
+        .unwrap();
+    let model = emitter_models()
+        .iter()
+        .find(|model| (row.len)(model) > 0)
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let (refusal, allocations) = crate::test_support::allocation::count_allocations(|| {
+        (row.emit)(&limited, model, row, &mut namespace)
+    });
+    assert_eq!(
+        allocations, 0,
+        "{arena_name} allocated before arena admission"
+    );
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(refusal.unwrap_err()),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain native arena name"
+    ));
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    (row.emit)(&service, model, row, &mut namespace).unwrap();
+    assert_eq!(namespace.arenas()[arena_name].len(), (row.len)(model));
+}
+
+macro_rules! child_emitter_limit_test {
+    ($name:ident, $arena:literal) => {
+        #[test]
+        fn $name() {
+            assert_child_emitter_refuses_before_clone($arena);
+        }
+    };
+}
+
+child_emitter_limit_test!(
+    native_pmi_dimension_emitter_refuses_before_child_clone,
+    "pmi_dimensions"
+);
+child_emitter_limit_test!(
+    native_configuration_emitter_refuses_before_child_clone,
+    "configurations"
+);
+child_emitter_limit_test!(
+    native_feature_emitter_refuses_before_child_clone,
+    "features"
+);
+child_emitter_limit_test!(
+    native_body_selection_emitter_refuses_before_child_clone,
+    "feature_input_body_selections"
+);
+child_emitter_limit_test!(
+    native_edge_selection_emitter_refuses_before_child_clone,
+    "feature_input_edge_selections"
+);
+child_emitter_limit_test!(
+    native_surface_selection_emitter_refuses_before_child_clone,
+    "feature_input_surface_selections"
+);
+child_emitter_limit_test!(
+    native_generated_surface_emitter_refuses_before_child_clone,
+    "feature_input_generated_surface_identities"
+);
+child_emitter_limit_test!(
+    native_class_emitter_refuses_before_child_clone,
+    "feature_input_classes"
+);
+child_emitter_limit_test!(
+    native_name_emitter_refuses_before_child_clone,
+    "feature_input_names"
+);
+child_emitter_limit_test!(
+    native_scalar_emitter_refuses_before_child_clone,
+    "feature_input_scalars"
+);
+child_emitter_limit_test!(
+    native_reference_emitter_refuses_before_child_clone,
+    "feature_input_references"
+);
+child_emitter_limit_test!(
+    native_relation_binding_emitter_refuses_before_child_clone,
+    "feature_input_relation_bindings"
+);
+child_emitter_limit_test!(
+    native_relation_instance_emitter_refuses_before_child_clone,
+    "feature_input_relation_instances"
+);
+child_emitter_limit_test!(
+    native_sketch_entity_emitter_refuses_before_child_clone,
+    "sketch_input_entities"
+);
+
+#[test]
+fn native_load_retained_limit_refuses_before_typed_record_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let first = &namespace.arenas()["feature_histories"][0];
+    let needed = u64::try_from(serde_json::to_vec(first).unwrap().len()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = needed - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::SldprtNative::load_charged(&limited, namespace).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "load typed native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        crate::native::SldprtNative::load_charged(&service, namespace).unwrap(),
+        crate::native::SldprtNative::load(namespace).unwrap()
+    );
+}
+
+#[test]
+fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "validate SLDPRT store features"
+    ));
+    assert!(namespace.arenas().is_empty());
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    native.store(&service, &mut namespace).unwrap();
+    assert!(!namespace.arenas()["features"].is_empty());
+}
 
 #[test]
 fn native_history_borrowed_view_matches_cleared_record_json_bytes() {

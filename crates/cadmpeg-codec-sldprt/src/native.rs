@@ -4,8 +4,10 @@
 
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
+
+use self::admission::{admit_retained_clones, admit_temporary_clones};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -34,6 +36,8 @@ const SLDPRT_ARENA_NAMES: &[&str] = &[
 ];
 
 type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
+
+mod admission;
 
 struct HistoryArenaView<'a>(&'a FeatureHistory);
 
@@ -315,33 +319,66 @@ impl SldprtNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        Self::load_inner(None, namespace)
+    }
+
+    pub(crate) fn load_charged(
+        ctx: &DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        Self::load_inner(Some(ctx), namespace)
+    }
+
+    fn load_inner(
+        ctx: Option<&DecodeContext<'_>>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        macro_rules! read_arena {
+            ($name:literal) => {
+                match ctx {
+                    Some(ctx) => namespace.arena_as_charged(ctx, $name)?,
+                    None => namespace.arena_as($name)?,
+                }
+            };
+        }
+        macro_rules! admit_index {
+            ($count:expr, $operation:literal) => {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(
+                        u64::try_from($count).map_err(|_| {
+                            ctx.refuse_codec_limit($operation, u64::MAX - 1, u64::MAX)
+                        })?,
+                        $operation,
+                    )?;
+                }
+            };
+        }
         let mut native = Self {
-            feature_histories: namespace.arena_as("feature_histories")?,
-            feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
-            pmi_dimensions: namespace.arena_as("pmi_dimensions")?,
+            feature_histories: read_arena!("feature_histories"),
+            feature_input_lanes: read_arena!("feature_input_lanes"),
+            pmi_dimensions: read_arena!("pmi_dimensions"),
         };
-        let configurations: Vec<crate::records::Configuration> =
-            namespace.arena_as("configurations")?;
-        let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
+        let configurations: Vec<crate::records::Configuration> = read_arena!("configurations");
+        let features: Vec<crate::records::Feature> = read_arena!("features");
         let entity_wires: Vec<crate::records::SketchInputEntityWire> =
-            namespace.arena_as("sketch_input_entities")?;
-        let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
+            read_arena!("sketch_input_entities");
+        let classes: Vec<FeatureInputClass> = read_arena!("feature_input_classes");
         let body_selections: Vec<FeatureInputBodySelection> =
-            namespace.arena_as("feature_input_body_selections")?;
+            read_arena!("feature_input_body_selections");
         let edge_selections: Vec<FeatureInputEdgeSelection> =
-            namespace.arena_as("feature_input_edge_selections")?;
+            read_arena!("feature_input_edge_selections");
         let surface_selections: Vec<FeatureInputSurfaceSelection> =
-            namespace.arena_as("feature_input_surface_selections")?;
+            read_arena!("feature_input_surface_selections");
         let generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity> =
-            namespace.arena_as("feature_input_generated_surface_identities")?;
-        let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
-        let references: Vec<FeatureInputReference> =
-            namespace.arena_as("feature_input_references")?;
+            read_arena!("feature_input_generated_surface_identities");
+        let names: Vec<FeatureInputName> = read_arena!("feature_input_names");
+        let references: Vec<FeatureInputReference> = read_arena!("feature_input_references");
         let relation_bindings: Vec<FeatureInputRelationBinding> =
-            namespace.arena_as("feature_input_relation_bindings")?;
+            read_arena!("feature_input_relation_bindings");
         let relation_instances: Vec<FeatureInputRelationInstance> =
-            namespace.arena_as("feature_input_relation_instances")?;
-        let scalars: Vec<FeatureInputScalar> = namespace.arena_as("feature_input_scalars")?;
+            read_arena!("feature_input_relation_instances");
+        let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
+        admit_index!(native.feature_histories.len(), "index SLDPRT history ids");
         let history_ids = native
             .feature_histories
             .iter()
@@ -365,15 +402,21 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        admit_index!(features.len(), "index SLDPRT feature ids");
         let feature_ids = features
             .iter()
             .map(|record| record.id.as_str())
             .collect::<std::collections::HashSet<_>>();
+        admit_index!(native.feature_input_lanes.len(), "index SLDPRT lane ids");
         let lane_ids = native
             .feature_input_lanes
             .iter()
             .map(|lane| lane.id.as_str())
             .collect::<std::collections::HashSet<_>>();
+        admit_index!(
+            native.feature_input_lanes.len(),
+            "index SLDPRT lane payloads"
+        );
         let lane_payloads = native
             .feature_input_lanes
             .iter()
@@ -388,6 +431,7 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        admit_index!(entity_wires.len(), "load SLDPRT sketch entities");
         let entities = entity_wires
             .into_iter()
             .map(|wire| {
@@ -506,6 +550,7 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
+        admit_index!(names.len(), "index SLDPRT feature names");
         let name_ids = names
             .iter()
             .map(|record| record.id.as_str())
@@ -568,14 +613,17 @@ impl SldprtNative {
                 record.id, record.name
             )));
         }
+        admit_index!(references.len(), "index SLDPRT references");
         let references_by_id = references
             .iter()
             .map(|record| (record.id.as_str(), record))
             .collect::<std::collections::HashMap<_, _>>();
+        admit_index!(classes.len(), "index SLDPRT classes");
         let class_ids = classes
             .iter()
             .map(|record| record.id.as_str())
             .collect::<std::collections::HashSet<_>>();
+        admit_index!(scalars.len(), "index SLDPRT scalars");
         let scalar_ids = scalars
             .iter()
             .map(|record| record.id.as_str())
@@ -660,6 +708,13 @@ impl SldprtNative {
             }
         }
         for history in &mut native.feature_histories {
+            admit_retained_clones(
+                ctx,
+                configurations
+                    .iter()
+                    .filter(|record| record.parent == history.id),
+                "attach SLDPRT history configurations",
+            )?;
             history.configurations = configurations
                 .iter()
                 .filter(|record| record.parent == history.id)
@@ -676,6 +731,11 @@ impl SldprtNative {
                     history.id, pair[1].ordinal
                 )));
             }
+            admit_retained_clones(
+                ctx,
+                features.iter().filter(|record| record.parent == history.id),
+                "attach SLDPRT history features",
+            )?;
             history.features = features
                 .iter()
                 .filter(|record| record.parent == history.id)
@@ -694,42 +754,83 @@ impl SldprtNative {
             }
         }
         for lane in &mut native.feature_input_lanes {
+            admit_retained_clones(
+                ctx,
+                classes.iter().filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane classes",
+            )?;
             lane.classes = classes
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.classes.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                names.iter().filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane names",
+            )?;
             lane.names = names
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.names.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                scalars.iter().filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane scalars",
+            )?;
             lane.scalars = scalars
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.scalars.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                references.iter().filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane references",
+            )?;
             lane.references = references
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.references.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                relation_bindings
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane relation bindings",
+            )?;
             lane.relation_bindings = relation_bindings
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.relation_bindings.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                relation_instances
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane relation instances",
+            )?;
             lane.relation_instances = relation_instances
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.relation_instances.sort_by_key(|record| record.ordinal);
+            admit_retained_clones(
+                ctx,
+                body_selections
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane body selections",
+            )?;
             lane.body_selections = body_selections
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -746,12 +847,24 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            admit_retained_clones(
+                ctx,
+                edge_selections
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane edge selections",
+            )?;
             lane.edge_selections = edge_selections
                 .iter()
                 .filter(|record| record.parent == lane.id)
                 .cloned()
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
+            let _edge_features_reservation = admit_temporary_clones(
+                ctx,
+                features.iter(),
+                "validate SLDPRT edge feature context",
+            )?;
             let mut edge_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut edge_features,
@@ -781,11 +894,23 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let _surface_features_reservation = admit_temporary_clones(
+                ctx,
+                features.iter(),
+                "validate SLDPRT surface feature context",
+            )?;
             let mut surface_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut surface_features,
                 std::slice::from_ref(lane),
             );
+            admit_retained_clones(
+                ctx,
+                surface_selections
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane surface selections",
+            )?;
             lane.surface_selections = surface_selections
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -800,6 +925,13 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            admit_retained_clones(
+                ctx,
+                generated_surface_identities
+                    .iter()
+                    .filter(|record| record.parent == lane.id),
+                "attach SLDPRT lane generated surfaces",
+            )?;
             let mut records = generated_surface_identities
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -815,6 +947,11 @@ impl SldprtNative {
                     lane.id
                 )));
             }
+            admit_retained_clones(
+                ctx,
+                entities.iter().filter(|record| record.parent() == lane.id),
+                "attach SLDPRT lane sketch entities",
+            )?;
             lane.sketch_entities = entities
                 .iter()
                 .filter(|record| record.parent() == lane.id)
@@ -832,6 +969,15 @@ impl SldprtNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        macro_rules! admit_store_index {
+            ($count:expr, $operation:literal) => {
+                ctx.charge_collection_items(
+                    u64::try_from($count)
+                        .map_err(|_| ctx.refuse_codec_limit($operation, u64::MAX - 1, u64::MAX))?,
+                    $operation,
+                )?;
+            };
+        }
         // Load admits every record against the lane payload it is derived from;
         // that is the boundary a hand-written namespace crosses. Store holds the
         // relations between records that no single payload derives.
@@ -857,32 +1003,44 @@ impl SldprtNative {
                 )));
             }
         }
+        let _features_reservation = admit_temporary_clones(
+            Some(ctx),
+            self.feature_histories
+                .iter()
+                .flat_map(|history| &history.features),
+            "validate SLDPRT store features",
+        )?;
         let features = self
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
             .cloned()
             .collect::<Vec<_>>();
+        admit_store_index!(features.len(), "index SLDPRT stored features");
         let feature_ids = features
             .iter()
             .map(|feature| feature.id.as_str())
             .collect::<std::collections::HashSet<_>>();
         for lane in &self.feature_input_lanes {
+            admit_store_index!(lane.names.len(), "index SLDPRT stored names");
             let name_ids = lane
                 .names
                 .iter()
                 .map(|record| record.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
+            admit_store_index!(lane.references.len(), "index SLDPRT stored references");
             let references_by_id = lane
                 .references
                 .iter()
                 .map(|record| (record.id.as_str(), record))
                 .collect::<std::collections::HashMap<_, _>>();
+            admit_store_index!(lane.classes.len(), "index SLDPRT stored classes");
             let class_ids = lane
                 .classes
                 .iter()
                 .map(|record| record.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
+            admit_store_index!(lane.scalars.len(), "index SLDPRT stored scalars");
             let scalar_ids = lane
                 .scalars
                 .iter()
@@ -921,6 +1079,11 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let _edge_features_reservation = admit_temporary_clones(
+                Some(ctx),
+                features.iter(),
+                "validate SLDPRT store edge features",
+            )?;
             let mut edge_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut edge_features,
@@ -938,6 +1101,11 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            let _surface_features_reservation = admit_temporary_clones(
+                Some(ctx),
+                features.iter(),
+                "validate SLDPRT store surface features",
+            )?;
             let mut surface_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut surface_features,
@@ -1043,6 +1211,10 @@ impl SldprtNative {
                     record.id, record.name
                 )));
             }
+            admit_store_index!(
+                lane.sketch_entities.len(),
+                "index SLDPRT stored sketch entities"
+            );
             let sketch_entities = lane
                 .sketch_entities
                 .iter()
@@ -1122,7 +1294,19 @@ impl SldprtNative {
                 }
             }
         }
+        let _expected_histories_reservation = admit_temporary_clones(
+            Some(ctx),
+            self.feature_histories.iter(),
+            "validate SLDPRT expected histories",
+        )?;
         let mut expected_histories = self.feature_histories.clone();
+        let _history_lanes_reservation = admit_temporary_clones(
+            Some(ctx),
+            self.feature_input_lanes.iter().filter(|lane| {
+                !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
+            }),
+            "validate SLDPRT history lanes",
+        )?;
         let history_lanes = self
             .feature_input_lanes
             .iter()
