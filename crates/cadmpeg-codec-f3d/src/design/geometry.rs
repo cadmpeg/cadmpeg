@@ -44,6 +44,20 @@ struct SketchArrangementFace {
     polyline: Vec<Point2>,
 }
 
+fn push_arrangement_outgoing(
+    outgoing: &mut Vec<(usize, bool, f64)>,
+    use_: (usize, bool, f64),
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        outgoing.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d arrangement outgoing allocation", 0, 1)
+        })?;
+    }
+    outgoing.push(use_);
+    Ok(())
+}
+
 pub(super) fn arrangement_region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -368,21 +382,35 @@ fn sketch_arrangement_faces(
             "f3d_arrangement_outgoing",
         )?,
     };
+    let _outgoing_reservation = ctx
+        .map(|ctx| {
+            let bytes = u64::try_from(edges.len())
+                .ok()
+                .and_then(|count| count.checked_mul(2))
+                .and_then(|count| {
+                    count.checked_mul(u64::try_from(std::mem::size_of::<(usize, bool, f64)>()).ok()?)
+                })
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("f3d arrangement outgoing bytes", u64::MAX - 1, u64::MAX)
+                })?;
+            ctx.reserve_scoped(bytes, "f3d arrangement outgoing entries")
+        })
+        .transpose()?;
     for (edge_index, edge) in edges.iter().enumerate() {
         let forward = geometric!(edge.polyline.get(1));
         let reverse = geometric!(edge
             .polyline
             .get(geometric!(edge.polyline.len().checked_sub(2))));
-        outgoing[edge.nodes[0]].push((
+        push_arrangement_outgoing(&mut outgoing[edge.nodes[0]], (
             edge_index,
             false,
             (forward.v - nodes[edge.nodes[0]].v).atan2(forward.u - nodes[edge.nodes[0]].u),
-        ));
-        outgoing[edge.nodes[1]].push((
+        ), ctx)?;
+        push_arrangement_outgoing(&mut outgoing[edge.nodes[1]], (
             edge_index,
             true,
             (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
-        ));
+        ), ctx)?;
     }
     if edges
         .iter()

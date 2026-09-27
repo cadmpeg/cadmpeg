@@ -693,6 +693,25 @@ fn arrangement_outgoing_refuses_collection_limit() {
 }
 
 #[test]
+fn arrangement_outgoing_entries_refuse_materialized_limit() {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 143;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let budget = local_arrangement_budget();
+    let error = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+        .err()
+        .expect("six outgoing entries require 144 temporary bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d arrangement outgoing entries"
+    ));
+}
+
+#[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
     let error = arrangement_refusal_with_collection_limit(1829);
     assert!(matches!(
