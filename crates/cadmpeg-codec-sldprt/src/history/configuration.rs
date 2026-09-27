@@ -148,7 +148,7 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
     );
-    crate::resolved_features::holes::project_helix_axes(Some(ctx), features, projection, lanes)?;
+    crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
         features, projection, lanes,
     );

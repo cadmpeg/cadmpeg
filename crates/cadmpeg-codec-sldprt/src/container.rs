@@ -446,7 +446,7 @@ fn walk_native_markers<E>(
 }
 
 fn compound_stream(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     path: String,
     directory_id: u32,
     start_sector: u32,
@@ -524,7 +524,7 @@ fn compound_streams<'a>(
             let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
             let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
             compound_stream(
-                Some(ctx),
+                ctx,
                 entry.path().to_owned(),
                 entry.id().directory_id(),
                 entry.start_sector(),
@@ -655,7 +655,7 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
 }
 
 fn block_from_inflated(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     off: usize,
     frame: &BlockFrame,
@@ -699,7 +699,9 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
     let payload = bytes.get(payload_start..payload_end)?;
     let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
-    block_from_inflated(None, bytes, off, &frame, inflated)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).ok()?;
+    block_from_inflated(&ctx, bytes, off, &frame, inflated)
         .ok()
         .flatten()
 }
@@ -731,7 +733,7 @@ fn try_block_budgeted<'a>(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    block_from_inflated(Some(ctx), bytes, off, &frame, inflated)
+    block_from_inflated(ctx, bytes, off, &frame, inflated)
 }
 
 /// Test a marker hit against the cache-cell relational invariant

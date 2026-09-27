@@ -2,9 +2,7 @@
 //! Wrappers over internal parsers for the `cadmpeg-fuzz` targets.
 //!
 //! Each wrapper runs one internal parser over arbitrary bytes. The fuzz target
-//! checks that no input panics. Resource-aware scanners can return a refusal;
-//! these wrappers run without a decode context. `pmi` states its own reparse
-//! invariant instead.
+//! checks that no input panics. Resource-aware scanners can return a refusal.
 #![doc(hidden)]
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -16,7 +14,11 @@ pub fn container(data: &[u8]) {
 
 /// Exercise embedded Parasolid stream extraction.
 pub fn parasolid(data: &[u8]) {
-    drop(crate::parasolid::extract_streams_with_offsets(data, None));
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
+        return;
+    };
+    drop(crate::parasolid::extract_streams_with_offsets(data, &ctx));
 }
 
 /// Exercise spline-curve carrier scanning.
