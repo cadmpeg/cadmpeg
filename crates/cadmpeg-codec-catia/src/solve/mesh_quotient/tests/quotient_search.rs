@@ -819,10 +819,10 @@ fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
     }]];
     let equations = possible_face_equations(&ctx, &assignments).expect("service resource budget");
 
+    let mut choices = Vec::new();
     assert!(
-        possible_face_choices_with_limit(&ctx, &assignments, &equations, 0)
+        !possible_face_choices_with_limit(&ctx, &assignments, &equations, 0, &mut choices)
             .expect("service resource budget")
-            .is_none()
     );
 }
 
@@ -838,7 +838,15 @@ fn face_choice_materialization_charges_nested_collections_before_absence() {
     }]];
     let fallback = vec![vec![[0, 1]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>, work_limit| {
-        possible_face_choices_with_limit(ctx, &assignments, &fallback, work_limit)
+        let mut choices = Vec::new();
+        let complete = possible_face_choices_with_limit(
+            ctx,
+            &assignments,
+            &fallback,
+            work_limit,
+            &mut choices,
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>(complete.then_some(choices))
     };
     assert!(crate::test_support::with_service_context(|ctx| run(ctx, 2))
         .expect("service resource budget")
@@ -891,7 +899,9 @@ fn face_choice_fallback_charges_copied_equations() {
     let faces = [vec![assignment]];
     let fallback = [vec![[0, 1]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        possible_face_choices_with_limit(ctx, &faces, &fallback, 2)
+        let mut choices = Vec::new();
+        let complete = possible_face_choices_with_limit(ctx, &faces, &fallback, 2, &mut choices)?;
+        Ok::<_, cadmpeg_core::CodecError>(complete.then_some(choices))
     };
     assert_eq!(
         crate::test_support::with_service_context(run).expect("service resource budget"),

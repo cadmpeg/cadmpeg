@@ -5090,14 +5090,14 @@ fn possible_face_choices_with_limit(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
     limit: usize,
-) -> Result<Option<Vec<Vec<Vec<[usize; 2]>>>>, CodecError> {
+    faces_choices: &mut Vec<Vec<Vec<[usize; 2]>>>,
+) -> Result<bool, CodecError> {
     let budget = WorkBudget::new(limit);
-    let mut faces_choices = Vec::new();
     for (assignments, fallback) in faces.iter().zip(face_equations) {
         let mut choices = HashSet::new();
         for assignment in assignments {
             if !budget.charge() {
-                return Ok(None);
+                return Ok(false);
             }
             let unknown = assignment
                 .boundaries
@@ -5126,7 +5126,7 @@ fn possible_face_choices_with_limit(
             };
             'masks: for mask in 0..combinations {
                 if !budget.charge() {
-                    return Ok(None);
+                    return Ok(false);
                 }
                 let mut variable = 0usize;
                 let mut directions = Vec::new();
@@ -5196,12 +5196,12 @@ fn possible_face_choices_with_limit(
         face_choices.sort_unstable();
         crate::resource::push(
             ctx,
-            &mut faces_choices,
+            faces_choices,
             face_choices,
             "catia_possible_face_choice_faces",
         )?;
     }
-    Ok((!budget.exhausted()).then_some(faces_choices))
+    Ok(!budget.exhausted())
 }
 
 #[cfg(test)]
@@ -5210,9 +5210,13 @@ fn possible_face_choices(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
 ) -> Vec<Vec<Vec<[usize; 2]>>> {
-    possible_face_choices_with_limit(ctx, faces, face_equations, usize::MAX)
-        .expect("service resource budget")
-        .expect("unbounded test face-choice materialization")
+    let mut choices = Vec::new();
+    assert!(
+        possible_face_choices_with_limit(ctx, faces, face_equations, usize::MAX, &mut choices)
+            .expect("service resource budget"),
+        "unbounded test face-choice materialization"
+    );
+    choices
 }
 
 fn deduplicate_mesh_quotient_assignments(
@@ -10552,15 +10556,16 @@ fn resolve_standard_mesh_endpoint_candidates(
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     }
     let face_equations = possible_face_equations(ctx, &assignments)?;
-    let Some(face_choices) = possible_face_choices_with_limit(
+    let mut face_choices = Vec::new();
+    if !possible_face_choices_with_limit(
         ctx,
         &assignments,
         &face_equations,
         MAX_MESH_CONSTRAINT_OPERATIONS,
-    )?
-    else {
+        &mut face_choices,
+    )? {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
-    };
+    }
     let unselected = ctx.alloc_filled(
         edge_candidates.len(),
         None,
