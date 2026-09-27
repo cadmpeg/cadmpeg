@@ -1267,7 +1267,11 @@ fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
         })
 }
 
-fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, FramingError> {
+fn parse_revision(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<RevisionHistory, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1280,9 +1284,9 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
         source: SourceRange {
             range: record.range.clone(),
         },
-        created_by: utf16(&mut reader)?,
+        created_by: utf16_retained(ctx, &mut reader, "Rhino revision creator")?,
         created: times(&mut reader)?,
-        last_edited_by: utf16(&mut reader)?,
+        last_edited_by: utf16_retained(ctx, &mut reader, "Rhino revision editor")?,
         last_edited: times(&mut reader)?,
         revision_count: reader.i32()?,
     };
@@ -1290,7 +1294,11 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
     Ok(value)
 }
 
-fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
+fn parse_notes(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<Notes, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1300,7 +1308,7 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
         ));
     }
     let html = reader.i32()? != 0;
-    let text = utf16(&mut reader)?;
+    let text = utf16_retained(ctx, &mut reader, "Rhino document notes")?;
     let visible = reader.i32()? != 0;
     let rectangle = [reader.i32()?, reader.i32()?, reader.i32()?, reader.i32()?];
     let locked = version.1 >= 1 && reader.bool()?;
@@ -1318,16 +1326,20 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
     Ok(value)
 }
 
-fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
+fn parse_application(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<Application, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     packed(&mut reader)?;
     let value = Application {
         source: SourceRange {
             range: record.range.clone(),
         },
-        name: utf16(&mut reader)?,
-        url: utf16(&mut reader)?,
-        details: utf16(&mut reader)?,
+        name: utf16_retained(ctx, &mut reader, "Rhino application name")?,
+        url: utf16_retained(ctx, &mut reader, "Rhino application URL")?,
+        details: utf16_retained(ctx, &mut reader, "Rhino application details")?,
     };
     reader.skip_remaining()?;
     Ok(value)
@@ -1337,12 +1349,20 @@ pub(crate) fn standard_scale(value: i32) -> Option<f64> {
     StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }
 
-fn parse_units(data: &[u8], record: &Record) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    parse_units_reader(&mut reader)
+    parse_units_reader(ctx, &mut reader, true)
 }
 
-fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units_reader(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    retain_custom_name: bool,
+) -> Result<UnitsAndTolerances, FramingError> {
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..200).contains(&version) {
@@ -1392,7 +1412,9 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
         None
     };
     let custom = if !legacy && version >= 102 {
-        Some((reader.f64()?, utf16(reader)?))
+        let scale = reader.f64()?;
+        let name = utf16_deferred(reader)?;
+        Some((scale, name))
     } else {
         None
     };
@@ -1402,6 +1424,11 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
             let (scale, name) = custom.ok_or_else(|| {
                 FramingError::structural(reader.position(), "custom unit has no scale")
             })?;
+            let name = if retain_custom_name {
+                name.admit(ctx, "Rhino custom unit name")?
+            } else {
+                String::new()
+            };
             UnitSystem::custom(scale, name).ok_or_else(|| {
                 FramingError::structural(reader.position(), "custom unit scale is invalid")
             })?
@@ -1475,11 +1502,11 @@ fn parse_plugin_reference<'a>(
     uuid(&mut payload)?;
     payload.i32()?;
     for _ in 0..3 {
-        utf16(&mut payload)?;
+        utf16_deferred(&mut payload)?;
     }
     if version.1 >= 1 {
         for _ in 0..8 {
-            utf16(&mut payload)?;
+            utf16_deferred(&mut payload)?;
         }
         if version.1 >= 2 {
             for _ in 0..3 {
@@ -1537,7 +1564,7 @@ fn parse_earth_anchor<'a>(
         payload.i32()?;
         uuid(&mut payload)?;
         for _ in 0..4 {
-            utf16(&mut payload)?;
+            utf16_deferred(&mut payload)?;
         }
         if version.1 >= 2 {
             payload.i32()?;
@@ -1674,6 +1701,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
 }
 
 fn parse_settings_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1695,7 +1723,7 @@ fn parse_settings_attributes(
         let (mut payload, _) =
             anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
         anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
-        parse_units_reader(&mut payload)?;
+        parse_units_reader(ctx, &mut payload, false)?;
     }
     if version.1 >= 2 {
         uuid(&mut reader)?;
@@ -2038,7 +2066,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     if version.0 == 1 {
         payload.i32()?;
-        utf16(&mut payload)?;
+        utf16_deferred(&mut payload)?;
         read_segments(&mut payload)?;
         if version.1 >= 1 {
             uuid(&mut payload)?;
@@ -2290,7 +2318,7 @@ fn parse_layer(
     let _obsolete_line_style_index = reader.i16()?;
     let _obsolete_thickness = read_finite(&mut reader, "layer thickness")?;
     let _obsolete_scale = read_finite(&mut reader, "layer scale")?;
-    let name = utf16(&mut reader)?;
+    let name = utf16_retained(ctx, &mut reader, "Rhino layer name")?;
     let visible = if version.1 >= 1 {
         reader.bool_with_writer_version(writer_version)?
     } else {
@@ -2478,22 +2506,25 @@ fn parse_layer(
             }
             if item == 37 {
                 layer.extension_items.push(item);
-                let description = utf16(&mut reader)?;
-                let description = description
-                    .trim_matches(|character: char| {
-                        matches!(
-                            character as u32,
-                            0x0001..=0x0020
-                                | 0x007f
-                                | 0x0080..=0x009f
-                                | 0x00a0
-                                | 0x2000..=0x200b
-                                | 0x200e..=0x200f
-                                | 0x2028..=0x202f
-                                | 0x2066..=0x2069
-                        )
-                    })
-                    .to_owned();
+                let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
+                let trim = |character: char| {
+                    matches!(
+                        character as u32,
+                        0x0001..=0x0020
+                            | 0x007f
+                            | 0x0080..=0x009f
+                            | 0x00a0
+                            | 0x2000..=0x200b
+                            | 0x200e..=0x200f
+                            | 0x2028..=0x202f
+                            | 0x2066..=0x2069
+                    )
+                };
+                let trimmed = description.trim_matches(trim);
+                let prefix = description.len() - description.trim_start_matches(trim).len();
+                let end = prefix + trimmed.len();
+                description.truncate(end);
+                description.drain(..prefix);
                 layer.description = (!description.is_empty()).then_some(description);
                 let _next_item = reader.u8()?;
             }
@@ -2555,13 +2586,13 @@ pub(crate) fn parse_metadata(
                         }
                         Ok(())
                     }
-                    REVISION_HISTORY => parse_revision(data, record)
+                    REVISION_HISTORY => parse_revision(ctx, data, record)
                         .map(|value| metadata.properties.revision_history = Some(value)),
-                    NOTES => parse_notes(data, record)
+                    NOTES => parse_notes(ctx, data, record)
                         .map(|value| metadata.properties.notes = Some(value)),
-                    APPLICATION => parse_application(data, record)
+                    APPLICATION => parse_application(ctx, data, record)
                         .map(|value| metadata.properties.application = Some(value)),
-                    AS_FILE_NAME => utf16_record(data, record)
+                    AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
                         .map(|value| metadata.properties.as_file_name = Some(value)),
                     PREVIEW | COMPRESSED_PREVIEW => {
                         metadata.properties.previews.push(PreviewDescriptor {
@@ -2575,7 +2606,7 @@ pub(crate) fn parse_metadata(
                     _ => Ok(()),
                 }
             } else if table_type == SETTINGS {
-                parse_setting(data, record, &mut metadata.settings, archive)
+                parse_setting(ctx, data, record, &mut metadata.settings, archive)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(
@@ -2702,14 +2733,20 @@ fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnos
     }
 }
 
-fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
+fn utf16_record(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+    operation: &'static str,
+) -> Result<String, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    let value = utf16(&mut reader)?;
+    let value = utf16_retained(ctx, &mut reader, operation)?;
     reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_setting(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     settings: &mut DocumentSettings,
@@ -2717,9 +2754,9 @@ fn parse_setting(
 ) -> Result<(), FramingError> {
     match record.typecode {
         PLUGIN_LIST => parse_plugin_list(data, record, archive),
-        UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
+        UNITS => parse_units(ctx, data, record).map(|value| settings.units = Some(value)),
         RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(data, record, archive),
-        ATTRIBUTES => parse_settings_attributes(data, record, archive),
+        ATTRIBUTES => parse_settings_attributes(ctx, data, record, archive),
         CURRENT_LAYER => {
             settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
@@ -2766,7 +2803,8 @@ fn parse_setting(
             settings.current_dimstyle = Some(short_index(record, "current dimstyle")?);
             Ok(())
         }
-        MODEL_URL => utf16_record(data, record).map(|value| settings.model_url = Some(value)),
+        MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")
+            .map(|value| settings.model_url = Some(value)),
         _ => {
             settings.unsupported.push(SettingDescriptor {
                 typecode: record.typecode,
