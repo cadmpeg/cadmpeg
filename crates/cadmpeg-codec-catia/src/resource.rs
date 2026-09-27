@@ -127,6 +127,79 @@ pub(crate) fn copy_knot_vector(
         .map_err(|_| allocation_failed(0, 0, knots.len(), operation))
 }
 
+pub(crate) fn copy_nurbs_surface(
+    ctx: &DecodeContext<'_>,
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::nurbs::NurbsSurface, CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
+
+    let knots = surface.u_knots().len().checked_add(surface.v_knots().len());
+    let (rows, poles, pole_bytes) = match surface.pole_grid() {
+        NurbsPoleGrid::Polynomial { rows } => (
+            rows.len(),
+            rows.iter().try_fold(0usize, |total, row| total.checked_add(row.len())),
+            std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
+        ),
+        NurbsPoleGrid::Rational { rows } => (
+            rows.len(),
+            rows.iter().try_fold(0usize, |total, row| total.checked_add(row.len())),
+            std::mem::size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<cadmpeg_ir::features::FinitePoint3>>(),
+        ),
+    };
+    let Some((count, bytes)) = knots
+        .and_then(|knots| knots.checked_add(rows).zip(knots.checked_mul(size_of::<f64>())))
+        .and_then(|(count, knot_bytes)| {
+            poles.and_then(|poles| {
+                count.checked_add(poles).zip(
+                    rows.checked_mul(size_of::<Vec<usize>>())
+                        .and_then(|row_bytes| poles.checked_mul(pole_bytes).and_then(|pole_bytes| knot_bytes.checked_add(row_bytes)?.checked_add(pole_bytes))),
+                )
+            })
+        })
+        .and_then(|(count, bytes)| Some((u64::try_from(count).ok()?, u64::try_from(bytes).ok()?)))
+    else {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    };
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(bytes, operation)?;
+    surface.try_clone().map_err(|_| allocation_failed(0, 0, usize::try_from(count).unwrap_or(usize::MAX), operation))
+}
+
+#[cfg(test)]
+mod nurbs_copy_tests {
+    use super::copy_nurbs_surface;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn nurbs_surface_copy_refuses_before_nested_lanes() {
+        let surface = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("valid surface");
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| copy_nurbs_surface(ctx, &surface, "catia_nurbs_surface_copy"))
+                .expect("service resource budget"),
+            surface
+        );
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, |ctx| copy_nurbs_surface(ctx, &surface, "catia_nurbs_surface_copy")),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_nurbs_surface_copy"
+        ));
+    }
+}
+
 pub(crate) fn reserve_set<T: Eq + Hash>(
     ctx: &DecodeContext<'_>,
     values: &mut HashSet<T>,

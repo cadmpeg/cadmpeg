@@ -79,14 +79,17 @@ impl E5RollingBallJet {
     const DEGREE: u32 = 5;
 
     /// Convert the admitted carrier payload to the exact neutral jet form.
-    pub(in crate::families) fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
-        Some(ProceduralSurfaceDefinition::RollingBallJet(
-            cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
-                Self::DEGREE,
-                self.stations.clone(),
-            )
-            .ok()?,
-        ))
+    pub(in crate::families) fn definition(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
+        let stations = crate::resource::copy_retained_slice(ctx, &self.stations, "catia_e5_rolling_ball_definition_stations")?;
+        Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
+            Self::DEGREE,
+            stations,
+        )
+        .ok()
+        .map(ProceduralSurfaceDefinition::RollingBallJet))
     }
 }
 
@@ -209,7 +212,7 @@ fn vertex_runs(bytes: &[u8]) -> Vec<Vec<FinitePoint3>> {
 
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
 /// Record strides are derived from the little-endian size field at `+5`.
-pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+pub(super) fn e5_circles(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Circle>, CodecError> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -236,16 +239,16 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                         };
                         let payload =
                             cadmpeg_ir::geometry::analytic::CircleCurve::new(origin, frame, radius);
-                        out.push(E5Circle {
+                        crate::resource::push(ctx, &mut out, E5Circle {
                             pos,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
-                        });
+                        }, "catia_e5_circles")?;
                     }
                 }
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Decode the byte-explicit origin and natural bounds of E5 class-`0xc8` planes.
@@ -253,7 +256,7 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
 /// The record does not store a complete in-plane frame, so this function does not
 /// synthesize plane axes or a [`SurfaceGeometry`].
 #[must_use]
-pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
+pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Plane>, CodecError> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -275,7 +278,7 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         #[cfg(not(test))]
         // discarded-value: reading the natural bounds admits them finite; only tests read them
         let _ = bounds;
-        out.push(E5Plane {
+        crate::resource::push(ctx, &mut out, E5Plane {
             pos,
             record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
             origin,
@@ -283,9 +286,9 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
             u_range: [bounds[0].get(), bounds[1].get()],
             #[cfg(test)]
             v_range: [bounds[2].get(), bounds[3].get()],
-        });
+        }, "catia_e5_planes")?;
     }
-    out
+    Ok(out)
 }
 
 /// A directly framed E5 edge-use record.  The endpoint ids are E5 vertex
@@ -299,7 +302,7 @@ pub(in crate::families::e5) struct E5Edge {
 }
 
 /// Decode E5 `0xff` five-reference edge records.
-pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
+pub(super) fn e5_edges(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Edge>, CodecError> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -308,16 +311,16 @@ pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
             if let Some((_, next)) = e5_ref(payload, 1) {
                 if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
                     if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
-                        out.push(E5Edge {
+                        crate::resource::push(ctx, &mut out, E5Edge {
                             start_vertex_id,
                             end_vertex_id,
-                        });
+                        }, "catia_e5_edges")?;
                     }
                 }
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
@@ -393,7 +396,7 @@ pub(in crate::families) fn e5_rolling_ball_jets(
         .filter(|record| record.class == 0xd8)
     {
         if let Some(jet) = parse_e5_rolling_ball_jet(ctx, data, record)? {
-            jets.push(jet);
+            crate::resource::push(ctx, &mut jets, jet, "catia_e5_rolling_ball_jets")?;
         }
     }
     Ok(jets)
@@ -617,30 +620,42 @@ fn relative_close(left: f64, right: f64, tolerance: f64) -> bool {
 /// remains opaque. Only the exact frame and reference lane are needed to join
 /// a face wrapper to a directly decoded geometric carrier.
 #[must_use]
-pub(in crate::families) fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
+pub(in crate::families) fn e5_surface_wrappers(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<E5SurfaceWrapper>, CodecError> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         if record.class != 0xf1 || record.size != 44 {
             continue;
         }
-        let Some((references, next)) =
-            crate::wire::tokens::counted_refs(&data[record.pos + 13..record.end()], false)
-        else {
+        let payload = &data[record.pos + 13..record.end()];
+        if payload.first() != Some(&0x85) {
             continue;
-        };
-        let Ok(references) = <[u32; 5]>::try_from(references) else {
+        }
+        let mut references = [0u32; 5];
+        let mut next = 1;
+        let mut complete = true;
+        for reference in &mut references {
+            let Some(value) = crate::wire::tokens::object_ref(payload, &mut next, false) else {
+                complete = false;
+                break;
+            };
+            *reference = value;
+        }
+        if !complete {
             continue;
-        };
+        }
         if next >= 44 {
             continue;
         }
-        out.push(E5SurfaceWrapper {
+        crate::resource::push(ctx, &mut out, E5SurfaceWrapper {
             pos: record.pos,
             record_id: View::u32_le_at(data, record.pos + 9).unwrap_or(0),
             references,
-        });
+        }, "catia_e5_surface_wrappers")?;
     }
-    out
+    Ok(out)
 }
 
 fn e5_nurbs_surface(
@@ -925,7 +940,9 @@ mod tests {
         );
         assert_close(jet.stations[1].site.second_derivative.angle.get(), 4.0);
         assert!(matches!(
-            jet.definition().expect("valid rolling-ball jet fixture"),
+            crate::test_support::with_service_context(|ctx| jet.definition(ctx))
+                .expect("service resource budget")
+                .expect("valid rolling-ball jet fixture"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
     }
 
@@ -951,6 +968,28 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "decode CATIA E5 rolling-ball stations"));
+    }
+
+    #[test]
+    fn e5_rolling_ball_result_refuses_before_growth() {
+        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
+        assert!(matches!(
+            crate::test_support::with_collection_limit(14, |ctx| e5_rolling_ball_jets(ctx, &bytes)),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_e5_rolling_ball_jets"
+        ));
+    }
+
+    #[test]
+    fn e5_rolling_ball_definition_refuses_before_station_copy() {
+        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
+        let jets = decoded_jets(&bytes).expect("service resource budget");
+        assert_eq!(jets.len(), 1);
+        assert!(matches!(
+            crate::test_support::with_collection_limit(1, |ctx| jets[0].definition(ctx)),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_e5_rolling_ball_definition_stations"
+        ));
     }
 
     fn nurbs_surface_payload(mode: u16) -> Vec<u8> {
@@ -1029,7 +1068,7 @@ mod tests {
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xf1, 0x0102_0305, &payload);
 
-        let wrappers = e5_surface_wrappers(&bytes);
+        let wrappers = crate::test_support::with_service_context(|ctx| e5_surface_wrappers(ctx, &bytes)).expect("service resource budget");
         assert_eq!(wrappers.len(), 1);
         assert_eq!(wrappers[0].record_id, 0x0102_0305);
         assert_eq!(
@@ -1037,6 +1076,12 @@ mod tests {
             [0x0304, 0x0506, 0x0708, 0x090a, 0x0b0c]
         );
         assert_eq!(wrappers[0].underlying_surface(), 0x0304);
+
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, |ctx| e5_surface_wrappers(ctx, &bytes)),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_e5_surface_wrappers"
+        ));
     }
 
     #[test]
@@ -1048,6 +1093,6 @@ mod tests {
         let mut wrong_tail = vec![0x85, 0x81, 0x82, 0x83, 0x84, 0x85];
         wrong_tail.extend_from_slice(&[0; 27]);
         append_e5_record(&mut bytes, 0xf1, 2, &wrong_tail);
-        assert!(e5_surface_wrappers(&bytes).is_empty());
+        assert!(crate::test_support::with_service_context(|ctx| e5_surface_wrappers(ctx, &bytes)).expect("service resource budget").is_empty());
     }
 }

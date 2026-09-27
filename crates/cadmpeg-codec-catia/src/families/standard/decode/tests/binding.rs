@@ -5,6 +5,7 @@ use crate::families::b2::records::B2OwnerReferenceEncoding;
 use crate::families::b5::graph::B5LogicalVertex;
 use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ball_jets;
 use crate::families::standard::decode::associate_standard_freeform_e5_surfaces;
+use crate::families::standard::decode::standard_freeform_e5_carrier_ids;
 use crate::families::standard::decode::build_standard_edge_curve;
 use crate::families::standard::decode::combine_propagated_endpoint_pairs;
 use crate::families::standard::decode::corroborate_successor_endpoint_points;
@@ -81,6 +82,32 @@ fn unit_square_surface() -> NurbsSurface {
         false,
     )
     .expect("valid unit-square surface")
+}
+
+#[test]
+fn standard_e5_carrier_identity_maps_refuse_before_growth() {
+    let mut stream = e5_torus_stream();
+    let mut wrapper = vec![0x85, 0xaa, 0x81, 0x82, 0x83, 0x84];
+    wrapper.extend_from_slice(&[0; 38]);
+    append_e5_record(&mut stream, 0xf1, 8, &wrapper);
+    append_e5_record(&mut stream, 0x00, 7, &[0x82, 0x88, 0x89, 1, 0]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| standard_freeform_e5_carrier_ids(ctx, &stream))
+            .expect("service resource budget")
+            .get(&7),
+        Some(&42)
+    );
+    for (cap, operation) in [
+        (0, "catia_e5_face_surfaces"),
+        (1, "catia_e5_surface_wrappers"),
+        (2, "catia_e5_wrapper_surfaces"),
+        (3, "catia_e5_face_carriers"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(cap, |ctx| standard_freeform_e5_carrier_ids(ctx, &stream)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+    }
 }
 
 fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> CatiaOwnerNumericTail {
@@ -755,11 +782,12 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_surfaces(
+    let associated = crate::test_support::with_service_context(|ctx| associate_standard_freeform_e5_surfaces(
+        ctx,
         &records,
         &stream,
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    )).expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
@@ -807,7 +835,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     .expect("synthetic E5 stream fits the service profile");
     let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
         .expect("two E5 stations fit the collection limit");
-    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream, &jets);
+    let associated = associate_standard_freeform_e5_rolling_ball_jets(&ctx, &records, &stream, &jets).expect("service resource budget");
     assert!(matches!(
         associated.get(&7),
         Some(StandardSurfaceProcedure::RollingBall {
@@ -824,7 +852,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     };
     *forward = false;
     assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream, &jets)
+        associate_standard_freeform_e5_rolling_ball_jets(&ctx, &opposite_records, &stream, &jets).expect("service resource budget")
             .is_empty()
     );
 
@@ -846,10 +874,11 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         crate::families::e5::graph::Sign::Positive
     );
     assert!(associate_standard_freeform_e5_rolling_ball_jets(
+        &ctx,
         &opposite_records,
         &reverse_stream,
         &reverse_jets
-    )
+    ).expect("service resource budget")
     .contains_key(&7));
 }
 

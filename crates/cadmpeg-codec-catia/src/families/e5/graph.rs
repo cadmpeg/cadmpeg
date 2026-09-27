@@ -431,8 +431,12 @@ pub(crate) fn parse_topology(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<E5Topology>, CodecError> {
+    let mut admitted_records = Vec::new();
+    for record in records(bytes) {
+        crate::resource::push(ctx, &mut admitted_records, record, "catia_e5_graph_records")?;
+    }
     (|| -> Option<Result<E5Topology, CodecError>> {
-        let records = records(bytes);
+        let records = admitted_records;
         let by_id: HashMap<u32, &Record<'_>> =
             records.iter().map(|record| (record.id, record)).collect();
         if by_id.len() != records.len() {
@@ -641,12 +645,24 @@ pub(crate) fn parse_topology(
 /// This is the narrow face-to-carrier relation used by standard freeform
 /// aliases. It does not claim that the complete E5 topology graph is closed.
 #[must_use]
-pub(in crate::families) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+pub(in crate::families) fn face_surface_references(
+    bytes: &[u8],
+) -> impl Iterator<Item = (u32, u32)> + '_ {
     records(bytes)
-        .into_iter()
         .filter(|record| record.class == 0x00)
-        .filter_map(|record| parse_face(&record).map(|face| (face.id, face.surface)))
-        .collect()
+        .filter_map(|record| {
+            let count = usize::from(record.payload.first()?.checked_sub(0x81)?);
+            if count == 0 {
+                return None;
+            }
+            let mut position = 1;
+            let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
+            for _ in 0..count {
+                wire::tokens::object_ref(record.payload, &mut position, false)?;
+            }
+            Sign::from_i16(View::i16_le_at(record.payload, position)?)?;
+            (position + 2 == record.payload.len()).then_some((record.id, surface))
+        })
 }
 
 fn is_surface_carrier_class(class: u8) -> bool {
@@ -1411,38 +1427,36 @@ fn parse_body_root(payload: &[u8]) -> Option<Vec<u32>> {
     Some(faces)
 }
 
-fn records(bytes: &[u8]) -> Vec<Record<'_>> {
-    let mut records = Vec::new();
+fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
     let mut position = 0;
-    while position + 13 <= bytes.len() {
-        let Some(relative) = bytes[position..]
+    std::iter::from_fn(move || loop {
+        if position + 13 > bytes.len() {
+            return None;
+        }
+        let relative = bytes[position..]
             .windows(3)
-            .position(|value| value == [0xe5, 0x0d, 0x03])
-        else {
-            break;
-        };
+            .position(|value| value == [0xe5, 0x0d, 0x03])?;
         let start = position + relative;
         let Some(id) = View::u32_le_at(bytes, start + 9) else {
-            break;
+            return None;
         };
         let Some(size) = View::u16_le_at(bytes, start + 5).map(usize::from) else {
-            break;
+            return None;
         };
         let Some(end) = start.checked_add(13 + size) else {
-            break;
+            return None;
         };
         if end > bytes.len() {
             position = start + 1;
             continue;
         }
-        records.push(Record {
+        position = end;
+        return Some(Record {
             class: bytes[start + 3],
             id,
             payload: &bytes[start + 13..end],
         });
-        position = end;
-    }
-    records
+    })
 }
 
 fn parse_face(record: &Record<'_>) -> Option<RawFace> {
@@ -2199,7 +2213,7 @@ mod tests {
         e5_test_context!(ctx);
         let mut bytes = vec![0; 20];
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, 0x00]);
-        assert!(records(&bytes).is_empty());
+        assert_eq!(records(&bytes).count(), 0);
         assert!(parse_topology(&ctx, &bytes)
             .expect("service decode")
             .is_none());
