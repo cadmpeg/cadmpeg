@@ -300,11 +300,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    let product_by_object = product_nodes
-        .iter()
-        .map(|node| (node.object.as_str(), node))
-        .collect::<HashMap<_, _>>();
-    let cyclic_products = product::product_cycle_nodes(&product_by_object);
+    let mut product_by_object = HashMap::new();
+    ctx.charge_collection_items(product_nodes.len() as u64, "fcstd product validation index")?;
+    product_by_object.try_reserve(product_nodes.len()).map_err(|_| {
+        resource::collection_allocation_failed(ctx, product_nodes.len() as u64, "fcstd product validation index")
+    })?;
+    for node in &product_nodes {
+        product_by_object.insert(node.object.as_str(), node);
+    }
+    let cyclic_products = product::product_cycle_nodes(ctx, &product_by_object)?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node

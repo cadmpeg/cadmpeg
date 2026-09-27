@@ -1315,7 +1315,11 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert!(product_cycle_nodes(&nodes).is_empty());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(product_cycle_nodes(&ctx, &nodes).expect("cycle analysis").is_empty());
 }
 
 #[test]
@@ -1325,7 +1329,25 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert_eq!(product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"), HashSet::from(["B", "C"]));
+}
+
+#[test]
+fn product_cycle_graph_refuses_at_caller_limit() {
+    let records = [node("A", &["B"]), node("B", &[])];
+    let nodes = records.iter().map(|record| (record.object.as_str(), record)).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(product_cycle_nodes(&ctx, &nodes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product reverse graph"));
 }
 
 #[test]
