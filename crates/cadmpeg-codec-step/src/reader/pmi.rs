@@ -243,22 +243,29 @@ pub(super) fn decode(
             .unwrap_or_default();
         let mut datum_records = HashSet::new();
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
-        let datum_references = constituents
-            .iter()
-            .enumerate()
-            .filter_map(|(index, constituent)| {
-                let precedence = u32::try_from(index + 1).ok().and_then(NonZeroU32::new)?;
-                Some(datum_references(
-                    constituent,
-                    precedence,
-                    exchange,
-                    &annotations,
-                    &mut datum_records,
-                    &mut measurements,
-                ))
-            })
-            .flatten()
-            .collect::<Vec<_>>();
+        let mut datum_references = Vec::new();
+        for (index, constituent) in constituents.iter().enumerate() {
+            let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new)
+            else {
+                continue;
+            };
+            for reference in datum_references_for_compartment(
+                constituent,
+                precedence,
+                exchange,
+                &annotations,
+                &mut datum_records,
+                &mut measurements,
+                ctx,
+            )? {
+                push_pmi_vec(
+                    &mut datum_references,
+                    reference,
+                    ctx,
+                    "step_pmi_datum_system_references",
+                )?;
+            }
+        }
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
@@ -1176,84 +1183,126 @@ fn curve_sources(
     Ok(curves)
 }
 
-fn datum_references(
+fn datum_references_for_compartment(
     value: &Value,
     precedence: NonZeroU32,
     exchange: &Exchange,
     annotations: &Annotations,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
-) -> Vec<DatumReference> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<DatumReference>, CodecError> {
     let Some(compartment_id) = value.reference() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(compartment) = exchange.records().get(&compartment_id) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if compartment.partial("DATUM_REFERENCE_COMPARTMENT").is_none()
         && compartment.partial("DATUM_REFERENCE_ELEMENT").is_none()
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    typed.insert(compartment_id);
-    let compartment_modifiers = datum_modifiers(compartment)
+    claim_pmi_typed(typed, compartment_id, ctx)?;
+    let mut compartment_modifiers = Vec::new();
+    for modifier in datum_modifiers(compartment)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
-        .filter_map(|modifier| modifier_text(modifier, exchange, typed, measurements))
-        .collect::<Vec<_>>();
+    {
+        if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
+            push_pmi_vec(
+                &mut compartment_modifiers,
+                text,
+                ctx,
+                "step_pmi_datum_modifier_items",
+            )?;
+        }
+    }
     let base = datum_base(compartment);
+    let mut output = Vec::new();
     if is_common_datum_list(base) {
         let Some(Value::Typed(_, members)) = base else {
-            return Vec::new();
+            return Ok(output);
         };
-        let element_ids = members
-            .list()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(ValueExt::reference)
-            .collect::<Vec<_>>();
-        let common_group = (element_ids.len() >= 2).then_some(precedence.get());
-        return element_ids
-            .into_iter()
-            .filter_map(|element_id| {
-                let element = exchange.records().get(&element_id)?;
-                element.partial("DATUM_REFERENCE_ELEMENT")?;
-                let datum = datum_base(element).and_then(ValueExt::reference)?;
-                annotations.get(datum)?;
-                let mut modifiers = compartment_modifiers.clone();
-                modifiers.extend(
-                    datum_modifiers(element)
-                        .and_then(ValueExt::list)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|modifier| {
-                            modifier_text(modifier, exchange, typed, measurements)
-                        }),
-                );
-                typed.extend([element_id, datum]);
-                Some(DatumReference {
+        let members = members.list().unwrap_or_default();
+        let common_group = (members.iter().filter_map(ValueExt::reference).count() >= 2)
+            .then_some(precedence.get());
+        for element_id in members.iter().filter_map(ValueExt::reference) {
+            let Some(element) = exchange.records().get(&element_id) else {
+                continue;
+            };
+            if element.partial("DATUM_REFERENCE_ELEMENT").is_none() {
+                continue;
+            }
+            let Some(datum) = datum_base(element).and_then(ValueExt::reference) else {
+                continue;
+            };
+            if annotations.get(datum).is_none() {
+                continue;
+            }
+            let mut modifiers = clone_pmi_modifiers(&compartment_modifiers, ctx)?;
+            for modifier in datum_modifiers(element)
+                .and_then(ValueExt::list)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
+                    push_pmi_vec(
+                        &mut modifiers,
+                        text,
+                        ctx,
+                        "step_pmi_datum_modifier_items",
+                    )?;
+                }
+            }
+            claim_pmi_typed_many(typed, [element_id, datum], ctx)?;
+            push_pmi_vec(
+                &mut output,
+                DatumReference {
                     datum: pmi_id(datum),
                     precedence,
                     common_group,
                     modifiers,
-                })
-            })
-            .collect();
+                },
+                ctx,
+                "step_pmi_datum_reference_items",
+            )?;
+        }
+        return Ok(output);
     }
-    datum_ids(base)
-        .into_iter()
-        .filter(|datum| annotations.get(*datum).is_some())
-        .map(|datum| {
-            typed.insert(datum);
-            DatumReference {
+    if let Some(base) = base {
+        visit_datum_ids(base, ctx, &mut |datum| {
+            if annotations.get(datum).is_none() {
+                return Ok(());
+            }
+            claim_pmi_typed(typed, datum, ctx)?;
+            push_pmi_vec(
+                &mut output,
+                DatumReference {
                 datum: pmi_id(datum),
                 precedence,
                 common_group: None,
-                modifiers: compartment_modifiers.clone(),
-            }
-        })
-        .collect()
+                    modifiers: clone_pmi_modifiers(&compartment_modifiers, ctx)?,
+                },
+                ctx,
+                "step_pmi_datum_reference_items",
+            )
+        })?;
+    }
+    Ok(output)
+}
+
+fn clone_pmi_modifiers(
+    values: &[String],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<String>, CodecError> {
+    let mut copy = Vec::new();
+    for value in values {
+        let text = clone_pmi_text(value, ctx, "step_pmi_datum_modifier_copy")?;
+        push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
+    }
+    Ok(copy)
 }
 
 fn datum_base(record: &RawRecord) -> Option<&Value> {
@@ -1278,15 +1327,24 @@ fn is_common_datum_list(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
 }
 
-fn datum_ids(value: Option<&Value>) -> Vec<u64> {
+fn visit_datum_ids(
+    value: &Value,
+    ctx: Option<&DecodeContext<'_>>,
+    visitor: &mut impl FnMut(u64) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_datum_id_walk"))
+        .transpose()?;
     match value {
-        Some(Value::Reference(id)) => vec![*id],
-        Some(Value::List(values)) => values
-            .iter()
-            .flat_map(|value| datum_ids(Some(value)))
-            .collect(),
-        _ => Vec::new(),
+        Value::Reference(id) => visitor(*id)?,
+        Value::List(values) => {
+            for value in values {
+                visit_datum_ids(value, ctx, visitor)?;
+            }
+        }
+        _ => {}
     }
+    Ok(())
 }
 
 fn modifier_text(
@@ -1294,28 +1352,58 @@ fn modifier_text(
     exchange: &Exchange,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
-) -> Option<String> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_datum_modifier_walk"))
+        .transpose()?;
     match value {
-        Value::Enumeration(value) => Some(value.to_ascii_lowercase()),
-        Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements),
+        Value::Enumeration(value) => {
+            let mut text = clone_pmi_text(value, ctx, "step_pmi_datum_modifier_text")?;
+            text.make_ascii_lowercase();
+            Ok(Some(text))
+        }
+        Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements, ctx),
         Value::Reference(id) => {
-            let record = exchange.records().get(id)?;
-            let parameters = record
+            let Some(record) = exchange.records().get(id) else {
+                return Ok(None);
+            };
+            let Some(parameters) = record
                 .partials
                 .iter()
-                .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")?
+                .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")
+            else {
+                return Ok(None);
+            };
+            let parameters = parameters
                 .parameters
                 .as_slice();
-            typed.insert(*id);
-            let kind = parameters.first()?.enumeration()?.to_ascii_lowercase();
-            let measure_id = parameters.get(1)?.reference()?;
-            let value = measure(&Value::Reference(measure_id), exchange, measurements)?
+            claim_pmi_typed(typed, *id, ctx)?;
+            let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
+                return Ok(None);
+            };
+            let Some(measure_id) = parameters.get(1).and_then(ValueExt::reference) else {
+                return Ok(None);
+            };
+            let Some(value) = measure(&Value::Reference(measure_id), exchange, measurements) else {
+                return Ok(None);
+            };
+            let value = value
                 .value
                 .get();
-            typed.insert(measure_id);
-            Some(format!("{kind}:{value}"))
+            claim_pmi_typed(typed, measure_id, ctx)?;
+            let mut text = match ctx {
+                Some(ctx) => crate::decode_alloc::charged_format(
+                    ctx,
+                    "step_pmi_datum_modifier_value_text",
+                    format_args!("{kind}:{value}"),
+                )?,
+                None => format!("{kind}:{value}"),
+            };
+            text.make_ascii_lowercase();
+            Ok(Some(text))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
