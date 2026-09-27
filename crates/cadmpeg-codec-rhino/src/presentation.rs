@@ -410,6 +410,12 @@ impl From<FramingError> for PatternTransferError {
     }
 }
 
+impl From<CodecError> for PatternTransferError {
+    fn from(error: CodecError) -> Self {
+        Self::Framing(error.into())
+    }
+}
+
 impl std::fmt::Display for PatternTransferError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -3010,7 +3016,7 @@ fn parse_linetype(
     let mut always = false;
     let (component, values) = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
-        let name = utf16(&mut reader)?;
+        let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino legacy linetype name")?;
         let values = segments(ctx, &mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
@@ -3118,16 +3124,31 @@ fn parse_linetype(
         });
     }
     let id = component.id;
-    let key = if id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        id.to_string()
-    };
     Ok(LinetypeRecord {
-        id: format!("rhino:presentation:linetype#{key}"),
+        id: if id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:linetype#record-{source_offset}"),
+                "Rhino linetype ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:linetype#{id}"),
+                "Rhino linetype ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: component.index,
-        source_uuid: (!id.is_nil()).then(|| id.to_string()),
+        source_uuid: (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{id}"),
+                    "Rhino linetype source UUID",
+                )
+            })
+            .transpose()?,
         name: component.name,
         segments,
         line_cap: cap,
@@ -3246,7 +3267,8 @@ fn parse_hatch_pattern(
         }
         let component = component(ctx, data, &mut reader, archive)?;
         let fill_type = reader.i32()?;
-        let description = utf16(&mut reader)?;
+        let description =
+            crate::settings::utf16_retained(ctx, &mut reader, "Rhino hatch description")?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         let mut line_reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let count = line_reader.i32()?;
@@ -3305,8 +3327,9 @@ fn parse_hatch_pattern(
         }
         let index = reader.i32()?;
         let fill_type = reader.i32()?;
-        let name = utf16(&mut reader)?;
-        let description = utf16(&mut reader)?;
+        let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino hatch name")?;
+        let description =
+            crate::settings::utf16_retained(ctx, &mut reader, "Rhino hatch description")?;
         let count = if fill_type == 1 { reader.i32()? } else { 0 };
         let count = usize::try_from(count).map_err(|_| {
             FramingError::structural(reader.position() - 4, "negative hatch-line count")
@@ -3356,16 +3379,31 @@ fn parse_hatch_pattern(
         }
         projected
     };
-    let key = if component.id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        component.id.to_string()
-    };
     Ok(HatchPatternRecord {
-        id: format!("rhino:presentation:hatch_pattern#{key}"),
+        id: if component.id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:hatch_pattern#record-{source_offset}"),
+                "Rhino hatch ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:hatch_pattern#{}", component.id),
+                "Rhino hatch ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil()).then(|| component.id.to_string()),
+        source_uuid: (!component.id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{}", component.id),
+                    "Rhino hatch source UUID",
+                )
+            })
+            .transpose()?,
         name: component.name,
         fill_type,
         description,
@@ -5042,7 +5080,15 @@ pub(crate) fn install(
                         binding,
                         record.range.start,
                     ) {
-                        Ok(value) => linetypes.push(value),
+                        Ok(value) => {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut linetypes,
+                                1,
+                                "Rhino linetypes",
+                            )?;
+                            linetypes.push(value);
+                        }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
@@ -5069,7 +5115,15 @@ pub(crate) fn install(
                         binding,
                         record.range.start,
                     ) {
-                        Ok(value) => hatch_patterns.push(value),
+                        Ok(value) => {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut hatch_patterns,
+                                1,
+                                "Rhino hatch patterns",
+                            )?;
+                            hatch_patterns.push(value);
+                        }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
