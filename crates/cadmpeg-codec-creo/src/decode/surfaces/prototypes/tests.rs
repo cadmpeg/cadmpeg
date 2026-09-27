@@ -14,6 +14,38 @@ use crate::CreoCodec;
 const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
 
 #[test]
+fn positional_replay_section_rows_refuse_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = [0u8];
+    let section = crate::container::Section::scan("VisibGeom".to_string(), 0, 1, None, &data)
+        .expect("bounded section");
+    let row = crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Spline,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code01,
+        next_surface: 0,
+        offset: 0,
+    };
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("root section is admitted");
+        super::relative_surface_rows(&ctx, std::slice::from_ref(&row), &section.section)
+    };
+    assert_eq!(run(1).expect("one relative row admitted").len(), 1);
+    let error = run(0).expect_err("relative row needs a Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo positional replay section rows"));
+}
+
+#[test]
 fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     const EPS_CONE_FRAME: f64 = f64::EPSILON * 8192.0;
 
