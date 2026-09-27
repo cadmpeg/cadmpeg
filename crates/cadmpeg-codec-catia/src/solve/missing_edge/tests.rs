@@ -111,7 +111,7 @@ fn edge_run_face_collection_refuses_limit() {
 
 #[test]
 fn edge_port_queue_propagates_collection_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let ports = [[10, 11]];
@@ -123,16 +123,57 @@ fn edge_port_queue_propagates_collection_refusal() {
         Some(vec![Some([0, 1])])
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = super::propagate_edge_port_points(&ctx, &ports, &pairs)
-        .expect_err("the edge queue exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_edge_port_queue"));
+    let mut operations = HashSet::new();
+    for limit in 0..=128 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            super::propagate_edge_port_points(ctx, &ports, &pairs)
+        }) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(resolved)) => {
+                assert_eq!(resolved, vec![Some([0, 1])]);
+                break;
+            }
+            outcome => panic!("unexpected edge port propagation outcome: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_port_resolved_pairs",
+        "catia_port_edge_entries",
+        "catia_port_incident_edges",
+        "catia_port_pair_points",
+        "catia_edge_port_initial_queue",
+        "catia_edge_port_queue",
+        "catia_port_resolved_port_rows",
+        "catia_port_resolved_candidate_pair",
+        "catia_port_resolved_candidate_rows",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn ordered_port_seed_refuses_before_binding_point_map() {
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    let ordered = [Some([0, 1])];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![Some([0, 1])]));
+    let mut operations = HashSet::new();
+    for limit in 0..=128 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected ordered port outcome: {outcome:?}"),
+        }
+    }
+    assert!(operations.contains("catia_port_bound_points"));
 }
 
 #[test]
