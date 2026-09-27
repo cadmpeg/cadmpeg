@@ -2298,7 +2298,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
-        self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
+        self.native.design_parameters = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
