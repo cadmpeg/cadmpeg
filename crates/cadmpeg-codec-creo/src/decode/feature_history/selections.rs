@@ -117,11 +117,12 @@ pub(in super::super) fn feature_edge_selection(
         // mixed identity, so retain the exact native selection.
         Ok(Some(EdgeSelection::Native(native)))
     } else if let Some(edges) = generated_curve_edge_refs(
+        ctx,
         ids,
         &scan.curves.topology_rows,
         &model_feature_ids(ctx, scan)?,
         &result_edge_ids,
-    ) {
+    )? {
         Ok(Some(
             EdgeSelection::generated(
                 edges,
@@ -135,29 +136,63 @@ pub(in super::super) fn feature_edge_selection(
 }
 
 pub(in super::super) fn generated_curve_edge_refs(
+    ctx: &DecodeContext<'_>,
     curve_ids: &[u32],
     rows: &[crate::curve::CurveTopologyRow],
     available_features: &BTreeSet<IrFeatureId>,
     result_edge_ids: &BTreeMap<u32, Vec<u32>>,
-) -> Option<Vec<GeneratedEdgeRef>> {
-    let unique_curve_ids = curve_ids.iter().copied().collect::<BTreeSet<_>>();
-    (unique_curve_ids.len() == curve_ids.len()).then_some(())?;
-    let unique_rows = crate::topology::uniquely_identified_rows(rows)
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    curve_ids
-        .iter()
-        .map(|curve_id| {
-            let row = unique_rows.get(curve_id)?;
-            let feature = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, row.feature_id);
-            (available_features.contains(&feature)
-                && result_edge_ids
-                    .get(&row.feature_id)
-                    .is_some_and(|ids| ids.contains(curve_id)))
-            .then_some(GeneratedEdgeRef::new(feature, format!("curve#{curve_id}")).ok()?)
-        })
-        .collect()
+) -> Result<Option<Vec<GeneratedEdgeRef>>, CodecError> {
+    let mut unique_curve_ids = BTreeSet::new();
+    for &curve_id in curve_ids {
+        if unique_curve_ids.contains(&curve_id) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "creo generated curve identity nodes")?;
+        unique_curve_ids.insert(curve_id);
+    }
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        if !counts.contains_key(&row.id) {
+            ctx.charge_collection_items(1, "creo generated curve count nodes")?;
+        }
+        *counts.entry(row.id).or_default() += 1;
+    }
+    let mut unique_rows = BTreeMap::new();
+    for row in rows {
+        if counts.get(&row.id) == Some(&1) {
+            ctx.charge_collection_items(1, "creo generated unique curve row nodes")?;
+            unique_rows.insert(row.id, row);
+        }
+    }
+    let mut generated = Vec::new();
+    for &curve_id in curve_ids {
+        let Some(row) = unique_rows.get(&curve_id) else {
+            return Ok(None);
+        };
+        let feature_text = ctx.format_retained(
+            format_args!("creo:model:feature#{}", row.feature_id),
+            "creo generated curve feature IDs",
+        )?;
+        let feature = IrFeatureId::mint(feature_text)
+            .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
+        if !available_features.contains(&feature)
+            || !result_edge_ids
+                .get(&row.feature_id)
+                .is_some_and(|ids| ids.contains(&curve_id))
+        {
+            return Ok(None);
+        }
+        let local_id = ctx.format_retained(
+            format_args!("curve#{curve_id}"),
+            "creo generated curve local IDs",
+        )?;
+        let Some(edge) = GeneratedEdgeRef::new(feature, local_id).ok() else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut generated, 1, "creo generated curve edge references")?;
+        generated.push(edge);
+    }
+    Ok(Some(generated))
 }
 
 /// Return the complete feature-local edge roster proven by unique topology rows.
@@ -211,8 +246,10 @@ fn feature_result_edge_ids_by_feature(
 
 #[cfg(test)]
 mod tests {
-    use super::{feature_edge_selection, feature_result_edge_ids, feature_result_edge_ids_by_feature};
+    use super::{feature_edge_selection, feature_result_edge_ids, feature_result_edge_ids_by_feature,
+        generated_curve_edge_refs};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeSet;
 
     fn one_edge() -> Vec<crate::curve::CurveTopologyRow> {
         vec![crate::curve::CurveTopologyRow {
@@ -224,6 +261,65 @@ mod tests {
             next_edges: [77, 77],
             offset: 0,
         }]
+    }
+
+    fn generated_reference_error(
+        collection: Option<u64>,
+        retained: Option<u64>,
+        operation: &'static str,
+    ) {
+        let rows = one_edge();
+        let available = BTreeSet::from([
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#97")
+                .expect("fixture feature ID"),
+        ]);
+        let results = std::collections::BTreeMap::from([(97, vec![77])]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if let Some(limit) = collection {
+            policy.limits.max_collection_items = limit;
+        }
+        if let Some(limit) = retained {
+            policy.limits.max_retained_bytes = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty source is admitted");
+        let error = generated_curve_edge_refs(&ctx, &[77], &rows, &available, &results)
+            .expect_err("one generated reference exceeds the resource limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+
+    #[test]
+    fn generated_curve_identity_nodes_refuse_collection_limit() {
+        generated_reference_error(Some(0), None, "creo generated curve identity nodes");
+    }
+
+    #[test]
+    fn generated_curve_count_nodes_refuse_collection_limit() {
+        generated_reference_error(Some(1), None, "creo generated curve count nodes");
+    }
+
+    #[test]
+    fn generated_unique_curve_row_nodes_refuse_collection_limit() {
+        generated_reference_error(Some(2), None, "creo generated unique curve row nodes");
+    }
+
+    #[test]
+    fn generated_curve_edge_references_refuse_collection_limit() {
+        generated_reference_error(Some(3), None, "creo generated curve edge references");
+    }
+
+    #[test]
+    fn generated_curve_feature_id_refuses_retained_limit() {
+        generated_reference_error(None, Some("creo:model:feature#97".len() as u64 - 1),
+            "creo generated curve feature IDs");
+    }
+
+    #[test]
+    fn generated_curve_local_id_refuses_retained_limit() {
+        generated_reference_error(None, Some("creo:model:feature#97".len() as u64),
+            "creo generated curve local IDs");
     }
 
     fn one_selected_edge() -> crate::container::ContainerScan<'static> {
