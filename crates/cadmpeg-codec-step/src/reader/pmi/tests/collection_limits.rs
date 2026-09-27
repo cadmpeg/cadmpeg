@@ -146,3 +146,33 @@ fn pmi_curve_source_items_refuse_collection_limit() {
                 && refusal.operation == "step_pmi_curve_source_items"
     ));
 }
+
+#[test]
+fn pmi_other_datum_target_form_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    assert!(matches!(
+        super::super::datum_target_form("custom form", Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_pmi_datum_target_form_copy"
+    ));
+}
+
+#[test]
+fn pmi_other_dimension_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    assert!(matches!(
+        super::super::dimension_kind("CUSTOM_SIZE", Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_pmi_other_dimension_name"
+    ));
+}
