@@ -1239,7 +1239,7 @@ fn scan_with_record_limit<'a>(
             warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            let parsed = parse_definitions(data, &records, archive, chunk.typecode);
+            let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
             opaque_records.extend(parsed.opaque_records);
         }

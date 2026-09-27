@@ -6,6 +6,7 @@ use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
 mod recovery;
+mod resource_limits;
 mod support;
 mod transforms;
 mod units;

@@ -634,10 +634,12 @@ pub(crate) fn file_reference<'a>(
 }
 
 fn skip_object_array(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-) -> Result<Vec<Range<usize>>, FramingError> {
+    ranges: &mut Vec<Range<usize>>,
+) -> Result<(), FramingError> {
     let count = reader.i32()?;
     let count = usize::try_from(count)
         .map_err(|_| FramingError::structural(reader.position(), "negative object count"))?;
@@ -647,7 +649,7 @@ fn skip_object_array(
             "object array exceeds item limit",
         ));
     }
-    let mut ranges = Vec::with_capacity(count);
+    crate::chunks::reserve_admitted_vec(ctx, ranges, count, "Rhino reference object ranges")?;
     for _ in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.short() {
@@ -659,10 +661,11 @@ fn skip_object_array(
         ranges.push(chunk.range());
         reader.skip(chunk.next_offset() - reader.position())?;
     }
-    Ok(ranges)
+    Ok(())
 }
 
 fn reference_settings<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -693,12 +696,21 @@ fn reference_settings<'a>(
                 "unsupported reference settings implementation version",
             ));
         }
-        let mut children = skip_object_array(data, &mut implementation_payload, archive)?;
-        children.extend(skip_object_array(
+        let mut children = Vec::new();
+        skip_object_array(
+            ctx,
             data,
             &mut implementation_payload,
             archive,
-        )?);
+            &mut children,
+        )?;
+        skip_object_array(
+            ctx,
+            data,
+            &mut implementation_payload,
+            archive,
+            &mut children,
+        )?;
         if implementation_payload.bool()? {
             let parent = chunk_at(
                 data,
@@ -713,6 +725,12 @@ fn reference_settings<'a>(
                     "reference parent layer is short-framed",
                 ));
             }
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino reference parent layer range",
+            )?;
             children.push(parent.range());
             implementation_payload
                 .skip(parent.next_offset() - implementation_payload.position())?;
@@ -825,6 +843,7 @@ fn parse_v5(
 }
 
 fn parse_v6(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     source_range: Range<usize>,
     range: Range<usize>,
@@ -849,8 +868,9 @@ fn parse_v6(
     outer.skip_remaining()?;
     let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
-    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
-    let mut outer_children = vec![component_start..reader.position()];
+    let mut outer_children =
+        crate::chunks::admitted_vec(ctx, 1, "Rhino instance definition checksum children")?;
+    outer_children.push(component_start..reader.position());
     if id.is_nil() {
         return Err(FramingError::structural(
             reader.position(),
@@ -860,6 +880,12 @@ fn parse_v6(
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
     let units = unit_detail(data, &mut reader, archive, warnings)?;
+    crate::chunks::reserve_admitted_vec(
+        ctx,
+        &mut outer_children,
+        1,
+        "Rhino instance definition checksum children",
+    )?;
     outer_children.push(units_start..reader.position());
     let description = utf16(&mut reader)?;
     let url = utf16(&mut reader)?;
@@ -882,11 +908,20 @@ fn parse_v6(
             ));
         }
         let reference = file_reference(data, &mut linked, archive, warnings)?;
-        let mut linked_children = vec![reference.source_range.clone()];
+        let mut linked_children =
+            crate::chunks::admitted_vec(ctx, 1, "Rhino linked definition checksum children")?;
+        linked_children.push(reference.source_range.clone());
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
-            linked_children.push(reference_settings(data, &mut linked, archive, warnings)?);
+            let range = reference_settings(ctx, data, &mut linked, archive, warnings)?;
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut linked_children,
+                1,
+                "Rhino linked definition checksum children",
+            )?;
+            linked_children.push(range);
         }
         linked.skip_remaining()?;
         checksum_warning_excluding(
@@ -895,6 +930,12 @@ fn parse_v6(
             &linked_children,
             "linked type",
             warnings,
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut outer_children,
+            1,
+            "Rhino instance definition checksum children",
         )?;
         outer_children.push(linked_chunk.range());
         Some(reference)
@@ -1107,11 +1148,12 @@ fn apply_idef_alternative_path(
 
 /// Parses all instance-definition records without losing framing after a bad record.
 pub(crate) fn parse_definitions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
     table_typecode: u32,
-) -> DefinitionParse {
+) -> Result<DefinitionParse, cadmpeg_core::CodecError> {
     let mut result = DefinitionParse::default();
     let mut seen = HashMap::new();
     let mut opaque_indices = BTreeSet::new();
@@ -1147,6 +1189,7 @@ pub(crate) fn parse_definitions(
                 )
             } else {
                 parse_v6(
+                    ctx,
                     data,
                     record.range.clone(),
                     class.class_data_range,
@@ -1207,6 +1250,9 @@ pub(crate) fn parse_definitions(
                     }
                 }
             }
+            Err(FramingError::Resource(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+            }
             Err(error) => {
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     diagnostic: RhinoDiagnostic {
@@ -1230,7 +1276,7 @@ pub(crate) fn parse_definitions(
             record: records[index].clone(),
         })
         .collect();
-    result
+    Ok(result)
 }
 
 /// Parses a packed major-1 instance-reference payload.
