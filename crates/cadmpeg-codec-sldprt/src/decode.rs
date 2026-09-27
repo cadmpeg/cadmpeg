@@ -2884,16 +2884,16 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model
-                .tessellations
-                .push(mesh.into_tessellation(
-                    cadmpeg_ir::tessellation::TessellationId::mint(id)
-                        .map_err(|error| CodecError::malformed(format_args!(
-                            "invalid display tessellation: {error}"
-                        )))?,
-                ).map_err(|error| {
+            ir.model.tessellations.push(
+                mesh.into_tessellation(
+                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                    })?,
+                )
+                .map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?);
+                })?,
+            );
         }
         let display_id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),

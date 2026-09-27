@@ -87,7 +87,8 @@ fn prepared(
     encoder: Box<dyn Encoder>,
     loss_policy: LossPolicy,
 ) -> PreparedConversion {
-    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
         validation,
@@ -123,10 +124,11 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![
-            cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"), serde_json::Map::default())
-                .expect("valid native identity"),
-        ],
+        vec![cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")],
     );
     ir.finalize();
     ir

@@ -1669,7 +1669,9 @@ fn embedded_history_mesh_keeps_geometry_and_checked_identity() {
     let json: serde_json::Value = serde_json::from_str(&text).expect("mesh JSON");
     assert_eq!(json["id"], "rhino:history:mesh#embedded");
     assert_eq!(json["kind"], "mesh");
-    assert!(json["vertices"].as_array().is_some_and(|vertices| !vertices.is_empty()));
+    assert!(json["vertices"]
+        .as_array()
+        .is_some_and(|vertices| !vertices.is_empty()));
 }
 
 #[test]
@@ -1684,7 +1686,10 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
             crate::mesh::MeshDecodeOptions {
                 writer_version: None,
                 association: None,
-                id: crate::mesh::MeshId::Ready(cadmpeg_ir::tessellation::TessellationId::mint("rhino:history:mesh#embedded").expect("valid identity")),
+                id: crate::mesh::MeshId::Ready(
+                    cadmpeg_ir::tessellation::TessellationId::mint("rhino:history:mesh#embedded")
+                        .expect("valid identity"),
+                ),
                 scale: MillimeterScale::IDENTITY,
                 userdata: &[],
             },

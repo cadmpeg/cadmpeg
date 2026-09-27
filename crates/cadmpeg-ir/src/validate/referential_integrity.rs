@@ -67,7 +67,8 @@ mod tests {
     fn unresolved_asset_reference_is_reported() {
         let missing = AssetId::mint("synthetic:test:asset#missing").expect("valid identity");
         let tessellation = Tessellation::new(
-            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#textured").expect("valid identity"),
+            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#textured")
+                .expect("valid identity"),
             TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),

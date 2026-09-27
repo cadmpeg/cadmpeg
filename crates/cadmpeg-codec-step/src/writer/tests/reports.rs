@@ -378,7 +378,10 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     );
     ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#triangle-metadata").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "synthetic:test:tessellation#triangle-metadata",
+            )
+            .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -809,7 +812,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#metadata").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#metadata")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -1318,7 +1322,8 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     });
     ir.model.tessellations.push(
         Tessellation::new(
-            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#0").expect("valid identity"),
+            cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#0")
+                .expect("valid identity"),
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: Vec::new(),
                 triangles: Vec::new(),
@@ -1909,10 +1914,11 @@ fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
-        vec![
-            cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"), Default::default())
-                .expect("valid native identity"),
-        ],
+        vec![cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+            Default::default(),
+        )
+        .expect("valid native identity")],
     );
     ir.finalize();
 
