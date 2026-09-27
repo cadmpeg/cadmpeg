@@ -386,6 +386,10 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
 
 #[test]
 fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[], &arena, &DecodePolicy::service(),
+    ).unwrap();
     let description = b"boundary_polyline mesh";
     let schema = b"SCH_3201255_32001_13006";
     let mut stream = b"PS\0\0".to_vec();
@@ -401,7 +405,7 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     }
     let header = crate::parasolid::stream_header(&stream).unwrap();
     assert_eq!(
-        crate::parasolid::mesh_polyline_from_header(&stream, &header),
+        crate::parasolid::mesh_polyline_from_header(&ctx, &stream, &header).unwrap(),
         Some(vec![
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0),

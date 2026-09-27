@@ -1,6 +1,8 @@
 //! Helix polyline fitting and the linear solvers it uses.
 
 use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two, Point3, Vector3};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 // Mesh coordinates are an approximation of the analytic helix. This fixed
 // relative bound is the decoder's promotion policy, not a value inferred from
@@ -8,24 +10,25 @@ use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two, Point3, Vector3};
 const HELIX_MAX_RELATIVE_RESIDUAL: f64 = 5.0e-4;
 
 pub(super) fn fit_helix_polyline(
+    ctx: &DecodeContext<'_>,
     points: &[Point3],
     revolutions: cadmpeg_ir::scalar::PositiveReal,
     clockwise: bool,
-) -> Option<(Point3, Vector3, f64, f64)> {
+) -> Result<Option<(Point3, Vector3, f64, f64)>, CodecError> {
     if points.len() < 6 {
-        return None;
+        return Ok(None);
     }
     let revolutions = revolutions.get();
-    let mut parameters = Vec::with_capacity(points.len());
-    parameters.push(0.0);
-    for pair in points.windows(2) {
+    let mut parameters = ctx.alloc_filled(points.len(), 0.0, "fit SLDPRT helix parameters")?;
+    for (index, pair) in points.windows(2).enumerate() {
         let delta = Vector3::new(
             pair[1].x - pair[0].x,
             pair[1].y - pair[0].y,
             pair[1].z - pair[0].z,
         );
-        parameters.push(parameters.last().copied()? + delta.norm());
+        parameters[index + 1] = parameters[index] + delta.norm();
     }
+    Ok((|| {
     let total = *parameters.last()?;
     if !total.is_finite() || total <= 0.0 {
         return None;
@@ -95,6 +98,7 @@ pub(super) fn fit_helix_polyline(
         points.last()?.z - points[0].z,
     );
     Some((origin, axis, radius, displacement.dot(axis)))
+    })())
 }
 
 fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)> {
@@ -268,6 +272,10 @@ mod tests {
 
     #[test]
     fn helix_fit_preserves_small_model_units() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         const RELATIVE_ERROR: f64 = 1e-10;
         for scale in [1e-8, 1.0, 1e8] {
             let points = (0..=16)
@@ -282,7 +290,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let (origin, axis, radius, rise) =
-                super::fit_helix_polyline(&points, revolutions(1.0), false).unwrap();
+                super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false).unwrap().unwrap();
             assert!(origin.x.abs() / scale <= RELATIVE_ERROR);
             assert!(origin.y.abs() / scale <= RELATIVE_ERROR);
             assert!((axis.z - 1.0).abs() <= RELATIVE_ERROR);
@@ -293,6 +301,10 @@ mod tests {
 
     #[test]
     fn helix_polyline_fit_recovers_axis_radius_and_rise() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         let points = (0..=64)
             .map(|index| {
                 let t = f64::from(index) / 64.0;
@@ -305,7 +317,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (origin, axis, radius, rise) =
-            super::fit_helix_polyline(&points, revolutions(0.25), false).unwrap();
+            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false).unwrap().unwrap();
         assert!((origin.x - 10.0).abs() < 1.0e-9);
         assert!((origin.y - 20.0).abs() < 1.0e-9);
         assert!((origin.z - 30.0).abs() < 1.0e-9);
@@ -318,6 +330,10 @@ mod tests {
 
     #[test]
     fn helix_fit_does_not_snap_axis_to_mesh_residual() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         let axis_x: f64 = 4.0e-5;
         let axis_y = -(1.0 - axis_x * axis_x).sqrt();
         let points = (0..=64)
@@ -336,7 +352,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (_, axis, radius, _) =
-            super::fit_helix_polyline(&points, revolutions(0.25), false).unwrap();
+            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false).unwrap().unwrap();
         assert!(axis.x > 3.0e-5 && axis.x < 5.0e-5, "{axis:?}");
         assert!(axis.y < -0.999_999_99, "{axis:?}");
         assert!(axis.z.abs() < 1.0e-6, "{axis:?}");

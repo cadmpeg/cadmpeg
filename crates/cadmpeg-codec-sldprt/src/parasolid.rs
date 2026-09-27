@@ -462,12 +462,13 @@ pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
 /// `0x0022` array tag and consecutive f64 values. The scalar count is three
 /// times the point count.
 pub(crate) fn mesh_polyline_from_header(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     header: &StreamHeader,
-) -> Option<Vec<Point3>> {
-    let schema = header.schema.value().to_ascii_lowercase();
-    if !schema.ends_with("_13006") {
-        return None;
+) -> Result<Option<Vec<Point3>>, CodecError> {
+    let schema = header.schema.value();
+    if !schema.as_bytes().ends_with(b"_13006") {
+        return Ok(None);
     }
     let mut candidates = Vec::new();
     for tag_at in header.body_offset..payload.len().saturating_sub(2) {
@@ -488,12 +489,27 @@ pub(crate) fn mesh_polyline_from_header(
         let Some(values) = payload.get(tag_at + 2..tag_at + 2 + byte_count) else {
             continue;
         };
-        let mut points = Vec::with_capacity(scalar_count / 3);
+        let point_count = scalar_count / 3;
+        ctx.charge_collection_items(
+            u64::try_from(point_count).map_err(|_| {
+                ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)
+            })?,
+            "decode Parasolid mesh points",
+        )?;
+        let mut points = Vec::new();
+        points.try_reserve(point_count).map_err(|_| {
+            ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)
+        })?;
         for xyz in values.chunks_exact(24) {
+            let (Some(x), Some(y), Some(z)) = (
+                View::f64_be_at(xyz, 0),
+                View::f64_be_at(xyz, 8),
+                View::f64_be_at(xyz, 16),
+            ) else {
+                return Ok(None);
+            };
             let point = Point3::new(
-                View::f64_be_at(xyz, 0)?,
-                View::f64_be_at(xyz, 8)?,
-                View::f64_be_at(xyz, 16)?,
+                x, y, z,
             );
             if !point.is_finite() {
                 points.clear();
@@ -502,18 +518,24 @@ pub(crate) fn mesh_polyline_from_header(
             points.push(point);
         }
         if points.len() >= 2 {
+            ctx.charge_collection_items(1, "collect Parasolid mesh candidates")?;
+            candidates.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect Parasolid mesh candidates", u64::MAX - 1, u64::MAX)
+            })?;
             candidates.push((scalar_count, points));
         }
     }
     candidates.sort_by_key(|(scalar_count, _)| std::cmp::Reverse(*scalar_count));
-    let (largest_count, points) = candidates.first()?;
+    let Some((largest_count, _)) = candidates.first() else {
+        return Ok(None);
+    };
     if candidates
         .get(1)
         .is_some_and(|(count, _)| count == largest_count)
     {
-        return None;
+        return Ok(None);
     }
-    Some(points.clone())
+    Ok(candidates.into_iter().next().map(|(_, points)| points))
 }
 
 #[cfg(test)]

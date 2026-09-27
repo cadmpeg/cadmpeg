@@ -51,11 +51,18 @@ pub(crate) fn project_helix_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let records = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let record_count = histories.iter().try_fold(0usize, |count, history| {
+        count.checked_add(history.features.len())
+    }).ok_or_else(|| ctx.refuse_codec_limit("index SLDPRT helix features", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(
+        u64::try_from(record_count).map_err(|_| ctx.refuse_codec_limit("index SLDPRT helix features", u64::MAX - 1, u64::MAX))?,
+        "index SLDPRT helix features",
+    )?;
+    let mut records = HashMap::new();
+    records.try_reserve(record_count).map_err(|_| ctx.refuse_codec_limit("index SLDPRT helix features", u64::MAX - 1, u64::MAX))?;
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        records.insert(feature.id.as_str(), feature);
+    }
     for model_feature in model_features {
         let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
             axial_rise,
@@ -91,19 +98,21 @@ pub(crate) fn project_helix_axes(
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
             };
-            meshes.extend(
-                crate::parasolid::extract_streams_with_offsets(object, ctx)?
-                    .into_iter()
-                    .filter_map(|stream| {
-                        crate::parasolid::mesh_polyline_from_header(&stream.payload, &stream.header)
-                    }),
-            );
+            for stream in crate::parasolid::extract_streams_with_offsets(object, ctx)? {
+                if let Some(points) = crate::parasolid::mesh_polyline_from_header(
+                    ctx, &stream.payload, &stream.header,
+                )? {
+                    ctx.charge_collection_items(1, "collect SLDPRT helix meshes")?;
+                    meshes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT helix meshes", u64::MAX - 1, u64::MAX))?;
+                    meshes.push(points);
+                }
+            }
         }
         let [points] = meshes.as_slice() else {
             continue;
         };
         let Some((axis_origin, mut axis_direction, radius, fitted_rise)) =
-            fit_helix_polyline(points, *revolutions, *clockwise)
+            fit_helix_polyline(ctx, points, *revolutions, *clockwise)?
         else {
             continue;
         };
