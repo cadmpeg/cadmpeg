@@ -511,14 +511,15 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             generated_ids.push(id);
         }
-        feature.dependencies = (reconciled_dependencies(
+        feature.dependencies = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+            reconciled_dependencies(
+            ctx,
             &feature.id,
             &feature.dependencies,
             native_dependencies.chain(generated_ids),
             &emitted,
-        ))
-        .into_iter()
-        .collect();
+        )?)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
             .map(|parent| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, parent))
             .filter(|parent| *parent != feature.id && emitted.contains(parent));
@@ -619,23 +620,38 @@ pub(in super::super) fn feature_generated_dependencies<'a>(
 }
 
 pub(in super::super) fn reconciled_dependencies(
+    ctx: &DecodeContext<'_>,
     feature_id: &IrFeatureId,
     established: &[IrFeatureId],
     native: impl IntoIterator<Item = IrFeatureId>,
     emitted: &BTreeSet<IrFeatureId>,
-) -> Vec<IrFeatureId> {
-    established
-        .iter()
-        .cloned()
-        .chain(native)
-        .filter(|dependency| emitted.contains(dependency))
-        .filter(|dependency| dependency != feature_id)
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+) -> Result<Vec<IrFeatureId>, CodecError> {
+    let mut dependencies = Vec::new();
+    for dependency in established {
+        if !emitted.contains(dependency)
+            || dependency == feature_id
+            || dependencies.contains(dependency)
+        {
+            continue;
+        }
+        let id = IrFeatureId::mint(ctx.copy_retained_text(
+            dependency.as_str(),
+            "creo established dependency IDs",
+        )?)
+        .map_err(CodecError::malformed)?;
+        ctx.try_reserve_items(&mut dependencies, 1, "creo reconciled dependencies")?;
+        dependencies.push(id);
+    }
+    for dependency in native {
+        if emitted.contains(&dependency)
+            && dependency != *feature_id
+            && !dependencies.contains(&dependency)
+        {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo reconciled dependencies")?;
+            dependencies.push(dependency);
+        }
+    }
+    Ok(dependencies)
 }
 
 fn agreed_ids<'a>(mut values: impl Iterator<Item = &'a [u32]>) -> Option<&'a [u32]> {
