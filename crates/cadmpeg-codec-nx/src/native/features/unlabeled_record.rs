@@ -5,8 +5,8 @@ use crate::om::header_references::{HeaderReferences, OperationHeader};
 use crate::om::reference_index::FeatureReferenceToken;
 use crate::om::UnlabeledOperationRecord;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "UnlabeledRecordWire", into = "UnlabeledRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "UnlabeledRecordWire")]
 pub(in crate::native) struct FeatureUnlabeledOperationRecord {
     pub(in crate::native) id: String,
     ordinal: u32,
@@ -14,6 +14,38 @@ pub(in crate::native) struct FeatureUnlabeledOperationRecord {
     sha256: crate::native::hex::Sha256Hex,
     payload_byte_len: u64,
     payload_sha256: crate::native::hex::Sha256Hex,
+}
+
+#[derive(serde::Serialize)]
+struct UnlabeledRecordRef<'a> {
+    id: &'a str,
+    ordinal: u32,
+    object_indices: [Option<u32>; 4],
+    object_index_source_offsets: [u64; 4],
+    byte_len: u64,
+    sha256: &'a crate::native::hex::Sha256Hex,
+    payload_byte_len: u64,
+    payload_sha256: &'a crate::native::hex::Sha256Hex,
+    payload_source_offset: u64,
+    source_offset: u64,
+}
+
+impl serde::Serialize for FeatureUnlabeledOperationRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        UnlabeledRecordRef {
+            id: &self.id,
+            ordinal: self.ordinal,
+            object_indices: self.header.objects().values(),
+            object_index_source_offsets: self.header.object_offsets(),
+            byte_len: u64::from(self.header.byte_len()) + self.payload_byte_len,
+            sha256: &self.sha256,
+            payload_byte_len: self.payload_byte_len,
+            payload_sha256: &self.payload_sha256,
+            payload_source_offset: self.header.end_offset(),
+            source_offset: self.header.offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl FeatureUnlabeledOperationRecord {
@@ -58,6 +90,7 @@ struct UnlabeledRecordWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureUnlabeledOperationRecord> for UnlabeledRecordWire {
     fn from(value: FeatureUnlabeledOperationRecord) -> Self {
         Self {
@@ -126,9 +159,29 @@ impl TryFrom<UnlabeledRecordWire> for FeatureUnlabeledOperationRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureUnlabeledOperationRecord;
+    use super::{FeatureUnlabeledOperationRecord, UnlabeledRecordWire};
 
     const WIRE: &str = r#"{"id":"record","ordinal":0,"object_indices":[null,0,0,0],"object_index_source_offsets":[115,116,117,119],"byte_len":25,"sha256":"e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95","payload_byte_len":3,"payload_sha256":"47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75","payload_source_offset":122,"source_offset":100}"#;
+
+    #[test]
+    fn unlabeled_record_borrowed_wire_preserves_bytes() {
+        let record: FeatureUnlabeledOperationRecord = serde_json::from_str(WIRE).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&UnlabeledRecordWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn unlabeled_record_native_limit_refuses_before_clone() {
+        let wire = WIRE.replace("\"id\":\"record\"", "\"id\":\"nx:feature:unlabeled#0\"");
+        let record: FeatureUnlabeledOperationRecord = serde_json::from_str(&wire).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(&wire).unwrap(),
+        );
+    }
 
     #[test]
     fn unlabeled_record_wire_retains_header_widths_and_payload_extent() {
