@@ -2545,7 +2545,7 @@ fn build_geometry_ir(
         &sketch_lanes,
     );
     stamp_feature_baseline(&mut ir)?;
-    let mut attributes = crate::metadata::attributes(scan, &mut annotations);
+    let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
     ));
@@ -3490,7 +3490,7 @@ fn build_metadata_ir(
         entities: sketch_entities,
         constraints: sketch_constraints,
     } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
-    let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
+    let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
     model_attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
     ));

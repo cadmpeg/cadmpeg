@@ -170,6 +170,26 @@ fn metadata_active_site_refuses_collection_limit() {
 }
 
 #[test]
+fn metadata_document_attributes_refuse_collection_limit() {
+    let mut source = outer_header();
+    let mut payload = b"moPart_c".to_vec();
+    payload.extend_from_slice(&7_u32.to_le_bytes());
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&8_u32.to_le_bytes());
+    source.extend(make_block(0x43, "SWObjects", &payload));
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(
+        &source,
+        options,
+        "collect SLDPRT document attributes",
+    );
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
 fn native_loss_validation_propagates_typed_load_retained_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 
