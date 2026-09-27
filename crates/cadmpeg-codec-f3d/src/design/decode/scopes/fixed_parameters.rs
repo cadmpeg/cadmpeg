@@ -41,36 +41,35 @@ pub(super) fn exact_fixed_extrude_parameters(
     {
         return None;
     }
-    let fixed_lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    let embedded_distances = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
+    let mut fixed_lanes = [None; 2];
+    let mut fixed_count = 0;
+    let mut embedded_distance = None;
+    for record_index in scope.reference_members().values() {
+        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        {
+            let slot = fixed_lanes.get_mut(fixed_count)?;
+            *slot = Some((*record_index, scalar));
+            fixed_count += 1;
+        }
+        if let Some(scalar) =
             exact_embedded_extrude_distance(bytes, records, *record_index, scope.record_index)
-                .map(|scalar| (*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    if fixed_lanes.len() > 2 || embedded_distances.len() > 1 {
-        return None;
+        {
+            if embedded_distance.replace((*record_index, scalar)).is_some() {
+                return None;
+            }
+        }
     }
-    let mut along_distance = embedded_distances.first().map(|(record_index, lane)| {
+    let mut along_distance = embedded_distance.map(|(record_index, lane)| {
         DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
             value: lane.value,
-            record_index: *record_index,
+            record_index,
             value_offset: lane.value_offset,
         })
     });
     let mut taper_angle = None;
     let mut seen_fixed_ordinals = [false; 2];
-    for (record_index, lane) in fixed_lanes {
+    for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= seen_fixed_ordinals.len() || seen_fixed_ordinals[ordinal] {
             return None;
@@ -150,17 +149,15 @@ fn exact_embedded_extrude_distance(
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<FixedScalarFrame<PositiveReal>> {
-    let candidates = records
+    let mut candidates = records
         .frames(record_index)
         .filter_map(|(start, end)| {
             (end.checked_sub(start)? == 100).then_some(())?;
-            let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            let (_, after_tag) =
+                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
             let first_auxiliary = record_index.checked_add(1)?;
             let second_auxiliary = record_index.checked_add(2)?;
             if after_tag != start + 7
-                || class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || bytes.get(start + 11..start + 21) != Some(&[0; 10])
                 || marked_record_reference(bytes, start + 21)? != scope_record_index
                 || bytes.get(start + 26..start + 32) != Some(&[0; 6])
@@ -186,12 +183,9 @@ fn exact_embedded_extrude_distance(
                 value,
                 value_offset: u64::try_from(start + 51).ok()?,
             })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 pub(super) fn exact_fixed_fillet_parameters(
@@ -305,38 +299,32 @@ pub(super) fn exact_fixed_chamfer_parameters(
     }) {
         return None;
     }
-    let lanes = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
-        })
-        .collect::<Vec<_>>();
-    if !(1..=2).contains(&lanes.len())
-        || lanes
-            .iter()
-            .enumerate()
-            .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
-    {
-        return None;
+    let mut lanes = [None; 2];
+    let mut lane_count = 0;
+    for record_index in scope.reference_members().values() {
+        if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        {
+            if usize::from(scalar.ordinal) != lane_count {
+                return None;
+            }
+            let slot = lanes.get_mut(lane_count)?;
+            *slot = Some((*record_index, scalar));
+            lane_count += 1;
+        }
     }
-    let mut distances = lanes
-        .into_iter()
-        .map(|(record_index, scalar)| {
-            Some(DesignFixedChamferDistance {
-                value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
-                record_index,
-                value_offset: scalar.value_offset,
-            })
+    let mut distances = lanes.into_iter().flatten().map(|(record_index, scalar)| {
+        Some(DesignFixedChamferDistance {
+            value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
+            record_index,
+            value_offset: scalar.value_offset,
         })
-        .collect::<Option<Vec<_>>>()?
-        .into_iter();
-    let first = distances.next()?;
+    });
+    let first = distances.next()??;
     Some(match distances.next() {
-        Some(second) => DesignFixedChamferParameters::TwoDistances { first, second },
+        Some(Some(second)) => DesignFixedChamferParameters::TwoDistances { first, second },
         None => DesignFixedChamferParameters::EqualDistance { distance: first },
+        Some(None) => return None,
     })
 }
 
