@@ -1256,7 +1256,8 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     );
 
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.decode_geometry().expect("geometry decode");
         assert!(context.mesh_budget_used() > 0);
         let result =
@@ -1389,7 +1390,8 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         ],
     );
     crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        let mut context =
+            crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry().expect("geometry decode");
         let result =

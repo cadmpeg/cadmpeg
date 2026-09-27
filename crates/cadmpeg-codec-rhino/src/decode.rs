@@ -202,6 +202,44 @@ pub(crate) fn session_ceiling(limit: u64, ceiling: usize) -> usize {
     }
 }
 
+fn transaction_allocation_failed(
+    operation: &'static str,
+    additional: usize,
+) -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+        limit: u64::MAX,
+        used: 0,
+        additional: u64_from_index(additional),
+        operation,
+    })
+}
+
+fn reserve_transaction_vec<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values
+        .try_reserve(additional)
+        .map_err(|_| transaction_allocation_failed(operation, additional))
+}
+
+fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values
+        .try_reserve(additional)
+        .map_err(|_| transaction_allocation_failed(operation, additional))
+}
+
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -292,22 +330,46 @@ pub(crate) struct DecodeContext<'a> {
     report: ReportBuckets,
     instance_selection: Option<InstanceSelection>,
     instance_display: Option<InstanceDisplay>,
-    object_candidates: BTreeMap<crate::wire::Uuid, Vec<usize>>,
-    definition_candidates: BTreeMap<crate::wire::Uuid, usize>,
+    object_candidates: HashMap<crate::wire::Uuid, Vec<usize>>,
+    definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
 }
 
 impl<'a> DecodeContext<'a> {
     /// Starts a transaction from a completed Rhino scan.
-    pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
-        let mut object_candidates = BTreeMap::new();
+    pub(crate) fn new(
+        scan: &'a Scan<'a>,
+        expand: crate::mesh::MeshExpand<'a>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let session = expand.ctx();
+        let mut object_candidates = HashMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
             if let Some(identity) = object.identity() {
-                object_candidates
-                    .entry(identity.object_id)
-                    .or_insert_with(Vec::new)
-                    .push(source_order);
+                if !object_candidates.contains_key(&identity.object_id) {
+                    reserve_transaction_map(
+                        session,
+                        &mut object_candidates,
+                        1,
+                        "Rhino object candidate keys",
+                    )?;
+                }
+                let positions = object_candidates.entry(identity.object_id).or_default();
+                reserve_transaction_vec(session, positions, 1, "Rhino object candidate positions")?;
+                positions.push(source_order);
             }
+        }
+        let mut definition_candidates = HashMap::new();
+        for (index, definition) in scan.definitions.definitions().iter().enumerate() {
+            let id = definition.id();
+            if !definition_candidates.contains_key(&id) {
+                reserve_transaction_map(
+                    session,
+                    &mut definition_candidates,
+                    1,
+                    "Rhino definition candidate keys",
+                )?;
+            }
+            definition_candidates.insert(id, index);
         }
         let report = ReportBuckets::default();
         let ir = build_ir(scan);
@@ -316,9 +378,9 @@ impl<'a> DecodeContext<'a> {
             expand,
             ir,
             annotations: cadmpeg_ir::Annotations::default(),
-            unknowns: Vec::with_capacity(scan.objects.len()),
+            unknowns: Vec::new(),
             opaque_records: Vec::new(),
-            statuses: Vec::with_capacity(scan.objects.len()),
+            statuses: Vec::new(),
             retained_bytes: 0,
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
@@ -327,18 +389,12 @@ impl<'a> DecodeContext<'a> {
             instance_selection: None,
             instance_display: None,
             object_candidates,
-            definition_candidates: scan
-                .definitions
-                .definitions()
-                .iter()
-                .enumerate()
-                .map(|(index, definition)| (definition.id(), index))
-                .collect(),
+            definition_candidates,
             expansion_budget: ExpansionBudget::from_session(expand.ctx()),
         };
-        context.retain_object_records();
-        context.retain_opaque_records();
-        context
+        context.retain_object_records()?;
+        context.retain_opaque_records()?;
+        Ok(context)
     }
 
     #[cfg(test)]
@@ -347,14 +403,18 @@ impl<'a> DecodeContext<'a> {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_retention_limits(&mut self, record: usize, document: usize) {
+    pub(crate) fn set_retention_limits(
+        &mut self,
+        record: usize,
+        document: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         self.retention_limits = [record, document];
         self.unknowns.clear();
         self.opaque_records.clear();
         self.statuses.clear();
         self.retained_bytes = 0;
-        self.retain_object_records();
-        self.retain_opaque_records();
+        self.retain_object_records()?;
+        self.retain_opaque_records()
     }
 
     /// Returns the document mesh budget's retained-byte count.
@@ -2268,12 +2328,12 @@ impl<'a> DecodeContext<'a> {
         let document_data = crate::document_data::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
-            self.retain_opaque_record(&source);
+            self.retain_opaque_record(&source)?;
         }
         let presentation = crate::presentation::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(presentation.losses);
         for source in presentation.opaque_records {
-            self.retain_opaque_record(&source);
+            self.retain_opaque_record(&source)?;
         }
         self.report
             .typed_losses
@@ -2281,7 +2341,7 @@ impl<'a> DecodeContext<'a> {
         let views = crate::views::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
-            self.retain_opaque_record(&source);
+            self.retain_opaque_record(&source)?;
         }
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
@@ -2446,49 +2506,67 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
-    fn retain_object_records(&mut self) {
+    fn retain_object_records(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        reserve_transaction_vec(
+            self.expand.ctx(),
+            &mut self.unknowns,
+            self.scan.objects.len(),
+            "Rhino object unknown records",
+        )?;
+        reserve_transaction_vec(
+            self.expand.ctx(),
+            &mut self.statuses,
+            self.scan.objects.len(),
+            "Rhino object statuses",
+        )?;
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
+            let range = object.range();
+            let degraded = object.is_degraded();
             let id = Self::mint_unknown_id(source_order);
-            let record = self.source_record(id, object.range());
+            let record = self.source_record(id, range)?;
             self.unknowns.push(record);
             self.statuses
-                .push(object.is_degraded().then_some(GeometryOutcome::Failed));
+                .push(degraded.then_some(GeometryOutcome::Failed));
         }
+        Ok(())
     }
 
-    fn retain_opaque_records(&mut self) {
+    fn retain_opaque_records(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         for index in 0..self.scan.opaque_records.len() {
             let source = &self.scan.opaque_records[index];
-            self.retain_opaque_record(source);
+            self.retain_opaque_record(source)?;
         }
+        Ok(())
     }
 
     /// Retains complete history records whose embedded geometry cannot enter
     /// canonical millimetre IR.  The feature projection still keeps the
     /// scalar history values and points to this source boundary by ID.
-    fn retain_unbound_history_geometry(&mut self) {
+    fn retain_unbound_history_geometry(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         if self.neutral_scale().is_some() {
-            return;
+            return Ok(());
         }
         let binding = self.unit_binding();
-        let ranges = self
-            .scan
-            .history
-            .iter()
-            .filter(|record| {
-                record.values.iter().any(|value| {
-                    matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
-                })
-            })
-            .map(|record| record.source_range.clone())
-            .collect::<Vec<_>>();
-        for range in ranges {
+        for index in 0..self.scan.history.len() {
+            let record = &self.scan.history[index];
+            if !record.values.iter().any(|value| {
+                matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
+            }) {
+                continue;
+            }
+            let range = record.source_range.clone();
             let id = UnknownId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "history", "source"),
                 IdentityKey::zero_padded(range.start as u64, 12),
             );
-            let retained = self.source_record(id, range.clone());
+            reserve_transaction_vec(
+                self.expand.ctx(),
+                &mut self.opaque_records,
+                1,
+                "Rhino history source records",
+            )?;
+            let retained = self.source_record(id, range.clone())?;
             self.opaque_records.push(retained);
             self.report.phase_warnings.push_coded(
                 RhinoLossCode::HistoryGeometryNotTransferred,
@@ -2500,9 +2578,13 @@ impl<'a> DecodeContext<'a> {
                 ),
             );
         }
+        Ok(())
     }
 
-    fn retain_opaque_record(&mut self, source: &OpaqueRecord) {
+    fn retain_opaque_record(
+        &mut self,
+        source: &OpaqueRecord,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let table_key = source.table_typecode.to_be_bytes();
         let record_key = source.record.typecode.to_be_bytes();
         let offset_key = (source.record.range.start as u64).to_be_bytes();
@@ -2514,11 +2596,22 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
             key,
         );
-        let record = self.source_record(id, source.record.range.clone());
+        reserve_transaction_vec(
+            self.expand.ctx(),
+            &mut self.opaque_records,
+            1,
+            "Rhino opaque source records",
+        )?;
+        let record = self.source_record(id, source.record.range.clone())?;
         self.opaque_records.push(record);
+        Ok(())
     }
 
-    fn source_record(&mut self, id: UnknownId, range: std::ops::Range<usize>) -> UnknownRecord {
+    fn source_record(
+        &mut self,
+        id: UnknownId,
+        range: std::ops::Range<usize>,
+    ) -> Result<UnknownRecord, cadmpeg_core::CodecError> {
         let bytes = &self.scan.data[range.clone()];
         let byte_len = bytes.len() as u64;
         let retained_end = self.retained_bytes.checked_add(bytes.len()).filter(|end| {
@@ -2527,11 +2620,20 @@ impl<'a> DecodeContext<'a> {
         let offset = range.start as u64;
         match retained_end {
             Some(end) => {
-                let data = bytes.to_vec();
+                let data = self
+                    .expand
+                    .ctx()
+                    .copy_retained(bytes, "Rhino source record bytes")?;
                 self.retained_bytes = end;
-                UnknownRecord::retained(id, offset, data, Vec::new())
+                Ok(UnknownRecord::retained(id, offset, data, Vec::new()))
             }
-            None => UnknownRecord::unavailable(id, offset, byte_len, sha256_hex(bytes), Vec::new()),
+            None => Ok(UnknownRecord::unavailable(
+                id,
+                offset,
+                byte_len,
+                sha256_hex(bytes),
+                Vec::new(),
+            )),
         }
     }
 
@@ -5772,10 +5874,10 @@ pub(crate) fn decode(
     scan: &Scan<'_>,
     expand: crate::mesh::MeshExpand<'_>,
 ) -> Result<Decoded, cadmpeg_core::CodecError> {
-    let mut context = DecodeContext::new(scan, expand);
+    let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry()?;
     context.decode_dimensions();
-    context.retain_unbound_history_geometry();
+    context.retain_unbound_history_geometry()?;
     let geometry_context = context.neutral_scale().map(|scale| {
         (
             expand,
