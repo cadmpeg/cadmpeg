@@ -1,14 +1,162 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    legacy_text_style_bytes, modern_font_chunk, object_rendering_with_negative_minor,
-    texture_payload,
+    anonymous, legacy_text_style_bytes, model_attributes_status_chunk, modern_font_chunk,
+    object_rendering_with_negative_minor, texture_payload, utf16_bytes,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::presentation::rendering_attributes;
 use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
+
+#[test]
+fn legacy_component_name_refuses_retained_limit() {
+    let mut body = 8_u32.to_le_bytes().to_vec();
+    body.extend(utf16_bytes("name"));
+    let bytes = anonymous(0, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("component root admitted");
+    let error = crate::presentation::component(
+        &ctx,
+        &bytes,
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("component bounds"),
+        ArchiveVersion::V8,
+    )
+    .expect_err("component name exceeds retained limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino component name")
+    );
+}
+
+#[test]
+fn modern_component_name_refuses_retained_limit() {
+    let bytes = model_attributes_status_chunk([3, 2, 3, 2, 1], "name", &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("component root admitted");
+    let error = crate::presentation::component(
+        &ctx,
+        &bytes,
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("component bounds"),
+        ArchiveVersion::V8,
+    )
+    .expect_err("component name exceeds retained limit");
+    assert!(
+        matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino component name")
+    );
+}
+
+fn group_refusal(limit: u64) -> FramingError {
+    let mut bytes = vec![0x1f];
+    bytes.extend(7_i32.to_le_bytes());
+    bytes.extend(utf16_bytes("fixtures"));
+    bytes.extend([0x44; 16]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("group root admitted");
+    crate::presentation::parse_group(&ctx, &bytes, 0..bytes.len(), 120)
+        .expect_err("group retained values exceed limit")
+}
+
+#[test]
+fn group_name_refuses_retained_limit() {
+    assert!(
+        matches!(group_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino group name")
+    );
+}
+
+#[test]
+fn group_id_refuses_retained_limit() {
+    assert!(
+        matches!(group_refusal(8), FramingError::Resource(refusal) if refusal.operation == "Rhino group ID")
+    );
+}
+
+#[test]
+fn group_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:group#44444444-4444-4444-4444-444444444444".len();
+    assert!(
+        matches!(group_refusal(u64::try_from(8 + id_len).expect("budget fits")), FramingError::Resource(refusal) if refusal.operation == "Rhino group source UUID")
+    );
+}
+
+fn duplicate_groups() -> Vec<crate::presentation::GroupRecord> {
+    let mut bytes = vec![0x1f];
+    bytes.extend(7_i32.to_le_bytes());
+    bytes.extend(utf16_bytes("fixtures"));
+    bytes.extend([0x44; 16]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    vec![
+        crate::presentation::parse_group(&ctx, &bytes, 0..bytes.len(), 120)
+            .expect("first group admitted"),
+        crate::presentation::parse_group(&ctx, &bytes, 0..bytes.len(), 240)
+            .expect("second group admitted"),
+    ]
+}
+
+#[test]
+fn group_identity_workspace_refuses_materialized_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+        .expect_err("identity workspace exceeds materialized limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity workspace")
+    );
+}
+
+#[test]
+fn group_identity_count_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+        .expect_err("identity map exceeds collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
+    );
+}
+
+#[test]
+fn duplicate_group_indices_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+        .expect_err("duplicate indices exceed collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate group indices")
+    );
+}
+
+#[test]
+fn disambiguated_group_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+        .expect_err("disambiguated ID exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID")
+    );
+}
 
 fn font_refusal(limit: u64) -> FramingError {
     let bytes = modern_font_chunk(7, &[]);

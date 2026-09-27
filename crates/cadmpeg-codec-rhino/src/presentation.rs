@@ -2,7 +2,7 @@
 //! Rhino appearance, grouping, and lighting presentation records.
 
 use crate::loss::Diagnostics;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -1484,6 +1484,7 @@ fn anonymous(
 }
 
 fn component(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1519,7 +1520,7 @@ fn component(
             None
         };
         let name = if bits & 8 != 0 {
-            utf16(&mut value)?
+            crate::settings::utf16_retained(ctx, &mut value, "Rhino component name")?
         } else {
             String::new()
         };
@@ -1552,7 +1553,7 @@ fn component(
     };
     let name = match value.u8()? {
         0 | 2 => String::new(),
-        1 => utf16(&mut value)?,
+        1 => crate::settings::utf16_retained(ctx, &mut value, "Rhino component name")?,
         _ => String::new(),
     };
     value.skip_remaining()?;
@@ -2501,7 +2502,7 @@ fn parse_material(
                 "material version is unsupported",
             ));
         }
-        let component = component(data, &mut reader, archive)?;
+        let component = component(ctx, data, &mut reader, archive)?;
         (reader, component, 6, true)
     } else {
         let mut outer = BoundedReader::new(data, range.start, range.end)?;
@@ -2639,6 +2640,7 @@ fn parse_material(
 }
 
 fn parse_group(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     source_offset: usize,
@@ -2652,21 +2654,35 @@ fn parse_group(
         ));
     }
     let index = reader.i32()?;
-    let name = utf16(&mut reader)?;
+    let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino group name")?;
     let id = if packed & 0x0f >= 1 {
         Some(uuid(&mut reader)?)
     } else {
         None
     };
     reader.skip_remaining()?;
-    let key = id
-        .filter(|id| !id.is_nil())
-        .map_or_else(|| format!("index-{index}"), |id| id.to_string());
+    let id = id.filter(|id| !id.is_nil());
     Ok(GroupRecord {
-        id: format!("rhino:presentation:group#{key}"),
+        id: if let Some(id) = id {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:group#{id}"),
+                "Rhino group ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:group#index-{index}"),
+                "Rhino group ID",
+            )?
+        },
         source_offset: source_offset as u64,
         archive_index: index,
-        source_uuid: id.filter(|id| !id.is_nil()).map(|id| id.to_string()),
+        source_uuid: id
+            .map(|id| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino group source UUID")
+            })
+            .transpose()?,
         name,
         links: Vec::new(),
     })
@@ -2675,23 +2691,53 @@ fn parse_group(
 /// Makes source identities unique when the archive repeats a group UUID or
 /// archive index. The serialized identity remains in `source_uuid` and
 /// `archive_index`; the suffix identifies the particular source record.
-fn disambiguate_group_ids(groups: &mut [GroupRecord]) -> usize {
-    let mut counts = BTreeMap::<String, usize>::new();
+fn disambiguate_group_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    groups: &mut [GroupRecord],
+) -> Result<usize, CodecError> {
+    let mut counts = HashMap::<&str, usize>::new();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     for group in groups.iter() {
-        *counts.entry(group.id.clone()).or_default() += 1;
-    }
-    let mut changed = 0;
-    for (order, group) in groups.iter_mut().enumerate() {
-        if counts.get(&group.id).copied() == Some(1) {
-            continue;
+        if let Some(count) = counts.get_mut(group.id.as_str()) {
+            *count += 1;
+        } else {
+            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                &str,
+                usize,
+            )>()))?;
+            crate::wire::reserve_hash_map(ctx, &mut counts, 1, "Rhino group identity counts")?;
+            counts.insert(group.id.as_str(), 1);
         }
-        group.id = format!(
-            "{}-source-offset-{:016x}-record-{order:06}",
-            group.id, group.source_offset
-        );
-        changed += 1;
     }
-    changed
+    let mut duplicate_indices = Vec::new();
+    for (order, group) in groups.iter().enumerate() {
+        if counts.get(group.id.as_str()).copied() != Some(1) {
+            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                usize,
+            >()))?;
+            crate::wire::reserve_collection(
+                ctx,
+                &mut duplicate_indices,
+                1,
+                "Rhino duplicate group indices",
+            )?;
+            duplicate_indices.push(order);
+        }
+    }
+    drop(counts);
+    let changed = duplicate_indices.len();
+    for order in duplicate_indices {
+        let group = &mut groups[order];
+        group.id = crate::wire::admitted_format(
+            ctx,
+            format_args!(
+                "{}-source-offset-{:016x}-record-{order:06}",
+                group.id, group.source_offset
+            ),
+            "Rhino disambiguated group ID",
+        )?;
+    }
+    Ok(changed)
 }
 
 fn parse_light(
@@ -2852,7 +2898,7 @@ fn parse_linetype(
             values,
         )
     } else if version.0 == 2 && version.1 >= 0 {
-        let component = component(data, &mut reader, archive)?;
+        let component = component(ctx, data, &mut reader, archive)?;
         let values = segments(ctx, &mut reader)?;
         let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
         if item == 1 {
@@ -3070,7 +3116,7 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let component = component(data, &mut reader, archive)?;
+        let component = component(ctx, data, &mut reader, archive)?;
         let fill_type = reader.i32()?;
         let description = utf16(&mut reader)?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
@@ -3675,6 +3721,7 @@ fn parse_v5_dimension_style(
 }
 
 fn parse_dimension_style(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -3688,7 +3735,7 @@ fn parse_dimension_style(
             "dimension-style version is unsupported",
         ));
     }
-    let component = component(data, &mut reader, archive)?;
+    let component = component(ctx, data, &mut reader, archive)?;
     let extension_line_extension_mm =
         scaled_length(&mut reader, scale, "extension-line extension")?;
     let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
@@ -4556,7 +4603,7 @@ fn parse_text_style(
             "text-style version is unsupported",
         ));
     }
-    let component = component(data, &mut reader, archive)?;
+    let component = component(ctx, data, &mut reader, archive)?;
     let font_description = if reader.bool_with_writer_version(writer_version)? {
         crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style font description")?
     } else {
@@ -4687,9 +4734,16 @@ pub(crate) fn install(
             let mut parsed = false;
             if table_type == GROUP_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, GROUP) {
-                    if let Ok(group) = parse_group(scan.data, range, record.range.start) {
-                        groups.push(group);
-                        parsed = true;
+                    match parse_group(ctx, scan.data, range, record.range.start) {
+                        Ok(group) => {
+                            crate::wire::reserve_collection(ctx, &mut groups, 1, "Rhino groups")?;
+                            groups.push(group);
+                            parsed = true;
+                        }
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(_) => {}
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
@@ -4946,15 +5000,28 @@ pub(crate) fn install(
                         }
                     }
                 } else if let Ok(range) = class_data(scan.data, record, scan.archive, DIMSTYLE) {
-                    if let Ok(value) = parse_dimension_style(
+                    match parse_dimension_style(
+                        ctx,
                         scan.data,
                         range,
                         scan.archive,
                         scale,
                         record.range.start,
                     ) {
-                        dimension_styles.push(value);
-                        parsed = true;
+                        Ok(value) => {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut dimension_styles,
+                                1,
+                                "Rhino dimension styles",
+                            )?;
+                            dimension_styles.push(value);
+                            parsed = true;
+                        }
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit));
+                        }
+                        Err(_) => {}
                     }
                 }
             } else if table_type == BITMAP_TABLE {
@@ -5195,7 +5262,7 @@ pub(crate) fn install(
             )));
         }
     }
-    let disambiguated_group_count = disambiguate_group_ids(&mut groups);
+    let disambiguated_group_count = disambiguate_group_ids(ctx, &mut groups)?;
     if disambiguated_group_count != 0 {
         losses.push(RhinoLossCode::DuplicateRecordResolved.note(format!(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
