@@ -4,7 +4,7 @@
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::loss::LossNote;
@@ -373,7 +373,8 @@ fn physical_lines(
         let mut card_start = start;
         for index in 0..cards {
             let card_end = card_start.saturating_add(CARD_WIDTH).min(payload_end);
-            let payload = source[card_start..card_end].to_vec();
+            charge_line(ctx)?;
+            let payload = copy_card_payload(&source[card_start..card_end], ctx)?;
             let marked = !terminated && payload.len() == CARD_WIDTH;
             let section = marked.then(|| marker(&payload)).flatten();
             let sequence = marked.then(|| sequence(&payload)).flatten();
@@ -382,7 +383,9 @@ fn physical_lines(
             } else {
                 LineEnding::None
             };
-            charge_line(ctx)?;
+            lines.try_reserve(1).map_err(|_| {
+                refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1)
+            })?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: u64::try_from(card_start).map_err(|_| {
@@ -400,12 +403,16 @@ fn physical_lines(
         }
         if card_start != payload_end {
             charge_line(ctx)?;
+            let payload = copy_card_payload(&source[card_start..payload_end], ctx)?;
+            lines.try_reserve(1).map_err(|_| {
+                refuse_local_limit("iges_cards", u64_from_index(lines.len()), 1)
+            })?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: u64::try_from(card_start).map_err(|_| {
                         CodecError::Malformed("IGES source offset exceeds u64".into())
                     })?,
-                    payload: source[card_start..payload_end].to_vec(),
+                    payload,
                     ending,
                 },
                 section: None,
@@ -423,8 +430,16 @@ fn physical_lines(
 fn frame_sections(
     lines: Vec<UnframedLine>,
     recoveries: &mut FramingRecoveries,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<ScannedLine>, CodecError> {
-    let mut scanned = Vec::with_capacity(lines.len());
+    let count = u64_from_index(lines.len());
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(count, "iges framed cards")?;
+    }
+    let mut scanned = Vec::new();
+    scanned
+        .try_reserve_exact(lines.len())
+        .map_err(|_| refuse_local_limit("iges framed cards", count, count))?;
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
@@ -563,7 +578,7 @@ pub(crate) fn scan_with_context<'a>(
     }
     let lines = physical_lines(source, ctx)?;
     let mut recoveries = FramingRecoveries::default();
-    let lines = frame_sections(lines, &mut recoveries)?;
+    let lines = frame_sections(lines, &mut recoveries, ctx)?;
     terminate_counts(&lines, &mut recoveries);
     Ok(CardScan {
         source,
@@ -574,6 +589,27 @@ pub(crate) fn scan_with_context<'a>(
 
 fn charge_line(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
     ctx.map_or(Ok(()), |ctx| ctx.charge_collection_items(1, "iges_cards"))
+}
+
+fn copy_card_payload(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u8>, CodecError> {
+    match ctx {
+        Some(ctx) => ctx.copy_retained(bytes, "iges physical card payload"),
+        None => {
+            let mut payload = Vec::new();
+            payload.try_reserve_exact(bytes.len()).map_err(|_| {
+                refuse_local_limit(
+                    "iges physical card payload",
+                    u64_from_index(bytes.len()),
+                    u64_from_index(bytes.len()),
+                )
+            })?;
+            payload.extend_from_slice(bytes);
+            Ok(payload)
+        }
+    }
 }
 
 pub(crate) fn summarize(
