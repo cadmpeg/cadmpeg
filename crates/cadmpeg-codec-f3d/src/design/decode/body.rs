@@ -484,10 +484,11 @@ fn reference_has_type(
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
 /// snapshot. The carrier uses a bare entity header in every serializer band.
 fn snapshot_body_map_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let primary_by_entity = frames
         .iter()
         .enumerate()
@@ -683,10 +684,11 @@ fn parse_snapshot_body_map_frame(
 /// extents. A candidate is a body map only when one supported reserved-zero
 /// width makes its count, pair run, tail, and basename consume that extent.
 fn body_map_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let record_frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let record_frames = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
@@ -797,22 +799,24 @@ fn body_map_records(
 }
 
 pub(crate) fn body_bindings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    Ok(body_map_records(bytes, meta)?
+    Ok(body_map_records(ctx, bytes, meta)?
         .into_iter()
         .flat_map(|record| record.bindings)
         .collect())
 }
 
 fn selected_body_map_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let modern = body_map_records(bytes, meta)?;
+    let modern = body_map_records(ctx, bytes, meta)?;
     if modern.is_empty() {
-        snapshot_body_map_records(bytes, meta)
+        snapshot_body_map_records(ctx, bytes, meta)
     } else {
         Ok(modern)
     }
@@ -839,8 +843,8 @@ pub(crate) fn design_model_blob_names(
         else {
             continue;
         };
-        let modern = body_map_records(bytes, &metadata)?;
-        let snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        let modern = body_map_records(ctx, bytes, &metadata)?;
+        let snapshots = snapshot_body_map_records(ctx, bytes, &metadata)?;
         for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
                 *carrier_counts.entry(record.blob_name.clone()).or_default() += 1;
@@ -1014,7 +1018,7 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        for record in selected_body_map_records(bytes, &metadata)? {
+        for record in selected_body_map_records(ctx, bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
@@ -1106,8 +1110,8 @@ pub(crate) fn decode_all_body_visibility(
         else {
             continue;
         };
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
-        for record in selected_body_map_records(bytes, &metadata)? {
+        let hidden_by_entity = typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
+        for record in selected_body_map_records(ctx, bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
@@ -1136,11 +1140,12 @@ struct BrowserNodeVisibility {
 }
 
 fn typed_browser_node_hidden_flags(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
-    let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
-    let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
+    let nodes = crate::design::decode::presentation::browser_node_records(ctx, bytes, meta)?;
+    let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
         nodes_by_entity
@@ -1249,8 +1254,7 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        body_bindings, body_bound_candidates, parse_body_map_frame, snapshot_body_map_records,
-        typed_browser_node_hidden_flags,
+        body_bound_candidates, parse_body_map_frame,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::bytes::take_reference;
@@ -1265,6 +1269,31 @@ mod tests {
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
     use crate::test_support::indexed_header;
     use crate::test_support::push_reference_u64;
+
+    fn snapshot_body_map_records(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BodyMapRecord>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| {
+            super::snapshot_body_map_records(ctx, bytes, meta)
+        })
+    }
+
+    fn body_bindings(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<Vec<super::BodyBinding>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| super::body_bindings(ctx, bytes, meta))
+    }
+
+    fn typed_browser_node_hidden_flags(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+    ) -> Result<std::collections::HashMap<u64, super::BrowserNodeVisibility>, cadmpeg_core::CodecError> {
+        crate::test_support::with_decode_context(|ctx| {
+            super::typed_browser_node_hidden_flags(ctx, bytes, meta)
+        })
+    }
 
     fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
         out.extend_from_slice(&3u32.to_le_bytes());

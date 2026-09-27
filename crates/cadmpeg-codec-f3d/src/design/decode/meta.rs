@@ -294,10 +294,11 @@ fn record_header_class_tag(
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
 pub(super) fn design_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let indexed = crate::metastream::primary_record_frames(ctx, meta, bytes.len())?;
     let registered_entities = meta
         .types
         .iter()
@@ -366,6 +367,7 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
@@ -391,7 +393,7 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(bytes, meta)? {
+    for primary_frame in design_primary_frames(ctx, bytes, meta)? {
         if !primary_frame
             .design_type
             .type_guid
