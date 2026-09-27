@@ -671,16 +671,12 @@ pub(in super::super) fn owned_section_feature_id(
     scan: &ContainerScan,
     definition_id: u32,
 ) -> Option<u32> {
-    let definitions = scan
+    let definition = exactly_one(scan
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.identity.id() == definition_id)
-        .collect::<Vec<_>>();
-    let [definition] = definitions.as_slice() else {
-        return None;
-    };
-    let rows = scan
+        .filter(|definition| definition.identity.id() == definition_id))?;
+    let row = exactly_one(scan
         .features
         .rows
         .iter()
@@ -688,11 +684,7 @@ pub(in super::super) fn owned_section_feature_id(
             row.root_schema_class == Some(SchemaClass::Section)
                 && definition.offset >= row.body_offset
                 && definition.offset < row.body_offset.saturating_add(row.body.len())
-        })
-        .collect::<Vec<_>>();
-    let [row] = rows.as_slice() else {
-        return None;
-    };
+        }))?;
     Some(row.feature_id)
 }
 
@@ -700,30 +692,22 @@ pub(super) fn section_definition_for_history_feature<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
-    let rows = scan
+    let row = exactly_one(scan
         .features
         .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.root_schema_class == Some(SchemaClass::Section)
-        })
-        .collect::<Vec<_>>();
-    let [row] = rows.as_slice() else {
-        return None;
-    };
-    let definitions = scan
+        }))?;
+    let definition = exactly_one(scan
         .features
         .definitions
         .iter()
         .filter(|definition| {
             definition.offset >= row.body_offset
                 && definition.offset < row.body_offset.saturating_add(row.body.len())
-        })
-        .collect::<Vec<_>>();
-    let [definition] = definitions.as_slice() else {
-        return None;
-    };
-    Some(*definition)
+        }))?;
+    Some(definition)
 }
 
 pub(in super::super) fn feature_source_properties(
