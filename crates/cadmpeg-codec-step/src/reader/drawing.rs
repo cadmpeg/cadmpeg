@@ -234,7 +234,7 @@ pub(super) fn decode(
             "step_drawing_target_members",
         )?;
     }
-    let drawing_target_ids = referenced_target_ids(exchange, &candidates);
+    let drawing_target_ids = referenced_target_ids(exchange, &candidates, ctx)?;
     add_source_typed_targets(
         ir,
         exchange,
@@ -382,19 +382,20 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
 fn referenced_target_ids(
     exchange: &Exchange,
     candidates: &[DrawingCandidate<'_>],
-) -> BTreeSet<u64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
     for candidate in candidates {
         for &index in relationship_indices(candidate.name) {
             if let Some(value) = candidate.parameters.get(index) {
-                collect_reference_ids(value, &mut ids);
+                collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
     }
     for (_, record) in exchange.entities("DRAWING_SHEET_REVISION_USAGE") {
         let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
         for value in parameters.iter().take(2) {
-            collect_reference_ids(value, &mut ids);
+            collect_reference_ids(value, &mut ids, ctx)?;
         }
     }
     for association_id in
@@ -408,7 +409,7 @@ fn referenced_target_ids(
         };
         for index in [2, 4] {
             if let Some(value) = parameters.get(index) {
-                collect_reference_ids(value, &mut ids);
+                collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
         if record
@@ -417,17 +418,21 @@ fn referenced_target_ids(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
-                ids.insert(placeholder_id);
+                insert_drawing_set(&mut ids, placeholder_id, ctx, "step_drawing_referenced_targets")?;
             }
         }
     }
-    ids
+    Ok(ids)
 }
 
-fn collect_reference_ids(value: &Value, output: &mut BTreeSet<u64>) {
-    let mut references = Vec::new();
-    collect_references(value, &mut references);
-    output.extend(references);
+fn collect_reference_ids(
+    value: &Value,
+    output: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    visit_drawing_references(value, ctx, &mut |id| {
+        insert_drawing_set(output, id, ctx, "step_drawing_referenced_targets")
+    })
 }
 
 fn add_source_typed_targets(

@@ -109,3 +109,11 @@ fn drawing_typed_claims_refuse_collection_limit() {
 fn drawing_ir_items_refuse_collection_limit() {
     drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_ir_items");
 }
+
+#[test]
+fn drawing_referenced_targets_refuse_collection_limit() {
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');",
+        "step_drawing_referenced_targets",
+    );
+}
