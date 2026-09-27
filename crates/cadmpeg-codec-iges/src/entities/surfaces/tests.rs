@@ -392,6 +392,8 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     for operation in [
         "iges ruled same-basis weight rows",
         "iges ruled same-basis weight row controls",
+        "iges ruled same-basis weighted rows",
+        "iges ruled same-basis weighted row controls",
     ] {
         let mut cap = 0_u64;
         let mut found = false;
