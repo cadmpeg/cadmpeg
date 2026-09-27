@@ -101,11 +101,15 @@ fn provider_identity_key(ctx: &DecodeContext<'_>, name: &str) -> Result<Identity
     crate::native::encoded_segment_charged(ctx, name, "FCStd GUI provider key")
 }
 
-fn object_appearance_id(provider: &IdentityKey) -> AppearanceId {
-    AppearanceId::compose(
-        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "object"),
-        provider.clone(),
-    )
+fn object_appearance_id(
+    ctx: &DecodeContext<'_>,
+    provider: &IdentityKey,
+) -> Result<AppearanceId, CodecError> {
+    AppearanceId::mint(crate::resource::retained_format(
+        ctx,
+        format_args!("fcstd:appearance:object#{provider}"),
+        "FCStd GUI object appearance identity",
+    )?).map_err(CodecError::malformed)
 }
 
 fn edge_appearance_id(provider: &IdentityKey) -> AppearanceId {
@@ -591,7 +595,7 @@ fn transfer_schema_one(
         let Some(packed_color) = packed_color else {
             continue;
         };
-        let appearance_id = object_appearance_id(&provider_key);
+        let appearance_id = object_appearance_id(ctx, &provider_key)?;
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -3856,7 +3860,7 @@ fn transfer_shape_appearances(
             },
         };
         if materials.len() == 1 {
-            let legacy_id = object_appearance_id(&provider_key);
+            let legacy_id = object_appearance_id(ctx, &provider_key)?;
             plan.bindings
                 .retain(|binding| binding.appearance != legacy_id);
             plan.appearances
