@@ -2092,7 +2092,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     scope.paired_class_tag.as_str(),
                 );
                 let as_built_421 = as_built_421_generation.is_some();
-                let operand_paths = alignment.operand_paths();
+                let operand_paths = alignment.operand_path_refs();
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
