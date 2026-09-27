@@ -2427,6 +2427,7 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
         self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
+            ctx,
             &self.native.design_entity_headers,
             &mut self.native.sketch_points,
             &mut self.native.sketch_curve_identities,

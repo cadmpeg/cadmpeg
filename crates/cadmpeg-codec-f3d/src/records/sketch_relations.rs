@@ -193,31 +193,43 @@ pub(crate) struct SketchRelationMembers(pub(super) Vec<SketchRelationMember>);
 
 impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
-    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32, u32)>) -> Self {
-        Self(
-            rows.into_iter()
-                .map(
-                    |(record_index, offset, relation_ordinal)| SketchRelationMember {
-                        reference: SketchRelationReference::Index(record_index),
-                        offset,
-                        relation_ordinal: Some(relation_ordinal),
-                    },
-                )
-                .collect(),
-        )
+    pub(crate) fn from_indices(
+        ctx: &DecodeContext<'_>,
+        rows: impl IntoIterator<Item = (u32, u32, u32)>,
+    ) -> Result<Self, CodecError> {
+        let mut members = Vec::new();
+        for (record_index, offset, relation_ordinal) in rows {
+            ctx.charge_collection_items(1, "admit F3D sketch relation members")?;
+            members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("admit F3D sketch relation members", 0, 1)
+            })?;
+            members.push(SketchRelationMember {
+                reference: SketchRelationReference::Index(record_index),
+                offset,
+                relation_ordinal: Some(relation_ordinal),
+            });
+        }
+        Ok(Self(members))
     }
 
     /// Resolve every member while retaining its position metadata.
-    pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self
-            .0
-            .iter()
-            .map(|row| SketchRelationMember {
-                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-                offset: row.offset,
-                relation_ordinal: row.relation_ordinal,
-            })
-            .collect();
+    pub(crate) fn resolve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) -> Result<(), CodecError> {
+        let mut resolved = Vec::new();
+        for row in &self.0 {
+            ctx.charge_collection_items(1, "resolve F3D sketch relation members")?;
+            resolved.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("resolve F3D sketch relation members", 0, 1)
+            })?;
+            resolved.push(resolve(row.reference.record_index()));
+        }
+        for (row, operand) in self.0.iter_mut().zip(resolved) {
+            row.reference = SketchRelationReference::Resolved(operand);
+        }
+        Ok(())
     }
 }
 
@@ -258,27 +270,42 @@ pub(crate) struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
 
 impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
-    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32)>) -> Self {
-        Self(
-            rows.into_iter()
-                .map(|(record_index, offset)| SketchRelationReturnMember {
-                    reference: SketchRelationReference::Index(record_index),
-                    offset,
-                })
-                .collect(),
-        )
+    pub(crate) fn from_indices(
+        ctx: &DecodeContext<'_>,
+        rows: impl IntoIterator<Item = (u32, u32)>,
+    ) -> Result<Self, CodecError> {
+        let mut members = Vec::new();
+        for (record_index, offset) in rows {
+            ctx.charge_collection_items(1, "admit F3D sketch relation return members")?;
+            members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("admit F3D sketch relation return members", 0, 1)
+            })?;
+            members.push(SketchRelationReturnMember {
+                reference: SketchRelationReference::Index(record_index),
+                offset,
+            });
+        }
+        Ok(Self(members))
     }
 
     /// Resolve every member while retaining its position metadata.
-    pub(super) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self
-            .0
-            .iter()
-            .map(|row| SketchRelationReturnMember {
-                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-                offset: row.offset,
-            })
-            .collect();
+    pub(super) fn resolve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) -> Result<(), CodecError> {
+        let mut resolved = Vec::new();
+        for row in &self.0 {
+            ctx.charge_collection_items(1, "resolve F3D sketch relation return members")?;
+            resolved.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("resolve F3D sketch relation return members", 0, 1)
+            })?;
+            resolved.push(resolve(row.reference.record_index()));
+        }
+        for (row, operand) in self.0.iter_mut().zip(resolved) {
+            row.reference = SketchRelationReference::Resolved(operand);
+        }
+        Ok(())
     }
 }
 
@@ -716,10 +743,11 @@ impl SketchRelation {
     /// Resolve both member runs without changing their byte offsets.
     pub(crate) fn resolve_members(
         &mut self,
+        ctx: &DecodeContext<'_>,
         mut resolve: impl FnMut(u32) -> SketchRelationOperand,
-    ) {
-        self.members.resolve(&mut resolve);
-        self.return_members.resolve(resolve);
+    ) -> Result<(), CodecError> {
+        self.members.resolve(ctx, &mut resolve)?;
+        self.return_members.resolve(ctx, resolve)
     }
 
     /// Retained auxiliary references.

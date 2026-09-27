@@ -322,6 +322,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
     bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header("A"), header("B")],
         &mut points,
         &mut [],
@@ -348,6 +349,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
     assert!(bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[overflowing_header],
         &mut [point("A")],
         &mut [],

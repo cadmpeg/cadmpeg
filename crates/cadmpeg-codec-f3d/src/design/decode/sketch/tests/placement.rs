@@ -937,6 +937,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     // that sketch; records the run does not name stay unowned.
     let mut points = [point(20), point(21), point(22)];
     bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header(100, vec![20, 21, 99])],
         &mut points,
         &mut [],
@@ -951,6 +952,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     // Two sketches claiming one record is a structural conflict.
     let mut points = [point(20)];
     assert!(bind_sketch_graph(
+        &cadmpeg_test_support::service_decode_context(),
         &[header(100, vec![20]), header(101, vec![20])],
         &mut points,
         &mut [],
