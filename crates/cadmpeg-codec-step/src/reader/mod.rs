@@ -307,11 +307,11 @@ fn decode_exchange_mode(
 
     session.semantic_input_work = semantic_input_work(exchange);
     session.charge_stage("step_geometry_decode")?;
-    let mut geometry = geometry::decode(exchange, &mut session.ir)?;
+    let mut geometry = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_stage("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange);
     session.charge_stage("step_carrier_index")?;
-    let carrier_index = index::CarrierIndex::from_ir(&session.ir);
+    let carrier_index = index::CarrierIndex::from_ir(&session.ir, session.ctx)?;
     session.charge_stage("step_topology_decode")?;
     session.ctx.charge_work(
         implicit_face_plane_work(exchange),

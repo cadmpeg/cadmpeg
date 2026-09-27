@@ -355,6 +355,7 @@ fn source_curve_parameter_scale(
 pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<StageOutcome<GeometryData>, CodecError> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
@@ -909,7 +910,7 @@ pub(super) fn decode(
     // STEP geometry is a graph, not an ordered stream. Resolve all deferred
     // curve constructors to a fixpoint so nested or forward references do not
     // disappear merely because their source record has a larger instance id.
-    let mut carrier_index = CarrierIndex::from_ir(ir);
+    let mut carrier_index = CarrierIndex::from_ir(ir, ctx)?;
     let deferred_ids = exchange
         .entities_any(&[
             "CURVE_REPLICA",
@@ -1518,7 +1519,7 @@ pub(super) fn decode(
     // Surface constructors form the same kind of dependency graph as curves.
     // Resolve replicas in the same fixpoint as trims, bounded surfaces, and
     // offsets so a forward or nested replica cannot become an opaque carrier.
-    carrier_index = CarrierIndex::from_ir(ir);
+    carrier_index = CarrierIndex::from_ir(ir, ctx)?;
     let deferred_surface_ids = exchange
         .entities_any(&[
             "CURVE_BOUNDED_SURFACE",
