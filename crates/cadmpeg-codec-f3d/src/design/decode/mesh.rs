@@ -1350,21 +1350,22 @@ where
         )?,
         "mesh-texture-filename",
     )?;
+    let mut owner_records = Vec::new();
+    for frame in typed_primary_frames(
+        bytes,
+        meta,
+        MESH_COLLECTION_OWNER_TYPE_GUID,
+        "mesh-collection-owner",
+    )? {
+        if let Some(owner) = parse_mesh_collection_owner_record(bytes, frame)? {
+            if collection_record_indices.contains(&owner.collection_record_index) {
+                push_mesh_record(ctx, &mut owner_records, owner, "f3d mesh collection owners")?;
+            }
+        }
+    }
     let mut collection_owners = unique_record_map(
         ctx,
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_COLLECTION_OWNER_TYPE_GUID,
-            "mesh-collection-owner",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_collection_owner_record(bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .filter(|owner| collection_record_indices.contains(&owner.collection_record_index))
-        .collect(),
+        owner_records,
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
@@ -1611,22 +1612,23 @@ fn decode_mesh_design_records(
             &mut asset_for_filename,
         )?;
         if !records.is_empty() {
-            push_mesh_design_stream(ctx, &mut out, records)?;
+            push_mesh_record(ctx, &mut out, records, "f3d mesh design streams")?;
         }
     }
     Ok(out)
 }
 
-fn push_mesh_design_stream(
+fn push_mesh_record<T>(
     ctx: &DecodeContext<'_>,
-    streams: &mut Vec<Vec<DesignMeshFeature>>,
-    records: Vec<DesignMeshFeature>,
+    records: &mut Vec<T>,
+    record: T,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "f3d mesh design streams")?;
-    streams.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("f3d mesh design streams allocation", 0, 1)
+    ctx.charge_collection_items(1, operation)?;
+    records.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit(operation, 0, 1)
     })?;
-    streams.push(records);
+    records.push(record);
     Ok(())
 }
 
@@ -1657,19 +1659,6 @@ fn copy_mesh_text(
 ) -> Result<String, CodecError> {
     String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
         .map_err(|_| CodecError::Malformed("F3D mesh source text must be UTF-8".into()))
-}
-
-fn push_mesh_outcome(
-    ctx: &DecodeContext<'_>,
-    outcomes: &mut Vec<MeshContainerOutcome>,
-    outcome: MeshContainerOutcome,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "f3d mesh container outcomes")?;
-    outcomes.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("f3d mesh container outcomes allocation", 0, 1)
-    })?;
-    outcomes.push(outcome);
-    Ok(())
 }
 
 fn resolve_mesh_body(
@@ -1713,10 +1702,10 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
             Ok(container) => container,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                push_mesh_outcome(ctx, &mut outcomes, MeshContainerOutcome::Failed {
+                push_mesh_record(ctx, &mut outcomes, MeshContainerOutcome::Failed {
                     entry_name: copy_mesh_text(ctx, &entry.name, "f3d failed mesh entry name")?,
                     error,
-                })?;
+                }, "f3d mesh container outcomes")?;
                 continue;
             }
         };
@@ -1725,9 +1714,9 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
         let Some((design_ordinal, feature_ordinal, body_ordinal)) =
             resolve_mesh_body(&design_records, base, &container.fusion_uuid)
         else {
-            push_mesh_outcome(ctx, &mut outcomes, MeshContainerOutcome::Unjoined {
+            push_mesh_record(ctx, &mut outcomes, MeshContainerOutcome::Unjoined {
                 entry_name: copy_mesh_text(ctx, &entry.name, "f3d unjoined mesh entry name")?,
-            })?;
+            }, "f3d mesh container outcomes")?;
             continue;
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
@@ -1743,10 +1732,10 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
             Ok(projected) => projected,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                push_mesh_outcome(ctx, &mut outcomes, MeshContainerOutcome::Failed {
+                push_mesh_record(ctx, &mut outcomes, MeshContainerOutcome::Failed {
                     entry_name: copy_mesh_text(ctx, &entry.name, "f3d failed mesh entry name")?,
                     error,
-                })?;
+                }, "f3d mesh container outcomes")?;
                 continue;
             }
         };
@@ -1756,7 +1745,7 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
                 &projected.id,
                 "f3d mesh tessellation reference",
             )?);
-        push_mesh_outcome(ctx, &mut outcomes, MeshContainerOutcome::Joined(projected))?;
+        push_mesh_record(ctx, &mut outcomes, MeshContainerOutcome::Joined(projected), "f3d mesh container outcomes")?;
     }
     for body in design_records
         .iter()
@@ -1764,9 +1753,9 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
         .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
     {
-        push_mesh_outcome(ctx, &mut outcomes, MeshContainerOutcome::Missing {
+        push_mesh_record(ctx, &mut outcomes, MeshContainerOutcome::Missing {
             entry_name: copy_mesh_text(ctx, body.entry.name(), "f3d missing mesh entry name")?,
-        })?;
+        }, "f3d mesh container outcomes")?;
     }
     let features = flatten_mesh_features(ctx, design_records)?;
     Ok(MeshDecode {
@@ -2960,6 +2949,27 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "f3d mesh filename entries"
         ));
+        let owner = parse_mesh_collection_owner_record(
+            &graph.bytes,
+            sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID),
+        )
+        .unwrap()
+        .unwrap();
+        let (owners_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .unwrap();
+        assert!(matches!(
+            super::push_mesh_record(
+                &owners_ctx,
+                &mut Vec::new(),
+                owner,
+                "f3d mesh collection owners",
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "f3d mesh collection owners"
+        ));
         let mut no_asset = no_texture_asset;
         let mut retained_policy = cadmpeg_core::decode::DecodePolicy::default();
         retained_policy.limits.max_retained_bytes = 0;
@@ -3372,7 +3382,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            super::push_mesh_design_stream(&ctx, &mut Vec::new(), design),
+            super::push_mesh_record(&ctx, &mut Vec::new(), design, "f3d mesh design streams"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "f3d mesh design streams"
@@ -3407,10 +3417,11 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            super::push_mesh_outcome(
+            super::push_mesh_record(
                 &collection_ctx,
                 &mut Vec::new(),
                 super::MeshContainerOutcome::Missing { entry_name: String::new() },
+                "f3d mesh container outcomes",
             ),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
