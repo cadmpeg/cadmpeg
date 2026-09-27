@@ -1995,8 +1995,8 @@ pub(crate) mod tests {
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("root view");
-        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-            .expect("valid cache range");
+        let mut reader =
+            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
         let refusal = read_mesh_cache(
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
@@ -2041,8 +2041,8 @@ pub(crate) mod tests {
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("root view");
-        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
-            .expect("valid cache range");
+        let mut reader =
+            crate::chunks::BoundedReader::new(&bytes, 0, bytes.len()).expect("valid cache range");
         let refusal = read_mesh_cache(
             crate::mesh::MeshExpand::new(&ctx, root),
             &bytes,
