@@ -766,7 +766,8 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new())
         .expect("valid native identity");
     right.native.finalize();
-    assert!(validate_neutral(&right, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&right, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message == "entity id is not globally unique"));
