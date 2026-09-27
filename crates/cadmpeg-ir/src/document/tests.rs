@@ -4,9 +4,11 @@
 use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
+    nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
+
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
@@ -16,6 +18,51 @@ use serde::{de::DeserializeOwned, Serialize};
 mod append;
 mod feature_parents;
 mod unknowns;
+
+#[test]
+fn procedural_surface_attachment_moves_the_solved_knot_storage() {
+    let surface_id = SurfaceId::mint("test:model:surface#move-cache").unwrap();
+    let procedural_id =
+        ProceduralSurfaceId::mint("test:model:surface-construction#move-cache").unwrap();
+    let carrier = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let original_knot_storage = carrier.u_knots().as_ptr();
+    let mut model = Model::default();
+    model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
+        source_object: None,
+    });
+    model
+        .add_procedural_surface(
+            surface_id,
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Unknown {
+                    record: None,
+                    cache: None,
+                },
+                None,
+            ),
+        )
+        .unwrap();
+    let Some(SolvedSurfaceGeometry::Nurbs(cached)) = model.surfaces[0].geometry.solved_cache()
+    else {
+        panic!("expected the attached NURBS cache");
+    };
+    assert_eq!(cached.u_knots().as_ptr(), original_knot_storage);
+}
 
 struct SerdeIdentity;
 

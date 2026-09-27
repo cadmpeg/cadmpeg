@@ -1003,11 +1003,17 @@ impl Model {
                     "surface {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            SurfaceGeometry::Solved(geometry) => {
-                surface.geometry = SurfaceGeometry::Procedural {
+            SurfaceGeometry::Solved(_) => {
+                let previous = std::mem::replace(&mut surface.geometry, SurfaceGeometry::Procedural {
                     construction: procedural.id.clone(),
-                    cache: Some(geometry.clone()),
-                };
+                    cache: None,
+                });
+                if let (
+                    SurfaceGeometry::Solved(geometry),
+                    SurfaceGeometry::Procedural { cache, .. },
+                ) = (previous, &mut surface.geometry) {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_surfaces.push(procedural);

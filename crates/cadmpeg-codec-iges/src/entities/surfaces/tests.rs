@@ -136,6 +136,21 @@ fn surface_projectors_refuse_neutral_and_placed_curve_slots() {
 }
 
 #[test]
+fn surface_projectors_refuse_procedural_attachment_slots() {
+    for bytes in [
+        ruled_surface_file(),
+        tabulated_hyperbola_file(),
+        placed_tabulated_line_file(),
+        hyperbola_surface_of_revolution_file(),
+        ellipse_surface_of_revolution_file(),
+        nurbs_surface_file(),
+        offset_plane_file(1.0, 2.0),
+    ] {
+        assert_surface_collection_refusal(&bytes, "iges procedural surface slots");
+    }
+}
+
+#[test]
 fn ruled_developability_loss_refuses_unadmitted_slot() {
     let bytes = ruled_surface_file();
     assert_surface_collection_refusal(&bytes, "iges entity loss slots");
