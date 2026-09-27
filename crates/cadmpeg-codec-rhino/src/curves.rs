@@ -539,7 +539,7 @@ pub(crate) fn decode_inner(
             ),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, scale, None, false)?;
+            let (geometry, warnings) = read_arc(ctx, &mut reader, scale, None, false)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
@@ -812,7 +812,7 @@ pub(crate) fn exact_nurbs(
                     yaxis,
                     radius,
                 };
-                arc_nurbs(&circle, [0.0, TAU], [0.0, TAU], TAU, offset)
+                arc_nurbs(ctx, &circle, [0.0, TAU], [0.0, TAU], TAU, offset)
             }
             _ => Err(error(offset, "curve has no exact NURBS representation")),
         },
@@ -1416,7 +1416,7 @@ pub(crate) fn decode_inner_2d(
         },
         ARC => {
             let (geometry, warnings) =
-                read_arc(&mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
+                read_arc(ctx, &mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
@@ -1715,6 +1715,7 @@ fn read_polyline(
 }
 
 fn read_arc(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
@@ -1759,6 +1760,7 @@ fn read_arc(
     }
     Ok((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(arc_nurbs(
+            ctx,
             &circle,
             angle,
             domain,
@@ -1966,6 +1968,7 @@ fn checked_polycurve_parameter(
 }
 
 fn arc_nurbs(
+    ctx: &DecodeContext<'_>,
     circle: &Circle,
     angle: [f64; 2],
     domain: [f64; 2],
@@ -1985,9 +1988,17 @@ fn arc_nurbs(
                 .ok_or_else(|| error(offset, "arc parameter domain is invalid"))
         }
     };
-    let mut control_points = Vec::with_capacity(spans * 2 + 1);
-    let mut weights = Vec::with_capacity(spans * 2 + 1);
-    let mut knots = Vec::with_capacity(spans * 2 + 4);
+    let point_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| error(offset, "arc control point count overflow"))?;
+    let knot_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(4))
+        .ok_or_else(|| error(offset, "arc knot count overflow"))?;
+    let mut control_points = charged_vec(ctx, point_count, "Rhino arc control points")?;
+    let mut weights = charged_vec(ctx, point_count, "Rhino arc weights")?;
+    let mut knots = charged_vec(ctx, knot_count, "Rhino arc knots")?;
     for span in 0..spans {
         let a0 = angle[0] + step * span as f64;
         let a1 = angle[0] + step * (span + 1) as f64;
@@ -2783,7 +2794,8 @@ mod tests {
     #[test]
     fn arc_nurbs_preserves_endpoints_midpoint_and_weights() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI, 0).expect("valid arc");
+        let arc = with_test_context(|ctx| arc_nurbs(ctx, &circle, [0.0, PI], [10.0, 20.0], PI, 0))
+            .expect("valid arc");
         assert_eq!(arc.degree(), 2);
         assert_eq!(
             arc.pole_rows().raw_points().first(),
@@ -2804,10 +2816,39 @@ mod tests {
         assert!((pole.y * weight - midpoint.y).abs() < EPS_EXACT_ARC);
     }
 
+    fn arc_collection_refusal(limit: u64, operation: &str) {
+        let error = with_collection_limit(limit, |ctx| {
+            arc_nurbs(ctx, &unit_circle(), [0.0, PI], [10.0, 20.0], PI, 0)
+        })
+        .expect_err("arc arrays exceed the collection limit");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation
+        ));
+    }
+
+    #[test]
+    fn arc_control_points_refuse_collection_limit() {
+        arc_collection_refusal(4, "Rhino arc control points");
+    }
+
+    #[test]
+    fn arc_weights_refuse_collection_limit() {
+        arc_collection_refusal(9, "Rhino arc weights");
+    }
+
+    #[test]
+    fn arc_knots_refuse_collection_limit() {
+        arc_collection_refusal(17, "Rhino arc knots");
+    }
+
     #[test]
     fn arc_nurbs_maps_a_wide_finite_parameter_domain() {
-        let arc = arc_nurbs(&unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
-            .expect("wide arc domain has finite knots");
+        let arc = with_test_context(|ctx| {
+            arc_nurbs(ctx, &unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
+        })
+        .expect("wide arc domain has finite knots");
         let knots = arc.knots().as_slice();
         assert_eq!(knots.first(), Some(&-f64::MAX));
         assert!(knots.contains(&0.0));
@@ -2835,7 +2876,10 @@ mod tests {
     #[test]
     fn arc_spans_never_exceed_quarter_turn() {
         let circle = unit_circle();
-        let arc = arc_nurbs(&circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0).expect("valid arc");
+        let arc = with_test_context(|ctx| {
+            arc_nurbs(ctx, &circle, [0.0, 3.0 * PI], [0.0, 3.0], 3.0 * PI, 0)
+        })
+        .expect("valid arc");
         assert_eq!(arc.control_points().len(), 2 * 6 + 1);
         assert_eq!(arc.knots().len(), arc.control_points().len() + 3);
     }
