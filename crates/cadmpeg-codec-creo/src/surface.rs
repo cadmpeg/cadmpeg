@@ -3268,14 +3268,19 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let slots = named_spline_scalar_slots(
+                let slots = match named_spline_scalar_slots(
+                    ctx,
                     family,
                     name,
                     remaining,
                     array.values().len(),
                     cache,
                     refusal,
-                )?;
+                ) {
+                    Ok(Some(slots)) => slots,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 array.fill_tokens(slots)?;
                 return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
@@ -3345,8 +3350,13 @@ fn parsed_named_surface_value(
                 | "end_tangts"
         );
         if spline_field {
-            let slots =
-                named_spline_scalar_slots(family, name, remaining, slot_count, cache, refusal)?;
+            let slots = match named_spline_scalar_slots(
+                ctx, family, name, remaining, slot_count, cache, refusal,
+            ) {
+                Ok(Some(slots)) => slots,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             array.fill_tokens(slots)?;
         } else if name == "local_sys" {
             let values =
@@ -5811,14 +5821,16 @@ fn plane_local_system_compound_close(
 /// continuation in an interpolation-point field encodes the final zero slot of
 /// its tuple with no token bytes of its own.
 fn named_spline_scalar_slots(
+    ctx: &DecodeContext<'_>,
     family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
-) -> Option<Vec<ScalarTokenSlot>> {
-    let mut slots = Vec::with_capacity(count);
+) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, count, "creo named spline scalar slots")?;
     let mut cursor = psb::Cursor::new(body);
     let mut continued_tuple = false;
     while slots.len() < count {
@@ -5834,7 +5846,10 @@ fn named_spline_scalar_slots(
         else {
             break;
         };
-        slots.push((value, body[start..cursor.pos()].to_vec()));
+        slots.push((
+            value,
+            ctx.copy_retained(&body[start..cursor.pos()], "creo named spline scalar token")?,
+        ));
     }
     if matches!(name, "i_pnts" | "i_points")
         && continued_tuple
@@ -5845,13 +5860,13 @@ fn named_spline_scalar_slots(
     }
     if slots.len() != count {
         refusal.state(scalar_body_refusal(body, count, slots.len(), cursor.pos()));
-        return None;
+        return Ok(None);
     }
     if cursor.pos() != body.len() {
         refusal.state(trailing_scalar_body_refusal(body, count, cursor.pos()));
-        return None;
+        return Ok(None);
     }
-    Some(slots)
+    Ok(Some(slots))
 }
 
 fn named_vector_scalar_body_len(
