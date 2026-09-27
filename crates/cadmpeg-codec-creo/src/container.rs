@@ -2906,7 +2906,7 @@ pub(crate) fn scan_bytes<'a>(
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(ctx, &curve_topology_rows)?;
-    let vertex_orbits = topology::vertex_orbits(&half_edges);
+    let vertex_orbits = topology::vertex_orbits(ctx, &half_edges)?;
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(ctx, &sections)?;
     let datum_cylinders = datum_cylinders(ctx, &sections)?;

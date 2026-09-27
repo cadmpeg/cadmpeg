@@ -223,6 +223,7 @@ pub(crate) fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeM
 }
 
 /// What one half-edge set states about its topological vertices.
+#[derive(Debug)]
 pub(crate) struct VertexOrbits {
     /// Topological vertex identities, one per admitted half-edge orbit.
     pub(crate) vertices: Vec<TopologicalVertex>,
@@ -245,20 +246,39 @@ pub(crate) struct VertexOrbits {
 /// [`VertexOrbits::unstatable_orbits`] by its seed half-edge and refused at its
 /// own lane. The rest of
 /// the file's topology is unaffected, so it is not a whole-file refusal.
-pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge))
-        .collect::<BTreeMap<_, _>>();
+pub(crate) fn vertex_orbits(
+    ctx: &DecodeContext<'_>,
+    edges: &[HalfEdge],
+) -> Result<VertexOrbits, CodecError> {
+    let mut by_id = BTreeMap::new();
+    for edge in edges {
+        match by_id.entry(edge.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(edge);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo vertex-orbit half-edge lookup nodes")?;
+                entry.insert(edge);
+            }
+        }
+    }
     let mut predecessors = BTreeMap::<HalfEdgeId, Vec<HalfEdgeId>>::new();
     for edge in edges {
         if let Some(next) = edge.next {
-            predecessors.entry(next).or_default().push(edge.id);
+            let previous = match predecessors.entry(next) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo predecessor group nodes")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.try_reserve_items(previous, 1, "creo predecessor group members")?;
+            previous.push(edge.id);
         }
     }
     let mut vertex_adjacency = BTreeMap::<HalfEdgeId, BTreeSet<HalfEdgeId>>::new();
     for half_edge in by_id.keys().copied() {
-        vertex_adjacency.entry(half_edge).or_default();
+        adjacency_for(ctx, &mut vertex_adjacency, half_edge)?;
         let Some(previous) = predecessors.get(&half_edge) else {
             continue;
         };
@@ -272,14 +292,16 @@ pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
         if !by_id.contains_key(&twin_previous) {
             continue;
         }
-        vertex_adjacency
-            .entry(half_edge)
-            .or_default()
-            .insert(twin_previous);
-        vertex_adjacency
-            .entry(twin_previous)
-            .or_default()
-            .insert(half_edge);
+        let adjacent = adjacency_for(ctx, &mut vertex_adjacency, half_edge)?;
+        if !adjacent.contains(&twin_previous) {
+            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
+            adjacent.insert(twin_previous);
+        }
+        let adjacent = adjacency_for(ctx, &mut vertex_adjacency, twin_previous)?;
+        if !adjacent.contains(&half_edge) {
+            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
+            adjacent.insert(half_edge);
+        }
     }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
@@ -289,57 +311,93 @@ pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
             continue;
         }
         let mut orbit = BTreeSet::new();
-        let mut pending = vec![start];
+        let mut pending = Vec::new();
+        ctx.try_reserve_items(&mut pending, 1, "creo vertex orbit pending edges")?;
+        pending.push(start);
         while let Some(half_edge) = pending.pop() {
-            if !visited.insert(half_edge) {
+            if visited.contains(&half_edge) {
                 continue;
             }
+            ctx.charge_collection_items(1, "creo visited vertex-orbit edges")?;
+            visited.insert(half_edge);
+            ctx.charge_collection_items(1, "creo vertex orbit member nodes")?;
             orbit.insert(half_edge);
-            pending.extend(
-                vertex_adjacency
-                    .get(&half_edge)
-                    .into_iter()
-                    .flatten()
-                    .filter(|next| !visited.contains(next))
-                    .copied(),
-            );
+            for next in vertex_adjacency
+                .get(&half_edge)
+                .into_iter()
+                .flatten()
+                .filter(|next| !visited.contains(next))
+                .copied()
+            {
+                ctx.try_reserve_items(&mut pending, 1, "creo vertex orbit pending edges")?;
+                pending.push(next);
+            }
         }
         let Some(id) = id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
         else {
             // `start` is the half-edge the orbit was grown from, so it names
             // the orbit no identifier could be stated for.
+            ctx.try_reserve_items(
+                &mut unstatable_orbits,
+                1,
+                "creo unstatable vertex orbits",
+            )?;
             unstatable_orbits.push(start);
             continue;
         };
+        let mut half_edges = Vec::new();
+        ctx.try_reserve_items(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
+        half_edges.extend(orbit);
+        ctx.try_reserve_items(&mut vertices, 1, "creo topological vertices")?;
         vertices.push(TopologicalVertex {
             id,
-            half_edges: orbit.into_iter().collect(),
+            half_edges,
         });
     }
-    let start_vertex = vertices
-        .iter()
-        .flat_map(|vertex| {
-            vertex
-                .half_edges
-                .iter()
-                .map(move |half_edge| (*half_edge, vertex.id))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let incidence = edges
-        .iter()
-        .filter_map(|edge| {
-            Some(HalfEdgeVertexIncidence {
+    let mut start_vertex = BTreeMap::new();
+    for vertex in &vertices {
+        for half_edge in &vertex.half_edges {
+            match start_vertex.entry(*half_edge) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(vertex.id);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo start-vertex lookup nodes")?;
+                    entry.insert(vertex.id);
+                }
+            }
+        }
+    }
+    let mut incidence = Vec::new();
+    for edge in edges {
+        if let Some(start_vertex_id) = start_vertex.get(&edge.id) {
+            ctx.try_reserve_items(&mut incidence, 1, "creo half-edge vertex incidence")?;
+            incidence.push(HalfEdgeVertexIncidence {
                 half_edge: edge.id,
-                start_vertex_id: *start_vertex.get(&edge.id)?,
+                start_vertex_id: *start_vertex_id,
                 end_vertex_id: edge.next.and_then(|next| start_vertex.get(&next).copied()),
-            })
-        })
-        .collect();
-    VertexOrbits {
+            });
+        }
+    }
+    Ok(VertexOrbits {
         vertices,
         incidence,
         unstatable_orbits,
-    }
+    })
+}
+
+fn adjacency_for<'a>(
+    ctx: &DecodeContext<'_>,
+    adjacency: &'a mut BTreeMap<HalfEdgeId, BTreeSet<HalfEdgeId>>,
+    id: HalfEdgeId,
+) -> Result<&'a mut BTreeSet<HalfEdgeId>, CodecError> {
+    Ok(match adjacency.entry(id) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo vertex adjacency nodes")?;
+            entry.insert(BTreeSet::new())
+        }
+    })
 }
 
 /// Group bounded face references connected by uniquely identified curve
