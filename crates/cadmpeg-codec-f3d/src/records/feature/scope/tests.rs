@@ -2,6 +2,100 @@
 //! Absence spellings of the flattened scope-record readers.
 
 #[test]
+fn parameter_scope_borrowed_wire_matches_owned_json_bytes() {
+    let scope = super::DesignParameterScope::empty(
+        "f3d:design:scope#1",
+        super::DesignScopePayload::WorkPoint(None),
+        1,
+    );
+    let owned = super::DesignParameterScopeSerde::from(scope.clone());
+    assert_eq!(
+        serde_json::to_vec(&scope).expect("borrowed scope wire"),
+        serde_json::to_vec(&owned).expect("owned scope wire")
+    );
+}
+
+#[test]
+fn parameter_scope_native_writer_refuses_retained_limit_before_outer_clone() {
+    let scope = super::DesignParameterScope::empty(
+        "f3d:design:scope#1",
+        super::DesignScopePayload::WorkPoint(None),
+        1,
+    );
+    let expected = serde_json::to_value(super::DesignParameterScopeSerde::from(scope.clone()))
+        .expect("owned scope wire");
+    super::SCOPE_CLONE_COUNT.with(|count| count.set(0));
+    cadmpeg_test_support::native_serialization::assert_native_limit(&scope, expected);
+    super::SCOPE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+}
+
+#[test]
+fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
+        DesignWorkPointRule, DesignWorkPointRuleForm,
+    };
+
+    let recipe = serde_json::from_value(serde_json::json!({
+        "record_index": 2,
+        "byte_offset": 10,
+        "class_tag": "369",
+        "paired_byte_offset": 20,
+        "paired_class_tag": "261",
+        "recipe_record_index": 5,
+        "recipe_record_byte_offset": 30,
+        "recipe_id": "f3d:design:recipe#1",
+        "recipe_prefix_offset": 41,
+        "recipe_prefix_bytes": "AP8=",
+        "recipe_references": [],
+        "recipe_program_offset": 43,
+        "recipe_program": [0],
+        "next_record_index": 7,
+        "next_byte_offset": 50
+    }))
+    .expect("vertex recipe wire");
+    let input = DesignWorkPointInput::try_new(
+        2,
+        12,
+        Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+            recipe,
+        })),
+    )
+    .expect("work point input");
+    let rule = DesignWorkPointRule::try_from(DesignWorkPointRuleForm::Vertex { input })
+        .expect("vertex work point rule");
+    let mut scope = super::DesignParameterScope::empty(
+        "f3d:design:scope#1",
+        super::DesignScopePayload::WorkPoint(None),
+        1,
+    );
+    if let super::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
+        *slot = Some(DesignWorkPointConstruction {
+            point_record_index: 21,
+            point_record_byte_offset: 0,
+            position: crate::test_support::reals([4.0, 3.0, 0.0]),
+            position_offset: 0,
+            rule,
+            reference_type_offset: 0,
+        });
+    }
+    let owned = super::DesignParameterScopeSerde::from(scope.clone());
+    assert_eq!(
+        serde_json::to_vec(&scope).expect("borrowed scope wire"),
+        serde_json::to_vec(&owned).expect("owned scope wire")
+    );
+    super::SCOPE_CLONE_COUNT.with(|count| count.set(0));
+    crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
+    cadmpeg_test_support::native_serialization::assert_native_limit(
+        &scope,
+        serde_json::to_value(owned).expect("owned scope value"),
+    );
+    super::SCOPE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT
+        .with(|count| assert_eq!(count.get(), 0));
+}
+
+#[test]
 fn work_plane_frame_wire_refuses_a_null_key() {
     #[derive(serde::Deserialize)]
     struct Probe {

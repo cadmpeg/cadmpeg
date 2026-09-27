@@ -7,7 +7,9 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{
+    FiniteReal, NonNegativeReal, PositiveAngle, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
 
@@ -77,22 +79,68 @@ pub(crate) struct Vector3(pub(crate) FiniteVector<3>);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Interval(pub(crate) FiniteVector<2>);
 
+/// A coordinate lane admitted from source or derived by reconstruction arithmetic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum CoordinateLane<const N: usize> {
+    Admitted(FiniteVector<N>),
+    /// Reconstruction arithmetic preserves its result, including overflow.
+    Derived([f64; N]),
+}
+
+impl<const N: usize> CoordinateLane<N> {
+    pub(crate) fn get(self) -> [f64; N] {
+        match self {
+            Self::Admitted(value) => value.get(),
+            Self::Derived(value) => value,
+        }
+    }
+}
+
+impl<const N: usize> Serialize for CoordinateLane<N>
+where
+    [f64; N]: Serialize,
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.get().serialize(serializer)
+    }
+}
+
+impl CoordinateLane<4> {
+    pub(crate) fn with_fourth(self, value: FiniteReal) -> Self {
+        match self {
+            Self::Admitted(values) => Self::Admitted(values.with_fourth(value)),
+            Self::Derived(mut values) => {
+                values[3] = value.get();
+                Self::Derived(values)
+            }
+        }
+    }
+}
+
+impl<const N: usize> std::ops::Deref for CoordinateLane<N> {
+    type Target = [f64; N];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Admitted(value) => value.as_raw(),
+            Self::Derived(value) => value,
+        }
+    }
+}
+
 /// A plane and its equation.
-///
-/// The readers admit finite values. The dimension decoder shifts a plane
-/// along its axes without an admission, so the fields hold raw coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Plane {
     /// Origin.
-    pub(crate) origin: [f64; 3],
+    pub(crate) origin: CoordinateLane<3>,
     /// X axis.
-    pub(crate) xaxis: [f64; 3],
+    pub(crate) xaxis: FiniteVector<3>,
     /// Y axis.
-    pub(crate) yaxis: [f64; 3],
+    pub(crate) yaxis: FiniteVector<3>,
     /// Z axis.
-    pub(crate) zaxis: [f64; 3],
+    pub(crate) zaxis: FiniteVector<3>,
     /// Plane equation.
-    pub(crate) equation: [f64; 4],
+    pub(crate) equation: CoordinateLane<4>,
 }
 
 /// A serialized axis-aligned bounding box.
@@ -415,6 +463,11 @@ impl MillimeterScale {
         self.0.get()
     }
 
+    /// The admitted positive scale for typed geometry arithmetic.
+    pub(crate) const fn positive(self) -> PositiveReal {
+        self.0
+    }
+
     /// The factor as a finite real.
     pub(crate) fn real(self) -> FiniteReal {
         self.0.into()
@@ -649,11 +702,42 @@ pub(crate) struct LayerPerViewportSettings {
     /// Per-viewport plot color, if effective.
     pub(crate) plot_color: Option<[u8; 4]>,
     /// Per-viewport plot weight in millimeters, if effective.
-    pub(crate) plot_weight_mm: Option<FiniteReal>,
+    pub(crate) plot_weight_mm: Option<LayerPlotWeight>,
     /// Source visibility override.
     pub(crate) visible: Option<LayerVisibility>,
     /// Source persistent-visibility override for child layers.
     pub(crate) persistent_visibility: Option<LayerVisibility>,
+}
+
+/// A nonnegative per-viewport plot weight or the source's exact unset sentinel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LayerPlotWeight {
+    Unset,
+    Millimeters(NonNegativeReal),
+}
+
+impl LayerPlotWeight {
+    fn new(value: f64) -> Option<Self> {
+        let value = FiniteReal::new(value)?;
+        if value.get() == -1.0 {
+            Some(Self::Unset)
+        } else {
+            NonNegativeReal::from_finite(value).map(Self::Millimeters)
+        }
+    }
+
+    fn get(self) -> f64 {
+        match self {
+            Self::Unset => -1.0,
+            Self::Millimeters(value) => value.get(),
+        }
+    }
+}
+
+impl Serialize for LayerPlotWeight {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(self.get())
+    }
 }
 
 /// Effective visibility values, ordered by their source encoding.
@@ -769,11 +853,15 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
     let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
-        origin: origin.0.get(),
-        xaxis: xaxis.0.get(),
-        yaxis: yaxis.0.get(),
-        zaxis: zaxis.0.get(),
-        equation: finite_array(equation_offset, equation, "plane equation")?.get(),
+        origin: CoordinateLane::Admitted(origin.0),
+        xaxis: xaxis.0,
+        yaxis: yaxis.0,
+        zaxis: zaxis.0,
+        equation: CoordinateLane::Admitted(finite_array(
+            equation_offset,
+            equation,
+            "plane equation",
+        )?),
     })
 }
 
@@ -968,13 +1056,9 @@ fn parse_layer_extensions(
         let plot_weight_mm = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
             let offset = entry_reader.position();
             let value = entry_reader.f64()?;
-            Some(
-                FiniteReal::new(value)
-                    .filter(|weight| weight.get() >= 0.0 || weight.get() == -1.0)
-                    .ok_or_else(|| {
-                        FramingError::structural(offset, "invalid layer per-viewport plot weight")
-                    })?,
-            )
+            Some(LayerPlotWeight::new(value).ok_or_else(|| {
+                FramingError::structural(offset, "invalid layer per-viewport plot weight")
+            })?)
         } else {
             None
         };
@@ -1199,15 +1283,15 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
     };
     let angular = finite(angular_offset, angular, "angular tolerance")?;
     let relative = finite(relative_offset, relative, "relative tolerance")?;
-    let absolute = PositiveReal::new(absolute.get()).ok_or_else(|| {
+    let absolute = PositiveReal::from_finite(absolute).ok_or_else(|| {
         FramingError::structural(reader.position(), "absolute tolerance must be positive")
     })?;
-    let angular = PositiveAngle::new(angular.get())
+    let angular = PositiveAngle::from_assigned_real(angular)
         .filter(|angular| angular.get() <= std::f64::consts::PI)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "angular tolerance must be in (0, pi]")
         })?;
-    let relative = PositiveReal::new(relative.get())
+    let relative = PositiveReal::from_finite(relative)
         .filter(|relative| relative.get() < 1.0)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "relative tolerance must be in (0, 1)")

@@ -1338,6 +1338,12 @@ struct OffsetPcurveWire {
 }
 
 impl OffsetPcurve {
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
+        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        Self::from_finite_parts(distance, basis)
+    }
+
     /// Build from a finite distance, checking only the basis depth.
     pub fn from_finite_parts(
         distance: FiniteReal,
@@ -1350,12 +1356,6 @@ impl OffsetPcurve {
             basis,
             depth,
         })
-    }
-
-    /// Admit finite parameters that satisfy the carrier's numeric contract.
-    pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
-        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
-        Self::from_finite_parts(distance, basis)
     }
 
     /// Return the distance.

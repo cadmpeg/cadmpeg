@@ -1372,8 +1372,10 @@ pub(crate) fn project_marker_backed_sketches(
                                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                                     center,
                                     major_angle: Angle::new((axis.1 as f64).atan2(axis.0 as f64))?,
-                                    major_radius: Length::new(major * NATIVE_TO_IR)?,
-                                    minor_radius: Length::new(minor * NATIVE_TO_IR)?,
+                                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                                        major_radius: Length::new(major * NATIVE_TO_IR)?,
+                                        minor_radius: Length::new(minor * NATIVE_TO_IR)?,
+                                    },
                                     bounds: None,
                                 })
                                 .ok()?
@@ -2362,14 +2364,15 @@ fn transform_sketch_block_geometry(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => SketchGeometry::from_parts(SketchGeometryDefinition::Ellipse {
             center: finite_point(center.get())?,
             major_angle: angle(*major_angle)?,
-            major_radius: major_radius.major(),
-            minor_radius: *minor_radius,
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: radii.major(),
+                minor_radius: radii.minor(),
+            },
             bounds: match bounds {
                 Some([start, end]) => Some([angle(*start)?, angle(*end)?]),
                 None => None,

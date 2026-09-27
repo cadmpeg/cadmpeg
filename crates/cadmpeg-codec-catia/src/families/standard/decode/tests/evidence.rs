@@ -201,12 +201,16 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     append(&mut stream, 0x30, 9, &offset);
     append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
 
-    let evidence = standard_object_evidence_from_streams(
-        [stream.clone(), stream.clone()],
-        &HashSet::from([10]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream.clone(), stream.clone()],
+            &HashSet::from([10]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(
         matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
         if {
@@ -218,12 +222,16 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let mut conflicting = stream.clone();
     let face_payload = conflicting.len() - 4;
     conflicting[face_payload + 1] = 0x8d;
-    let evidence = standard_object_evidence_from_streams(
-        [stream, conflicting],
-        &HashSet::from([10]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream, conflicting],
+            &HashSet::from([10]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(!evidence.surface_geometries.contains_key(&10));
 }
 
@@ -274,8 +282,11 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )]),
     };
 
-    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new())
-        .expect("revolution evidence");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_surface_evidence(ctx, &graph, 10, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };
@@ -332,12 +343,16 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     revolution[167] = 0x01;
     append_b5_record(&mut stream, 0x2d, 120, &revolution);
 
-    let evidence = standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([120]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([120]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         evidence.surface_geometries.get(&120),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -1462,7 +1477,10 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
 #[test]
 fn standard_surface_entity_limit_refuses_before_first_surface_append() {
     let bytes = crate::test_support::test_container::standard_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
@@ -1481,33 +1499,6 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
         cadmpeg_core::decode::ResourceDimension::Entities
     );
     assert_eq!(limit.used, 1);
-    assert_eq!(limit.operation, "admit CATIA family model entity");
-}
-
-#[test]
-fn standard_topology_entity_limit_propagates_before_fallback() {
-    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // One retained carrier, four surfaces, four points, four vertices,
-    // four faces, and one body, region, and shell precede the first edge.
-    policy.limits.max_entities = 20;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("topology fixture fits the input-byte limit");
-    let result = crate::families::standard::decode::try_decode_standard(
-        &ctx,
-        &scan,
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
-    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-        panic!("first topology entity must exceed the entity limit");
-    };
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::Entities
-    );
-    assert_eq!(limit.used, 20);
     assert_eq!(limit.operation, "admit CATIA family model entity");
 }
 

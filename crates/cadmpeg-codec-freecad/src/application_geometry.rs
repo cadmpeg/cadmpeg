@@ -371,11 +371,7 @@ impl<'a> Reader<'a> {
                 "{label} contains a non-finite coordinate"
             )));
         };
-        Ok(FinitePoint3::from_coordinates(
-            FiniteReal::from_finite_binary32(x),
-            FiniteReal::from_finite_binary32(y),
-            FiniteReal::from_finite_binary32(z),
-        ))
+        Ok(FinitePoint3::from_coordinates(x.into(), y.into(), z.into()))
     }
 
     fn finish(&self, label: &str) -> Result<(), CodecError> {

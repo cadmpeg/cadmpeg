@@ -19,6 +19,139 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
+fn native_history_borrowed_view_matches_cleared_record_json_bytes() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let history = &native.feature_histories[0];
+    let mut cleared = history.clone();
+    cleared.configurations.clear();
+    cleared.features.clear();
+    assert_eq!(
+        serde_json::to_vec(&super::HistoryArenaView(history)).unwrap(),
+        serde_json::to_vec(&cleared).unwrap()
+    );
+}
+
+#[test]
+fn native_history_retained_limit_refuses_before_history_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let row = super::SLDPRT_FAMILIES
+        .iter()
+        .find(|row| row.arena == "feature_histories")
+        .unwrap();
+    let needed = row.arena.len()
+        + serde_json::to_vec(&super::HistoryArenaView(&native.feature_histories[0]))
+            .unwrap()
+            .len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::records::FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(0));
+    let error = (row.emit)(&limited, &native, row, &mut namespace).unwrap_err();
+    crate::records::FEATURE_HISTORY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    (row.emit)(&service, &native, row, &mut namespace).unwrap();
+    assert_eq!(namespace.arenas()[row.arena].len(), 1);
+}
+
+#[test]
+fn native_lane_borrowed_view_matches_cleared_record_json_bytes() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let lane = &native.feature_input_lanes[0];
+    let mut cleared = lane.clone();
+    cleared.classes.clear();
+    cleared.names.clear();
+    cleared.scalars.clear();
+    cleared.relation_bindings.clear();
+    cleared.relation_instances.clear();
+    cleared.body_selections.clear();
+    cleared.edge_selections.clear();
+    cleared.surface_selections.clear();
+    cleared.generated_surface_identities.clear();
+    cleared.references.clear();
+    cleared.sketch_entities.clear();
+    assert_eq!(
+        serde_json::to_vec(&super::LaneArenaView(lane)).unwrap(),
+        serde_json::to_vec(&cleared).unwrap()
+    );
+}
+
+#[test]
+fn native_lane_retained_limit_refuses_before_lane_clone() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let row = super::SLDPRT_FAMILIES
+        .iter()
+        .find(|row| row.arena == "feature_input_lanes")
+        .unwrap();
+    let needed = row.arena.len()
+        + serde_json::to_vec(&super::LaneArenaView(&native.feature_input_lanes[0]))
+            .unwrap()
+            .len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::records::FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(0));
+    let error = (row.emit)(&limited, &native, row, &mut namespace).unwrap_err();
+    crate::records::FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    (row.emit)(&service, &native, row, &mut namespace).unwrap();
+    assert_eq!(namespace.arenas()[row.arena].len(), 1);
+}
+
+#[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let decoded = SldprtCodec
         .decode(

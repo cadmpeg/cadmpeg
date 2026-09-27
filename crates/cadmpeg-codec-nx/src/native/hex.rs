@@ -4,9 +4,15 @@
 use serde::{Deserialize, Serialize};
 
 /// A SHA-256 digest encoded as 64 lowercase hexadecimal digits.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub struct Sha256Hex(String);
+
+impl Serialize for Sha256Hex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl Sha256Hex {
     /// SHA-256 of the supplied bytes.
@@ -58,9 +64,15 @@ impl From<Sha256Hex> for String {
 }
 
 /// A saved-toggle identity encoded as 32 lowercase hexadecimal digits.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(try_from = "String")]
 pub(super) struct ToggleId(String);
+
+impl Serialize for ToggleId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl TryFrom<String> for ToggleId {
     type Error = &'static str;
@@ -95,6 +107,44 @@ fn is_lowercase_hex(value: &str, digits: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{Sha256Hex, ToggleId};
+
+    #[test]
+    fn sha256_hex_streams_once_with_native_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Row {
+            id: &'static str,
+            sha256: Sha256Hex,
+        }
+
+        let sha256 = Sha256Hex::digest(&[]);
+        let expected = serde_json::json!({
+            "id": "nx:hash:digest#1", "sha256": sha256.as_str()
+        });
+        let row = Row {
+            id: "nx:hash:digest#1",
+            sha256,
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(&row, expected);
+    }
+
+    #[test]
+    fn toggle_id_streams_once_with_native_retained_limit() {
+        #[derive(serde::Serialize)]
+        struct Row {
+            id: &'static str,
+            toggle: ToggleId,
+        }
+
+        let value = "a".repeat(32);
+        let row = Row {
+            id: "nx:toggle:record#1",
+            toggle: ToggleId::try_from(value.clone()).unwrap(),
+        };
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &row,
+            serde_json::json!({"id": row.id, "toggle": value}),
+        );
+    }
 
     #[test]
     fn digest_preserves_canonical_hex_and_rejects_other_strings(

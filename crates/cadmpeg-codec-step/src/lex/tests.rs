@@ -40,6 +40,57 @@ fn binary_lexeme_reserves_temporary_digits_before_allocation() {
 }
 
 #[test]
+fn binary_hex_digits_refuse_collection_limit() {
+    let input = b"\"0A1F2\"";
+    let service = DecodePolicy::service();
+    assert!(lex_under_policy(input, service, false).is_ok());
+    let mut limited = service;
+    limited.limits.max_collection_items = 4;
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("five hex digits exceed four collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_binary_hex_digits"
+    ));
+}
+
+#[test]
+fn binary_packed_bytes_refuse_collection_limit() {
+    let input = b"\"0A1F2\"";
+    let service = DecodePolicy::service();
+    assert!(lex_under_policy(input, service, false).is_ok());
+    let mut limited = service;
+    limited.limits.max_collection_items = 6;
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("five hex digits plus two packed bytes exceed six collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_binary_packed_bytes"
+    ));
+}
+
+#[test]
+fn uri_lexeme_bytes_refuse_collection_limit() {
+    let input = b"<part/path>";
+    let service = DecodePolicy::service();
+    assert!(lex_under_policy(input, service, false).is_ok());
+    let mut limited = service;
+    limited.limits.max_collection_items = 8;
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("nine URI bytes exceed eight collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_uri_lexeme_bytes"
+    ));
+}
+
+#[test]
 fn binary_lexeme_charges_packed_bytes_before_retention() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();

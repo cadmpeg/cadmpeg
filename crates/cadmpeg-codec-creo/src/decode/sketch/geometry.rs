@@ -696,8 +696,10 @@ pub(in crate::decode) fn saved_section_entity_geometry(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: Point2::new(frame[9], frame[10]),
                     major_angle: Angle::new(major_axis[1].atan2(major_axis[0]))?,
-                    major_radius: Length::new(major_radius)?,
-                    minor_radius: Length::new(minor_radius)?,
+                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                        major_radius: Length::new(major_radius)?,
+                        minor_radius: Length::new(minor_radius)?,
+                    },
                     bounds,
                 })
                 .ok()?,

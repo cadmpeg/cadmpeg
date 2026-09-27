@@ -709,10 +709,11 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let mut loci = vec![locus(
                 center.get(),
                 SketchLocus::Center(entity.id().clone()),

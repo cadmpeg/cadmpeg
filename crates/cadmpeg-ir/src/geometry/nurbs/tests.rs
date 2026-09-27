@@ -551,14 +551,18 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), &[1.0, 1.0, 2.0, 2.0]),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
-            &[1.0, 1.0, 2.0, 2.0]
+            Some(&[1.0, 1.0, 2.0, 2.0])
         )
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], &[1.0]),
+        positive_controls(&surface.poles(), None),
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+    );
+    assert_eq!(
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])),
         None
     );
     let mut mapped = surface.clone();

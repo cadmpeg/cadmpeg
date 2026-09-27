@@ -16,6 +16,7 @@ pub mod bytes;
 pub mod compound;
 pub mod edit;
 pub mod golden;
+pub mod native_serialization;
 pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;

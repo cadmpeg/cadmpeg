@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Located parser failures shared by the Inventor record families.
 
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -46,8 +47,8 @@ pub(crate) enum RecordIssueFamily {
     Feature { type_id: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "RecordIssueWire", into = "RecordIssueWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "RecordIssueWire")]
 pub(crate) struct RecordIssue {
     pub(crate) family: RecordIssueFamily,
     pub(crate) segment_token: String,
@@ -55,16 +56,52 @@ pub(crate) struct RecordIssue {
     pub(crate) detail: String,
 }
 
-impl RecordIssue {
-    pub(crate) fn id(&self) -> String {
-        let prefix = match self.family {
+struct RecordIssueId<'a>(&'a RecordIssue);
+
+impl std::fmt::Display for RecordIssueId<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prefix = match self.0.family {
             RecordIssueFamily::Assembly => "inventor:assembly:record-issue",
             RecordIssueFamily::Presentation => "inventor:presentation:record-issue",
             RecordIssueFamily::Design { .. } => "inventor:pmdc:record-issue",
             RecordIssueFamily::Sketch { .. } => "inventor:pmdc:sketch-record-issue",
             RecordIssueFamily::Feature { .. } => "inventor:pmdc:feature-record-issue",
         };
-        format!("{prefix}#{}-{}", self.segment_token, self.record_ordinal)
+        formatter.write_fmt(format_args!(
+            "{prefix}#{}-{}",
+            self.0.segment_token, self.0.record_ordinal
+        ))
+    }
+}
+
+impl Serialize for RecordIssueId<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl Serialize for RecordIssue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &RecordIssueId(self))?;
+        match &self.family {
+            RecordIssueFamily::Assembly | RecordIssueFamily::Presentation => {}
+            RecordIssueFamily::Design { type_id }
+            | RecordIssueFamily::Sketch { type_id }
+            | RecordIssueFamily::Feature { type_id } => {
+                map.serialize_entry("type_id", type_id)?;
+            }
+        }
+        map.serialize_entry("segment_token", &self.segment_token)?;
+        map.serialize_entry("record_ordinal", &self.record_ordinal)?;
+        map.serialize_entry("detail", &self.detail)?;
+        map.end()
+    }
+}
+
+impl RecordIssue {
+    pub(crate) fn id(&self) -> String {
+        RecordIssueId(self).to_string()
     }
 }
 
@@ -133,7 +170,7 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 
 #[cfg(test)]
 mod tests {
-    use super::{RecordIssue, RecordIssueFamily};
+    use super::{RecordIssue, RecordIssueFamily, RecordIssueWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
@@ -211,6 +248,27 @@ mod tests {
     #[test]
     fn a_top_level_record_issue_key_names_itself_in_its_refusal() {
         states_the_key("type_id", &refusal::<super::RecordIssueWire>("type_id"));
+    }
+
+    #[test]
+    fn record_issue_borrowed_wire_refuses_retained_limit_before_text_copy() {
+        let issue = RecordIssue {
+            family: RecordIssueFamily::Design {
+                type_id: "0123456789abcdef0123456789abcdef".to_owned(),
+            },
+            segment_token: "segment".to_owned(),
+            record_ordinal: 1,
+            detail: "invalid indexed record".to_owned(),
+        };
+        let wire = RecordIssueWire::from(issue.clone());
+        assert_eq!(
+            serde_json::to_vec(&issue).expect("borrowed issue"),
+            serde_json::to_vec(&wire).expect("owned issue")
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &issue,
+            serde_json::to_value(wire).expect("owned issue value"),
+        );
     }
 }
 

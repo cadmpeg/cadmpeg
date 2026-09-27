@@ -89,6 +89,7 @@ impl BaseTypeGuid {
         }
     }
 
+    #[cfg(test)]
     fn into_wire(self) -> (Option<String>, Option<u64>) {
         match self {
             Self::Absent => (None, None),
@@ -101,8 +102,9 @@ impl BaseTypeGuid {
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "SegmentTypeWire")]
 pub(crate) struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -128,10 +130,91 @@ pub(crate) struct SegmentType {
     pub(crate) entities: ReferenceRun<u64>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static SEGMENT_TYPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for SegmentType {
+    fn clone(&self) -> Self {
+        SEGMENT_TYPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            type_guid: self.type_guid.clone(),
+            type_guid_offset: self.type_guid_offset,
+            base_type_guid: self.base_type_guid.clone(),
+            version: self.version,
+            version_offset: self.version_offset,
+            module: self.module.clone(),
+            entities: self.entities.clone(),
+        }
+    }
+}
+
+struct SegmentValues<'a>(&'a ReferenceRun<u64>);
+
+impl Serialize for SegmentValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.values())
+    }
+}
+
+struct SegmentOffsets<'a>(&'a ReferenceRun<u64>);
+
+impl Serialize for SegmentOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.offsets())
+    }
+}
+
+#[derive(Serialize)]
+struct SegmentTypeWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    type_guid: &'a DesignRelaxedGuidText,
+    type_guid_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_type_guid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_type_guid_offset: Option<u64>,
+    version: u32,
+    version_offset: u64,
+    module: &'a str,
+    entity_ids: SegmentValues<'a>,
+    entity_id_offsets: SegmentOffsets<'a>,
+}
+
+impl Serialize for SegmentType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let base_type_guid = match &self.base_type_guid {
+            BaseTypeGuid::Absent => None,
+            BaseTypeGuid::EmptyRoot { .. } => Some(""),
+            BaseTypeGuid::Guid { value, .. } => Some(value.as_str()),
+        };
+        SegmentTypeWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            type_guid: &self.type_guid,
+            type_guid_offset: self.type_guid_offset,
+            base_type_guid,
+            base_type_guid_offset: self.base_type_guid.offset(),
+            version: self.version,
+            version_offset: self.version_offset,
+            module: &self.module,
+            entity_ids: SegmentValues(&self.entities),
+            entity_id_offsets: SegmentOffsets(&self.entities),
+        }
+        .serialize(serializer)
+    }
+}
+
 /// One type-table entry from a `MetaStream` segment header. The entry registers
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct SegmentTypeWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -197,6 +280,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
     }
 }
 
+#[cfg(test)]
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
         let (entity_ids, entity_id_offsets) = value.entities.into_wire();
@@ -725,3 +809,6 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

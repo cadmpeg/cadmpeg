@@ -3920,7 +3920,7 @@ fn closest_nurbs_curve_parameter_with_budget(
             )
         })
         .collect::<Vec<_>>();
-    let controls = positive_controls(&residuals, &weights)?;
+    let controls = positive_controls(&residuals, Some(&weights))?;
     let homogeneous = HomogeneousCurveSpans {
         spans: homogeneous_spans(degree, curve.knots(), controls)?,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
