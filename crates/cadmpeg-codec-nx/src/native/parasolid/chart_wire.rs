@@ -5,9 +5,11 @@ use super::ParasolidChartRecord;
 use crate::intersection::chart_samples::{ChartPreamble, SourceChartData, MISSING_PARAMETER};
 use crate::intersection::{ChartFraming, ChartPointLayout};
 use cadmpeg_ir::math::Point3;
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct ChartWire {
     id: String,
     stream_ordinal: u32,
@@ -26,6 +28,88 @@ pub(super) struct ChartWire {
     framing: ChartFraming,
     inflated_offset: u64,
 }
+
+struct ChartPoints<'a>(&'a SourceChartData);
+struct ChartParameters<'a>(&'a SourceChartData);
+
+impl Serialize for ChartPoints<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let count = usize::try_from(self.0.count()).map_err(serde::ser::Error::custom)?;
+        let mut points = serializer.serialize_seq(Some(count))?;
+        for index in 0..count {
+            let point = self.0.point_at(index).ok_or_else(|| {
+                serde::ser::Error::custom("chart point missing from counted source")
+            })?;
+            points.serialize_element(&[point.x, point.y, point.z])?;
+        }
+        points.end()
+    }
+}
+
+impl Serialize for ChartParameters<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let count = usize::try_from(self.0.count()).map_err(serde::ser::Error::custom)?;
+        let mut parameters = serializer.serialize_seq(Some(count))?;
+        for index in 0..count {
+            let value = self.0.native_parameter_at(index).ok_or_else(|| {
+                serde::ser::Error::custom("chart parameter missing from counted source")
+            })?;
+            parameters.serialize_element(&value)?;
+        }
+        parameters.end()
+    }
+}
+
+#[derive(Serialize)]
+struct ChartRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    count: u32,
+    base_parameter: f64,
+    base_scale: f64,
+    chart_count: u32,
+    chordal_error: f64,
+    angular_error: f64,
+    parameter_errors: [f64; 2],
+    points: ChartPoints<'a>,
+    native_parameters: Option<ChartParameters<'a>>,
+    ext_support_uv: [Option<&'a [cadmpeg_ir::units::FiniteVector<2>]>; 2],
+    point_layout: ChartPointLayout,
+    framing: ChartFraming,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidChartRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let support_uv = self
+            .data
+            .support_uv_ref()
+            .map(|lane| lane.map(|lane| lane.as_slice()));
+        ChartRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            count: self.data.count(),
+            base_parameter: self.preamble.base_parameter(),
+            base_scale: self.preamble.base_scale(),
+            chart_count: self.data.count(),
+            chordal_error: self.preamble.chordal_error().get(),
+            angular_error: self.preamble.angular_error(),
+            parameter_errors: [MISSING_PARAMETER, MISSING_PARAMETER],
+            points: ChartPoints(&self.data),
+            native_parameters: (self.data.point_layout() == ChartPointLayout::Ext11)
+                .then_some(ChartParameters(&self.data)),
+            ext_support_uv: support_uv,
+            point_layout: self.data.point_layout(),
+            framing: self.framing,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidChartRecord> for ChartWire {
     fn from(value: ParasolidChartRecord) -> Self {
         Self {
@@ -110,6 +194,10 @@ mod tests {
             );
             let chart: ParasolidChartRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&chart).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&chart).unwrap(),
+                serde_json::to_vec(&super::ChartWire::from(chart.clone())).unwrap()
+            );
             for (field, invalid) in [
                 ("count", serde_json::json!(1)),
                 ("chart_count", serde_json::json!(1)),
@@ -124,5 +212,15 @@ mod tests {
                 assert!(error.to_string().contains(field), "{error}");
             }
         }
+    }
+
+    #[test]
+    fn chart_native_limit_refuses_before_nested_column_copies() {
+        let json = r#"{"id":"nx:parasolid:chart#0","stream_ordinal":0,"xmt":1,"count":2,"base_parameter":2.0,"base_scale":1.0,"chart_count":2,"chordal_error":0.01,"angular_error":0.1,"parameter_errors":[-31415800000000.0,-31415800000000.0],"points":[[0.0,0.0,0.0],[1.0,0.0,0.0]],"native_parameters":[2.0,5.0],"ext_support_uv":[[[0.0,1.0],[2.0,3.0]],null],"point_layout":"ext11","framing":"direct","inflated_offset":10}"#;
+        let chart: ParasolidChartRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &chart,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }

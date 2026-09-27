@@ -28,6 +28,14 @@ impl<T> NonEmpty<T> {
         &self.first
     }
 
+    pub(crate) fn get(&self, index: usize) -> Option<&T> {
+        if index == 0 {
+            Some(&self.first)
+        } else {
+            self.rest.get(index - 1)
+        }
+    }
+
     pub(crate) fn last(&self) -> &T {
         self.rest.last().unwrap_or(&self.first)
     }
