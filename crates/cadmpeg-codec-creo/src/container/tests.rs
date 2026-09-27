@@ -807,6 +807,71 @@ fn legacy_schema_and_release_succeed_under_service_policy() {
     assert_eq!(framing.product_release.as_deref(), Some("H-01-21"));
 }
 
+fn one_compressed_section() -> Vec<u8> {
+    let mut data = b"#SolidPrimdata\n".to_vec();
+    data.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01]);
+    data
+}
+
+#[test]
+fn expanded_section_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_compressed_section();
+    let section = super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        .expect("bounded compressed section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("compressed input is admitted");
+    let error = super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
+        .expect_err("expanded name needs retained bytes after output");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo expanded section names"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn expanded_section_record_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_compressed_section();
+    let section = super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        .expect("bounded compressed section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3 * (1 << 16);
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("compressed input is admitted");
+    let error = super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
+        .expect_err("expanded record needs another collection item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo expanded sections"));
+}
+
+#[test]
+fn expanded_section_record_succeeds_under_service_policy() {
+    let data = one_compressed_section();
+    let section = super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        .expect("bounded compressed section");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("compressed input is admitted");
+    let expanded = super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
+        .expect("expanded section is admitted");
+    assert_eq!(expanded.len(), 1);
+    assert_eq!(expanded[0].name, "SolidPrimdata");
+    assert_eq!(expanded[0].data, b"ABC");
+}
+
 #[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
