@@ -48,6 +48,58 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
     }
 }
 
+#[test]
+fn standard_native_vertex_binding_refuses_before_identity_and_edge_growth() {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, NonEmptyCoedges};
+
+    let topology = StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: NonEmptyCoedges::one(CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }),
+            }],
+        }],
+        edge_rows: vec![EdgeRow {
+            kind: 1,
+            handles: vec![7],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }],
+        vertex_points: Vec::new(),
+        logical_vertex_count: 2,
+    };
+    let bound = crate::test_support::with_service_context(|ctx| {
+        topology.with_native_edge_vertices(ctx, &[[4, 5]])
+    })
+    .expect("service resource budget")
+    .expect("native edge identities bind");
+    assert_eq!(bound.logical_vertex_count, 2);
+    assert_eq!(bound.faces[0].boundaries[0].coedges[0].start_vertex, 0);
+    assert_eq!(bound.faces[0].boundaries[0].coedges[0].end_vertex, 1);
+    assert_eq!(
+        standard_collection_limit_operation(0, |ctx| {
+            topology.with_native_edge_vertices(ctx, &[[4, 5]])?;
+            Ok(())
+        }),
+        "catia_standard_native_vertex_identities"
+    );
+    assert_eq!(
+        standard_collection_limit_operation(2, |ctx| {
+            topology.with_native_edge_vertices(ctx, &[[4, 5]])?;
+            Ok(())
+        }),
+        "catia_standard_native_edge_vertices"
+    );
+    assert!(crate::test_support::with_collection_limit(0, |ctx| {
+        topology.with_native_edge_vertices(ctx, &[])
+    })
+    .expect("invalid length requires no allocation")
+    .is_none());
+}
+
 fn standard_collection_limit_operation(
     max_collection_items: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
