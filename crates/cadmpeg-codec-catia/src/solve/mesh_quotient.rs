@@ -9138,6 +9138,21 @@ impl MeshSelectionSearch<'_, '_> {
                 .all(|candidates| candidates.len() == 1)
     }
 
+    fn selected_edges(&self) -> Result<HashSet<usize>, CodecError> {
+        let mut edges = HashSet::new();
+        for (face, selected) in self.selected.iter().enumerate() {
+            let Some((index, _)) = selected else {
+                continue;
+            };
+            if let Some(assignment) = self.assignments[face].get(*index) {
+                for use_ in assignment.boundaries.iter().flatten() {
+                    crate::resource::insert_set(self.ctx, &mut edges, use_.edge, "catia_selection_selected_edges")?;
+                }
+            }
+        }
+        Ok(edges)
+    }
+
     #[cfg(test)]
     fn remaining_equation_merge_capacity(
         &self,
@@ -9809,19 +9824,7 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
         }
-        let selected_edges = self
-            .selected
-            .iter()
-            .enumerate()
-            .filter_map(|(face, selected)| {
-                selected
-                    .as_ref()
-                    .and_then(|(index, _)| self.assignments[face].get(*index))
-            })
-            .flat_map(|assignment| &assignment.boundaries)
-            .flatten()
-            .map(|use_| use_.edge)
-            .collect::<HashSet<_>>();
+        let selected_edges = self.selected_edges()?;
         let mut impossible = false;
         let face = self
             .selected
@@ -9910,25 +9913,23 @@ impl MeshSelectionSearch<'_, '_> {
                 self.fixed_edge_orientations[edge] = None;
                 return Ok(());
             }
-            let selected_assignments = self
-                .selected
-                .iter()
-                .enumerate()
-                .map(|(face, selected)| {
-                    let (assignment, directions) = selected.as_ref()?;
-                    if *assignment != 0 {
-                        return None;
-                    }
-                    Some((self.assignments[face].get(*assignment)?.clone(), directions))
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(selected_assignments) = selected_assignments else {
-                return Ok(());
-            };
-            let (selected_assignments, directions): (Vec<_>, Vec<_>) = selected_assignments
-                .into_iter()
-                .map(|(assignment, directions)| (assignment, directions.clone()))
-                .unzip();
+            let mut selected_assignments = Vec::new();
+            let mut directions = Vec::new();
+            crate::resource::reserve_vec(self.ctx, &mut selected_assignments, self.selected.len(), "catia_fixed_selected_assignments")?;
+            crate::resource::reserve_vec(self.ctx, &mut directions, self.selected.len(), "catia_fixed_selected_directions")?;
+            for (face, selected) in self.selected.iter().enumerate() {
+                let Some((assignment, selected_directions)) = selected else {
+                    return Ok(());
+                };
+                if *assignment != 0 {
+                    return Ok(());
+                }
+                let Some(source) = self.assignments[face].get(*assignment) else {
+                    return Ok(());
+                };
+                selected_assignments.push(copy_mesh_assignment(self.ctx, source)?);
+                directions.push(copy_mesh_boundary_directions(self.ctx, selected_directions)?);
+            }
             let Some(port_identities) = self.port_identities else {
                 return Ok(());
             };
@@ -9968,7 +9969,6 @@ impl MeshSelectionSearch<'_, '_> {
             }
             return Ok(());
         };
-        let previous_orientations = self.fixed_edge_orientations.clone();
         let options = self.fixed_direction_options(&measured, face, Some(budget))?;
         if budget.exhausted() {
             self.outcome.exhaust();
@@ -9978,12 +9978,11 @@ impl MeshSelectionSearch<'_, '_> {
             if self.should_stop() {
                 return Ok(());
             }
-            self.fixed_edge_orientations = next_orientations;
+            let previous_orientations = std::mem::replace(&mut self.fixed_edge_orientations, next_orientations);
             self.selected[face] = Some((0, directions));
             self.search_fixed_direction_with_budget(&next_quotient, budget)?;
             self.selected[face] = None;
-            self.fixed_edge_orientations
-                .clone_from(&previous_orientations);
+            self.fixed_edge_orientations = previous_orientations;
         }
         Ok(())
     }
@@ -10106,36 +10105,20 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
         }
-        let selected_edges = self
-            .selected
-            .iter()
-            .enumerate()
-            .filter_map(|(face, selected)| {
-                selected
-                    .as_ref()
-                    .and_then(|(index, _)| self.assignments[face].get(*index))
-            })
-            .flat_map(|assignment| &assignment.boundaries)
-            .flatten()
-            .map(|use_| use_.edge)
-            .collect::<HashSet<_>>();
-        let adjacent_faces = (!selected_edges.is_empty())
-            .then(|| {
-                self.selected
+        let selected_edges = self.selected_edges()?;
+        let mut adjacent_faces = HashSet::new();
+        if !selected_edges.is_empty() {
+            for (face, selected) in self.selected.iter().enumerate() {
+                if selected.is_none() && self.assignments[face]
                     .iter()
-                    .enumerate()
-                    .filter_map(|(face, selected)| {
-                        (selected.is_none()
-                            && self.assignments[face]
-                                .iter()
-                                .flat_map(|assignment| &assignment.boundaries)
-                                .flatten()
-                                .any(|use_| selected_edges.contains(&use_.edge)))
-                        .then_some(face)
-                    })
-                    .collect::<HashSet<_>>()
-            })
-            .filter(|faces| !faces.is_empty());
+                    .flat_map(|assignment| &assignment.boundaries)
+                    .flatten()
+                    .any(|use_| selected_edges.contains(&use_.edge)) {
+                    crate::resource::insert_set(self.ctx, &mut adjacent_faces, face, "catia_selection_adjacent_faces")?;
+                }
+            }
+        }
+        let adjacent_faces = (!adjacent_faces.is_empty()).then_some(adjacent_faces);
         let next = self
             .selected
             .iter()
@@ -10217,24 +10200,20 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         }
         let Some((_, supported, _, _, _, face)) = next else {
-            let selected = self.selected.iter().cloned().collect::<Option<Vec<_>>>();
-            let Some(selected) = selected else {
-                return Ok(());
-            };
-            let assignment_indices = selected.iter().map(|(index, _)| *index).collect::<Vec<_>>();
-            let directions = selected
-                .iter()
-                .map(|(_, directions)| directions.clone())
-                .collect::<Vec<_>>();
-            let selected_assignments = self
-                .assignments
-                .iter()
-                .zip(&assignment_indices)
-                .map(|(assignments, &index)| assignments.get(index).cloned())
-                .collect::<Option<Vec<_>>>();
-            let Some(selected_assignments) = selected_assignments else {
-                return Ok(());
-            };
+            let mut selected_assignments = Vec::new();
+            let mut directions = Vec::new();
+            crate::resource::reserve_vec(self.ctx, &mut selected_assignments, self.selected.len(), "catia_search_selected_assignments")?;
+            crate::resource::reserve_vec(self.ctx, &mut directions, self.selected.len(), "catia_search_selected_directions")?;
+            for (face, selected) in self.selected.iter().enumerate() {
+                let Some((index, selected_directions)) = selected else {
+                    return Ok(());
+                };
+                let Some(assignment) = self.assignments[face].get(*index) else {
+                    return Ok(());
+                };
+                selected_assignments.push(copy_mesh_assignment(self.ctx, assignment)?);
+                directions.push(copy_mesh_boundary_directions(self.ctx, selected_directions)?);
+            }
             if self
                 .edge_candidates
                 .iter()
@@ -10282,7 +10261,7 @@ impl MeshSelectionSearch<'_, '_> {
                     }
                 }
             }
-            let mut quotient = measured.clone();
+            let mut quotient = measured.clone_charged(self.ctx)?;
             let Some(root_points) = quotient.close_coordinate_roots(
                 self.ctx,
                 self.vertex_points.len(),
@@ -10347,16 +10326,10 @@ impl MeshSelectionSearch<'_, '_> {
                             None => point_assignment[vertex] = Some(point),
                         }
                     }
-                    let Some(points) = vertices
-                        .map(|vertex| point_assignment[vertex])
-                        .into_iter()
-                        .collect::<Option<Vec<_>>>()
-                    else {
+                    let [Some(start), Some(end)] = vertices.map(|vertex| point_assignment[vertex]) else {
                         break 'candidate None;
                     };
-                    let Ok(points) = <[usize; 2]>::try_from(points) else {
-                        break 'candidate None;
-                    };
+                    let points = [start, end];
                     let closed_ports =
                         quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
                     if !mesh_edge_points_compatible(
@@ -10367,12 +10340,15 @@ impl MeshSelectionSearch<'_, '_> {
                         break 'candidate None;
                     }
                 }
-                let Some(point_assignment) =
-                    point_assignment.into_iter().collect::<Option<Vec<_>>>()
-                else {
-                    break 'candidate None;
-                };
-                Some((topology, point_assignment))
+                let mut completed_points = Vec::new();
+                crate::resource::reserve_vec(self.ctx, &mut completed_points, point_assignment.len(), "catia_search_completed_points")?;
+                for point in point_assignment {
+                    let Some(point) = point else {
+                        break 'candidate None;
+                    };
+                    completed_points.push(point);
+                }
+                Some((topology, completed_points))
             };
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
@@ -10436,13 +10412,10 @@ impl MeshSelectionSearch<'_, '_> {
                 self.outcome.exhaust();
                 return Ok(());
             }
-            options.extend(
-                assignment_options
-                    .into_iter()
-                    .map(|(directions, next_quotient)| {
-                        (assignment_index, directions, next_quotient)
-                    }),
-            );
+            crate::resource::reserve_vec(self.ctx, &mut options, assignment_options.len(), "catia_search_assignment_options")?;
+            options.extend(assignment_options.into_iter().map(|(directions, next_quotient)| {
+                (assignment_index, directions, next_quotient)
+            }));
         }
         options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
         if options.is_empty() {
@@ -10450,7 +10423,7 @@ impl MeshSelectionSearch<'_, '_> {
         }
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
             let changed_edges = changed_quotient_edges(self.ctx, &measured, next_quotient)?;
-            self.selected[face] = Some((*assignment_index, directions.clone()));
+            self.selected[face] = Some((*assignment_index, copy_mesh_boundary_directions(self.ctx, directions)?));
             if self.selected_orientable()? {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)?
@@ -10465,14 +10438,17 @@ impl MeshSelectionSearch<'_, '_> {
             self.selected[face] = None;
             return Ok(());
         }
-        options.sort_unstable_by_key(|(assignment, directions, quotient)| {
-            let mut measured = quotient.clone();
-            let root_count = measured.root_count();
-            let domain_freedom = (0..measured.union.len())
-                .filter(|&node| measured.union.find(node) == node)
-                .map(|node| measured.domains[node].len())
-                .fold(0usize, usize::saturating_add);
-            (root_count, domain_freedom, *assignment, directions.clone())
+        options.sort_unstable_by(|(left_assignment, left_directions, left_quotient), (right_assignment, right_directions, right_quotient)| {
+            let measure = |quotient: &MeshQuotient| {
+                (0..quotient.union.len())
+                    .filter(|&node| quotient.union.root(node) == node)
+                    .fold((0usize, 0u128), |(count, freedom), node| {
+                        (count + 1, freedom + quotient.domains[node].len() as u128)
+                    })
+            };
+            measure(left_quotient).cmp(&measure(right_quotient))
+                .then_with(|| left_assignment.cmp(right_assignment))
+                .then_with(|| left_directions.cmp(right_directions))
         });
         for (assignment_index, directions, next_quotient) in options {
             let changed_edges = changed_quotient_edges(self.ctx, &measured, &next_quotient)?;

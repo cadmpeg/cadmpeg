@@ -221,3 +221,41 @@ fn mesh_selection_completion_refuses_existing_nested_direction_copies() {
     assert!(refusals.contains("catia_direction_copy_rows"));
     assert!(refusals.contains("catia_direction_copy_values"));
 }
+
+#[test]
+fn mesh_selection_selected_edges_refuse_before_set_growth() {
+    use cadmpeg_core::CodecError;
+
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 7, start: 0, end: 1, reversed: None,
+        }]],
+    }]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let search = MeshSelectionSearch {
+            ctx,
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: vec![Some(1)],
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            candidate_gauge: None,
+            port_identities: None,
+            fixed_face_directions: Vec::new(),
+            fixed_edge_orientations: Vec::new(),
+            edge_has_fixed_direction: Vec::new(),
+            selected: vec![Some((0, vec![vec![false]]))],
+            visited_states: HashSet::new(),
+            outcome: SearchOutcome::Open,
+            face_equation_cache: RefCell::default(),
+        };
+        search.selected_edges()
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(run(ctx).expect("service budget"), HashSet::from([7]));
+    });
+    assert!(matches!(crate::test_support::with_collection_limit(0, run),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_selection_selected_edges"));
+}
