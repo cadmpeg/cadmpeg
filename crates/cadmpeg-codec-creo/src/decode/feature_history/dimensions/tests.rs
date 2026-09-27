@@ -13,12 +13,49 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
     dimension_expression, feature_dimension_parameter_layout, insert_dimension_property,
-    planned_feature_dimension_parameter_ids, transfer_feature_dimensions, HexToken,
+    planned_feature_dimension_parameter_ids, push_feature_source_parameter,
+    transfer_feature_dimensions, HexToken,
 };
 
 fn layout_key() -> cadmpeg_ir::sketches::SketchId {
     cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917".to_string())
         .expect("valid test identity")
+}
+
+#[test]
+fn feature_source_parameter_refuses_before_content_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let id = ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+        .expect("valid test identity");
+    let mut content = cadmpeg_ir::features::FeatureContent::default();
+    let error = push_feature_source_parameter(&ctx, &mut content, id)
+        .expect_err("one reference needs one content row");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo feature source content"));
+    assert!(content.is_empty());
+}
+
+#[test]
+fn feature_source_parameter_keeps_order_and_duplicate_refusal() {
+    let id = ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+        .expect("valid test identity");
+    let mut content = cadmpeg_ir::features::FeatureContent::default();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        push_feature_source_parameter(ctx, &mut content, id.clone())
+    })
+    .expect("one reference fits service limits");
+    assert_eq!(content.len(), 1);
+    assert!(matches!(&content[0], cadmpeg_ir::features::FeatureSourceContent::Parameter(value)
+        if value == &id));
+    let error = crate::decode::with_test_decode_ctx(|ctx| {
+        push_feature_source_parameter(ctx, &mut content, id)
+    })
+    .expect_err("duplicate parameter remains invalid");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
