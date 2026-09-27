@@ -2669,8 +2669,9 @@ impl<'a> F3dDecodeSession<'a> {
                 linear_tolerance: self.ir.tolerances.linear.get(),
                 angular_tolerance: self.ir.tolerances.angular.get(),
                 arrangement_budget: &arrangement_budget,
+                ctx: Some(self.ctx),
             },
-        );
+        )?;
         if matches!(path, SessionPath::Geometry(_)) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }

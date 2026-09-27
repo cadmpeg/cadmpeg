@@ -41,10 +41,13 @@ pub(super) fn arrangement_region_containing_points(
     points: &[Point2],
     tolerance: f64,
     budget: &WorkBudget<'_>,
-) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let faces = sketch_arrangement_faces(sketch, entities, tolerance, budget)?;
+    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, budget, ctx)? else {
+        return Ok(None);
+    };
     let mut boundary_matches = faces.iter().filter(|face| {
         points.iter().all(|point| {
             face.boundary
@@ -52,9 +55,10 @@ pub(super) fn arrangement_region_containing_points(
                 .any(|use_| point_on_profile_boundary_use(*point, use_, entities, tolerance))
         })
     });
-    let boundary = boundary_matches.next();
-    if boundary.is_some() && boundary_matches.next().is_none() {
-        return SketchProfileRegion::trimmed(boundary?.boundary.clone(), Vec::new()).ok();
+    if let Some(boundary) = boundary_matches.next() {
+        if boundary_matches.next().is_none() {
+            return Ok(SketchProfileRegion::trimmed(boundary.boundary.clone(), Vec::new()).ok());
+        }
     }
     let mut interior_matches = faces.iter().filter(|face| {
         points.iter().all(|point| {
@@ -65,11 +69,13 @@ pub(super) fn arrangement_region_containing_points(
                 && point_in_polygon(*point, &face.polyline)
         })
     });
-    let interior = interior_matches.next()?;
+    let Some(interior) = interior_matches.next() else {
+        return Ok(None);
+    };
     if interior_matches.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok()
+    Ok(SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok())
 }
 
 fn sketch_arrangement_faces(
@@ -77,9 +83,19 @@ fn sketch_arrangement_faces(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     budget: &WorkBudget<'_>,
-) -> Option<Vec<SketchArrangementFace>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
+
+    macro_rules! geometric {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
 
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
@@ -107,27 +123,29 @@ fn sketch_arrangement_faces(
             .collect::<Vec<_>>()
     };
     for use_ in candidate_uses {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             circles.push((use_, center.get(), radius));
             continue;
         }
-        let range = sketch_geometry_parameter_range(&entity.geometry)?;
+        let range = geometric!(sketch_geometry_parameter_range(&entity.geometry));
         for point in [
-            sketch_geometry_point(&entity.geometry, range[0])?,
-            sketch_geometry_point(&entity.geometry, range[1])?,
+            geometric!(sketch_geometry_point(&entity.geometry, range[0])),
+            geometric!(sketch_geometry_point(&entity.geometry, range[1])),
         ] {
             arrangement_node(&mut nodes, point, tolerance);
         }
         pending.push(SketchProfileBoundaryUse {
             entity: entity.id().clone(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
+            parameter_range: geometric!(
+                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()
+            ),
             reversed: use_.reversed,
         });
     }
     for (use_, center, radius) in circles {
         if radius.get() <= tolerance {
-            return None;
+            return Ok(None);
         }
         let mut angles = nodes
             .iter()
@@ -169,7 +187,7 @@ fn sketch_arrangement_faces(
             angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
         }
         if angles.len() < 2 {
-            return None;
+            return Ok(None);
         }
         for index in 0..angles.len() {
             let start = angles[index];
@@ -180,32 +198,42 @@ fn sketch_arrangement_faces(
             let range = [start, end];
             pending.push(SketchProfileBoundaryUse {
                 entity: use_.entity.clone(),
-                parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
+                parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
+                    range
+                )
+                .ok()),
                 reversed: use_.reversed,
             });
         }
     }
     let mut split_pending = Vec::new();
     for boundary in pending {
-        let entity = entities
+        let entity = geometric!(entities
             .iter()
-            .find(|entity| entity.id() == &boundary.entity)?;
-        let parameters = arrangement_split_parameters(
+            .find(|entity| entity.id() == &boundary.entity));
+        let parameters = geometric!(arrangement_split_parameters(
             &entity.geometry,
             boundary.parameter_range.endpoints(),
             &nodes,
             tolerance,
-        )?;
+        ));
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
             split_pending.push((
                 SketchProfileBoundaryUse {
                     entity: boundary.entity.clone(),
-                    parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range)
-                        .ok()?,
+                    parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
+                        range
+                    )
+                    .ok()),
                     reversed: boundary.reversed,
                 },
-                profile_use_polyline(entity, range, boundary.reversed, tolerance)?,
+                geometric!(profile_use_polyline(
+                    entity,
+                    range,
+                    boundary.reversed,
+                    tolerance
+                )),
             ));
         }
     }
@@ -213,14 +241,14 @@ fn sketch_arrangement_faces(
     for (boundary, polyline) in split_pending {
         let edge = SketchArrangementEdge {
             nodes: [
-                arrangement_node(&mut nodes, *polyline.first()?, tolerance),
-                arrangement_node(&mut nodes, *polyline.last()?, tolerance),
+                arrangement_node(&mut nodes, *geometric!(polyline.first()), tolerance),
+                arrangement_node(&mut nodes, *geometric!(polyline.last()), tolerance),
             ],
             boundary,
             polyline,
         };
         if edge.nodes[0] == edge.nodes[1] {
-            return None;
+            return Ok(None);
         }
         if edges.iter().any(|candidate| {
             (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
@@ -230,21 +258,23 @@ fn sketch_arrangement_faces(
         }
         edges.push(edge);
     }
-    arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget);
+    arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
     if budget.exhausted() {
-        return None;
+        return Ok(None);
     }
     if edges.len() < 3 {
-        return None;
+        return Ok(None);
     }
     let edge_tubes = edges
         .iter()
         .map(|edge| arrangement_edge_tubes(edge, entities, tolerance))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let edge_tubes = geometric!(edge_tubes);
     let edge_bounds = edge_tubes
         .iter()
         .map(|tubes| certified_tube_bounds(tubes))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let edge_bounds = geometric!(edge_bounds);
     for left_index in 0..edges.len() {
         for right_index in left_index + 1..edges.len() {
             let left = &edges[left_index];
@@ -263,7 +293,7 @@ fn sketch_arrangement_faces(
                     &shared_nodes,
                     tolerance,
                 ) {
-                    return None;
+                    return Ok(None);
                 }
                 continue;
             }
@@ -283,19 +313,27 @@ fn sketch_arrangement_faces(
                 &edge_tubes[left_index],
                 &edge_tubes[right_index],
             ) {
-                return None;
+                return Ok(None);
             }
         }
     }
-    let mut outgoing = alloc_filled(
-        nodes.len(),
-        Vec::<(usize, bool, f64)>::new(),
-        "f3d_arrangement_outgoing",
-    )
-    .ok()?;
+    let mut outgoing = match ctx {
+        Some(ctx) => ctx.alloc_filled(
+            nodes.len(),
+            Vec::<(usize, bool, f64)>::new(),
+            "f3d_arrangement_outgoing",
+        )?,
+        None => alloc_filled(
+            nodes.len(),
+            Vec::<(usize, bool, f64)>::new(),
+            "f3d_arrangement_outgoing",
+        )?,
+    };
     for (edge_index, edge) in edges.iter().enumerate() {
-        let forward = edge.polyline.get(1)?;
-        let reverse = edge.polyline.get(edge.polyline.len().checked_sub(2)?)?;
+        let forward = geometric!(edge.polyline.get(1));
+        let reverse = geometric!(edge
+            .polyline
+            .get(geometric!(edge.polyline.len().checked_sub(2))));
         outgoing[edge.nodes[0]].push((
             edge_index,
             false,
@@ -311,12 +349,15 @@ fn sketch_arrangement_faces(
         .iter()
         .any(|edge| edge.nodes.iter().any(|node| outgoing[*node].len() < 2))
     {
-        return None;
+        return Ok(None);
     }
     for uses in &mut outgoing {
         uses.sort_by(|left, right| left.2.total_cmp(&right.2));
     }
-    let mut visited = alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits").ok()?;
+    let mut visited = match ctx {
+        Some(ctx) => ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?,
+        None => alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?,
+    };
     let mut faces = Vec::new();
     for edge_index in 0..edges.len() {
         for reversed in [false, true] {
@@ -331,7 +372,7 @@ fn sketch_arrangement_faces(
                 let (index, reverse) = current;
                 if visited[index][usize::from(reverse)] {
                     if current != start {
-                        return None;
+                        return Ok(None);
                     }
                     break;
                 }
@@ -347,9 +388,9 @@ fn sketch_arrangement_faces(
                 polyline.extend(points.into_iter().take(edge.polyline.len() - 1));
                 let destination = edge.nodes[usize::from(!reverse)];
                 let uses = &outgoing[destination];
-                let twin = uses.iter().position(|(candidate, candidate_reverse, _)| {
+                let twin = geometric!(uses.iter().position(|(candidate, candidate_reverse, _)| {
                     *candidate == index && *candidate_reverse != reverse
-                })?;
+                }));
                 let next = uses[(twin + uses.len() - 1) % uses.len()];
                 current = (next.0, next.1);
             }
@@ -358,7 +399,7 @@ fn sketch_arrangement_faces(
             }
         }
     }
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
 }
 
 fn arrangement_edges_meet_only_at_nodes(
@@ -834,31 +875,39 @@ fn arrangement_retain_cycle_edges(
     edges: &mut Vec<SketchArrangementEdge>,
     node_count: usize,
     budget: &WorkBudget<'_>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     loop {
         // Each retention pass may run a BFS per edge (O(E²) worst case).
         if !budget.charge_by(edges.len().saturating_mul(edges.len())) {
-            return;
+            return Ok(());
         }
-        let retained = edges
-            .iter()
-            .enumerate()
-            .filter(|(index, edge)| {
-                arrangement_has_alternate_path(
-                    edges,
-                    *index,
-                    edge.nodes[0],
-                    edge.nodes[1],
-                    node_count,
-                )
-            })
-            .map(|(_, edge)| edge.clone())
-            .collect::<Vec<_>>();
+        let mut retained = Vec::new();
+        for (index, edge) in edges.iter().enumerate() {
+            if arrangement_has_alternate_path(
+                edges,
+                index,
+                edge.nodes[0],
+                edge.nodes[1],
+                node_count,
+                ctx,
+            )? {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d arrangement retained edge")?;
+                    ctx.charge_collection_items(
+                        edge.polyline.len() as u64,
+                        "f3d arrangement retained edge polyline",
+                    )?;
+                }
+                retained.push(edge.clone());
+            }
+        }
         if retained.len() == edges.len() {
             break;
         }
         *edges = retained;
     }
+    Ok(())
 }
 
 fn arrangement_has_alternate_path(
@@ -867,17 +916,20 @@ fn arrangement_has_alternate_path(
     start: usize,
     destination: usize,
     node_count: usize,
-) -> bool {
-    let Ok(mut visited) =
-        cadmpeg_core::decode::alloc_filled(node_count, false, "f3d arrangement visit marks")
-    else {
-        return false;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let mut visited = match ctx {
+        Some(ctx) => ctx.alloc_filled(node_count, false, "f3d arrangement visit marks")?,
+        None => alloc_filled(node_count, false, "f3d arrangement visit marks")?,
     };
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
+    }
     let mut pending = vec![start];
     visited[start] = true;
     while let Some(node) = pending.pop() {
         if node == destination {
-            return true;
+            return Ok(true);
         }
         for (index, edge) in edges.iter().enumerate() {
             if index == excluded_edge {
@@ -891,11 +943,14 @@ fn arrangement_has_alternate_path(
             };
             if !visited[next] {
                 visited[next] = true;
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
+                }
                 pending.push(next);
             }
         }
     }
-    false
+    Ok(false)
 }
 
 fn arrangement_edges_coincident(

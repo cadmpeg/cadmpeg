@@ -177,7 +177,9 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         ],
         1.0e-6,
         &arrangement_budget,
+        None,
     )
+    .expect("arrangement collection admitted")
     else {
         panic!("selected face must resolve from raw sketch geometry")
     };
@@ -540,7 +542,8 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
     let arrangement_budget = local_arrangement_budget();
-    let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget)
+    let faces = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, None)
+        .expect("arrangement collection admitted")
         .expect("endpoint arrangement faces");
     assert_eq!(faces.len(), 2);
     let selected = arrangement_region_containing_points(
@@ -553,7 +556,9 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
         ],
         1.0e-7,
         &arrangement_budget,
+        None,
     )
+    .expect("arrangement collection admitted")
     .expect("left half-disk arrangement face");
     let SketchProfileRegion::Trimmed {
         outer_boundary,
@@ -578,8 +583,68 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
         .expect("root context for session work budget");
     let budget = ctx.work_budget(MAX_ARRANGEMENT_WALK_WORK as u64);
 
-    assert!(sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget).is_none());
+    assert!(
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+            .expect("work refusal remains an absent arrangement")
+            .is_none()
+    );
     assert!(budget.exhausted());
+}
+
+#[test]
+fn arrangement_visit_marks_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, Some(&ctx))
+        .err()
+        .expect("two visit marks exceed one admitted item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 2
+    ));
+}
+
+fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::CodecError {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = maximum;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let budget = local_arrangement_budget();
+    sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+        .err()
+        .expect("arrangement exceeds the selected collection limit")
+}
+
+#[test]
+fn arrangement_outgoing_refuses_collection_limit() {
+    let error = arrangement_refusal_with_collection_limit(787);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d_arrangement_outgoing"
+                && limit.used == 786
+                && limit.additional == 2
+    ));
+}
+
+#[test]
+fn arrangement_edge_visits_refuse_collection_limit() {
+    let error = arrangement_refusal_with_collection_limit(790);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d arrangement edge visits"
+                && limit.used == 788
+                && limit.additional == 3
+    ));
 }
 
 #[test]
