@@ -201,6 +201,29 @@ fn quarantined_parameter_sequences(
     Ok(sequences)
 }
 
+fn source_fidelity(
+    source_bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<SourceFidelity, CodecError> {
+    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
+    let id = format_retained(
+        ctx,
+        format_args!("{}", crate::SOURCE_IMAGE_ID),
+        "iges source fidelity id",
+    )?;
+    let id = cadmpeg_ir::ids::UnknownId::try_from(id)
+        .map_err(|_| CodecError::Malformed("IGES source image id is invalid".into()))?;
+    let owner = format_retained(
+        ctx,
+        format_args!("iges"),
+        "iges source fidelity stream owner",
+    )?;
+    ctx.charge_collection_items(1, "iges source fidelity record node")?;
+    let mut fidelity = SourceFidelity::default();
+    fidelity.insert_retained_record(id, RetainedSourceRecord::whole(owner, retained_source))?;
+    Ok(fidelity)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParseMode {
     Decode,
@@ -437,15 +460,7 @@ fn decode_with_occurrence_limits(
         projection_directory(&parse.directory, &quarantined_parameter_sequences, ctx)?;
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
-    let mut source_fidelity = SourceFidelity::default();
-    let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
-    source_fidelity.insert_retained_record(
-        cadmpeg_ir::ids::UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("iges", "file", "source-image"),
-            0_u64,
-        ),
-        RetainedSourceRecord::whole("iges", retained_source),
-    )?;
+    let source_fidelity = source_fidelity(source_bytes, ctx)?;
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(ctx, &parse.global, representation, primary)?);

@@ -21,6 +21,48 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn source_fidelity_refuses_id_owner_and_record_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    for (cap, operation) in [
+        (0, "iges source fidelity id"),
+        (
+            crate::SOURCE_IMAGE_ID.len() as u64 + 3,
+            "iges source fidelity stream owner",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::source_fidelity(&[], &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::source_fidelity(&[], &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges source fidelity record node"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let fidelity = super::source_fidelity(b"IGES", &ctx).unwrap();
+    let record = fidelity.retained_record(crate::SOURCE_IMAGE_ID).unwrap();
+    assert_eq!(record.stream(), "iges");
+    assert_eq!(record.data(), Some(b"IGES".as_slice()));
+}
+
+#[test]
 fn admission_loss_slots_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
