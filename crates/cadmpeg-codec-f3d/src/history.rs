@@ -833,7 +833,7 @@ fn historical_record_archive(
         let Some(revision) = i64::try_from(revision).ok() else {
             return Ok(None);
         };
-        records.insert(revision, record.clone());
+        records.insert(revision, clone_historical_record(ctx, record)?);
     }
     for (revision_id, framed) in archived_frames {
         ctx.charge_collection_items(1, "retain F3D archived record archive")?;
@@ -864,7 +864,16 @@ fn historical_record_archive(
                 .map_err(|_| ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX))?;
             let token_bytes = token_count.checked_mul(token_width)
                 .ok_or_else(|| ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX))?;
+            let _temporary = ctx.reserve_scoped(token_bytes, "copy F3D archived record tokens")?;
             ctx.charge_retained(token_bytes, "copy F3D archived record tokens")?;
+            let mut tokens = Vec::new();
+            tokens.try_reserve(record.tokens.len()).map_err(|_| {
+                ctx.refuse_codec_limit("copy F3D archived record tokens", 0, token_count)
+            })?;
+            for token in record.tokens.iter() {
+                tokens.push(clone_historical_token(ctx, token)?);
+            }
+            record.tokens = tokens.into();
         }
         for token in std::sync::Arc::make_mut(&mut record.tokens) {
             let cadmpeg_asm::sab::Token::Ref(reference) = token else {
@@ -879,6 +888,48 @@ fn historical_record_archive(
         }
     }
     Ok(Some(records))
+}
+
+fn clone_historical_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &cadmpeg_asm::sab::Record,
+) -> Result<cadmpeg_asm::sab::Record, cadmpeg_core::CodecError> {
+    let name = clone_historical_text(ctx, &record.name)?;
+    Ok(cadmpeg_asm::sab::Record {
+        index: record.index,
+        name,
+        tokens: record.tokens.clone(),
+        offset: record.offset,
+        len: record.len,
+    })
+}
+
+fn clone_historical_token(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    token: &cadmpeg_asm::sab::Token,
+) -> Result<cadmpeg_asm::sab::Token, cadmpeg_core::CodecError> {
+    use cadmpeg_asm::sab::Token;
+    Ok(match token {
+        Token::Str(value) => Token::Str(clone_historical_text(ctx, value)?),
+        Token::Ident(value) => Token::Ident(clone_historical_text(ctx, value)?),
+        Token::SubIdent(value) => Token::SubIdent(clone_historical_text(ctx, value)?),
+        _ => token.clone(),
+    })
+}
+
+fn clone_historical_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let length = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit("copy F3D historical record text", 0, u64::MAX))?;
+    ctx.charge_retained(length, "copy F3D historical record text")?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len()).map_err(|_| {
+        ctx.refuse_codec_limit("copy F3D historical record text", 0, length)
+    })?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 fn bind_historical_transitions(
@@ -9531,7 +9582,7 @@ fn materialize_record_table(
                 return Ok(None);
             }
         }
-        records.push(record.clone());
+        records.push(clone_historical_record(ctx, record)?);
     }
     records.sort_unstable_by_key(|record| record.index);
     Ok(Some(records))
