@@ -1956,7 +1956,7 @@ fn read_children(
                 let child_start = child_reader.position();
                 let child_chunk = chunk_at(bytes, child_start, child_reader.end(), archive, false)?;
                 let child_end = child_chunk.next_offset();
-                let class = parse_class_wrapper(bytes, child_chunk.range(), archive, warnings)?;
+                let class = parse_class_wrapper(ctx, bytes, child_chunk.range(), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
                 slots.push(Some(RawBrepChild {
                     class_uuid: class.class_uuid,
@@ -2499,7 +2499,7 @@ fn read_region_sides<'a>(
     let mut result = charged_vec(ctx, count, "Rhino Brep region face sides")?;
     let mut children = charged_vec(ctx, count, "Rhino Brep region side ranges")?;
     for _ in 0..count {
-        let (body, source) = region_element(bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
+        let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         result.push(RawBrepFaceSide {
@@ -2527,7 +2527,7 @@ fn read_region_records<'a>(
     let mut children = charged_vec(ctx, count, "Rhino Brep region record ranges")?;
     let mut index_mismatch = false;
     for position in 0..count {
-        let (body, source) = region_element(bytes, &mut child, archive, ON_BREP_REGION)?;
+        let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_REGION)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
@@ -2566,6 +2566,7 @@ fn region_array<'a>(
 }
 
 fn region_element(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -2590,7 +2591,7 @@ fn region_element(
         ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        let class = parse_class_wrapper(bytes, chunk.range(), archive, &mut Diagnostics::new())?;
+        let class = parse_class_wrapper(ctx, bytes, chunk.range(), archive, &mut Diagnostics::new())?;
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }

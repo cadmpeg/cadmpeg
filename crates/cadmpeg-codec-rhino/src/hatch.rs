@@ -240,6 +240,7 @@ pub(crate) fn decode(
         let wrapper = chunk_at(data, wrapper_offset, range.end, archive, false)?;
         let mut loop_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            expand.ctx(),
             data,
             wrapper_offset..wrapper.next_offset(),
             archive,

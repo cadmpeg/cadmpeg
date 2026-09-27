@@ -552,7 +552,7 @@ fn light_table_class_data_stops_before_record_children() {
     ));
     let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
 
-    let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
+    let range = class_data_prefix(&cadmpeg_test_support::service_decode_context(), &body, &record, archive, LIGHT).expect("light class");
     assert_eq!(&body[range], payload);
 }
 

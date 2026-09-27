@@ -2754,15 +2754,16 @@ impl<'a> DecodeContext<'a> {
             )?;
             let retained = self.source_record(id, range.clone())?;
             self.opaque_records.push(retained);
-            self.report.phase_warnings.push_coded(
+            self.report.phase_warnings.push_coded_admitted(
+                self.expand.ctx(),
                 RhinoLossCode::HistoryGeometryNotTransferred,
-                format!(
+                format_args!(
                     "history record at source range {}..{} retained as complete source for {} unit binding",
                     range.start,
                     range.end,
                     binding.label()
                 ),
-            );
+            )?;
         }
         Ok(())
     }

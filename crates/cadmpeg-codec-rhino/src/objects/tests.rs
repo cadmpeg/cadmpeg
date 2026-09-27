@@ -1285,6 +1285,43 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
 }
 
 #[test]
+fn class_uuid_checksum_diagnostic_refuses_collection_limit() {
+    let archive = ArchiveVersion::V5;
+    let mut uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
+    let crc_offset = uuid.len() - 1;
+    uuid[crc_offset] ^= 1;
+    let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
+        .expect("root bytes admitted");
+    let refusal = crate::objects::parse_class_wrapper(
+        &ctx,
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("checksum diagnostic exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        crate::chunks::FramingError::Resource(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let mut warnings = Diagnostics::new();
+    crate::objects::parse_class_wrapper(
+        &cadmpeg_test_support::service_decode_context(),
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut warnings,
+    )
+    .expect("service profile retains checksum diagnostic");
+    assert_eq!(warnings.iter().count(), 1);
+}
+
+#[test]
 fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only() {
     let archive = ArchiveVersion::V8;
     let userdata = crate::test_support::test_dump::class_userdata(
@@ -1306,6 +1343,7 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
         .expect("root bytes admitted");
     crate::objects::parse_class_wrapper(
+        &ctx,
         &wrapper,
         0..wrapper.len(),
         archive,

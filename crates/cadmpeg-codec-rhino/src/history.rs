@@ -615,7 +615,7 @@ fn parse_record(
             "invalid history table record",
         ));
     }
-    let class = parse_class_wrapper(bytes, record.body(), archive, warnings)?;
+    let class = parse_class_wrapper(ctx, bytes, record.body(), archive, warnings)?;
     if class.class_uuid != HISTORY_CLASS {
         return Err(FramingError::structural(
             record.body().start,

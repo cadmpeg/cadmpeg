@@ -991,6 +991,7 @@ fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
             .expect("group table retained");
         let group_record = group_table.records.first().expect("group record retained");
         let group_range = crate::presentation::class_data(
+            &cadmpeg_test_support::service_decode_context(),
             scan.data,
             group_record,
             archive,

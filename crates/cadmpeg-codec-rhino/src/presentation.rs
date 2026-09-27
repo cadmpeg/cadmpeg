@@ -1863,12 +1863,13 @@ fn wide_string(
 }
 
 fn class_data(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(data, record.body(), archive, &mut Diagnostics::new())?;
+    let class = parse_class_wrapper(ctx, data, record.body(), archive, &mut Diagnostics::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1879,6 +1880,7 @@ fn class_data(
 }
 
 fn class_data_prefix(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1886,6 +1888,7 @@ fn class_data_prefix(
 ) -> Result<Range<usize>, FramingError> {
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let class = parse_class_wrapper(
+        ctx,
         data,
         wrapper.header_start..wrapper.next_offset(),
         archive,
@@ -1910,7 +1913,7 @@ fn parse_light_record_attributes(
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
     let mut warnings = Diagnostics::new();
     // discarded-value: the class prefix is checked and skipped; ? states the refusal and its range has no reader
-    let _ = class_data_prefix(data, record, archive, LIGHT)?;
+    let _ = class_data_prefix(ctx, data, record, archive, LIGHT)?;
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
@@ -2311,6 +2314,7 @@ fn texture_array(
             ));
         }
         let class = parse_class_wrapper(
+            ctx,
             data,
             object.header_start..object.next_offset(),
             archive,
@@ -5133,7 +5137,7 @@ pub(crate) fn install(
             );
             let mut parsed = false;
             if table_type == GROUP_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, GROUP) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, GROUP))? {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok(group) => {
                             crate::wire::reserve_collection(ctx, &mut groups, 1, "Rhino groups")?;
@@ -5249,7 +5253,7 @@ pub(crate) fn install(
                     );
                     continue;
                 };
-                if let Ok(range) = class_data_prefix(scan.data, record, scan.archive, LIGHT) {
+                if let Some(range) = optional_malformed(class_data_prefix(ctx, scan.data, record, scan.archive, LIGHT))? {
                     if let Some(mut light) = optional_malformed(parse_light(
                         ctx,
                         scan.data,
@@ -5304,7 +5308,7 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, LINETYPE) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, LINETYPE))? {
                     match parse_linetype(
                         ctx,
                         scan.data,
@@ -5339,7 +5343,7 @@ pub(crate) fn install(
                     parsed = true;
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, HATCH_PATTERN) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, HATCH_PATTERN))? {
                     match parse_hatch_pattern(
                         ctx,
                         scan.data,
@@ -5451,7 +5455,7 @@ pub(crate) fn install(
                             parsed = true;
                         }
                     }
-                } else if let Ok(range) = class_data(scan.data, record, scan.archive, DIMSTYLE) {
+                } else if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, DIMSTYLE))? {
                     match parse_dimension_style(
                         ctx,
                         scan.data,
@@ -5477,7 +5481,7 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == BITMAP_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, EMBEDDED_BITMAP) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, EMBEDDED_BITMAP))? {
                     if let Some(value) = optional_malformed(parse_embedded_image(
                         ctx,
                         scan.data,
@@ -5489,12 +5493,13 @@ pub(crate) fn install(
                         images.push(value);
                         parsed = true;
                     }
-                } else if let Ok(class) = parse_class_wrapper(
+                } else if let Some(class) = optional_malformed(parse_class_wrapper(
+                    ctx,
                     scan.data,
                     record.body(),
                     scan.archive,
                     &mut Diagnostics::new(),
-                ) {
+                ))? {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Some(value) = optional_malformed(parse_windows_bitmap(
                             ctx,
@@ -5516,7 +5521,7 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, TEXTURE_MAPPING) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, TEXTURE_MAPPING))? {
                     if let Some(value) = optional_malformed(parse_texture_mapping(
                         ctx,
                         scan.data,
@@ -5545,7 +5550,7 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == FONT_TABLE {
-                if let Ok(range) = class_data(scan.data, record, scan.archive, TEXT_STYLE) {
+                if let Some(range) = optional_malformed(class_data(ctx, scan.data, record, scan.archive, TEXT_STYLE))? {
                     match parse_text_style(
                         ctx,
                         scan.data,

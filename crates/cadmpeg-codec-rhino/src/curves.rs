@@ -597,6 +597,7 @@ pub(crate) fn decode_embedded_curve(
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
     let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
+        ctx,
         data,
         start..wrapper.next_offset(),
         archive,
@@ -656,6 +657,7 @@ pub(crate) fn decode_embedded_curve_2d(
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
     let mut wrapper_warnings = Diagnostics::new();
     let class = parse_class_wrapper(
+        ctx,
         data,
         start..wrapper.next_offset(),
         archive,
@@ -1468,6 +1470,7 @@ fn read_polycurve_2d(
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            ctx,
             data,
             start..wrapper.next_offset(),
             archive,
@@ -1876,6 +1879,7 @@ fn read_polycurve(
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            ctx,
             data,
             start..wrapper.next_offset(),
             archive,

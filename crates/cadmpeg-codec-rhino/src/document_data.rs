@@ -502,7 +502,7 @@ fn render_userdata(
                     "Rhino render userdata items",
                 )?;
                 let mut checksum_warnings = Diagnostics::new();
-                let item = parse_userdata(data, &chunk, archive, &mut checksum_warnings)?;
+                let item = parse_userdata(ctx, data, &chunk, archive, &mut checksum_warnings)?;
                 items.push(item);
                 offset = chunk.next_offset();
             }

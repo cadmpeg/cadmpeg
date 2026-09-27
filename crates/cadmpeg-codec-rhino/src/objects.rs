@@ -491,12 +491,13 @@ fn checksum_warning_excluding(
 
 /// Parses a table-record Rhino class wrapper without decoding its payload.
 pub(crate) fn parse_class_wrapper(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<ClassDescriptor, FramingError> {
-    scan_class_wrapper(bytes, body, archive, warnings, None)
+    scan_class_wrapper(ctx, bytes, body, archive, warnings, None)
 }
 
 /// Parses a class wrapper and retains its ordered class-userdata descriptors.
@@ -508,17 +509,17 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let mut userdata = Vec::new();
-    let descriptor =
-        scan_class_wrapper(bytes, body, archive, warnings, Some((ctx, &mut userdata)))?;
+    let descriptor = scan_class_wrapper(ctx, bytes, body, archive, warnings, Some(&mut userdata))?;
     Ok((descriptor, userdata))
 }
 
 fn scan_class_wrapper(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-    mut retained: Option<(&DecodeContext<'_>, &mut Vec<UserdataDescriptor>)>,
+    mut retained: Option<&mut Vec<UserdataDescriptor>>,
 ) -> Result<ClassDescriptor, FramingError> {
     let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
@@ -532,7 +533,7 @@ fn scan_class_wrapper(
     require_long(&uuid_chunk, CLASS_UUID)?;
     let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
     }
     let class_uuid = Uuid::from_wire(class_uuid_bytes);
     if class_uuid == Uuid::nil() {
@@ -564,11 +565,11 @@ fn scan_class_wrapper(
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            if let Some((ctx, values)) = retained.as_mut() {
+            if let Some(values) = retained.as_mut() {
                 crate::chunks::reserve_admitted_vec(ctx, values, 1, "Rhino class userdata")?;
-                values.push(parse_userdata(bytes, &item, archive, warnings)?);
+                values.push(parse_userdata(ctx, bytes, &item, archive, warnings)?);
             } else {
-                parse_userdata(bytes, &item, archive, warnings)?;
+                parse_userdata(ctx, bytes, &item, archive, warnings)?;
             }
             offset = item.next_offset();
         } else {
@@ -592,6 +593,7 @@ fn scan_class_wrapper(
 
 /// Parses one class-userdata chunk shared by object and render-settings wrappers.
 pub(crate) fn parse_userdata(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -610,7 +612,7 @@ pub(crate) fn parse_userdata(
         let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
         }
         return Ok(UserdataDescriptor::Known(ClassUserdata {
             range: wrapper.range(),
@@ -634,7 +636,7 @@ pub(crate) fn parse_userdata(
     let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
     }
     let mut header_reader = BoundedReader::new(bytes, header.body().start, header.body().end)?;
     let class_uuid = uuid(&mut header_reader)?;
@@ -676,7 +678,7 @@ pub(crate) fn parse_userdata(
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
     {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
     }
     Ok(UserdataDescriptor::Known(ClassUserdata {
         range: wrapper.range(),
@@ -1407,7 +1409,7 @@ pub(crate) fn parse_attribute_userdata(
                 range: item.range(),
             });
         } else {
-            match parse_userdata(bytes, &item, archive, warnings) {
+            match parse_userdata(ctx, bytes, &item, archive, warnings) {
                 Ok(UserdataDescriptor::Known(ClassUserdata {
                     range,
                     class_uuid,
@@ -1738,7 +1740,7 @@ pub(crate) fn parse_object_record(
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             crate::chunks::reserve_admitted_vec(ctx, &mut userdata, 1, "Rhino object userdata")?;
-            userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
+            userdata.push(parse_userdata(ctx, bytes, &item, archive, &mut warnings)?);
             offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
