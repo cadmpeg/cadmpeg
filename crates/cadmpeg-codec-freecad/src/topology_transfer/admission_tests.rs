@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::copy_shape_for_transfer;
-use crate::brep::{TextEdgeRepresentation, TextTShape, TextTShapeGeometry};
+use super::{copy_shape_for_transfer, Builder};
+use crate::brep::{ShapePayload, ShapePayloadRecord, Tables, TextEdgeRepresentation, TextTShape, TextTShapeGeometry, TextTShapes};
+use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::transform::Transform;
 
 #[test]
 fn topology_body_roots_refuse_at_collection_limit() {
@@ -142,4 +145,124 @@ fn pcurve_pair_continuity_refuses_at_retained_limit() {
 #[test]
 fn topology_occurrence_identity_refuses_at_retained_limit() {
     assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD topology occurrence identity");
+}
+
+macro_rules! triangulated_identity_refusal {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_codec_retained_refusal(&triangulated_face_archive(), $operation);
+        }
+    };
+}
+
+triangulated_identity_refusal!(body_identity_refuses_at_retained_limit, "FreeCAD body identity");
+triangulated_identity_refusal!(region_identity_refuses_at_retained_limit, "FreeCAD region identity");
+triangulated_identity_refusal!(shell_identity_refuses_at_retained_limit, "FreeCAD shell identity");
+triangulated_identity_refusal!(face_identity_refuses_at_retained_limit, "FreeCAD face identity");
+triangulated_identity_refusal!(triangulation_surface_identity_refuses_at_retained_limit, "FreeCAD triangulation surface identity");
+triangulated_identity_refusal!(triangulation_surface_key_refuses_at_retained_limit, "FreeCAD triangulation surface key");
+triangulated_identity_refusal!(face_loop_identity_refuses_at_retained_limit, "FreeCAD face loop identity");
+triangulated_identity_refusal!(face_loop_key_refuses_at_retained_limit, "FreeCAD face loop key");
+triangulated_identity_refusal!(face_coedge_identity_refuses_at_retained_limit, "FreeCAD face coedge identity");
+triangulated_identity_refusal!(face_coedge_key_refuses_at_retained_limit, "FreeCAD face coedge key");
+triangulated_identity_refusal!(edge_identity_refuses_at_retained_limit, "FreeCAD edge identity");
+triangulated_identity_refusal!(point_identity_refuses_at_retained_limit, "FreeCAD point identity");
+triangulated_identity_refusal!(vertex_identity_refuses_at_retained_limit, "FreeCAD vertex identity");
+
+fn empty_builder<'a, 'c, 'r>(
+    ctx: &'c DecodeContext<'r>,
+    payload: &'a ShapePayloadRecord,
+    tshapes: &'a TextTShapes,
+) -> Result<Builder<'a, 'c, 'r>, CodecError> {
+    Builder::new(ctx, payload, Tables {
+        locations: &[], curve2ds: &[], curves: &[], surfaces: &[],
+        polygons3d: &[], polygons_on_triangulations: &[],
+        tshapes, triangulations: &[], roots: &[],
+    }, cadmpeg_core::text::NonBlankString::new("Object".to_owned()).unwrap())
+}
+
+fn assert_empty_builder_refusal(
+    operation: &str,
+    call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
+) {
+    let payload = ShapePayloadRecord {
+        id: "fcstd:native:entry#Payload".to_owned(),
+        property: "Property".to_owned(),
+        entry: "Shape.brp".to_owned(),
+        payload: ShapePayload::Empty,
+    };
+    let tshapes = TextTShapes::default();
+    assert_retained_refusal_at(&[], operation, |ctx| {
+        let mut builder = empty_builder(ctx, &payload, &tshapes)?;
+        call(&mut builder)
+    });
+}
+
+fn placed_transform() -> Transform {
+    Transform::affine([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]).unwrap()
+}
+
+#[test]
+fn pcurve_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD pcurve key", |builder| builder.pcurve_id(1, 0, false).map(|_| ()));
+}
+
+#[test]
+fn pcurve_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD pcurve identity", |builder| builder.pcurve_id(1, 0, false).map(|_| ()));
+}
+
+#[test]
+fn shell_component_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD shell component key", |builder| builder.shell_component_id("1", 1).map(|_| ()));
+}
+
+#[test]
+fn shell_component_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD shell component identity", |builder| builder.shell_component_id("1", 1).map(|_| ()));
+}
+
+#[test]
+fn base_curve_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD base curve key", |builder| builder.located_curve(&mut CadIr::empty(), 1, Transform::identity()).map(|_| ()));
+}
+
+#[test]
+fn base_curve_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD base curve identity", |builder| builder.located_curve(&mut CadIr::empty(), 1, Transform::identity()).map(|_| ()));
+}
+
+#[test]
+fn located_curve_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD located curve key", |builder| builder.located_curve(&mut CadIr::empty(), 1, placed_transform()).map(|_| ()));
+}
+
+#[test]
+fn located_curve_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD located curve identity", |builder| builder.located_curve(&mut CadIr::empty(), 1, placed_transform()).map(|_| ()));
+}
+
+#[test]
+fn base_surface_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD base surface key", |builder| builder.located_surface(&mut CadIr::empty(), 1, Transform::identity()).map(|_| ()));
+}
+
+#[test]
+fn base_surface_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD base surface identity", |builder| builder.located_surface(&mut CadIr::empty(), 1, Transform::identity()).map(|_| ()));
+}
+
+#[test]
+fn located_surface_key_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD located surface key", |builder| builder.located_surface(&mut CadIr::empty(), 1, placed_transform()).map(|_| ()));
+}
+
+#[test]
+fn located_surface_identity_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD located surface identity", |builder| builder.located_surface(&mut CadIr::empty(), 1, placed_transform()).map(|_| ()));
 }

@@ -83,20 +83,29 @@ pub(crate) fn model_id_charged(
     parent: &str,
     child: &str,
 ) -> Result<String, CodecError> {
-    const OPERATION: &str = "FreeCAD model identity";
+    model_id_charged_at(ctx, kind, parent, child, "FreeCAD model identity")
+}
+
+pub(crate) fn model_id_charged_at(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    parent: &str,
+    child: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     let parent_key = id_key(parent);
-    let child_len = if child.is_empty() { 0 } else { encoded_segment_len(ctx, child, OPERATION)? };
+    let child_len = if child.is_empty() { 0 } else { encoded_segment_len(ctx, child, operation)? };
     let len = "fcstd:model:".len()
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(parent_key.len()))
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(child_len))
-        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
-    ctx.charge_retained(len as u64, OPERATION)?;
+        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))?;
+    ctx.charge_retained(len as u64, operation)?;
     let mut id = String::new();
     id.try_reserve_exact(len)
-        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, operation))?;
     id.push_str("fcstd:model:");
     id.push_str(kind);
     id.push('#');
