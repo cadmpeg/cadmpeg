@@ -1434,6 +1434,23 @@ fn external_link_indices(
     Ok(indices)
 }
 
+fn sketch_attributes(
+    ctx: &DecodeContext<'_>,
+    carrier: Option<roxmltree::Node<'_, '_>>,
+) -> Result<BTreeMap<String, String>, CodecError> {
+    let mut attributes = BTreeMap::new();
+    if let Some(carrier) = carrier {
+        for attribute in carrier.attributes() {
+            ctx.charge_collection_items(1, "fcstd sketch carrier attributes")?;
+            attributes.insert(
+                retained_string(ctx, attribute.name(), "fcstd sketch attribute name")?,
+                retained_string(ctx, attribute.value(), "fcstd sketch attribute value")?,
+            );
+        }
+    }
+    Ok(attributes)
+}
+
 fn parse_sketch(
     ctx: &DecodeContext<'_>,
     object: &ObjectRecord,
@@ -1467,14 +1484,9 @@ fn parse_sketch(
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
-                .unwrap_or("unknown")
-                .to_owned();
-            let attributes = carrier.map_or_else(BTreeMap::new, |child| {
-                child
-                    .attributes()
-                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                    .collect()
-            });
+                .unwrap_or("unknown");
+            let native_kind = retained_string(ctx, native_kind, "fcstd sketch geometry kind")?;
+            let attributes = sketch_attributes(ctx, carrier)?;
             let geometry_value = match carrier
                 .map(|carrier| sketch_nurbs(&native_kind, carrier))
                 .transpose()?
@@ -1483,20 +1495,22 @@ fn parse_sketch(
                 Some(nurbs) => nurbs,
                 None => sketch_geometry(&native_kind, &attributes)?,
             };
+            reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::compose(
                         &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
                         object_key(object)?.colon(index + 1),
                     ),
-                    id.clone(),
+                    SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                        .map_err(CodecError::malformed)?,
                     geometry_value,
                 )
                 .with_construction(node.descendants().any(|child| {
                     child.has_tag_name("Construction")
                         && child.attribute("value").is_some_and(|value| value != "0")
                 }))
-                .with_native_ref(Some(geometry.id.clone())),
+                .with_native_ref(Some(retained_string(ctx, &geometry.id, "fcstd sketch geometry native reference")?)),
             );
         }
     }
@@ -1544,6 +1558,7 @@ fn parse_sketch(
                 }
             }
             if let Some(reference_index) = reference_index {
+                ctx.charge_collection_items(1, "fcstd sketch matched references")?;
                 matched_references.insert(reference_index);
             }
             let carrier = sketch_carrier(node);
@@ -1553,14 +1568,9 @@ fn parse_sketch(
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
-                .unwrap_or("unknown")
-                .to_owned();
-            let attributes = carrier.map_or_else(BTreeMap::new, |child| {
-                child
-                    .attributes()
-                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                    .collect()
-            });
+                .unwrap_or("unknown");
+            let native_kind = retained_string(ctx, native_kind, "fcstd external sketch geometry kind")?;
+            let attributes = sketch_attributes(ctx, carrier)?;
             let geometry = match carrier
                 .map(|carrier| sketch_nurbs(&native_kind, carrier))
                 .transpose()?
@@ -1569,6 +1579,7 @@ fn parse_sketch(
                 Some(nurbs) => nurbs,
                 None => sketch_geometry(&native_kind, &attributes)?,
             };
+            reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::compose(
@@ -1577,20 +1588,21 @@ fn parse_sketch(
                             .colon(cadmpeg_ir::identity_key!("external"))
                             .colon(external_index),
                     ),
-                    id.clone(),
+                    SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                        .map_err(CodecError::malformed)?,
                     geometry,
                 )
                 .with_construction(true)
-                .with_native_ref(Some(external_geometry.id.clone()))
-                .with_geometry_ref(references.map(|property| property.id.clone()))
+                .with_native_ref(Some(retained_string(ctx, &external_geometry.id, "fcstd external geometry native reference")?))
+                .with_geometry_ref(references.map(|property| retained_string(ctx, &property.id, "fcstd external geometry reference property")).transpose()?)
                 .with_endpoint_refs(
                     reference_index
                         .and_then(|index| {
                             references.and_then(|property| property.links().get(index))
                         })
                         .and_then(Option::as_ref)
-                        .map(|reference| reference.subelements().to_vec())
-                        .unwrap_or_default(),
+                        .map(|reference| crate::resource::retained_strings(ctx, reference.subelements(), "fcstd sketch external endpoint refs"))
+                        .transpose()?.unwrap_or_default(),
                 ),
             );
         }
@@ -1603,7 +1615,7 @@ fn parse_sketch(
             let Some(reference) = reference.as_ref() else {
                 continue;
             };
-            let Some(target_object) = reference.object().map(str::to_owned) else {
+            let Some(target_object) = reference.object() else {
                 continue;
             };
             let numeric_suffix = format!(":external:{external_index}");
@@ -1621,31 +1633,34 @@ fn parse_sketch(
             } else {
                 entity_key
             };
+            reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::compose(
                         &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
                         entity_suffix,
                     ),
-                    id.clone(),
+                    SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                        .map_err(CodecError::malformed)?,
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
-                        document: reference.document_name().map(str::to_owned),
-                        object: cadmpeg_core::text::NonBlankString::new(target_object).ok_or_else(
+                        document: reference.document_name().map(|name| retained_string(ctx, name, "fcstd sketch external document")).transpose()?,
+                        object: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, target_object, "fcstd sketch external object")?).ok_or_else(
                             || cadmpeg_core::CodecError::malformed("object must not be empty"),
                         )?,
-                        subelements: reference.subelements().to_vec(),
+                        subelements: crate::resource::retained_strings(ctx, reference.subelements(), "fcstd sketch external subelements")?,
                     })
                     .map_err(CodecError::malformed)?,
                 )
                 .with_construction(true)
-                .with_native_ref(Some(references.id.clone()))
-                .with_geometry_ref(Some(references.id.clone()))
-                .with_endpoint_refs(reference.subelements().to_vec()),
+                .with_native_ref(Some(retained_string(ctx, &references.id, "fcstd sketch external native reference")?))
+                .with_geometry_ref(Some(retained_string(ctx, &references.id, "fcstd sketch external geometry reference")?))
+                .with_endpoint_refs(crate::resource::retained_strings(ctx, reference.subelements(), "fcstd sketch external endpoint refs")?),
             );
         }
     }
     let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(properties);
     if horizontal_axis {
+        reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
                 SketchEntityId::compose(
@@ -1653,7 +1668,8 @@ fn parse_sketch(
                     object_key(object)?
                         .colon(cadmpeg_ir::identity_key!("reference-horizontal-axis")),
                 ),
-                id.clone(),
+                SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -1661,17 +1677,19 @@ fn parse_sketch(
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(object.id.clone())),
+            .with_native_ref(Some(retained_string(ctx, &object.id, "fcstd sketch axis native reference")?)),
         );
     }
     if vertical_axis {
+        reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
                 SketchEntityId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
                     object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-vertical-axis")),
                 ),
-                id.clone(),
+                SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(0.0, 1.0),
@@ -1679,24 +1697,26 @@ fn parse_sketch(
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(object.id.clone())),
+            .with_native_ref(Some(retained_string(ctx, &object.id, "fcstd sketch axis native reference")?)),
         );
     }
     if root_point {
+        reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
         entities.push(
             SketchEntity::new(
                 SketchEntityId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
                     object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-root-point")),
                 ),
-                id.clone(),
+                SketchId::mint(retained_string(ctx, id.as_str(), "fcstd sketch entity parent")?)
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
                 })
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(object.id.clone())),
+            .with_native_ref(Some(retained_string(ctx, &object.id, "fcstd sketch axis native reference")?)),
         );
     }
     let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
@@ -1705,14 +1725,14 @@ fn parse_sketch(
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
-            name: Some(object.name.clone()),
+            name: Some(retained_string(ctx, &object.name, "fcstd sketch name")?),
             configuration: None,
             visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            native_ref: Some(object.id.clone()),
+            native_ref: Some(retained_string(ctx, &object.id, "fcstd sketch native reference")?),
         },
         entities,
         constraints,
