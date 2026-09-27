@@ -502,26 +502,17 @@ pub(super) fn decode(
             )), ctx, "step_topology_losses")?;
         }
     }
-    let wire_models = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            representation_items(record).map(|items| {
-                items
-                    .into_iter()
-                    .filter(|model| {
-                        exchange.records().get(model).is_some_and(|record| {
-                            record.partial("EDGE_BASED_WIREFRAME_MODEL").is_some()
-                        })
-                    })
-                    .map(move |model| (id, model))
-                    .collect::<Vec<_>>()
-            })
-        })
-        .flatten()
-        .collect::<Vec<_>>();
     let mut built_wire_models = BTreeSet::new();
-    for (representation, model) in wire_models {
+    for (&representation, record) in exchange.records() {
+        let Some(items) = representation_item_values(record) else {
+            continue;
+        };
+        for model in items.iter().filter_map(Value::reference) {
+            if !exchange.records().get(&model).is_some_and(|record| {
+                record.partial("EDGE_BASED_WIREFRAME_MODEL").is_some()
+            }) {
+                continue;
+            }
         if built_wire_models.contains(&model) {
             result.claims.insert(representation);
             if let Some(body_ids) = result.body_by_root.get(&model).cloned() {
@@ -567,6 +558,7 @@ pub(super) fn decode(
                 "EDGE_BASED_WIREFRAME_MODEL #{model} omitted {} unresolved connected edge set(s)",
                 failures.count
             )), ctx, "step_topology_losses")?;
+        }
         }
     }
     for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
