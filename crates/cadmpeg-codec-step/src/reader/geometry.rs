@@ -1276,18 +1276,18 @@ pub(super) fn decode(
             continue;
         }
         if composite_curve_parameters(record).is_some() {
-            let missing = composite_curve_dependencies(record, exchange)
-                .into_iter()
-                .filter(|dependency| !carrier_index.curves.contains_key(dependency))
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                for dependency in missing {
+            let mut missing = false;
+            for dependency in composite_curve_dependencies(record, exchange) {
+                if !carrier_index.curves.contains_key(&dependency) {
                     defer_geometry_dependency(&mut waiting_on, dependency, id, ctx, "step_deferred_curve_groups", "step_deferred_curve_members")?;
+                    missing = true;
                 }
+            }
+            if missing {
                 continue;
             }
             let Some((segments, self_intersect)) =
-                composite_curve(record, exchange, &carrier_index)
+                composite_curve(record, exchange, &carrier_index, ctx)?
             else {
                 continue;
             };
@@ -1295,25 +1295,24 @@ pub(super) fn decode(
             for &(segment, _) in &segments {
                 claim_geometry_typed(&mut typed, segment, ctx)?;
             }
+            let mut model_segments = Vec::new();
+            for (_, segment) in segments {
+                push_geometry_vec(&mut model_segments, segment, ctx, "step_composite_curve_model_segments")?;
+            }
+            let segments = match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(model_segments) {
+                Ok(segments) => segments,
+                Err(error) => {
+                    push_geometry_vec(&mut losses,
+                        StepLossCode::DecodeWarning.note(format!("COMPOSITE_CURVE #{id}: {error}")),
+                        ctx, "step_geometry_losses")?;
+                    continue;
+                }
+            };
             let curve_index = CurveIndex(ir.model.curves.len());
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-                    segments: match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(
-                        segments
-                            .into_iter()
-                            .map(|(_, segment)| segment)
-                            .collect::<Vec<_>>(),
-                    ) {
-                        Ok(segments) => segments,
-                        Err(error) => {
-                            push_geometry_vec(&mut losses,
-                                StepLossCode::DecodeWarning
-                                    .note(format!("COMPOSITE_CURVE #{id}: {error}")),
-                            ctx, "step_geometry_losses")?;
-                            continue;
-                        }
-                    },
+                    segments,
                     self_intersect,
                 }),
                 source_object: None,
@@ -4285,12 +4284,12 @@ fn wake_deferred_dependents(
     Ok(())
 }
 
-fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
-    let Some((parameters, offset)) = composite_curve_parameters(record) else {
-        return Vec::new();
-    };
-    parameters
-        .get(offset)
+fn composite_curve_dependencies<'a>(
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
+) -> impl Iterator<Item = u64> + 'a {
+    composite_curve_parameters(record)
+        .and_then(|(parameters, offset)| parameters.get(offset))
         .and_then(Value::list)
         .into_iter()
         .flatten()
@@ -4299,23 +4298,26 @@ fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<
         .filter_map(composite_curve_segment_parameters)
         .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
         .filter_map(|curve| curve_carrier_record(curve, exchange))
-        .collect()
 }
 
 fn composite_curve(
     record: &RawRecord,
     exchange: &Exchange,
     decoded: &CarrierIndex,
-) -> Option<CompositeCurveData> {
-    let (parameters, offset) = composite_curve_parameters(record)?;
-    let segments = parameters
-        .get(offset)?
-        .list()?
-        .iter()
-        .map(|value| {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CompositeCurveData>, CodecError> {
+    let Some((parameters, offset)) = composite_curve_parameters(record) else {
+        return Ok(None);
+    };
+    let Some(values) = parameters.get(offset).and_then(Value::list) else {
+        return Ok(None);
+    };
+    let mut segments = Vec::new();
+    for value in values {
+        let Some(segment) = (|| {
             let id = value.reference()?;
-            let segment = exchange.records().get(&id)?;
-            let parameters = composite_curve_segment_parameters(segment)?;
+            let record = exchange.records().get(&id)?;
+            let parameters = composite_curve_segment_parameters(record)?;
             let transition = match parameters.first()?.enumeration()? {
                 "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
                 "CONTINUOUS" => CompositeCurveTransition::Continuous,
@@ -4335,14 +4337,18 @@ fn composite_curve(
                     transition,
                 },
             ))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some((
-        segments,
-        parameters
-            .get(offset + 1)
-            .and_then(|value| logical_value(value).ok())?,
-    ))
+        })() else {
+            return Ok(None);
+        };
+        push_geometry_vec(&mut segments, segment, ctx, "step_composite_curve_segments")?;
+    }
+    let Some(self_intersect) = parameters
+        .get(offset + 1)
+        .and_then(|value| logical_value(value).ok())
+    else {
+        return Ok(None);
+    };
+    Ok(Some((segments, self_intersect)))
 }
 
 fn composite_curve_parameters(record: &RawRecord) -> Option<(&[Value], usize)> {
