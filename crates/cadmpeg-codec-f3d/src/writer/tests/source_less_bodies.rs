@@ -504,7 +504,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
             .rows()[0][3],
         30.0
     );
-    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

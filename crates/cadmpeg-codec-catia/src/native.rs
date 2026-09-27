@@ -8196,7 +8196,7 @@ fn consolidated_edge_runs(
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<CatiaConsolidatedEdgeRun> {
+) -> Result<Vec<CatiaConsolidatedEdgeRun>, cadmpeg_core::decode::ResourceLimit> {
     let pcurve_ids = pcurves
         .iter()
         .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
@@ -8204,7 +8204,7 @@ fn consolidated_edge_runs(
     let resolved =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             bytes, records, refusal,
-        )
+        )?
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -8212,7 +8212,7 @@ fn consolidated_edge_runs(
         .iter()
         .map(|node| (node.byte_offset, node))
         .collect::<HashMap<_, _>>();
-    crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+    Ok(crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
         bytes, records,
     )
     .into_iter()
@@ -8249,7 +8249,7 @@ fn consolidated_edge_runs(
                 .map(|points| points.map(|point| point_coordinates(&point))),
         })
     })
-    .collect()
+    .collect())
 }
 
 fn consolidated_edge_nodes(
@@ -9035,7 +9035,7 @@ impl CatiaNative {
                 bytes,
                 zero_entity_range.clone(),
                 refusal,
-            );
+            )?;
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,
@@ -9060,7 +9060,7 @@ impl CatiaNative {
             &consolidated_pcurves,
             &consolidated_edge_nodes,
             refusal,
-        );
+        )?;
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         Ok(Self {

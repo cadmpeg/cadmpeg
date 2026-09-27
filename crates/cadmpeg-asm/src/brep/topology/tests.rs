@@ -96,7 +96,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 .collect();
             let table = nurbs::toks::SubtypeTable::from_records(&records);
             let decoded =
-                nurbs::proc_surface::procedural_surface_resolving_refs(&records[0].tokens, &table)
+                nurbs::proc_surface::procedural_surface_resolving_refs(&records[0].tokens, &table).transpose().expect("resource allocation did not fail")
                     .unwrap();
             let DecodedProceduralSurfaceDefinition::Sum {
                 revision_form: Some(form),

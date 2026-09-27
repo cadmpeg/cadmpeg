@@ -109,7 +109,7 @@ fn decode_builds_valid_topology_and_geometry() {
 
     // The decoded document is internally valid: refs resolve, the loop ring
     // closes, no bounds violations.
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 
     // Edges carry no analytic curve (their carriers were null), which is legal.
@@ -205,7 +205,7 @@ fn decode_transfers_generated_wire_body_topology() {
         f3d_native(edited.ir()).wire_topologies[0].side,
         cadmpeg_asm::brep::records::WireSide::In
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -241,7 +241,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
         wire.members.free_vertex().cloned(),
         Some(result.ir().model.vertices[0].id.clone())
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -271,7 +271,7 @@ fn decode_classifies_generated_mixed_face_wire_body_as_general() {
     assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.curves.len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -359,7 +359,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.geometry == expected));
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "degenerate-curve findings: {:?}",
@@ -395,7 +395,7 @@ fn generated_source_less_writes_general_face_wire_body() {
     assert_eq!(round_trip.ir().model.faces.len(), 1);
     assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 4);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-body findings: {:?}",
@@ -452,7 +452,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
         .wire_topologies
         .iter()
         .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "face-and-point-wire findings: {:?}",
@@ -508,7 +508,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
     );
     assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_eq!(round_trip.ir().model.shells[1].wire_edges().len(), 1);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "combined-body findings: {:?}",
@@ -568,7 +568,7 @@ fn generated_source_less_writes_wire_body_topology() {
         expected_points
     );
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected_curve);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -620,7 +620,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
         Some(round_trip.ir().model.vertices[0].id.clone())
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "free-vertex findings: {:?}",
@@ -687,7 +687,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     );
     assert_eq!(round_trip.ir().model.vertices.len(), 4);
     assert_eq!(round_trip.ir().model.points.len(), 4);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "mixed-wire findings: {:?}",
@@ -757,7 +757,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
             .rows()[0][3],
         25.0
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -803,7 +803,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
     assert_eq!(round_trip.ir().model.shells[0].wire_edges().len(), 2);
     assert_eq!(round_trip.ir().model.edges.len(), 2);
     assert_eq!(round_trip.ir().model.curves.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -861,7 +861,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
         .iter()
         .all(|region| region.body == round_trip.ir().model.bodies[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -918,7 +918,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .iter()
         .all(|shell| shell.region == round_trip.ir().model.regions[0].id));
     assert_eq!(round_trip.ir().model.edges.len(), 2);
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
@@ -1210,7 +1210,7 @@ fn decode_keeps_face_on_unknown_surface() {
     assert!(note.message.contains("Native kinds: splne=1."));
 
     // The decoded document still validates.
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 

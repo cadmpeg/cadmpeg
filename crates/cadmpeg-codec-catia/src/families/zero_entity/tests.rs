@@ -140,7 +140,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -221,7 +222,8 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides()[1].surface, None);
     assert_eq!(context.sides()[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -257,7 +259,8 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     ));
     assert!(result.ir().model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

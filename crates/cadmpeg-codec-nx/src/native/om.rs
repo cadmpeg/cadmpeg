@@ -5931,7 +5931,8 @@ mod tests {
             )) if value.get() == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -6189,7 +6190,8 @@ mod tests {
         let mut duplicate = attributes.clone();
         duplicate.push(attributes[0].clone());
         assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 

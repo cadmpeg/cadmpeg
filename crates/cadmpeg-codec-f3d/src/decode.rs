@@ -2729,7 +2729,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear.get(),
             )
-        };
+        }?;
         self.ir
             .model
             .sketch_constraints
@@ -2740,7 +2740,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
                 self.ir.tolerances.linear.get(),
-            ),
+            )?,
         );
         crate::design::dimensions::bind_offset_dimension_parameters(
             &mut self.ir.model.sketch_constraints,

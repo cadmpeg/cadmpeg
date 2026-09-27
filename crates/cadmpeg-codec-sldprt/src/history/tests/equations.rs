@@ -400,7 +400,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
             .ordinal
     };
     assert!(ordinal("Later") < ordinal("Forward"));
-    assert!(!cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+    assert!(!cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("parameter dependency")));

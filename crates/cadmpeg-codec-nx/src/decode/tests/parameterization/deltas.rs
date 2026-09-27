@@ -147,7 +147,7 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
         result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.1)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.shells.len(), 1);
     assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn decode_preserves_partition_fin_topology_over_deltas_history() {
         result.ir().model.coedges[0].sense,
         cadmpeg_ir::topology::Sense::Forward
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     let direction = *line_curve.direction().as_raw();
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
             .procedural_surface_owner(&procedural.id)
             .expect("offset owner")
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
             .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
             .expect("blend owner")
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.3, 0.7])
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
         result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -411,7 +411,7 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
                         && radius == 25.0
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -437,7 +437,7 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
                         && minor_radius == 12.0
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
                         && radius == 25.0
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -489,7 +489,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
                         && (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
                         && radius == 25.0
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
                         && minor_radius == 15.0
                 })
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

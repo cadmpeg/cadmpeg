@@ -120,7 +120,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             .find(|unknown| unknown.id == record)
             .is_some_and(|unknown| { unknown.links.iter().any(|link| link.as_str() == geometry) }));
     }
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -443,7 +443,7 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .points
         .iter()
         .all(|point| point.position().get().x != 10_000.0));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -469,7 +469,7 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

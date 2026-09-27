@@ -55,7 +55,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
             for expected in [None, Some(0), Some(3)] {
                 let bytes = variable_blend_side(int_width, name, expected);
                 let mut position = 0;
-                let side = decode_rolling_ball_side(&bytes, &mut position, int_width)
+                let side = decode_rolling_ball_side(&bytes, &mut position, int_width).transpose().expect("resource allocation did not fail")
                     .unwrap_or_else(|| {
                         panic!(
                             "variable-blend support side {name} width {int_width} extension {expected:?}"
@@ -327,7 +327,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_int(&mut bytes, 0x15, -1, int_width);
         bytes.push(0x10);
 
-        let layout = rolling_ball_patch_layout(&bytes, int_width)
+        let layout = rolling_ball_patch_layout(&bytes, int_width).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -346,7 +346,7 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_f64(&mut compact, -2.5);
         push_int(&mut compact, 0x15, -1, int_width);
         compact.push(0x10);
-        let layout = rolling_ball_patch_layout(&compact, int_width)
+        let layout = rolling_ball_patch_layout(&compact, int_width).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -368,7 +368,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         push_f64(&mut straight, 3.0);
         let mut position = 0;
         assert!(
-            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width),
+            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width).transpose().expect("resource allocation did not fail"),
                 Some(RollingBallSupportCurve {
                     curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                     parameter_range: [Some(-2.0), Some(3.0)],
@@ -392,7 +392,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         intcurve.extend_from_slice(&[0x0b, 0x0b]);
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_curve(&intcurve, &mut position, int_width),
+            decode_rolling_ball_curve(&intcurve, &mut position, int_width).transpose().expect("resource allocation did not fail"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
@@ -421,7 +421,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let tokens = lex_test_span(&intcurve, int_width).expect("framed intcurve reference");
         let mut cur = Cur::at(&tokens, 0);
         assert!(matches!(
-            crate::nurbs::blend::rolling_ball_curve(&mut cur, Some(&table)),
+            crate::nurbs::blend::rolling_ball_curve(&mut cur, Some(&table)).transpose().expect("resource allocation did not fail"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],

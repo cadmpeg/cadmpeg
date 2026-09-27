@@ -57,7 +57,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -126,7 +126,7 @@ fn offset_surface_rejects_nested_cache_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -188,7 +188,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
         assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
         let (definition, _) = decoded.into_parts();
@@ -289,7 +289,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -351,7 +351,7 @@ fn taper_surface_rejects_nested_cache_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -380,7 +380,7 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -441,7 +441,7 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                     &tokens,
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-                )
+                ).transpose().expect("resource allocation did not fail")
                 .is_none()
             );
         }
@@ -477,7 +477,7 @@ fn loft_surface_walks_bridge_to_direct_cache() {
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -542,7 +542,7 @@ fn loft_surface_rejects_nested_cache_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -567,7 +567,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
             let (definition, _) = decoded.into_parts();
@@ -622,7 +622,7 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                     &tokens,
                     &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-                )
+                ).transpose().expect("resource allocation did not fail")
                 .is_none()
             );
         }
@@ -644,7 +644,7 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -679,7 +679,7 @@ fn ruled_surface_rejects_nested_profile_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -701,7 +701,7 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -752,7 +752,7 @@ fn sum_surface_rejects_nested_curve_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -774,7 +774,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
         let (definition, _) = decoded.into_parts();
@@ -830,7 +830,7 @@ fn revolution_surface_rejects_nested_profile_substitution() {
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
                 &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-            )
+            ).transpose().expect("resource allocation did not fail")
             .is_none()
         );
     }
@@ -859,7 +859,7 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
             &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
-        )
+        ).transpose().expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Revolution {

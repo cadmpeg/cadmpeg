@@ -186,7 +186,8 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
                  neutral construction remains unresolved",
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

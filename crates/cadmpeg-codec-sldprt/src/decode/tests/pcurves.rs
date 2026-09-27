@@ -191,7 +191,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
                         && (*center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0))
                 })
     );
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
                             && (radial_sin.v - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT)
                 })
     );
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -275,7 +275,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - 1000.0).abs() < 1.0e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -533,7 +533,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1000.0])
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -571,7 +571,7 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-500.0, 500.0])
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

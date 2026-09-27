@@ -23,7 +23,7 @@ pub(crate) fn validate_ir(
     let mut report = match source_fidelity {
         Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
         None => validate_neutral(ir, losses),
-    };
+    }?;
     report.findings.extend(validate_native(ctx, inputs, ir)?);
     Ok(report)
 }

@@ -4161,7 +4161,7 @@ impl PcurveOrientationContext<'_> {
             // one is.
             let pcurve_point = |parameter, position| match pcurve_uv(&pcurve.geometry, parameter) {
                 Ok(uv) => Ok(uv.get()),
-                Err(failure) => failure.non_finite().ok_or_else(|| {
+                Err(failure) => failure.non_finite()?.ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "IGES {} pcurve {} {position} cannot be evaluated",
                         self.owner, pcurve.id
@@ -5123,6 +5123,7 @@ fn extrusion_surface_entities(
             Err(EvaluationFailure::NoValue) => Err(CodecError::malformed(format_args!(
                 "IGES {label} cannot be evaluated"
             ))),
+            Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit.into()),
         };
         (
             directrix_end(evaluation_interval[0], "Type 122 directrix start")?,
