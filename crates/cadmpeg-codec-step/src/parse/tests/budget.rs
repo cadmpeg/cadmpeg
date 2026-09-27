@@ -379,6 +379,24 @@ parser_vector_limit_test!(
     ANCHOR_VECTOR_SOURCE,
     "step_anchor_binding_items"
 );
+
+#[test]
+fn anchor_binding_value_copy_refuses_retained_limit() {
+    let refused = (0..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(ANCHOR_VECTOR_SOURCE, &arena, &policy)
+            .expect("input fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(ANCHOR_VECTOR_SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_anchor_binding_value_copy"
+        )
+    });
+    assert!(refused, "anchor value copy must reach the parser caller");
+}
 parser_vector_limit_test!(
     reference_entry_vector_refuses_collection_limit,
     ANCHOR_VECTOR_SOURCE,
