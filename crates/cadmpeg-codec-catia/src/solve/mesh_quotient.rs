@@ -9755,6 +9755,98 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
 }
 
 #[test]
+fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let edge_rows = (0..3)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }]];
+    let configurations = vec![vec![Some(vec![vec![
+        (0, [0, 1]),
+        (1, [1, 2]),
+        (2, [0, 2]),
+    ]])]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_endpoint_configuration_relation_streaming(
+            ctx,
+            &assignments,
+            &configurations,
+            &edge_candidates,
+            &edge_rows,
+            &vertex_points,
+            &[[0, 1], [2, 3], [4, 5]],
+            &budget,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        Some(MeshSolve::Solved(_))
+    ));
+
+    let mut refused = HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(Some(MeshSolve::Solved(_))) => {
+                completed = true;
+                break;
+            }
+            Ok(outcome) => panic!("cycle relation must solve, got {outcome:?}"),
+            Err(error) => panic!("unexpected relation refusal: {error}"),
+        }
+    }
+    assert!(completed, "adaptive caps must admit the cycle relation");
+    assert!(refused.contains("catia_endpoint_relation_covered"));
+    assert!(refused.contains("catia_endpoint_relation_assigned"));
+}
+
+#[test]
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
@@ -10767,6 +10859,10 @@ mod direct_matching_tests {
 
     #[test]
     fn direct_mesh_quotient_defers_non_unique_matching() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use std::collections::HashSet;
+
         catia_test_context!(ctx);
         let edge_rows = (0..3)
             .map(|edge| EdgeRow {
@@ -10815,7 +10911,7 @@ mod direct_matching_tests {
 
         assert!(resolve_mesh_selection_from_quotient(
             &ctx,
-            topology,
+            topology.clone(),
             quotient,
             &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             &edge_candidates,
@@ -10824,6 +10920,44 @@ mod direct_matching_tests {
         )
         .expect("service resource budget")
         .is_none());
+
+        let singleton_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+        let run = |ctx: &DecodeContext<'_>| {
+            let quotient = initial_mesh_quotient(&singleton_candidates, 3, &port_identities)
+                .expect("three singleton edge pairs form a triangle quotient");
+            let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            resolve_mesh_selection_from_quotient(
+                ctx,
+                topology.clone(),
+                quotient,
+                &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                &singleton_candidates,
+                &port_identities,
+                &budget,
+            )
+        };
+        assert!(matches!(
+            run(&ctx).expect("service resource budget"),
+            Some(super::MeshSolve::Solved(_))
+        ));
+        let mut refused = HashSet::new();
+        for limit in 0..=256 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match run(&limited_ctx) {
+                Err(CodecError::ResourceLimit(error)) => {
+                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                    refused.insert(error.operation);
+                }
+                Ok(Some(super::MeshSolve::Solved(_))) => break,
+                Ok(_) => panic!("singleton triangle quotient must resolve directly"),
+                Err(error) => panic!("unexpected direct quotient refusal: {error}"),
+            }
+        }
+        assert!(refused.contains("catia_merged_mesh_point_assignment"));
     }
 }
 
