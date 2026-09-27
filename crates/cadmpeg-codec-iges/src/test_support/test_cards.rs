@@ -25,7 +25,7 @@ pub(crate) fn card_with_ending(data: &[u8], section: u8, sequence: u32, ending: 
 }
 
 pub(crate) fn fixed_ascii_with_global(global: &[u8]) -> Vec<u8> {
-    match crate::global::layout_global_cards(global) {
+    match crate::global::layout_global_cards(global, None) {
         Ok(cards) => {
             fixed_ascii_with_global_cards(&cards.iter().map(Vec::as_slice).collect::<Vec<_>>())
         }
@@ -49,7 +49,7 @@ pub(crate) fn fixed_ascii_with_global_cards(cards: &[&[u8]]) -> Vec<u8> {
 }
 
 pub(crate) fn global_card_count(global: &[u8]) -> usize {
-    crate::global::layout_global_cards(global).map_or_else(
+    crate::global::layout_global_cards(global, None).map_or_else(
         |_| global.len().div_ceil(CARD_DATA_COLUMNS),
         |cards| cards.len(),
     )

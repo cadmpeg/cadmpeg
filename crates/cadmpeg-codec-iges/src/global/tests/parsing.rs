@@ -55,6 +55,28 @@ fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 }
 
 #[test]
+fn global_layout_card_refuses_retained_limit_before_allocation() {
+    let bytes = b"1H,,1H;,;";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 71;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let result = crate::global::layout_global_cards(bytes, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 72
+                && limit.operation == "iges global layout card bytes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(crate::global::layout_global_cards(bytes, Some(&ctx)).unwrap().len(), 1);
+}
+
+#[test]
 fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let first = [b'A'; CARD_DATA_COLUMNS];
     let second = [b'B'; CARD_DATA_COLUMNS];

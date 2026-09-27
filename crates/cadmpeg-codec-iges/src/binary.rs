@@ -9,7 +9,10 @@
 //! passed to the reader, so normalization does not replace source fidelity.
 
 use crate::directory::DirectoryFieldSlot;
-use crate::decode_resource::{copy_optional_retained, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{
+    copy_optional_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec,
+    reserve_vec_growth,
+};
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1004,13 +1007,18 @@ fn normalize_directory_and_parameters(
     parameters: Vec<BinaryParameter>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
-    let directory_by_offset = directory
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.offset, index))
-        .collect::<BTreeMap<_, _>>();
+    let mut directory_by_offset = BTreeMap::new();
+    for (index, record) in directory.iter().enumerate() {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut directory_by_offset,
+            record.offset,
+            index,
+            "iges binary normalized directory index",
+        )?;
+    }
     let mut referenced_parameters = BTreeSet::new();
-    let mut normalized = Vec::with_capacity(parameters.len());
+    let mut normalized = reserve_vec(ctx, parameters.len(), "iges binary normalized parameters")?;
     let mut parameter_sequence = 1_u32;
     for parameter in parameters {
         let directory_pointer =
@@ -1047,11 +1055,16 @@ fn normalize_directory_and_parameters(
             first_sequence,
         });
     }
-    let parameter_by_offset = normalized
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.offset, index))
-        .collect::<BTreeMap<_, _>>();
+    let mut parameter_by_offset = BTreeMap::new();
+    for (index, record) in normalized.iter().enumerate() {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut parameter_by_offset,
+            record.offset,
+            index,
+            "iges binary normalized parameter index",
+        )?;
+    }
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
@@ -1065,7 +1078,12 @@ fn normalize_directory_and_parameters(
         let parameter_index = *parameter_by_offset
             .get(&parameter_offset)
             .ok_or_else(|| malformed("Binary Directory Parameter Data pointer does not resolve"))?;
-        if !referenced_parameters.insert(parameter_index) {
+        if !insert_optional_btree_set(
+            Some(ctx),
+            &mut referenced_parameters,
+            parameter_index,
+            "iges binary referenced parameters",
+        )? {
             return Err(malformed(
                 "Binary Parameter Data entry is referenced by more than one Directory Entry",
             ));
@@ -1301,18 +1319,23 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let global_values = read_global(sections.global, sections.lengths, ctx)?;
     let global_text = normalize_global(&global_values)?;
     let directory = read_directory(sections.directory, sections.lengths, ctx)?;
-    let directory_by_offset = directory
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.offset, index))
-        .collect::<BTreeMap<_, _>>();
+    let mut directory_by_offset = BTreeMap::new();
+    for (index, record) in directory.iter().enumerate() {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut directory_by_offset,
+            record.offset,
+            index,
+            "iges binary directory index",
+        )?;
+    }
     let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset, ctx)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence, ctx)?;
     let start_count = start_sequence.saturating_sub(1) as usize;
     let mut global_sequence = 1_u32;
-    let global_cards = crate::global::layout_global_cards(&global_text)?;
+    let global_cards = crate::global::layout_global_cards(&global_text, Some(ctx))?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
@@ -1333,6 +1356,33 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_directory_index_refuses_collection_limit_before_insertion() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut values = std::array::from_fn(|_| super::BinaryValue::Default);
+        values[0] = super::BinaryValue::Integer(116);
+        values[1] = super::BinaryValue::Pointer(0);
+        let directory = [super::BinaryDirectory::new(1, values).unwrap()];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::normalize_directory_and_parameters(&mut Vec::new(), &directory, Vec::new(), &ctx);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 0
+                    && limit.additional == 1
+                    && limit.operation == "iges binary normalized directory index"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert!(super::normalize_directory_and_parameters(&mut Vec::new(), &directory, Vec::new(), &ctx).is_ok());
+    }
+
     #[test]
     fn parameter_card_refuses_an_unrenderable_directory_sequence() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
