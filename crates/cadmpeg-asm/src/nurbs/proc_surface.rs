@@ -850,9 +850,9 @@ fn g2_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     };
     cur.set_pos(cache_end + usize::from(cache_fit_tolerance.is_some()));
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
@@ -2463,7 +2463,7 @@ fn scaled_compound_loft_spl_sur(
             [cur.take_range_value()?, cur.take_range_value()?],
             [cur.take_range_value()?, cur.take_range_value()?],
         ];
-        let parameters = [cur.take_float_array()?, cur.take_float_array()?];
+        let parameters = [propagate_resource!(cur.take_float_array(ctx)?), propagate_resource!(cur.take_float_array(ctx)?)];
         (
             EmbeddedScaledCompoundLoftShape::None {
                 parameter_ranges,
@@ -2473,12 +2473,12 @@ fn scaled_compound_loft_spl_sur(
         )
     };
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     let scales = Box::new([
@@ -2668,8 +2668,8 @@ fn law_expression_resolving(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         }
         "SPLINE_LAW" => {
             let native_id = cur.take_long()?;
-            let knots = cur.take_float_array()?;
-            let controls = cur.take_float_array()?;
+            let knots = propagate_resource!(cur.take_float_array(ctx)?);
+            let controls = propagate_resource!(cur.take_float_array(ctx)?);
             let point = cur.take_position()?;
             Some(Ok(EmbeddedLawExpression::Spline {
                 native_id,
@@ -2802,12 +2802,12 @@ fn skin_spl_sur(
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -2875,7 +2875,7 @@ pub(super) fn law_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &
             )
         }
         1 => {
-            let parameters = [cur.take_float_array()?, cur.take_float_array()?];
+            let parameters = [propagate_resource!(cur.take_float_array(ctx)?), propagate_resource!(cur.take_float_array(ctx)?)];
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
             let closures = [cur.take_enum()?, cur.take_enum()?];
@@ -2911,12 +2911,12 @@ pub(super) fn law_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &
         _ => return None,
     };
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Law(Box::new(EmbeddedLawSurface {
@@ -2981,12 +2981,12 @@ fn net_spl_sur(
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -3207,12 +3207,12 @@ fn sweep_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok(DecodedProceduralSurface::legacy(
@@ -3538,7 +3538,7 @@ fn comp_spl_sur(
     } else {
         None
     };
-    let parameters = cur.take_float_array()?;
+    let parameters = propagate_resource!(cur.take_float_array(ctx)?);
     let mut components = propagate_resource!(crate::decode_alloc::counted_vec(
         ctx,
         parameters.len(),
@@ -3634,12 +3634,12 @@ pub fn revision_surface_tail(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur:
         _ => return None,
     };
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let tail_flag = cur.take_bool()?;
     Some(Ok(RevisionSurfaceTail {
@@ -4058,12 +4058,12 @@ fn t_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token], tabl
         cur.set_pos(cache_end);
         let cache_fit_tolerance = cur.take_f64()? * LEN_TO_MM;
         let discontinuities = [
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
         ];
         let discontinuity_flag = cur.take_bool()?;
         let parameter_ranges = [
@@ -4399,12 +4399,12 @@ fn defm_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -
         cur.set_pos(cache_end);
         let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
         let discontinuities = [
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
-            cur.take_float_array()?,
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
+            propagate_resource!(cur.take_float_array(ctx)?),
         ];
         let discontinuity_flag = cur.take_bool()?;
         Some(Ok(DecodedProceduralSurface::legacy(
