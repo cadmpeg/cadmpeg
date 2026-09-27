@@ -1198,22 +1198,29 @@ enum NullToken {
     RepresentsBytes,
 }
 
-fn byte_string_value(bytes: &[u8], null_token: NullToken) -> StringValue {
+fn byte_string_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    null_token: NullToken,
+) -> Result<StringValue, CodecError> {
     if null_token == NullToken::RepresentsNull && bytes == b"NULL" {
-        StringValue::Null
+        Ok(StringValue::Null)
     } else if let Ok(text) = std::str::from_utf8(bytes) {
-        StringValue::Utf8 {
-            text: text.to_string(),
-        }
+        Ok(StringValue::Utf8 {
+            text: ctx.copy_retained_text(text, "creo legacy string UTF-8 payload")?,
+        })
     } else {
-        StringValue::Bytes {
-            bytes: bytes.to_vec(),
-        }
+        Ok(StringValue::Bytes {
+            bytes: ctx.copy_retained(bytes, "creo legacy string byte payload")?,
+        })
     }
 }
 
-fn string_value(bytes: &[u8]) -> StringValue {
-    byte_string_value(bytes, NullToken::RepresentsNull)
+fn string_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<StringValue, CodecError> {
+    byte_string_value(ctx, bytes, NullToken::RepresentsNull)
 }
 
 fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
@@ -1244,13 +1251,16 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
                 unresolved += 1;
                 continue;
             };
+            let payload = byte_string_value(ctx, bytes, null_token)?;
+            let name = ctx.copy_retained_text(&declaration.name, "creo legacy scalar string names")?;
+            ctx.try_reserve_items(&mut records, 1, "creo legacy scalar string records")?;
             records.push(ValueRecord {
-                name: declaration.name.clone(),
+                name,
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
                 parent: parents.get(&value.offset).copied(),
                 depth: value.depth,
-                payload: byte_string_value(bytes, null_token),
+                payload,
                 offset: value.offset,
             });
         }
@@ -1276,7 +1286,7 @@ fn string_records(
         let mut array_children = BTreeMap::<usize, Vec<&AttributeValue>>::new();
         let mut array_element_offsets = BTreeSet::new();
         for value in &scope.values {
-            drop(active_arrays.split_off(&value.depth));
+            active_arrays.retain(|depth, _| *depth < value.depth);
             let array_parent = value.depth.checked_sub(1).and_then(|depth| {
                 active_arrays
                     .get(&depth)
@@ -1284,8 +1294,24 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
-                array_children.entry(parent_offset).or_default().push(value);
-                array_element_offsets.insert(value.offset);
+                match array_children.entry(parent_offset) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo legacy string array child nodes")?;
+                        let mut children = Vec::new();
+                        ctx.try_reserve_items(&mut children, 1, "creo legacy string array child rows")?;
+                        children.push(value);
+                        entry.insert(children);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        let children = entry.get_mut();
+                        ctx.try_reserve_items(children, 1, "creo legacy string array child rows")?;
+                        children.push(value);
+                    }
+                }
+                if !array_element_offsets.contains(&value.offset) {
+                    ctx.charge_collection_items(1, "creo legacy string array element offsets")?;
+                    array_element_offsets.insert(value.offset);
+                }
                 continue;
             }
             if declarations
@@ -1293,6 +1319,9 @@ fn string_records(
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
                 && array_dimensions(ctx, &data[value.payload.clone()])?.is_some()
             {
+                if !active_arrays.contains_key(&value.depth) {
+                    ctx.charge_collection_items(1, "creo legacy active string arrays")?;
+                }
                 active_arrays.insert(value.depth, (value.offset, value.attribute_id));
             }
         }
@@ -1312,17 +1341,16 @@ fn string_records(
                 let children = array_children
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
-                let values = children
-                    .iter()
-                    .map(|child| {
-                        if let Some(continuation) = &child.continuation {
-                            unresolved += 1;
-                            Err(continuation.clone())
-                        } else {
-                            Ok(string_value(&data[child.payload.clone()]))
-                        }
-                    })
-                    .collect();
+                let mut values = Vec::new();
+                ctx.try_reserve_items(&mut values, children.len(), "creo legacy string array values")?;
+                for child in children {
+                    if let Some(continuation) = &child.continuation {
+                        unresolved += 1;
+                        values.push(Err(continuation.clone()));
+                    } else {
+                        values.push(Ok(string_value(ctx, &data[child.payload.clone()])?));
+                    }
+                }
                 unresolved += usize::from(value.continuation.is_some());
                 let payload = StringPayload::Array {
                     dimensions,
@@ -1337,11 +1365,13 @@ fn string_records(
                     continue;
                 }
                 StringPayload::Scalar {
-                    value: string_value(bytes),
+                    value: string_value(ctx, bytes)?,
                 }
             };
+            let name = ctx.copy_retained_text(&declaration.name, "creo legacy string record names")?;
+            ctx.try_reserve_items(&mut records, 1, "creo legacy string records")?;
             records.push(ValueRecord {
-                name: declaration.name.clone(),
+                name,
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
                 parent: parents.get(&value.offset).copied(),
