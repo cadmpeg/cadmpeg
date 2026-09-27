@@ -50,21 +50,20 @@ struct ParsedHalfEdge {
     face: i64,
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
 fn compact_half_edges(
+    ctx: &DecodeContext<'_>,
     name: &str,
-    slots: Vec<Option<ParsedHalfEdge>>,
+    slots: &[Option<ParsedHalfEdge>],
     face_roots: &mut [Option<usize>],
     edge_roots: &mut [Option<usize>],
     vertex_roots: &mut [Option<(usize, SubdGripDirection)>],
 ) -> Result<Vec<HalfEdge>, CodecError> {
-    let mut map = vec![None; slots.len()];
+    let mut map = ctx.alloc_filled(slots.len(), None, "map T-spline half-edge slots")?;
     let mut dense = Vec::new();
     for (old, half) in slots.iter().enumerate() {
         if let Some(half) = half {
             map[old] = Some(HalfEdgeId(dense.len()));
-            dense.push(*half);
+            push_charged(ctx, &mut dense, *half, "collect T-spline live half-edges")?;
         }
     }
     let remap = |index: usize| {
@@ -73,11 +72,9 @@ fn compact_half_edges(
             .flatten()
             .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))
     };
-    let half_edges =
-        dense
-            .into_iter()
-            .map(|half| {
-                Ok(HalfEdge {
+    let mut half_edges = Vec::new();
+    for half in dense {
+        let resolved = HalfEdge {
                     next: remap(half.next)?,
                     previous: remap(half.previous)?,
                     mate: remap(half.mate)?,
@@ -88,9 +85,9 @@ fn compact_half_edges(
                             malformed(name, "half-edge face is negative or overflows")
                         })?),
                     },
-                })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+                };
+        push_charged(ctx, &mut half_edges, resolved, "collect T-spline compact half-edges")?;
+    }
     for root in face_roots.iter_mut().flatten() {
         *root = remap(*root)?.index();
     }
@@ -101,6 +98,32 @@ fn compact_half_edges(
         root.0 = remap(root.0)?.index();
     }
     Ok(half_edges)
+}
+
+fn push_charged<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.push(value);
+    Ok(())
+}
+
+fn collect_charged<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        push_charged(ctx, &mut collected, value, operation)?;
+    }
+    Ok(collected)
 }
 
 #[derive(Clone, Copy)]
@@ -195,16 +218,25 @@ fn parse_direction(name: &str, value: Option<&str>) -> Result<SubdGripDirection,
 }
 
 /// Map each program slot to its IR index, or `None` for a deleted slot.
-fn compact(live: impl Iterator<Item = bool>) -> Vec<Option<u32>> {
+fn compact(
+    ctx: &DecodeContext<'_>,
+    live: impl Iterator<Item = bool>,
+) -> Result<Vec<Option<u32>>, CodecError> {
     let mut next = 0u32;
-    live.map(|live| {
-        live.then(|| {
+    let mut compacted = Vec::new();
+    for live in live {
+        let index = if live {
             let index = next;
-            next += 1;
-            index
-        })
-    })
-    .collect()
+            next = next.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("T-spline live slot count exceeds u32")
+            })?;
+            Some(index)
+        } else {
+            None
+        };
+        push_charged(ctx, &mut compacted, index, "compact T-spline slots")?;
+    }
+    Ok(compacted)
 }
 
 fn require_end<'a>(
@@ -1141,15 +1173,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         return Err(malformed(name, "control cage is incomplete"));
     }
     let half_edges = compact_half_edges(
+        ctx,
         name,
-        half_edges,
+        &half_edges,
         &mut face_roots,
         &mut edge_roots,
         &mut vertex_roots,
     )?;
 
-    let face_live = face_roots.iter().map(Option::is_some).collect::<Vec<_>>();
-    let edge_live = edge_roots.iter().map(Option::is_some).collect::<Vec<_>>();
+    let face_live = collect_charged(ctx, face_roots.iter().map(Option::is_some), "index T-spline live faces")?;
+    let edge_live = collect_charged(ctx, edge_roots.iter().map(Option::is_some), "index T-spline live edges")?;
     for edge in &selected_edges {
         if !edge_live.get(*edge).copied().unwrap_or(false) {
             return Err(malformed(name, "selected edge is out of range or deleted"));
@@ -1319,9 +1352,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     }
 
     // Slot indices address the program; IR indices address only populated slots.
-    let vertex_ir = compact(vertex_live.iter().copied());
-    let edge_ir = compact(edge_roots.iter().map(Option::is_some));
-    let face_ir = compact(face_roots.iter().map(Option::is_some));
+    let vertex_ir = compact(ctx, vertex_live.iter().copied())?;
+    let edge_ir = compact(ctx, edge_roots.iter().map(Option::is_some))?;
+    let face_ir = compact(ctx, face_roots.iter().map(Option::is_some))?;
     let symmetries = symmetry_blocks
         .iter()
         .map(|block| {
@@ -1561,6 +1594,109 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
             .expect("test decode context");
         super::parse(&ctx, "synthetic.tsm", bytes)
+    }
+
+    fn compact_half_edge_limit(limit: u64) -> cadmpeg_core::CodecError {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::compact_half_edges(
+            &ctx,
+            "synthetic.tsm",
+            &[Some(super::ParsedHalfEdge {
+                next: 0,
+                previous: 0,
+                mate: 0,
+                vertex: 0,
+                face: -1,
+            })],
+            &mut [Some(0)],
+            &mut [Some(0)],
+            &mut [Some((0, super::SubdGripDirection::North))],
+        )
+        .err()
+        .expect("half-edge compaction must refuse the configured limit")
+    }
+
+    #[test]
+    fn tsm_half_edge_slot_map_refuses_collection_limit() {
+        let error = compact_half_edge_limit(0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "map T-spline half-edge slots"));
+    }
+
+    #[test]
+    fn tsm_live_half_edge_list_refuses_collection_limit() {
+        let error = compact_half_edge_limit(1);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect T-spline live half-edges"));
+    }
+
+    #[test]
+    fn tsm_compact_half_edge_list_refuses_collection_limit() {
+        let error = compact_half_edge_limit(2);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect T-spline compact half-edges"));
+    }
+
+    #[test]
+    fn tsm_slot_compaction_refuses_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::compact(&ctx, [true, false].into_iter()).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compact T-spline slots"));
+    }
+
+    fn parse_quad_limit(limit: u64) -> cadmpeg_core::CodecError {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+        super::parse(&ctx, "synthetic.tsm", source.as_bytes()).unwrap_err()
+    }
+
+    #[test]
+    fn tsm_live_face_index_refuses_collection_limit() {
+        let error = parse_quad_limit(24);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index T-spline live faces"));
+    }
+
+    #[test]
+    fn tsm_live_edge_index_refuses_collection_limit() {
+        let error = parse_quad_limit(25);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index T-spline live edges"));
+    }
+
+    #[test]
+    fn tsm_vertex_slot_compaction_refuses_collection_limit() {
+        let error = parse_quad_limit(33);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compact T-spline slots"), "{error:?}");
+    }
+
+    #[test]
+    fn tsm_edge_slot_compaction_refuses_collection_limit() {
+        let error = parse_quad_limit(37);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compact T-spline slots"));
+    }
+
+    #[test]
+    fn tsm_face_slot_compaction_refuses_collection_limit() {
+        let error = parse_quad_limit(41);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compact T-spline slots"));
     }
 
     #[test]
