@@ -2035,21 +2035,26 @@ fn parse_constraints(
                             CodecError::malformed("constraint length must be finite")
                         })?),
                     };
-                    let path = format!("Constraints[{index}]");
+                    let path = retained_format(
+                        ctx, format_args!("Constraints[{index}]"),
+                        "fcstd constraint expression path",
+                    )?;
                     let expression = expression_binding(ctx, properties, &path)?;
-                    let mut parameter_properties = [(
+                    let mut parameter_properties = BTreeMap::new();
+                    ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
+                    parameter_properties.insert(
                         cadmpeg_core::nonblank_literal!("is_driving"),
                         retained_string(ctx, node.attribute("IsDriving").unwrap_or("1"), "fcstd constraint driving flag")?,
-                    )]
-                    .into_iter()
-                    .collect::<BTreeMap<_, _>>();
+                    );
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
+                        ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
                         parameter_properties.insert(
                             cadmpeg_core::nonblank_literal!("source_name"),
                             retained_string(ctx, name, "fcstd constraint source name")?,
                         );
                     }
                     if let Some((native_ref, _)) = &expression {
+                        ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
                         parameter_properties.insert(
                             cadmpeg_core::nonblank_literal!("expression_native_ref"),
                             retained_string(ctx, native_ref, "fcstd constraint expression reference")?,
@@ -2065,7 +2070,10 @@ fn parse_constraints(
                             .map_err(CodecError::malformed)?,
                         owner: Some(feature_id(ctx, object)?),
                         ordinal: index as u32,
-                        name: format!("Constraint{}", index + 1),
+                        name: retained_format(
+                            ctx, format_args!("Constraint{}", index + 1),
+                            "fcstd constraint parameter name",
+                        )?,
                         expression,
                         display: None,
                         value: Some(value),
@@ -2140,7 +2148,9 @@ fn parse_constraints(
         let mut native_operands = Vec::new();
         for (entity, position) in operands.iter()
             .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none()) {
-            let native_kind = cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
+            let native_kind = cadmpeg_core::text::NonBlankString::new(retained_format(
+                ctx, format_args!("position:{position}"), "fcstd native operand position kind",
+            )?)
                 .ok_or_else(|| malformed_design(ctx, format_args!(
                     "{} constraint {} has an empty source operand kind", property.id, index + 1
                 )))?;
