@@ -1567,6 +1567,95 @@ fn texture_file_reference_loss_text_refuses_retained_limit() {
 }
 
 #[test]
+fn presentation_loss_refuses_collection_and_note_copy_limits() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut losses = Vec::new();
+    let error = crate::presentation::push_presentation_loss(
+        &ctx,
+        &mut losses,
+        crate::loss::RhinoLossCode::PresentationRecordDropped,
+        format_args!("dropped"),
+    )
+    .expect_err("loss requires one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino presentation losses"
+    ));
+
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = "dropped".len() as u64;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::push_presentation_loss(
+        &ctx,
+        &mut losses,
+        crate::loss::RhinoLossCode::PresentationRecordDropped,
+        format_args!("dropped"),
+    )
+    .expect_err("loss note copy exceeds the retained limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino presentation loss text"
+    ));
+    assert!(losses.is_empty());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    crate::presentation::push_presentation_loss(
+        &ctx,
+        &mut losses,
+        crate::loss::RhinoLossCode::PresentationRecordDropped,
+        format_args!("dropped"),
+    )
+    .expect("service profile admits the loss");
+    assert_eq!(losses[0].message, "dropped");
+}
+
+#[test]
+fn unbound_presentation_record_refuses_opaque_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let record = crate::container::Record::short(0x1000_0012, 0..8, 0);
+    let mut losses = Vec::new();
+    let mut opaque = Vec::new();
+    let error = crate::presentation::retain_unbound_presentation_record(
+        &ctx,
+        &mut losses,
+        &mut opaque,
+        0x1000_0012,
+        &record,
+        crate::settings::UnitBinding::Unavailable,
+        "light",
+    )
+    .expect_err("opaque record requires a second collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino opaque presentation records"
+    ));
+    assert!(opaque.is_empty());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    crate::presentation::retain_unbound_presentation_record(
+        &ctx,
+        &mut Vec::new(),
+        &mut opaque,
+        0x1000_0012,
+        &record,
+        crate::settings::UnitBinding::Unavailable,
+        "light",
+    )
+    .expect("service profile admits the retained record");
+    assert_eq!(opaque.len(), 1);
+}
+
+#[test]
 fn projected_user_string_entries_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
