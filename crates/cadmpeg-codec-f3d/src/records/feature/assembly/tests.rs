@@ -966,3 +966,48 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
         assert!(Occurrence::try_new(draft(u64::MAX - last_offset + 1, placement)).is_err());
     }
 }
+
+fn axial_selector_for_serialization(version: bool) -> super::DesignAssemblyAxialSelectorIdentity {
+    let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+    let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"00000007-1111-4111-8111-111111111111","occurrence_role_offset":0}"#;
+    let version_fields = if version {
+        r#", "external_property_key":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","external_property_key_offset":100,"external_version_urn":"urn","external_version_urn_offset":110"#
+    } else {
+        ""
+    };
+    serde_json::from_str(&format!("{prefix}{version_fields}{suffix}")).unwrap()
+}
+
+#[test]
+fn assembly_axial_selector_borrowed_wire_matches_owned_wire_bytes() {
+    for selector in [
+        axial_selector_for_serialization(false),
+        axial_selector_for_serialization(true),
+    ] {
+        let owned = super::DesignAssemblyAxialSelectorIdentityWire::from(selector.clone());
+        assert_eq!(
+            serde_json::to_vec(&selector).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn assembly_axial_selector_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignAssemblyAxialSelectorIdentity,
+    }
+    let selector = axial_selector_for_serialization(true);
+    let record = NestedRecord {
+        id: "f3d:native:assembly-axial-selector#0",
+        value: &selector,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(|count| count.set(0)),
+        || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
