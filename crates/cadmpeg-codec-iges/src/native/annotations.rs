@@ -4,7 +4,8 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use super::OverdeclaredCounts;
+use super::{collect_native_items, OverdeclaredCounts};
+use crate::decode_resource::{collect_result_vec, format_retained};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
@@ -13,6 +14,7 @@ use crate::global::GlobalTable;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -193,16 +195,25 @@ struct Subject<'a, 'ctx> {
     primary_end: usize,
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     parameter_resolver: &'a ParameterResolver<'a, 'ctx>,
+    ctx: &'a DecodeContext<'ctx>,
     v5_null_string_rule: bool,
 }
 
 impl Subject<'_, '_> {
-    fn id(&self) -> String {
-        format!("iges:presentation:annotation#D{}", self.sequence)
+    fn id(&self) -> Result<String, CodecError> {
+        format_retained(self.ctx, format_args!("iges:presentation:annotation#D{}", self.sequence), "iges native annotation id")
     }
 
-    fn source_entity(&self) -> String {
-        format!("iges:entity:directory#{}", self.sequence)
+    fn source_entity(&self) -> Result<String, CodecError> {
+        format_retained(self.ctx, format_args!("iges:entity:directory#{}", self.sequence), "iges native annotation source")
+    }
+
+    fn annotation_link_id(&self, sequence: u32) -> Result<String, CodecError> {
+        format_retained(self.ctx, format_args!("iges:presentation:annotation#D{sequence}"), "iges native annotation link")
+    }
+
+    fn entity_link_id(&self, sequence: u32) -> Result<String, CodecError> {
+        format_retained(self.ctx, format_args!("iges:entity:directory#{sequence}"), "iges native annotation entity link")
     }
 
     fn counted_tail(
@@ -249,14 +260,17 @@ impl Subject<'_, '_> {
             Some(value) => self
                 .parameter_resolver
                 .resolve_negative_type(self.sequence, start + 3, value, 310, &[0])?
-                .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
+                .map(|sequence| format_retained(self.ctx, format_args!("iges:presentation:text-font#D{sequence}"), "iges native text run font"))
+                .transpose()?,
             None => None,
         };
         Ok(NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
             text: (!v5_null_string)
-                .then(|| text.map(<[u8]>::to_vec))
-                .flatten(),
+                .then_some(text)
+                .flatten()
+                .map(|bytes| self.ctx.copy_retained(bytes, "iges native text run bytes"))
+                .transpose()?,
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),
@@ -279,17 +293,18 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve_type(self.sequence, index, sequence, 212, &[0])?
-            .map(|sequence| format!("iges:presentation:annotation#D{sequence}")))
+            .map(|sequence| self.annotation_link_id(sequence))
+            .transpose()
     }
 
     fn leader_link(&self, index: usize) -> Result<Option<String>, CodecError> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -298,7 +313,8 @@ impl Subject<'_, '_> {
                 ReferenceExpectation::Named(ExpectationLabel::Type214Form1Through12),
                 |target| target.entity_type == 214 && matches!(target.form, 1..=12),
             )?
-            .map(|sequence| format!("iges:presentation:annotation#D{sequence}")))
+            .map(|sequence| self.annotation_link_id(sequence))
+            .transpose()
     }
 
     fn leader_list(
@@ -307,19 +323,19 @@ impl Subject<'_, '_> {
         leader_start: usize,
         overdeclared: &mut OverdeclaredCounts,
     ) -> Result<Vec<Option<String>>, CodecError> {
-        (0..self.counted_tail_at(count_index, leader_start, 1, overdeclared))
-            .map(|offset| self.leader_link(leader_start + offset))
-            .collect()
+        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
+        collect_result_vec(self.ctx, count, "iges native annotation leader slots", |offset| self.leader_link(leader_start + offset))
     }
 
     fn witness_link(&self, index: usize) -> Result<Option<String>, CodecError> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve_type(self.sequence, index, sequence, 106, &[40])?
-            .map(|sequence| format!("iges:entity:directory#{sequence}")))
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
     fn curve_link(
@@ -330,7 +346,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -343,14 +359,15 @@ impl Subject<'_, '_> {
                         && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                 },
             )?
-            .map(|sequence| format!("iges:entity:directory#{sequence}")))
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
     fn ordinate_link(&self, index: usize) -> Result<Option<String>, CodecError> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -366,11 +383,9 @@ impl Subject<'_, '_> {
                 self.entries
                     .get(&sequence)
                     .filter(|target| target.entity_type == 214)
-                    .map_or_else(
-                        || format!("iges:entity:directory#{sequence}"),
-                        |_| format!("iges:presentation:annotation#D{sequence}"),
-                    )
-            }))
+                    .map_or_else(|| self.entity_link_id(sequence), |_| self.annotation_link_id(sequence))
+            })
+            .transpose()
     }
 
     fn enclosure_link(
@@ -381,7 +396,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -396,7 +411,8 @@ impl Subject<'_, '_> {
                         && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                 },
             )?
-            .map(|sequence| format!("iges:entity:directory#{sequence}")))
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
     fn geometry_link(
@@ -407,7 +423,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -419,14 +435,15 @@ impl Subject<'_, '_> {
                         && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
                 },
             )?
-            .map(|sequence| format!("iges:entity:directory#{sequence}")))
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 
     fn section_boundary_link(&self, index: usize) -> Result<Option<String>, CodecError> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        Ok(self
+        self
             .parameter_resolver
             .resolve(
                 self.sequence,
@@ -435,7 +452,8 @@ impl Subject<'_, '_> {
                 ReferenceExpectation::Named(ExpectationLabel::SectionBoundaryEntity),
                 section_boundary_type,
             )?
-            .map(|sequence| format!("iges:entity:directory#{sequence}")))
+            .map(|sequence| self.entity_link_id(sequence))
+            .transpose()
     }
 }
 
@@ -447,13 +465,11 @@ fn general_note(
     let record = subject.record;
     let count = subject.counted_tail(1, 12, overdeclared);
     Ok(NativeAnnotation::GeneralNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
-        strings: (0..count)
-            .map(|index| subject.text_run(2 + index * 12))
-            .collect::<Result<Vec<_>, CodecError>>()?,
+        strings: collect_result_vec(subject.ctx, count, "iges native general note text run slots", |index| subject.text_run(2 + index * 12))?,
         transformation,
     })
 }
@@ -466,8 +482,8 @@ fn new_general_note(
     let record = subject.record;
     let count = subject.counted_tail(12, 20, overdeclared);
     Ok(NativeAnnotation::NewGeneralNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         containment_size: [
             record.and_then(|record| record.number(1)),
             record.and_then(|record| record.number(2)),
@@ -486,8 +502,7 @@ fn new_general_note(
         ],
         normal_interline_spacing: record.and_then(|record| record.number(11)),
         declared_string_count: record.and_then(|record| record.integer(12)),
-        strings: (0..count)
-            .map(|index| -> Result<NativeNewTextRun, CodecError> {
+        strings: collect_result_vec(subject.ctx, count, "iges native new note text run slots", |index| -> Result<NativeNewTextRun, CodecError> {
                 let start = 13 + index * 20;
                 Ok(NativeNewTextRun {
                     fixed_or_variable: record.and_then(|record| record.integer(start)),
@@ -501,13 +516,13 @@ fn new_general_note(
                     character_angle: record.and_then(|record| record.number(start + 6)),
                     control_codes: record
                         .and_then(|record| record.string(start + 7))
-                        .map(<[u8]>::to_vec),
+                        .map(|bytes| subject.ctx.copy_retained(bytes, "iges native new note control codes"))
+                        .transpose()?,
                     // A 213 text block is the 212 layout shifted by its
                     // eight-token prefix.
                     text: subject.text_run(start + 8)?,
                 })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?,
+            })?,
         transformation,
     })
 }
@@ -516,13 +531,13 @@ fn leader(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> NativeAnnotation {
+) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let count = subject.counted_tail_at(1, 7, 2, overdeclared);
     let z = record.and_then(|record| record.number(4));
-    NativeAnnotation::Leader {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+    Ok(NativeAnnotation::Leader {
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         declared_segment_count: record.and_then(|record| record.integer(1)),
         arrowhead_size: [
@@ -534,17 +549,15 @@ fn leader(
             record.and_then(|record| record.number(6)),
             z,
         ],
-        segment_tails: (0..count)
-            .map(|index| {
-                [
+        segment_tails: collect_result_vec(subject.ctx, count, "iges native leader segment tail slots", |index| {
+                Ok([
                     record.and_then(|record| record.number(7 + index * 2)),
                     record.and_then(|record| record.number(8 + index * 2)),
                     z,
-                ]
-            })
-            .collect(),
+                ])
+            })?,
         transformation,
-    }
+    })
 }
 
 fn flag_note(
@@ -555,8 +568,8 @@ fn flag_note(
     let record = subject.record;
     let leaders = subject.leader_list(6, 7, overdeclared)?;
     Ok(NativeAnnotation::FlagNote {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         origin: [
             record.and_then(|record| record.number(1)),
             record.and_then(|record| record.number(2)),
@@ -578,8 +591,8 @@ fn general_label(
     let record = subject.record;
     let leaders = subject.leader_list(2, 3, overdeclared)?;
     Ok(NativeAnnotation::GeneralLabel {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         note: subject.note_link(1)?,
         declared_leader_count: record.and_then(|record| record.integer(2)),
         leaders,
@@ -618,18 +631,14 @@ fn general_symbol(
         })
         .unwrap_or_default();
     Ok(NativeAnnotation::GeneralSymbol {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         note: subject.note_link(1)?,
         declared_geometry_count,
-        geometry: (0..geometry_count)
-            .map(|offset| subject.geometry_link(3 + offset, global_table))
-            .collect::<Result<Vec<_>, CodecError>>()?,
+        geometry: collect_result_vec(subject.ctx, geometry_count, "iges native symbol geometry slots", |offset| subject.geometry_link(3 + offset, global_table))?,
         declared_leader_count,
-        leaders: (0..leader_count)
-            .map(|offset| subject.leader_link(leader_count_index + 1 + offset))
-            .collect::<Result<Vec<_>, CodecError>>()?,
+        leaders: collect_result_vec(subject.ctx, leader_count, "iges native symbol leader slots", |offset| subject.leader_link(leader_count_index + 1 + offset))?,
         transformation,
     })
 }
@@ -642,8 +651,8 @@ fn sectioned_area(
     let record = subject.record;
     let island_count = subject.counted_tail_at(8, 9, 1, overdeclared);
     Ok(NativeAnnotation::SectionedArea {
-        id: subject.id(),
-        source_entity: subject.source_entity(),
+        id: subject.id()?,
+        source_entity: subject.source_entity()?,
         form: subject.form,
         boundary: subject.section_boundary_link(1)?,
         fill_pattern: record.and_then(|record| record.integer(2)),
@@ -655,9 +664,7 @@ fn sectioned_area(
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
         declared_island_count: record.and_then(|record| record.integer(8)),
-        islands: (0..island_count)
-            .map(|offset| subject.section_boundary_link(9 + offset))
-            .collect::<Result<Vec<_>, CodecError>>()?,
+        islands: collect_result_vec(subject.ctx, island_count, "iges native section island slots", |offset| subject.section_boundary_link(9 + offset))?,
         transformation,
     })
 }
@@ -670,11 +677,13 @@ pub(super) fn build(
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
-    directory
-        .iter()
-        .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
-        .map(|(entry, kind)| -> Result<NativeAnnotation, CodecError> {
+    collect_native_items(
+        ctx,
+        directory.iter().filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
+        "iges native annotation slots",
+        |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
             let record = by_directory.get(&entry.sequence).copied();
             let subject = Subject {
                 sequence: entry.sequence,
@@ -683,11 +692,13 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
+                ctx,
                 v5_null_string_rule: global_table == GlobalTable::V5_0
                     && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)
-                .then(|| format!("iges:native:transformation#D{}", entry.transform));
+                .then(|| format_retained(ctx, format_args!("iges:native:transformation#D{}", entry.transform), "iges native annotation transformation"))
+                .transpose()?;
             Ok(match kind {
                 AnnotationKind::GeneralNote => {
                     general_note(&subject, transformation, overdeclared_counts)?
@@ -695,7 +706,7 @@ pub(super) fn build(
                 AnnotationKind::NewGeneralNote => {
                     new_general_note(&subject, transformation, overdeclared_counts)?
                 }
-                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts),
+                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts)?,
                 AnnotationKind::FlagNote => {
                     flag_note(&subject, transformation, overdeclared_counts)?
                 }
@@ -709,8 +720,8 @@ pub(super) fn build(
                     sectioned_area(&subject, transformation, overdeclared_counts)?
                 }
                 AnnotationKind::AngularDimension => NativeAnnotation::AngularDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     note: subject.note_link(1)?,
                     witnesses: [subject.witness_link(2)?, subject.witness_link(3)?],
                     vertex: [
@@ -722,8 +733,8 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::CurveDimension => NativeAnnotation::CurveDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     note: subject.note_link(1)?,
                     curves: [
                         subject.curve_link(2, global_table)?,
@@ -734,8 +745,8 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::DiameterDimension => NativeAnnotation::DiameterDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     note: subject.note_link(1)?,
                     leaders: [subject.leader_link(2)?, subject.leader_link(3)?],
                     center: [
@@ -745,8 +756,8 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::LinearDimension => NativeAnnotation::LinearDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
                     note: subject.note_link(1)?,
                     leaders: [subject.leader_link(2)?, subject.leader_link(3)?],
@@ -754,8 +765,8 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::OrdinateDimension => NativeAnnotation::OrdinateDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
                     note: subject.note_link(1)?,
                     ordinate: subject.ordinate_link(2)?,
@@ -767,16 +778,16 @@ pub(super) fn build(
                     transformation,
                 },
                 AnnotationKind::PointDimension => NativeAnnotation::PointDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     note: subject.note_link(1)?,
                     leader: subject.leader_link(2)?,
                     enclosure: subject.enclosure_link(3, global_table)?,
                     transformation,
                 },
                 AnnotationKind::RadiusDimension => NativeAnnotation::RadiusDimension {
-                    id: subject.id(),
-                    source_entity: subject.source_entity(),
+                    id: subject.id()?,
+                    source_entity: subject.source_entity()?,
                     form: subject.form,
                     note: subject.note_link(1)?,
                     leaders: [
@@ -794,6 +805,6 @@ pub(super) fn build(
                     transformation,
                 },
             })
-        })
-        .collect()
+        },
+    )
 }
