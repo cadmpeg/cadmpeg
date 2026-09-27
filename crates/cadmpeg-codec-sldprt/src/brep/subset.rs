@@ -81,7 +81,7 @@ fn close(left: Point3, right: Point3) -> bool {
 
 /// Decode `00 85` wrappers whose stored bounds agree with their source curve.
 pub(super) fn scan(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
@@ -140,8 +140,7 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        if let Some(ctx) = ctx {
-            if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry {
+                    if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry {
                 let lane_count = curve.knots().len() + curve.pole_count();
                 ctx.charge_collection_items(
                     lane_count as u64,
@@ -149,7 +148,7 @@ pub(super) fn scan(
                 )?;
             }
             ctx.charge_collection_items(1, "collect Parasolid subset curves")?;
-        }
+
         out.push(CurveCarrier {
             attr,
             offset: off,
@@ -240,7 +239,7 @@ mod tests {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error =
-            scan(Some(&ctx), &bytes, &carriers).expect_err("subset collection exceeds its limit");
+            scan(&ctx, &bytes, &carriers).expect_err("subset collection exceeds its limit");
         assert!(
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -252,7 +251,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            scan(Some(&ctx), &bytes, &carriers)
+            scan(&ctx, &bytes, &carriers)
                 .expect("service scan")
                 .len(),
             1
@@ -271,7 +270,11 @@ mod tests {
 
     #[test]
     fn decodes_bounds_that_evaluate_on_the_source_curve() {
-        let decoded = scan(None, &wrapper(0.005, false), &carriers()).expect("subset scan");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+        let decoded = scan(&ctx, &wrapper(0.005, false), &carriers()).expect("subset scan");
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
         assert!(matches!(
@@ -288,8 +291,12 @@ mod tests {
 
     #[test]
     fn decodes_optional_ff_header() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         assert_eq!(
-            scan(None, &wrapper(0.005, true), &carriers())
+            scan(&ctx, &wrapper(0.005, true), &carriers())
                 .expect("subset scan")
                 .len(),
             1
@@ -298,9 +305,13 @@ mod tests {
 
     #[test]
     fn rejects_bounds_that_do_not_evaluate_on_the_source_curve() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = wrapper(0.005, false);
         bytes[21 + 3 * 8..21 + 4 * 8].copy_from_slice(&0.001f64.to_be_bytes());
-        assert!(scan(None, &bytes, &carriers())
+        assert!(scan(&ctx, &bytes, &carriers())
             .expect("subset scan")
             .is_empty());
     }

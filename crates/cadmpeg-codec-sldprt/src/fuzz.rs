@@ -7,6 +7,8 @@
 //! invariant instead.
 #![doc(hidden)]
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
 /// Exercise outer-container scanning.
 pub fn container(data: &[u8]) {
     crate::container::scan_bytes(data);
@@ -19,8 +21,12 @@ pub fn parasolid(data: &[u8]) {
 
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) {
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
+        return;
+    };
     drop(crate::brep::spline::scan_curve_carriers(
-        None,
+        &ctx,
         data,
         &mut Vec::new(),
     ));
@@ -28,8 +34,12 @@ pub fn spline_curves(data: &[u8]) {
 
 /// Exercise spline-surface carrier scanning.
 pub fn spline_surfaces(data: &[u8]) {
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
+        return;
+    };
     drop(crate::brep::spline::scan_surface_carriers(
-        None,
+        &ctx,
         data,
         &mut Vec::new(),
     ));
@@ -37,12 +47,20 @@ pub fn spline_surfaces(data: &[u8]) {
 
 /// Exercise topology record scanning.
 pub fn topology(data: &[u8]) {
-    drop(crate::brep::topology::scan(data));
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
+        return;
+    };
+    drop(crate::brep::topology::scan(&ctx, data));
 }
 
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) {
-    drop(crate::brep::entity::scan_metadata(None, data, false));
+    let arena = DecodeArena::new();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) else {
+        return;
+    };
+    drop(crate::brep::entity::scan_metadata(&ctx, data, false));
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.

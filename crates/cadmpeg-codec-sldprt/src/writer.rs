@@ -3851,6 +3851,10 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let surface = NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
@@ -3875,7 +3879,7 @@ mod nurbs_write_tests {
             "test:surface#high-degree",
         )
         .expect("stored degree is representable");
-        let carrier = crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect("surface scan")
             .remove(&2)
             .expect("surface carrier");
@@ -3888,6 +3892,10 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let surface = NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
@@ -3920,7 +3928,7 @@ mod nurbs_write_tests {
             "test:surface#ambiguous-shape",
         )
         .expect("stored counts disambiguate the surface");
-        let carrier = crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+        let carrier = crate::brep::spline::scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect("surface scan")
             .remove(&2)
             .expect("surface carrier");

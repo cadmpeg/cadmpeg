@@ -748,7 +748,7 @@ fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
 }
 
 struct BrepSink<'ctx, 'arena, 'out> {
-    ctx: Option<&'ctx DecodeContext<'arena>>,
+    ctx: &'ctx DecodeContext<'arena>,
     out: &'out mut Brep,
 }
 
@@ -1095,7 +1095,7 @@ fn header_body<'a>(
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
 pub(crate) fn decode(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     header: &StreamHeader,
     stream: &cadmpeg_ir::StreamName,
@@ -1109,7 +1109,7 @@ pub(crate) fn decode(
 /// records and point updates, but do not replace a same-identity partition
 /// topology or carrier record. `stream` names the combined provenance source.
 pub(crate) fn decode_bodies(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
@@ -1211,7 +1211,7 @@ pub(crate) fn decode_bodies(
 }
 
 fn decode_body(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
@@ -1237,11 +1237,10 @@ fn decode_body(
 }
 
 fn admit_brep_scan_candidates(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(ctx) = ctx {
-        let count = body
+            let count = body
             .windows(3)
             .filter(|marker| {
                 marker[0] == 0
@@ -1293,14 +1292,13 @@ fn admit_brep_scan_candidates(
             )
         })?;
         ctx.charge_collection_items(count, "admit Parasolid scan candidates")?;
-    }
+
     Ok(())
 }
 
-fn admit_brep_entity(ctx: Option<&DecodeContext<'_>>) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_entities(1, "admit SLDPRT B-rep entity")?;
-    }
+fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
+            ctx.charge_entities(1, "admit SLDPRT B-rep entity")?;
+
     Ok(())
 }
 
@@ -1441,7 +1439,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
 }
 
 fn decode_graph(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     t: &topology::Tables,
     entity_facts: entity::Facts,
@@ -2699,7 +2697,7 @@ fn annotate_surface_frame(
 }
 
 fn derive_planar_pcurves(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -2895,7 +2893,7 @@ fn derive_planar_pcurves(
 }
 
 fn derive_cylindrical_pcurves(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -3564,7 +3562,7 @@ fn circle_azimuth_parameter(
 }
 
 fn derive_revolved_circle_pcurves(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -3757,7 +3755,7 @@ fn sphere_latitude(height: f64, radius: f64) -> Option<f64> {
 }
 
 fn derive_spherical_pcurves(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -3932,7 +3930,7 @@ fn derive_spherical_pcurves(
 }
 
 fn derive_nurbs_isoparametric_pcurves(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -5669,7 +5667,7 @@ fn solve_face_orientation(out: &mut Brep) {
 }
 
 fn synthesize_cylinder_seams(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -5879,7 +5877,7 @@ fn synthesize_cylinder_seams(
 }
 
 fn synthesize_sphere_seams(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -6236,7 +6234,7 @@ fn synthesize_sphere_seams(
 }
 
 fn emit_curve(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     out: &mut Brep,
     carrier: &CurveCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -6985,7 +6983,11 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(None, &[], &cadmpeg_ir::stream_name!("empty"))
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+        let decoded = super::decode_body(&ctx, &[], &cadmpeg_ir::stream_name!("empty"))
             .expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
@@ -7002,7 +7004,7 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
         let Err(error) = super::decode_body(
-            Some(&ctx),
+            &ctx,
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
         ) else {
@@ -7017,7 +7019,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service()).expect("root");
         super::decode_body(
-            Some(&ctx),
+            &ctx,
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
         )
@@ -7100,6 +7102,10 @@ mod tests {
 
     #[test]
     fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let bridge = |attr, surface, offset| Bridge {
             attr,
             sequence: 0,
@@ -7112,7 +7118,7 @@ mod tests {
         tables.insert_bridge(bridge(10, 100, 20));
         tables.insert_bridge(bridge(11, 200, 10));
         let decoded = super::decode_graph(
-            None,
+            &ctx,
             &crate::brep::index::CarrierIndex::default(),
             &tables,
             super::entity::Facts {
@@ -7618,6 +7624,10 @@ mod tests {
 
     #[test]
     fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         use cadmpeg_ir::annotations::AnnotationBuilder;
         use cadmpeg_ir::geometry::{Curve, Surface};
         use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
@@ -7737,7 +7747,7 @@ mod tests {
         let mut annotations = AnnotationBuilder::new();
         let source_stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test"));
-        super::derive_cylindrical_pcurves(None, &mut brep, &mut annotations, &source_stream)
+        super::derive_cylindrical_pcurves(&ctx, &mut brep, &mut annotations, &source_stream)
             .expect("cylindrical pcurve derivation");
 
         assert!(brep.pcurves.is_empty());

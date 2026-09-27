@@ -125,7 +125,7 @@ impl CarrierIndex {
 /// the partition carrier remains authoritative and a deltas carrier fills only
 /// an absent identity.
 pub(super) fn scan_carriers(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();

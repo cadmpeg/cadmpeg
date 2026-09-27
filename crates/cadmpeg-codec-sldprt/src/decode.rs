@@ -1990,7 +1990,7 @@ fn try_decode_brep(
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
-        let decoded = decode_bodies(Some(ctx), &bodies, streams[first].source_stream())?;
+        let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {

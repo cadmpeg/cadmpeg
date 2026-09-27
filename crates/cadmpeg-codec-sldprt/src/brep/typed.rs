@@ -60,13 +60,12 @@ struct BodyCandidate {
 }
 
 impl BodyCandidate {
-    fn into_node(self, ctx: Option<&DecodeContext<'_>>) -> Result<BodyNode, CodecError> {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(
+    fn into_node(self, ctx: &DecodeContext<'_>) -> Result<BodyNode, CodecError> {
+                    ctx.charge_collection_items(
                 self.ownership_len as u64,
                 "copy Parasolid body ownership references",
             )?;
-        }
+
         Ok(BodyNode {
             attr: self.attr,
             node_id: self.node_id,
@@ -806,14 +805,13 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
 }
 
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
-fn admit_record(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "admit typed Parasolid record")?;
-    }
+fn admit_record(ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+            ctx.charge_collection_items(1, "admit typed Parasolid record")?;
+
     Ok(())
 }
 
-pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Facts, CodecError> {
+pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, CodecError> {
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
@@ -919,6 +917,10 @@ mod tests {
 
     #[test]
     fn semantic_writer_emits_typed_body_ownership_nodes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let decoded = SldprtCodec
             .decode(
                 &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -926,7 +928,7 @@ mod tests {
             )
             .unwrap();
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
-        let facts = scan(&body, None).expect("typed scan");
+        let facts = scan(&body, &ctx).expect("typed scan");
 
         assert!(facts.has_valid_ownership());
         assert_eq!(facts.bodies.len(), 1);
@@ -944,7 +946,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
-        let error = scan(&body, Some(&ctx)).expect_err("typed record must be admitted");
+        let error = scan(&body, &ctx).expect_err("typed record must be admitted");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -953,7 +955,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service()).expect("root");
-        assert!(!scan(&body, Some(&ctx))
+        assert!(!scan(&body, &ctx)
             .expect("service profile admits typed records")
             .bodies
             .is_empty());
@@ -979,7 +981,7 @@ mod tests {
             end: 0,
         };
         let error = candidate
-            .into_node(Some(&ctx))
+            .into_node(&ctx)
             .expect_err("seven references exceed six items");
         assert!(matches!(error,
             CodecError::ResourceLimit(limit)
@@ -1123,11 +1125,15 @@ mod tests {
 
     #[test]
     fn first_body_follows_schema_terminator() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b];
         bytes.extend_from_slice(b"CCCCA");
         bytes.push(b'Z');
         bytes.extend(body_node(3, 0x18b9, 1));
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 3);
         assert_eq!(facts.bodies[0].kind, BodyKind::Solid);
@@ -1135,15 +1141,23 @@ mod tests {
 
     #[test]
     fn body_kind_is_stored_not_inferred() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 3));
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.bodies[0].kind, BodyKind::Sheet);
     }
 
     #[test]
     fn tagged_body_accepts_the_four_reference_header_form() {
-        let facts = scan(&tagged_four_ref_body(7, 0x18b9), None).expect("typed scan");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+        let facts = scan(&tagged_four_ref_body(7, 0x18b9), &ctx).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 7);
         assert!(facts.bodies[0].ownership_refs.contains(&48));
@@ -1152,6 +1166,10 @@ mod tests {
 
     #[test]
     fn extended_body_references_are_decoded() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node_with_topology(
             3,
@@ -1159,7 +1177,7 @@ mod tests {
             1,
             [7, 8, 0x8000, 10, 11, 12, 13],
         ));
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(
             facts.bodies[0].topology_refs,
@@ -1169,6 +1187,10 @@ mod tests {
 
     #[test]
     fn extended_references_close_every_typed_ownership_edge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         const BODY: u32 = 40_000;
         const SHELL: u32 = 40_001;
         const REGION: u32 = 40_002;
@@ -1185,7 +1207,7 @@ mod tests {
         bytes.extend(typed_region(REGION as u16, 9, [1, BODY, 1, 1, SHELL], b'S'));
         bytes.extend(typed_face(FACE, 10, [1, 1, 1, SHELL, 12]));
 
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         let hierarchy = facts
             .hierarchies(&HashSet::from([FACE]))
             .expect("extended typed references close the ownership graph");
@@ -1205,6 +1227,10 @@ mod tests {
 
     #[test]
     fn seven_reference_body_and_extended_region_fields_are_decoded() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node_with_header::<7>(
             3,
@@ -1221,7 +1247,7 @@ mod tests {
             b'V',
         ));
 
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].topology_refs, [7, 1, 8, 9, 10, 1, 1]);
         assert_eq!(facts.regions.len(), 1);
@@ -1230,6 +1256,10 @@ mod tests {
 
     #[test]
     fn first_region_follows_schema_terminator() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x13, 0x1b, b'C', b'Z'];
         bytes.extend_from_slice(&11u16.to_be_bytes());
         bytes.extend_from_slice(&9u32.to_be_bytes());
@@ -1238,7 +1268,7 @@ mod tests {
         }
         bytes.push(b'V');
 
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
@@ -1246,10 +1276,14 @@ mod tests {
 
     #[test]
     fn tagged_face_replaces_a_schema_prepass_collision() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0e, b'C', b'Z'];
         bytes.extend(typed_face(100, 900, [1, 1, 1, 8, 12]));
 
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.faces.len(), 1);
         assert_eq!(facts.faces[0].offset, 4);
         assert_eq!(facts.faces[0].attr, 100);
@@ -1258,6 +1292,10 @@ mod tests {
 
     #[test]
     fn typed_hierarchy_uses_previous_region_and_shell_owner() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 1));
         bytes.extend(typed_shell(7, 814, 39));
@@ -1265,7 +1303,7 @@ mod tests {
         bytes.extend(typed_region(39, 815, [1, 3, 1, 11, 7], b'S'));
         bytes.extend(typed_face(100, 900, [1, 1, 49, 7, 8]));
 
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         let hierarchy = facts
             .hierarchies(&HashSet::from([100]))
             .expect("closed typed hierarchy");
@@ -1553,18 +1591,26 @@ mod tests {
 
     #[test]
     fn malformed_body_kind_is_withheld() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 4));
-        assert!(scan(&bytes, None).expect("typed scan").bodies.is_empty());
+        assert!(scan(&bytes, &ctx).expect("typed scan").bodies.is_empty());
     }
 
     #[test]
     fn shell_links_are_not_limited_to_sentinel_payloads() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut bytes = typed_prefix(SHELL_TAG, 7, 814);
         for value in [9, 3, 8, 38, 42, 43, 39, 44] {
             push_ref(&mut bytes, value);
         }
-        let facts = scan(&bytes, None).expect("typed scan");
+        let facts = scan(&bytes, &ctx).expect("typed scan");
         assert_eq!(facts.shells.len(), 1);
         assert_eq!(facts.shells[0].refs, [9, 3, 8, 38, 42, 43, 39, 44]);
     }
