@@ -15,13 +15,45 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    arc_z_coordinate, arc_z_fields, conic_local_system, conic_parameter, ellipse_carriers,
-    line3d_fields, line3d_lines, lines, named_conics, positional_conic_local_system,
-    positional_conics, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
+    arc_z_coordinate, arc_z_fields, conic_local_system, conic_parameter, line3d_fields,
+    positional_conic_local_system, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
     ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+
+mod resource_limits;
+
+fn with_reference_ctx<T>(
+    bytes: &[u8],
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("reference input is admitted");
+    run(&ctx).expect("reference collection is admitted")
+}
+
+fn lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
+    with_reference_ctx(payload, |ctx| super::lines(ctx, payload))
+}
+
+fn line3d_lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
+    with_reference_ctx(payload, |ctx| super::line3d_lines(ctx, payload))
+}
+
+fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    with_reference_ctx(payload, |ctx| super::named_conics(ctx, payload))
+}
+
+fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+    with_reference_ctx(payload, |ctx| super::positional_conics(ctx, payload))
+}
+
+fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+    with_reference_ctx(&[], |ctx| super::ellipse_carriers(ctx, conics))
+}
 
 #[test]
 fn decodes_complete_positional_line_rows() {
