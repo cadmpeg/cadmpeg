@@ -36,6 +36,72 @@ fn with_collection_limit<R>(
     f(&ctx)
 }
 
+fn with_retained_limit<R>(
+    bytes: &[u8],
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    f(&ctx)
+}
+
+fn modern_linetype_retained_refusal(limit: u64) -> PatternTransferError {
+    let bytes = modern_linetype(false);
+    with_retained_limit(&bytes, limit, |ctx| {
+        parse_linetype(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
+            0,
+        )
+        .expect_err("linetype text exceeds retained limit")
+    })
+}
+
+#[test]
+fn linetype_id_refuses_retained_limit() {
+    assert!(
+        matches!(modern_linetype_retained_refusal(11), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype ID")
+    );
+}
+
+#[test]
+fn linetype_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:linetype#33333333-3333-3333-3333-333333333333".len();
+    assert!(
+        matches!(modern_linetype_retained_refusal(u64::try_from(11 + id_len).expect("budget fits")), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino linetype source UUID")
+    );
+}
+
+#[test]
+fn legacy_linetype_name_refuses_retained_limit() {
+    let mut body = 4_i32.to_le_bytes().to_vec();
+    body.extend(utf16_bytes("dash"));
+    body.extend(0_i32.to_le_bytes());
+    body.extend([0x66; 16]);
+    let bytes = anonymous(15, &body);
+    let error = with_retained_limit(&bytes, 0, |ctx| {
+        parse_linetype(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+        .expect_err("legacy linetype name exceeds retained limit")
+    });
+    assert!(
+        matches!(error, PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino legacy linetype name")
+    );
+}
+
 fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) -> Vec<u8> {
     let mut component = 1_i32.to_le_bytes().to_vec();
     component.extend(0_i32.to_le_bytes());
@@ -193,6 +259,91 @@ fn hatch_pattern_collection_refusal(
         )
         .expect_err("hatch pattern exceeds collection limit")
     })
+}
+
+fn hatch_pattern_retained_refusal(
+    archive: ArchiveVersion,
+    modern: bool,
+    limit: u64,
+) -> PatternTransferError {
+    let bytes = if modern {
+        modern_hatch_pattern_record(archive, 0, false)
+    } else {
+        legacy_hatch_pattern_record(archive)
+    };
+    let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
+        .expect("hatch record chunk");
+    let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
+    let range = crate::presentation::class_data(&bytes, &record, archive, HATCH_PATTERN)
+        .expect("hatch class data");
+    with_retained_limit(&bytes, limit, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &bytes,
+            range,
+            archive,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+        .expect_err("hatch text exceeds retained limit")
+    })
+}
+
+macro_rules! hatch_text_limit {
+    ($name:ident, $archive:expr, $modern:expr, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(
+                hatch_pattern_retained_refusal($archive, $modern, $limit),
+                PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+                    if refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+hatch_text_limit!(
+    legacy_hatch_name_refuses_retained_limit,
+    ArchiveVersion::V5,
+    false,
+    0,
+    "Rhino hatch name"
+);
+hatch_text_limit!(
+    legacy_hatch_description_refuses_retained_limit,
+    ArchiveVersion::V5,
+    false,
+    5,
+    "Rhino hatch description"
+);
+hatch_text_limit!(
+    legacy_hatch_id_refuses_retained_limit,
+    ArchiveVersion::V5,
+    false,
+    16,
+    "Rhino hatch ID"
+);
+hatch_text_limit!(
+    modern_hatch_description_refuses_retained_limit,
+    ArchiveVersion::V8,
+    true,
+    12,
+    "Rhino hatch description"
+);
+hatch_text_limit!(
+    modern_hatch_id_refuses_retained_limit,
+    ArchiveVersion::V8,
+    true,
+    30,
+    "Rhino hatch ID"
+);
+
+#[test]
+fn legacy_hatch_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:hatch_pattern#77777777-7777-7777-7777-777777777777".len();
+    assert!(
+        matches!(hatch_pattern_retained_refusal(ArchiveVersion::V5, false, u64::try_from(16 + id_len).expect("budget fits")), PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal)) if refusal.operation == "Rhino hatch source UUID")
+    );
 }
 
 #[test]
@@ -560,6 +711,45 @@ fn hatch_install_retains_document_distances_without_physical_units() {
             }));
         }
     }
+}
+
+fn pattern_install_collection_refusal(
+    table_type: u32,
+    record: Vec<u8>,
+    limit: u64,
+) -> cadmpeg_core::CodecError {
+    let archive = ArchiveVersion::V8;
+    let unit = crate::test_support::test_dump::units_record(archive, 2);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "80",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[unit]),
+            crate::test_support::test_dump::table(archive, table_type, &[record]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes.clone()).expect("complete pattern document");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("pattern root admitted");
+    install(&ctx, &scan, &mut CadIr::empty()).expect_err("pattern exceeds collection limit")
+}
+
+#[test]
+fn installed_linetype_refuses_collection_limit() {
+    assert!(
+        matches!(pattern_install_collection_refusal(LINETYPE_TABLE, modern_linetype_record(ArchiveVersion::V8, false), 7), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino linetypes")
+    );
+}
+
+#[test]
+fn installed_hatch_refuses_collection_limit() {
+    assert!(
+        matches!(pattern_install_collection_refusal(HATCH_PATTERN_TABLE, legacy_hatch_pattern_record(ArchiveVersion::V8), 4), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino hatch patterns")
+    );
 }
 
 #[test]
