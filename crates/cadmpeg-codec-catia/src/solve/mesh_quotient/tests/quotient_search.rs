@@ -483,13 +483,65 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         }
     }
     for operation in [
+        "catia_boundary_direction_options",
+        "catia_boundary_directions",
         "catia_boundary_dir_row",
         "catia_boundary_dir_grid",
+        "catia_boundary_supported_grids",
         "catia_boundary_forward",
+        "catia_boundary_forward_rows",
         "catia_boundary_backward",
+        "catia_boundary_backward_rows",
+        "catia_boundary_corner_equations",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
+
+    let fixed_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            })
+            .collect()],
+    };
+    let fixed_run = |ctx: &DecodeContext<'_>| {
+        let mut quotient = initial_quotient.clone();
+        let budget = WorkBudget::new(1_000);
+        crate::solve::mesh_quotient::common_supported_corner_equations(
+            ctx,
+            &mut quotient,
+            std::slice::from_ref(&fixed_assignment),
+            &budget,
+        )
+    };
+    assert_eq!(
+        fixed_run(&service_ctx)
+            .expect("service resource budget")
+            .expect("fixed cycle has supported corners")
+            .len(),
+        3
+    );
+    let mut refused_forced_corner = false;
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match fixed_run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused_forced_corner |= error.operation == "catia_boundary_forced_corners";
+            }
+            Ok(Some(corners)) => assert_eq!(corners.len(), 3),
+            Ok(None) => panic!("fixed closed cycle must admit corners"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    assert!(refused_forced_corner, "no forced-corner collection refusal");
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -505,10 +557,10 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         &mut quotient,
         &budget,
     )
-    .expect_err("direction row exceeds the collection limit");
+    .expect_err("direction options exceed the collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_boundary_dir_row"));
+            && limit.operation == "catia_boundary_direction_options"));
 }
 
 #[test]
