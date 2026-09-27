@@ -6223,7 +6223,7 @@ pub(crate) fn parameter_records_with_face_ids(
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Vec<CurveParameterRecord>, cadmpeg_core::CodecError> {
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut records = Vec::new();
     for framed in framed_rows_with_face_ids(payload, face_ids) {
         let row = &payload[framed.start..framed.end];

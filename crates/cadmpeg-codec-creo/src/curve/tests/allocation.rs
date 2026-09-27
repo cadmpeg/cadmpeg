@@ -96,3 +96,24 @@ fn curve_expression_records_refuse_before_vector_growth() {
                 && limit.operation == "creo expression records"
     ));
 }
+
+#[test]
+fn curve_parameter_scalar_cache_refuses_before_unique_image_growth() {
+    let payload = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::super::parameter_records_with_face_ids(&ctx, &payload, None)
+    };
+    assert!(run(3).expect("service admits scalar image").is_empty());
+    let error = run(0).expect_err("scalar image requires a set node");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar cache unique images"
+    ));
+}
