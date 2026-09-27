@@ -319,7 +319,7 @@ fn typed_report_loss_and_prefixed_diagnostic_refuse_collection_limit() {
     source.push("repaired");
     let refusal = with_collection_limit(0, |ctx| {
         Diagnostics::new()
-            .append_prefixed_admitted(ctx, source, "object")
+            .append_prefixed_admitted(ctx, source, format_args!("object"))
             .expect_err("prefixed diagnostic requires a collection slot")
     });
     assert!(matches!(
@@ -337,6 +337,30 @@ fn typed_report_loss_and_prefixed_diagnostic_refuse_collection_limit() {
     )
     .expect("service profile admits the typed loss");
     assert_eq!(losses[0].message, "override dropped");
+}
+
+#[test]
+fn curve_warning_tree_refuses_collection_limit() {
+    let mut warnings = Diagnostics::new();
+    warnings.push("curve repair");
+    let curve = crate::curves::DecodedCurve::leaf(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
+        warnings,
+    );
+    let error = with_collection_limit(0, |ctx| {
+        super::append_curve_warnings(ctx, &mut Diagnostics::new(), &curve, "source")
+            .expect_err("curve diagnostic requires a collection slot")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut report = Diagnostics::new();
+    super::append_curve_warnings(&ctx, &mut report, &curve, "source")
+        .expect("service profile admits the warning");
+    assert_eq!(report[0].message, "source: curve repair");
 }
 
 #[test]
@@ -2086,7 +2110,14 @@ fn class_report_preserves_nil_class_source_selection() {
 #[test]
 fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
     let mut staged = BrepDraft::default();
-    staged.mesh_cache_slot_dropped("render", 2, &"payload is truncated");
+    staged
+        .mesh_cache_slot_dropped(
+            &cadmpeg_test_support::service_decode_context(),
+            "render",
+            2,
+            &"payload is truncated",
+        )
+        .expect("service profile admits cache warning");
     assert_eq!(
         staged
             .warnings

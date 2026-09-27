@@ -74,14 +74,6 @@ impl Diagnostics {
         });
     }
 
-    /// Records a diagnostic whose category the producer knows.
-    pub(crate) fn push_coded(&mut self, code: RhinoLossCode, message: impl Into<String>) {
-        self.0.push(RhinoDiagnostic {
-            code: Some(code),
-            message: message.into(),
-        });
-    }
-
     pub(crate) fn messages(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|entry| entry.message.as_str())
     }
@@ -93,10 +85,6 @@ impl Diagnostics {
 
     pub(crate) fn truncate(&mut self, len: usize) {
         self.0.truncate(len);
-    }
-
-    pub(crate) fn append(&mut self, other: &mut Self) {
-        self.0.append(&mut other.0);
     }
 
     /// Moves admitted diagnostics into a second report collection.
@@ -120,7 +108,7 @@ impl Diagnostics {
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: Self,
-        prefix: &str,
+        prefix: std::fmt::Arguments<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         for diagnostic in other {
             self.push_coded_admitted(
@@ -157,18 +145,6 @@ impl Diagnostics {
         Ok(())
     }
 
-    /// Rewrites every message through `map`, keeping each code.
-    pub(crate) fn map_messages(self, map: impl Fn(String) -> String) -> Self {
-        Self(
-            self.0
-                .into_iter()
-                .map(|entry| RhinoDiagnostic {
-                    code: entry.code,
-                    message: map(entry.message),
-                })
-                .collect(),
-        )
-    }
 }
 
 impl std::ops::Deref for Diagnostics {
