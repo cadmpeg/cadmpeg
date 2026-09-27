@@ -40,7 +40,7 @@ pub(crate) fn standard_edge_rows(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows))
+    Ok(parse_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _)| rows))
 }
 
 fn standard_edge_port_identities_with_namespace(
@@ -52,64 +52,98 @@ fn standard_edge_port_identities_with_namespace(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
+    let Some((edge_rows, scopes, _, _)) =
+        parse_standard_edge_tables_scoped(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
     let mut identity_by_handle = HashMap::new();
     let mut next_identity = 0u32;
-    Ok(edge_rows
-        .iter()
-        .zip(scopes)
-        .map(|(row, scope)| {
-            row.handles.first().zip(row.handles.last())?;
-            if !global && row.boundary_layout != EdgeBoundaryLayout::CompleteBoundaryRun {
-                let start = next_identity;
-                next_identity = next_identity.checked_add(2)?;
-                return Some([start, start.checked_add(1)?]);
-            }
+    let mut pairs = Vec::new();
+    for (row, scope) in edge_rows.iter().zip(scopes) {
+        let (Some(&first), Some(&last)) = (row.handles.first(), row.handles.last()) else {
+            return Ok(None);
+        };
+        let pair = if !global && row.boundary_layout != EdgeBoundaryLayout::CompleteBoundaryRun {
+            let start = next_identity;
+            let Some(next) = next_identity.checked_add(2) else {
+                return Ok(None);
+            };
+            next_identity = next;
+            let Some(end) = start.checked_add(1) else {
+                return Ok(None);
+            };
+            [start, end]
+        } else {
             let mut pair = [0; 2];
-            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                .into_iter()
-                .enumerate()
-            {
+            for (port, handle) in [first, last].into_iter().enumerate() {
                 let key = (if global { 0 } else { scope }, handle);
                 let identity = if let Some(identity) = identity_by_handle.get(&key) {
                     *identity
                 } else {
                     let identity = next_identity;
-                    next_identity = next_identity.checked_add(1)?;
-                    identity_by_handle.insert(key, identity);
+                    let Some(next) = next_identity.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    next_identity = next;
+                    crate::resource::insert_map(
+                        ctx,
+                        &mut identity_by_handle,
+                        key,
+                        identity,
+                        "catia_standard_port_handle_ids",
+                    )?;
                     identity
                 };
                 pair[port] = identity;
             }
-            Some(pair)
-        })
-        .collect())
+            pair
+        };
+        crate::resource::push(ctx, &mut pairs, pair, "catia_standard_port_pairs")?;
+    }
+    Ok(Some(pairs))
 }
 
-fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
-    let face_run = largest_fbb_run(bytes)?;
+fn fbb_edge_port_identities_with_namespace(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    global: bool,
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)? else {
+        return Ok(None);
+    };
     let mut identity_by_handle = HashMap::new();
-    edge_rows
-        .iter()
-        .zip(scopes)
-        .map(|(row, scope)| {
-            let mut pair = [0; 2];
-            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
-                .into_iter()
-                .enumerate()
-            {
-                let next = u32::try_from(identity_by_handle.len()).ok()?;
-                let key = (if global { 0 } else { scope }, handle);
-                pair[port] = *identity_by_handle.entry(key).or_insert(next);
-            }
-            Some(pair)
-        })
-        .collect()
+    let mut pairs = Vec::new();
+    for (row, scope) in edge_rows.iter().zip(scopes) {
+        let (Some(&first), Some(&last)) = (row.handles.first(), row.handles.last()) else {
+            return Ok(None);
+        };
+        let mut pair = [0; 2];
+        for (port, handle) in [first, last].into_iter().enumerate() {
+            let Some(next) = u32::try_from(identity_by_handle.len()).ok() else {
+                return Ok(None);
+            };
+            let key = (if global { 0 } else { scope }, handle);
+            pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
+                identity
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut identity_by_handle,
+                    key,
+                    next,
+                    "catia_fbb_port_handle_ids",
+                )?;
+                next
+            };
+        }
+        crate::resource::push(ctx, &mut pairs, pair, "catia_fbb_port_pairs")?;
+    }
+    Ok(Some(pairs))
 }
 
 const INDEXED_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
@@ -286,8 +320,11 @@ fn standard_edge_port_identities(
     standard_edge_port_identities_with_namespace(ctx, bytes, false)
 }
 
-fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    fbb_edge_port_identities_with_namespace(bytes, false)
+fn fbb_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    fbb_edge_port_identities_with_namespace(ctx, bytes, false)
 }
 
 fn standard_global_edge_port_identities(
@@ -297,8 +334,11 @@ fn standard_global_edge_port_identities(
     standard_edge_port_identities_with_namespace(ctx, bytes, true)
 }
 
-pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    fbb_edge_port_identities_with_namespace(bytes, true)
+pub(crate) fn fbb_global_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    fbb_edge_port_identities_with_namespace(ctx, bytes, true)
 }
 
 /// Select conservative endpoint identities for the bounded topology solver.
@@ -306,7 +346,11 @@ pub(crate) fn edge_port_identities(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    Ok(standard_edge_port_identities(ctx, bytes)?.or_else(|| fbb_edge_port_identities(bytes)))
+    if let Some(identities) = standard_edge_port_identities(ctx, bytes)? {
+        Ok(Some(identities))
+    } else {
+        fbb_edge_port_identities(ctx, bytes)
+    }
 }
 
 /// Select endpoint identities from every row's terminal handles in the
@@ -315,8 +359,11 @@ fn global_edge_port_identities(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    Ok(standard_global_edge_port_identities(ctx, bytes)?
-        .or_else(|| fbb_global_edge_port_identities(bytes)))
+    if let Some(identities) = standard_global_edge_port_identities(ctx, bytes)? {
+        Ok(Some(identities))
+    } else {
+        fbb_global_edge_port_identities(ctx, bytes)
+    }
 }
 
 pub(super) fn solver_ports(
@@ -779,14 +826,14 @@ fn standard_mesh_analysis(
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, handle_width, fixed_complete_row_spans)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)
-            .map(|(rows, _, width)| (rows, width, false))
-            .or_else(|| {
-                parse_fbb_edge_tables(bytes, after_faces)
-                    .map(|(rows, _, _, width)| (rows, width, true))
-            })
-    else {
+    let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
+    let parsed = if let Some((rows, _, width)) = standard {
+        Some((rows, width, false))
+    } else {
+        parse_fbb_edge_tables(ctx, bytes, after_faces)?
+            .map(|(rows, _, _, width)| (rows, width, true))
+    };
+    let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
@@ -938,12 +985,13 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, handle_width)) = parse_standard_edge_tables_with_width(bytes, after_faces)
-        .map(|(rows, _, width)| (rows, width))
-        .or_else(|| {
-            parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
-        })
-    else {
+    let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
+    let parsed = if let Some((rows, _, width)) = standard {
+        Some((rows, width))
+    } else {
+        parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, width)| (rows, width))
+    };
+    let Some((edge_rows, handle_width)) = parsed else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
@@ -3131,10 +3179,10 @@ fn parse_standard_mesh_selection(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     let Some(assignments) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)?
@@ -3313,10 +3361,10 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+    let Some((_, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     let point_count = vertex_points.len();

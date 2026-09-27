@@ -223,8 +223,25 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
 #[test]
 fn counted_edge_arities_are_bounded_by_remaining_bytes() {
     let oversized_row = [0x01, 0x01, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff];
-    assert!(parse_edge_tables_scoped_at(&oversized_row, 0).is_none());
-    assert!(parse_fbb_edge_tables_width(&oversized_row, 0, 3).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_scoped_at(
+            ctx,
+            &oversized_row,
+            0
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(
+            ctx,
+            &oversized_row,
+            0,
+            3
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -237,8 +254,18 @@ fn fbb_edge_width_requires_a_complete_counted_vertex_table() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0x01]);
 
-    assert!(parse_fbb_edge_tables_width(&bytes, 0, 3).is_some());
-    assert!(parse_fbb_edge_tables(&bytes, 0).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(
+            ctx, &bytes, 0, 3
+        ))
+        .expect("service resource budget")
+        .is_some()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]

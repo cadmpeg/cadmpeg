@@ -10225,10 +10225,10 @@ pub(super) fn parse_standard_mesh_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != edge_candidates.len() {
@@ -11162,10 +11162,11 @@ where
             };
             let face_count = face_run.face_count();
             let after_faces = face_run.after_faces();
-            let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+            let Some((edge_rows, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)?
+            else {
                 return Ok(None);
             };
-            let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+            let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
                 return Ok(None);
             };
             let boundary_context = StandardMeshBoundaryContext::parse_ports(

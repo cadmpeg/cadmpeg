@@ -1361,7 +1361,7 @@ fn identify_fbb_variant(
     if crate::families::standard::fbb::standard_edge_count(ctx, brep)?.is_some() {
         return Ok(Variant::StandardNested);
     }
-    if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
+    if crate::families::standard::fbb::fbb_only_edge_count(ctx, brep)?.is_some() {
         return Ok(Variant::FbbOnly);
     }
     if census.edge_delimiters == 0 && census.vertex_markers > 0 {

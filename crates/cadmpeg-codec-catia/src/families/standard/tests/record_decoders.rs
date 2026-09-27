@@ -394,7 +394,8 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
-    let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&bytes)
+    let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&ctx, &bytes)
+        .expect("service resource budget")
         .expect("global FBB handle ports");
     assert_eq!(table_ports[0][1], table_ports[1][0]);
     assert_eq!(table_ports[1][1], table_ports[2][0]);
@@ -467,11 +468,13 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
         .expect("fixture fits the input limit");
     let bytes = fbb_only_quad_topology_stream();
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&bytes),
+        crate::families::standard::fbb::fbb_only_edge_count(&ctx, &bytes)
+            .expect("service resource budget"),
         Some(4)
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_vertex_points(&bytes)
+        crate::families::standard::fbb::fbb_only_vertex_points(&ctx, &bytes)
+            .expect("service resource budget")
             .expect("counted FBB-only vertices")
             .len(),
         4

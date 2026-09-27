@@ -211,7 +211,10 @@ fn standard_edge_row_arity_uses_widened_count_form() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("widened row arity");
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("widened row arity");
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].handles, vec![10, 11]);
     assert_eq!(rows[1].handles, vec![20, 21]);
@@ -228,7 +231,10 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
     bytes.extend_from_slice(&EDGE_DELIMITER);
     bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("u8 edge rows");
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("u8 edge rows");
     assert_eq!(rows[0].handles, [2, 0]);
     assert_eq!(rows[1].handles, [0, 1]);
     assert!(rows
@@ -582,11 +588,16 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
         .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        let layout = fbb_population_layouts(&bytes)
-            .into_iter()
-            .find(|layout| layout.face_run == *group)
-            .expect("matching population layout");
-        let spine = population_spine(&bytes, &layout).expect("complete population spine");
+        let layout =
+            crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+                .expect("service resource budget")
+                .into_iter()
+                .find(|layout| layout.face_run == *group)
+                .expect("matching population layout");
+        let spine =
+            crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, &layout))
+                .expect("service resource budget")
+                .expect("complete population spine");
         let topology = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, spine)
         })
@@ -612,7 +623,9 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
     bytes.push(0);
     bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
 
-    let layouts = fbb_population_layouts(&bytes);
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     assert_eq!(layouts.len(), 2);
     assert!(layouts.iter().all(|layout| {
         layout.face_run.face_count() == 1 && layout.edge_count == 4 && layout.vertex_count == 4
@@ -622,13 +635,20 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
 #[test]
 fn fbb_population_spine_retains_the_preceding_trim_chain() {
     let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-    let layouts = fbb_population_layouts(&bytes);
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     let [layout] = layouts.as_slice() else {
         panic!("one source-closed FBB population");
     };
 
-    let spine = population_spine(&bytes, layout).expect("isolated FBB spine");
-    let isolated_layouts = fbb_population_layouts(spine);
+    let spine =
+        crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, layout))
+            .expect("service resource budget")
+            .expect("isolated FBB spine");
+    let isolated_layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, spine))
+            .expect("service resource budget");
     let [isolated] = isolated_layouts.as_slice() else {
         panic!("isolated spine remains source-closed");
     };

@@ -1409,11 +1409,11 @@ pub(crate) fn parse_fbb(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((mut edge_rows, _, vertex_header, handle_width)) =
-        parse_fbb_edge_tables(bytes, after_faces)
+        parse_fbb_edge_tables(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
