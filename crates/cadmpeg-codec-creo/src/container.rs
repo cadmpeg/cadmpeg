@@ -1583,7 +1583,14 @@ fn two_chart_pcurves(
     )?;
     let mut counts = BTreeMap::new();
     for record in &records {
-        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+        let count = match counts.entry(record.curve_id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo two-chart pcurve counts")?;
+                entry.insert(0usize)
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
+        *count += 1;
     }
     records.retain(|record| counts.get(&record.curve_id) == Some(&1));
     Ok(records)
