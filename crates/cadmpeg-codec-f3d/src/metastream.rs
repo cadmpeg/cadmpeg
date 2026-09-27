@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared Fusion `MetaStream` segment framing.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_filtered, lp_utf16_bounded};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_strict_charged, lp_utf16_bounded_charged};
 use crate::records::entity_header::SegmentType;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
@@ -121,19 +121,49 @@ fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
     Some(())
 }
 
-fn take_record_index(bytes: &[u8], at: &mut usize) -> Option<Vec<RecordIndexEntry>> {
-    let count = View::u32_le_at(bytes, *at)?;
-    let records_at = at.checked_add(4)?;
+fn take_record_index(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<Vec<RecordIndexEntry>>, CodecError> {
+    let Some(count) = View::u32_le_at(bytes, *at) else {
+        return Ok(None);
+    };
+    let Some(records_at) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Ok(count_usize) = usize::try_from(count) else {
+        return Ok(None);
+    };
+    let Some(records_end) = count_usize
+        .checked_mul(16)
+        .and_then(|size| records_at.checked_add(size))
+    else {
+        return Ok(None);
+    };
+    if bytes.get(records_at..records_end).is_none() {
+        return Ok(None);
+    }
+    ctx.charge_collection_items(u64::from(count), "parse F3D MetaStream record index")?;
+    let mut records = Vec::new();
+    records
+        .try_reserve_exact(count_usize)
+        .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream record index", 0, u64::from(count)))?;
     let mut view = View::over_retained(bytes);
-    view.seek(records_at)?;
-    let records = view.read_counted(u64::from(count), 16, |view| {
-        Some(RecordIndexEntry {
-            entity_id: view.u64_le()?,
-            bulk_offset: view.u64_le()?,
-        })
-    })?;
+    if view.seek(records_at).is_none() {
+        return Ok(None);
+    }
+    for _ in 0..count {
+        let Some(entity_id) = view.u64_le() else {
+            return Ok(None);
+        };
+        let Some(bulk_offset) = view.u64_le() else {
+            return Ok(None);
+        };
+        records.push(RecordIndexEntry { entity_id, bulk_offset });
+    }
     *at = view.position();
-    Some(records)
+    Ok(Some(records))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,16 +172,44 @@ struct ParseFailure {
     offset: usize,
 }
 
+enum ParseIssue {
+    Malformed(ParseFailure),
+    Resource(CodecError),
+}
+
+impl From<ParseFailure> for ParseIssue {
+    fn from(value: ParseFailure) -> Self {
+        Self::Malformed(value)
+    }
+}
+
+impl From<CodecError> for ParseIssue {
+    fn from(value: CodecError) -> Self {
+        Self::Resource(value)
+    }
+}
+
+fn lp_graphic_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: std::ops::RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    Ok(lp_ascii_strict_charged(ctx, bytes, at, bounds)?
+        .filter(|(value, _)| value.as_bytes().iter().all(u8::is_ascii_graphic)))
+}
+
 fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T, ParseFailure> {
     value.ok_or(ParseFailure { field, offset })
 }
 
 fn take_version_guid(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: &mut usize,
     field: &'static str,
     allow_zero_prefix: bool,
-) -> Result<(), ParseFailure> {
+) -> Result<(), ParseIssue> {
     let initial = *at;
     for prefix_len in [0, 4] {
         if prefix_len != 0 && (!allow_zero_prefix || View::u32_le_at(bytes, initial) != Some(0)) {
@@ -160,7 +218,7 @@ fn take_version_guid(
         let Some(guid_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((guid, next)) = lp_utf16_bounded(bytes, guid_at, 36..=36) else {
+        let Some((guid, next)) = lp_utf16_bounded_charged(ctx, bytes, guid_at, 36..=36)? else {
             continue;
         };
         if is_guid_hyphenated(&guid) {
@@ -171,10 +229,10 @@ fn take_version_guid(
     Err(ParseFailure {
         field,
         offset: initial,
-    })
+    }.into())
 }
 
-fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
+fn take_version_urn(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
     let initial = *at;
     for prefix_len in [0, 4] {
         if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
@@ -183,7 +241,7 @@ fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
         let Some(urn_at) = initial.checked_add(prefix_len) else {
             continue;
         };
-        let Some((urn, next)) = lp_utf16_bounded(bytes, urn_at, 1..=1024) else {
+        let Some((urn, next)) = lp_utf16_bounded_charged(ctx, bytes, urn_at, 1..=1024)? else {
             continue;
         };
         let urn = urn.as_bytes();
@@ -198,10 +256,10 @@ fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     Err(ParseFailure {
         field: "version-context version URN",
         offset: initial,
-    })
+    }.into())
 }
 
-fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
+fn take_version_context(ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize) -> Result<(), ParseIssue> {
     let count_at = *at;
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
     *at = require(at.checked_add(4), "version-context count", *at)?;
@@ -209,51 +267,59 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
         return Err(ParseFailure {
             field: "version-context count",
             offset: count_at,
-        });
+        }.into());
     }
     for _ in 0..count {
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
         require(bytes.get(*at..token_end), "version-context token", *at)?;
         *at = token_end;
-        take_version_guid(bytes, at, "version-context asset GUID", true)?;
+        take_version_guid(ctx, bytes, at, "version-context asset GUID", true)?;
 
         // Legacy full contexts omit the separate revision GUID and place the
         // version URN directly after the asset GUID.
         let legacy_full_at = *at;
-        if take_version_urn(bytes, at).is_ok() {
-            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
+        if match take_version_urn(ctx, bytes, at) {
+            Ok(()) => true,
+            Err(ParseIssue::Malformed(_)) => false,
+            Err(error) => return Err(error),
+        } {
+            take_version_guid(ctx, bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             continue;
         }
         *at = legacy_full_at;
-        take_version_guid(bytes, at, "version-context revision GUID", true)?;
+        take_version_guid(ctx, bytes, at, "version-context revision GUID", true)?;
 
         let full_at = *at;
-        let full: Result<(), ParseFailure> = (|| {
-            take_version_urn(bytes, at)?;
-            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
+        let full: Result<(), ParseIssue> = (|| {
+            take_version_urn(ctx, bytes, at)?;
+            take_version_guid(ctx, bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
         })();
-        if full.is_err() {
-            *at = full_at;
-            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
-            *at = require(at.checked_add(4), "version-context revision", *at)?;
+        match full {
+            Ok(()) => {}
+            Err(ParseIssue::Malformed(_)) => {
+                *at = full_at;
+                require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+                *at = require(at.checked_add(4), "version-context revision", *at)?;
+            }
+            Err(error) => return Err(error),
         }
     }
     Ok(())
 }
 
-fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
+fn parse_segment_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(u32, usize), ParseIssue> {
     let (_, at) = require(
-        lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic),
+        lp_graphic_charged(ctx, bytes, 0, 1..=256)?,
         "short segment type name",
         0,
     )?;
     let at = require(at.checked_add(4), "segment id", at)?;
-    let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
+    let (_, at) = require(lp_utf16_bounded_charged(ctx, bytes, at, 0..=256)?, "asset GUID", at)?;
     let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
         at.checked_add(if magic == MODERN_SERIALIZER_MAGIC {
@@ -272,32 +338,69 @@ fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
     Ok((magic, at))
 }
 
-fn parse_error(failure: ParseFailure, stream: &str) -> CodecError {
-    CodecError::malformed(format_args!(
+fn parse_error(
+    ctx: &DecodeContext<'_>,
+    issue: ParseIssue,
+    stream: &str,
+) -> CodecError {
+    let failure = match issue {
+        ParseIssue::Malformed(failure) => failure,
+        ParseIssue::Resource(error) => return error,
+    };
+    struct Length(usize);
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let args = format_args!(
         "invalid F3D MetaStream {} at byte {}: {stream}",
         failure.field, failure.offset
-    ))
+    );
+    let mut length = Length(0);
+    if std::fmt::write(&mut length, args).is_err() {
+        return ctx.refuse_codec_limit("report F3D MetaStream parse error", 0, u64::MAX);
+    }
+    let Ok(bytes) = u64::try_from(length.0) else {
+        return ctx.refuse_codec_limit("report F3D MetaStream parse error", 0, u64::MAX);
+    };
+    if let Err(error) = ctx.charge_retained(bytes, "report F3D MetaStream parse error") {
+        return error;
+    }
+    let mut text = String::new();
+    if text.try_reserve(length.0).is_err() {
+        return ctx.refuse_codec_limit("report F3D MetaStream parse error", 0, bytes);
+    }
+    if std::fmt::write(&mut text, args).is_err() {
+        return ctx.refuse_codec_limit("report F3D MetaStream parse error", 0, bytes);
+    }
+    CodecError::Malformed(text)
 }
 
 /// Read the serializer magic from a `MetaStream` header.
-pub(crate) fn serializer_magic(bytes: &[u8], stream: &str) -> Result<u32, CodecError> {
-    parse_segment_header(bytes)
+pub(crate) fn serializer_magic(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+) -> Result<u32, CodecError> {
+    parse_segment_header(ctx, bytes)
         .map(|(magic, _)| magic)
-        .map_err(|failure| parse_error(failure, stream))
+        .map_err(|issue| parse_error(ctx, issue, stream))
 }
 
-fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
+fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, ParseIssue> {
     // Header: short segment type name, segment id, asset GUID, serializer
     // magic and its magic-gated integer group, full segment type name, add-in
     // name, and the segment type code.
-    let (_, at) = parse_segment_header(bytes)?;
+    let (_, at) = parse_segment_header(ctx, bytes)?;
     let (_, at) = require(
-        lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic),
+        lp_graphic_charged(ctx, bytes, at, 1..=256)?,
         "full segment type name",
         at,
     )?;
     let (_, at) = require(
-        lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
+        lp_graphic_charged(ctx, bytes, at, 0..=256)?,
         "add-in name",
         at,
     )?;
@@ -306,12 +409,19 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 
     let count = require(View::u32_le_at(bytes, at), "type count", at)?;
     at = require(at.checked_add(4), "type count", at)?;
+    ctx.charge_collection_items(u64::from(count), "parse F3D MetaStream types")?;
     let mut types = Vec::new();
+    let count_usize = usize::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count))
+    })?;
+    types.try_reserve_exact(count_usize).map_err(|_| {
+        ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count))
+    })?;
     for _ in 0..count {
         let entry_at = at;
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
-            lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
+            lp_graphic_charged(ctx, bytes, at, 1..=256)?.and_then(|(guid, next)| {
                 crate::records::mesh::DesignRelaxedGuidText::try_from(guid)
                     .ok()
                     .map(|guid| (guid, next))
@@ -322,7 +432,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         at = next;
         let base_type_guid_offset = require(at.checked_add(4), "base type GUID", at)?;
         let (base_type_guid, next) = require(
-            lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
+            lp_graphic_charged(ctx, bytes, at, 0..=256)?.and_then(|(guid, next)| {
                 if guid.is_empty() {
                     Some((None, next))
                 } else {
@@ -339,7 +449,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         let version = require(View::u32_le_at(bytes, at), "type version", at)?;
         at = require(at.checked_add(4), "type version", at)?;
         let (module, next) = require(
-            lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
+            lp_graphic_charged(ctx, bytes, at, 0..=256)?,
             "type module",
             at,
         )?;
@@ -362,13 +472,38 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             ids_at,
         )?;
         require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
+        let id_count_u64 = u64::try_from(id_count).map_err(|_| {
+                ctx.refuse_codec_limit("parse F3D MetaStream type entity ids", 0, u64::MAX)
+            })?;
+        ctx.charge_collection_items(
+            id_count_u64,
+            "parse F3D MetaStream type entity ids",
+        )?;
+        let mut entity_rows = Vec::new();
+        entity_rows.try_reserve_exact(id_count).map_err(|_| {
+            ctx.refuse_codec_limit("parse F3D MetaStream type entity ids", 0, id_count_u64)
+        })?;
         let mut id_view = View::over_retained(bytes);
         require(id_view.seek(ids_at), "type entity ids", ids_at)?;
-        let entity_ids = require(
-            id_view.read_counted(id_count as u64, 8, View::u64_le),
-            "type entity ids",
-            ids_at,
-        )?;
+        for index in 0..id_count {
+            let value = require(id_view.u64_le(), "type entity ids", id_view.position())?;
+            let offset = ids_at
+                .checked_add(index.checked_mul(8).ok_or(ParseFailure {
+                    field: "type entity ids",
+                    offset: ids_at,
+                })?)
+                .ok_or(ParseFailure {
+                    field: "type entity ids",
+                    offset: ids_at,
+                })?;
+            entity_rows.push(crate::records::identity::Located {
+                value,
+                offset: u64::try_from(offset).map_err(|_| ParseFailure {
+                    field: "type entity ids",
+                    offset: ids_at,
+                })?,
+            });
+        }
         at = ids_end;
         types.push(SegmentType {
             id: String::new(),
@@ -385,20 +520,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             version,
             version_offset: version_offset as u64,
             module,
-            entities: if entity_ids.is_empty() {
-                crate::records::identity::ReferenceRun::unlocated(entity_ids)
-            } else {
-                crate::records::identity::ReferenceRun::located(
-                    entity_ids
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, value)| crate::records::identity::Located {
-                            value,
-                            offset: (ids_at + index * 8) as u64,
-                        })
-                        .collect(),
-                )
-            },
+            entities: crate::records::identity::ReferenceRun::located(entity_rows),
         });
     }
 
@@ -411,13 +533,13 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     )?;
     let primary_index_at = at;
     let records = require(
-        take_record_index(bytes, &mut at),
+        take_record_index(ctx, bytes, &mut at)?,
         "primary record index",
         primary_index_at,
     )?;
     let secondary_index_at = at;
     let secondary_records = require(
-        take_record_index(bytes, &mut at),
+        take_record_index(ctx, bytes, &mut at)?,
         "secondary record index",
         secondary_index_at,
     )?;
@@ -430,13 +552,13 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         at += 8;
     }
     if at < bytes.len() {
-        take_version_context(bytes, &mut at)?;
+        take_version_context(ctx, bytes, &mut at)?;
         if at < bytes.len() {
             let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
             at = require(at.checked_add(4), "property count", at)?;
             for _ in 0..properties {
                 let (_, next) = require(
-                    lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
+                    lp_graphic_charged(ctx, bytes, at, 0..=256)?,
                     "property name",
                     at,
                 )?;
@@ -449,7 +571,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         return Err(ParseFailure {
             field: "trailing bytes",
             offset: at,
-        });
+        }.into());
     }
     Ok(MetaStream {
         types,
@@ -459,15 +581,143 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 }
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
-pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
-    parse_inner(bytes).map_err(|failure| parse_error(failure, stream))
+pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+) -> Result<MetaStream, CodecError> {
+    parse_inner(ctx, bytes).map_err(|issue| parse_error(ctx, issue, stream))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
-    use crate::test_support::streams_test::design_metastream;
+    use super::{primary_record_frames, MetaStream, RecordIndexEntry};
+    use crate::test_support::streams_test::{design_metastream, design_metastream_with_records};
     use crate::test_support::{lp_ascii, lp_utf16};
+
+    fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, cadmpeg_core::CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+        super::parse(&ctx, bytes, stream)
+    }
+
+    fn parse_with_limits(
+        bytes: &[u8],
+        collection_items: u64,
+        retained_bytes: u64,
+    ) -> Result<MetaStream, cadmpeg_core::CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = collection_items;
+        policy.limits.max_retained_bytes = retained_bytes;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+        super::parse(&ctx, bytes, "limited MetaStream")
+    }
+
+    fn refused(bytes: &[u8], collection_items: u64, retained_bytes: u64) -> cadmpeg_core::CodecError {
+        match parse_with_limits(bytes, collection_items, retained_bytes) {
+            Err(error) => error,
+            Ok(_) => panic!("MetaStream limit must refuse this input"),
+        }
+    }
+
+    #[test]
+    fn metastream_type_rows_refuse_collection_limit() {
+        let bytes = design_metastream(&[(
+            "11111111-2222-3333-4444-555555555555",
+            "",
+            1,
+            "Fusion",
+            &[],
+        )]);
+        let error = refused(&bytes, 0, u64::MAX);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream types"));
+    }
+
+    #[test]
+    fn metastream_type_entity_rows_refuse_collection_limit() {
+        let bytes = design_metastream(&[(
+            "11111111-2222-3333-4444-555555555555",
+            "",
+            1,
+            "Fusion",
+            &[7],
+        )]);
+        let error = refused(&bytes, 1, u64::MAX);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream type entity ids"));
+    }
+
+    #[test]
+    fn metastream_record_index_refuses_collection_limit() {
+        let bytes = design_metastream_with_records(&[], &[(7, 0)]);
+        let error = refused(&bytes, 0, u64::MAX);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream record index"));
+    }
+
+    #[test]
+    fn metastream_secondary_index_refuses_collection_limit() {
+        let mut bytes = design_metastream(&[]);
+        let secondary_count_at = bytes.len() - 20;
+        bytes[secondary_count_at..secondary_count_at + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        let mut secondary = Vec::new();
+        secondary.extend_from_slice(&7u64.to_le_bytes());
+        secondary.extend_from_slice(&4u64.to_le_bytes());
+        bytes.splice(secondary_count_at + 4..secondary_count_at + 4, secondary);
+        let error = refused(&bytes, 0, u64::MAX);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D MetaStream record index"));
+    }
+
+    #[test]
+    fn metastream_header_text_refuses_retained_limit() {
+        let bytes = design_metastream(&[]);
+        let error = refused(&bytes, u64::MAX, 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D ASCII string"));
+    }
+
+    #[test]
+    fn metastream_header_guid_refuses_retained_limit() {
+        let bytes = design_metastream(&[]);
+        let error = refused(&bytes, u64::MAX, "Design".len() as u64);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-16 string"));
+    }
+
+    #[test]
+    fn metastream_malformed_text_refuses_retained_limit() {
+        let error = refused(&[], u64::MAX, 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "report F3D MetaStream parse error"));
+    }
+
+    #[test]
+    fn metastream_version_urn_refusal_survives_legacy_fallback() {
+        let mut bytes = stream_prefix();
+        bytes.extend_from_slice(&15u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
+        lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+        lp_utf16(&mut bytes, "urn:synthetic:version:2");
+        lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        let retained_before_urn = (
+            "ACT".len()
+                + "00000000-0000-0000-0000-000000000000".len()
+                + "FusionACTSegmentType".len()
+                + "Fusion".len()
+                + "11111111-2222-3333-4444-555555555555".len()
+        ) as u64;
+        let error = refused(&bytes, u64::MAX, retained_before_urn);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D UTF-16 string"));
+    }
 
     fn stream_prefix() -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -681,8 +931,6 @@ mod tests {
     }
     #[test]
     fn design_type_table_attributes_each_entry_to_its_own_type() {
-        use crate::metastream::parse;
-
         let first = "11111111-1111-1111-1111-111111111111";
         let second = "22222222-2222-2222-2222-222222222222";
         let third = "33333333-3333-3333-3333-333333333333";

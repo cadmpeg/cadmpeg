@@ -103,6 +103,7 @@ impl IndexedRecordOffsets {
 /// stream interval even though its generic reference table does not repeat
 /// the entity suffix.
 pub(crate) fn decode_sketch_placements(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
@@ -120,7 +121,7 @@ pub(crate) fn decode_sketch_placements(
             ids::native_scope(&entry.name),
             IndexedRecordOffsets::build(bytes),
         );
-        let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(metadata) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
@@ -940,12 +941,13 @@ fn parse_legacy_sketch_container_members(
 /// sketch-typed entities, the trailing reference-list header. Headers occur in
 /// the fixed layout or in the `EntityGenesis` layout.
 pub(crate) fn decode_entity_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     // Entity ids are unique per Design stream, not archive-wide.
     let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
-    let types = decode_types(scan)?;
+    let types = decode_types(ctx, scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
     for design_type in types {
         if let Some(stream) = native_stream(&design_type.id) {
@@ -1175,6 +1177,7 @@ fn decode_headers_for_indices(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub(crate) fn decode_sketch_relations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
@@ -1182,7 +1185,7 @@ pub(crate) fn decode_sketch_relations(
     // A record carries no class identity of its own: its class tag selects an
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
-    let types = decode_types(scan)?;
+    let types = decode_types(ctx, scan)?;
     for entry in scan
         .entries
         .iter()
@@ -1497,8 +1500,11 @@ fn decode_sketch_points_from_stream(
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+pub(crate) fn decode_sketch_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_streams(ctx, scan, decode_sketch_points_from_stream)
 }
 
 /// Read a class property block: a presence byte, and when it is `01`, a u32
@@ -1578,8 +1584,11 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_streams(ctx, scan, decode_sketch_texts_from_stream)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -2670,6 +2679,7 @@ fn decode_sketch_curve_identities_from_stream(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
@@ -2679,7 +2689,7 @@ pub(crate) fn decode_sketch_curve_identities(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         out.extend(decode_sketch_curve_identities_from_stream(
@@ -4143,6 +4153,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 }
 
 fn decode_sketch_streams<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
@@ -4153,7 +4164,7 @@ fn decode_sketch_streams<T>(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         out.extend(decode(bytes, &meta, &entry.name)?);

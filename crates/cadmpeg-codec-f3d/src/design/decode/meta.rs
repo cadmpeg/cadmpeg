@@ -56,14 +56,17 @@ impl<'a> MetaStreamEntry<'a> {
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
-pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
+pub(crate) fn decode_types(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
         out.extend(meta.types.iter().cloned().map(|mut design_type| {
             design_type.id = ids::native_design_type_id(&entry.entry.name, design_type.byte_offset);
             design_type
@@ -100,6 +103,7 @@ fn insert_component_naming_space(
 
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
@@ -108,7 +112,7 @@ pub(crate) fn decode_component_naming_spaces(
         .iter()
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
-        let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
+        let meta = scan.parsed_metastream(ctx, &meta_entry.entry.name)?;
         let component_entities = meta
             .types
             .iter()
@@ -227,6 +231,7 @@ pub(crate) fn decode_component_naming_spaces(
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
 pub(crate) fn metadata_for_bulk_stream(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     bulk_entry_name: &str,
 ) -> Result<Option<crate::metastream::MetaStream>, CodecError> {
@@ -237,7 +242,7 @@ pub(crate) fn metadata_for_bulk_stream(
     if !scan.entries.iter().any(|entry| entry.name == meta_name) {
         return Ok(None);
     }
-    scan.parsed_metastream(&meta_name)
+    scan.parsed_metastream(ctx, &meta_name)
         .map(|meta| Some((*meta).clone()))
 }
 
@@ -654,6 +659,7 @@ pub(crate) fn decode_feature_timelines(
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = crate::metastream::parse(
+            ctx,
             scan.entry_bytes(&meta_entry.entry.name)?,
             &meta_entry.entry.name,
         )?;

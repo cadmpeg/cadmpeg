@@ -1381,6 +1381,7 @@ where
 }
 
 fn decode_mesh_design_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
@@ -1389,7 +1390,7 @@ fn decode_mesh_design_records(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+        let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
         let mut asset_for_filename = |filename: &str| {
@@ -1446,8 +1447,11 @@ fn resolve_mesh_body(
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, CodecError> {
-    let mut design_records = decode_mesh_design_records(scan)?;
+pub(crate) fn decode_mesh_bodies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<MeshDecode, CodecError> {
+    let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
     for entry in scan
         .entries

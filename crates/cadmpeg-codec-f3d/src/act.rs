@@ -263,7 +263,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Resul
                     entry.name
                 ))
             })?;
-        let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
+        let meta = crate::metastream::parse(ctx, scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let frames = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
         let table_frames = collect_charged(ctx, frames
             .iter()

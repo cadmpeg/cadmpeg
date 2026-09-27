@@ -1432,7 +1432,10 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     let bytes = zip.finish().unwrap().into_inner();
 
     with_scan(&bytes, |scan| {
-        let visibility = crate::design::decode::body::decode_all_body_visibility(scan).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let visibility = crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))
