@@ -104,6 +104,47 @@ fn feature_entity_surface_id_node_refuses_before_insertion() {
 }
 
 #[test]
+fn two_chart_pcurve_count_node_refuses_before_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let samples = [
+        0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d, 0x0d, 0x18, 0xe4, 0x0f,
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
+    payload.extend_from_slice(&[8, 0, 4, 0xf6, 1]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let section = super::Section::scan("body".to_string(), 0, payload.len(), None, &payload)
+        .expect("one bounded section");
+    let sections = [section];
+    let face_ids = BTreeSet::from([10, 11]);
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::two_chart_pcurves(&ctx, &sections, &face_ids)
+    };
+    assert_eq!(
+        run(4).expect("two rows and two count nodes admitted").len(),
+        2
+    );
+    let error = run(2).expect_err("count node follows two collected rows");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo two-chart pcurve counts"
+    ));
+}
+
+#[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
     assert_eq!(codec.detect(b"#UGC:2 P foo"), Confidence::High);
