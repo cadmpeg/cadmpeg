@@ -221,6 +221,24 @@ pub(crate) struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
+    pub(crate) fn admitted_loss_provenance(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::SourceProvenance, CodecError> {
+        let format = format_retained(ctx, format_args!("iges"), "iges loss source format")?;
+        let tag = format_retained(
+            ctx,
+            format_args!("directory_entry:D{}", self.sequence),
+            "iges loss directory tag",
+        )?;
+        Ok(cadmpeg_ir::SourceProvenance::in_stream(
+            format,
+            cadmpeg_ir::stream_name!("iges"),
+            self.source_offset,
+        )
+        .with_tag(tag))
+    }
+
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",

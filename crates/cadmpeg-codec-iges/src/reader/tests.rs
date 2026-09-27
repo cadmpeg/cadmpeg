@@ -20,6 +20,153 @@ use crate::test_support::test_curves_and_surfaces::{
 use crate::test_support::test_drawing_and_trimming::test_surface_domains::transform_chain_overflow_file;
 use crate::IgesCodec;
 
+fn directory_fixture() -> (
+    Vec<crate::directory::DirectoryEntry>,
+    crate::global::GlobalTable,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let table = global.global_table();
+    let (directory, _) = crate::directory::parse(&scan, table, Some(&ctx)).unwrap();
+    (directory, table)
+}
+
+#[test]
+fn reader_occurrence_loss_refuses_slot_and_message_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, _) = directory_fixture();
+    let sequence = directory[0].sequence;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut losses = Vec::new();
+    assert!(matches!(
+        super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
+            format_args!("loss"), sequence, &directory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges occurrence loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::push_occurrence_loss(&ctx, &mut losses, IgesLossCode::OccurrenceRootInferenceBlocked,
+            format_args!("loss"), sequence, &directory),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges occurrence loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::push_occurrence_loss(
+        &ctx,
+        &mut losses,
+        IgesLossCode::OccurrenceRootInferenceBlocked,
+        format_args!("loss"),
+        sequence,
+        &directory,
+    )
+    .unwrap();
+    assert_eq!(losses[0].message, "loss");
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn reader_generic_loss_refuses_slot_and_message_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, table) = directory_fixture();
+    let projection = crate::entities::geometry::Projection::default();
+    let attributed = std::collections::BTreeSet::new();
+    let mut losses = Vec::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges generic loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges generic loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::append_generic_losses(
+        &ctx,
+        &mut losses,
+        &directory,
+        &projection,
+        &attributed,
+        table,
+    )
+    .unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        IgesLossCode::EntityRetainedUnprojected.kind()
+    );
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("directory_entry:D1")
+    );
+}
+
+#[test]
+fn directory_loss_provenance_refuses_format_and_tag_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (directory, _) = directory_fixture();
+    for (cap, operation) in [
+        (0, "iges loss source format"),
+        (4, "iges loss directory tag"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            directory[0].admitted_loss_provenance(&ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        directory[0].admitted_loss_provenance(&ctx).unwrap(),
+        directory[0].loss_provenance()
+    );
+}
+
 #[test]
 fn source_fidelity_refuses_id_owner_and_record_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
