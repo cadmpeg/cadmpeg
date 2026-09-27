@@ -5955,29 +5955,47 @@ fn endpoint_relation_state_signature(
 /// A relation branch can only select pairs from this set, so coordinate
 /// infeasibility of the superset is a sound branch rejection.
 fn relation_coordinate_candidate_domains(
+    ctx: &DecodeContext<'_>,
     domains: &[Vec<MeshEndpointRelationChoice>],
     assigned: &[Option<[usize; 2]>],
     base_candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     if assigned.len() != base_candidates.len() {
-        return None;
+        return Ok(None);
     }
     let has_unconstrained_choice = domains
         .iter()
         .flatten()
         .any(|choice| choice.selection.is_unconstrained());
-    let mut candidates = base_candidates.to_vec();
-    let mut possible = (0..base_candidates.len())
-        .map(|_| Vec::<[usize; 2]>::new())
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut possible = Vec::new();
+    for base in base_candidates {
+        let copy =
+            crate::resource::copy_slice(ctx, base, "catia_relation_coordinate_candidate_pairs")?;
+        crate::resource::push(
+            ctx,
+            &mut candidates,
+            copy,
+            "catia_relation_coordinate_candidate_rows",
+        )?;
+        crate::resource::push(
+            ctx,
+            &mut possible,
+            Vec::<[usize; 2]>::new(),
+            "catia_relation_coordinate_possible_rows",
+        )?;
+    }
     if !has_unconstrained_choice {
         for choice in domains.iter().flatten() {
             for &(edge, pair) in choice.selection.edge_pairs() {
-                possible.get_mut(edge)?.push(pair);
+                let Some(row) = possible.get_mut(edge) else {
+                    return Ok(None);
+                };
+                crate::resource::push(ctx, row, pair, "catia_relation_coordinate_possible_pairs")?;
             }
         }
     }
-    for (edge, (assigned, base)) in assigned.iter().zip(base_candidates).enumerate() {
+    for (edge, assigned) in assigned.iter().enumerate() {
         if let Some(pair) = assigned {
             candidates[edge].retain(|candidate| same_unordered_pair(*candidate, *pair));
         } else if !has_unconstrained_choice && !possible[edge].is_empty() {
@@ -5986,14 +6004,12 @@ fn relation_coordinate_candidate_domains(
                     .iter()
                     .any(|possible| same_unordered_pair(*candidate, *possible))
             });
-        } else {
-            candidates[edge].clone_from(base);
         }
         if candidates[edge].is_empty() {
-            return None;
+            return Ok(None);
         }
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 #[derive(Clone)]
@@ -6568,10 +6584,12 @@ where
     {
         if !coordinate_budget.exhausted() {
             let Some(candidates) = relation_coordinate_candidate_domains(
+                ctx,
                 &domains,
                 &assigned,
                 coordinate_domains.edge_candidates(),
-            ) else {
+            )?
+            else {
                 return Ok(false);
             };
             if coordinate_domains
@@ -10753,6 +10771,7 @@ where
 
 #[test]
 fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
+    catia_test_context!(ctx);
     let base_candidates = vec![vec![[0, 1], [0, 2]], vec![[1, 2]]];
     let domains = vec![
         vec![MeshEndpointRelationChoice {
@@ -10772,7 +10791,8 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
     ];
     let assigned = vec![None, None];
     assert_eq!(
-        relation_coordinate_candidate_domains(&domains, &assigned, &base_candidates),
+        relation_coordinate_candidate_domains(&ctx, &domains, &assigned, &base_candidates)
+            .expect("service resource budget"),
         Some(vec![vec![[0, 1]], vec![[1, 2]]]),
     );
 
@@ -10781,15 +10801,62 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
         selection: MeshEndpointRelationSelection::Deferred,
     }]];
     assert_eq!(
-        relation_coordinate_candidate_domains(&unknown_domains, &assigned, &base_candidates),
+        relation_coordinate_candidate_domains(&ctx, &unknown_domains, &assigned, &base_candidates)
+            .expect("service resource budget"),
         Some(base_candidates.clone()),
     );
     assert!(relation_coordinate_candidate_domains(
+        &ctx,
         &domains,
         &[Some([2, 3]), None],
         &base_candidates,
     )
+    .expect("service resource budget")
     .is_none());
+
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            relation_coordinate_candidate_domains(ctx, &domains, &assigned, &base_candidates)
+        });
+        match result {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected relation coordinate candidates"),
+        }
+    }
+    for operation in [
+        "catia_relation_coordinate_candidate_pairs",
+        "catia_relation_coordinate_candidate_rows",
+        "catia_relation_coordinate_possible_rows",
+        "catia_relation_coordinate_possible_pairs",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn relation_coordinate_candidates_refuse_before_invalid_edge_result() {
+    let domains = [vec![MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(1, [0, 1])],
+        },
+    }]];
+    let run = |ctx: &DecodeContext<'_>| {
+        relation_coordinate_candidate_domains(ctx, &domains, &[None], &[vec![[0, 1]]])
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_relation_coordinate_candidate_pairs"
+    ));
 }
 
 #[test]
