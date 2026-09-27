@@ -1635,8 +1635,12 @@ fn bounded_nurbs_for_id(
             ) else {
                 return Ok(None);
             };
+            let mut knots = reserve_optional_vec(ctx, 4, "iges composite line knots")?;
+            knots.extend([0.0, 0.0, 1.0, 1.0]);
+            let mut points = reserve_optional_vec(ctx, 2, "iges composite line points")?;
+            points.extend([start, end]);
             Some((
-                NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false)?,
+                NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
                 [0.0, 1.0],
             ))
         }
@@ -2171,17 +2175,22 @@ fn project_with_type_130_policy(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"))?;
             continue;
         };
-        let Some(child_sequences) = (0..child_count)
-            .map(|index| {
-                record
-                    .integer(index + 2)
-                    .and_then(|value| u32::try_from(value).ok())
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut child_sequences = reserve_optional_vec(ctx, child_count, "iges composite child pointer slots")?;
+        let mut valid_child_pointers = true;
+        for index in 0..child_count {
+            let Some(sequence) = record
+                .integer(index + 2)
+                .and_then(|value| u32::try_from(value).ok())
+            else {
+                valid_child_pointers = false;
+                break;
+            };
+            child_sequences.push(sequence);
+        }
+        if !valid_child_pointers {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "child pointer list is invalid"))?;
             continue;
-        };
+        }
         let is_logical_connector = child_sequences.len() == 2
             && child_sequences.iter().all(|sequence| {
                 entries
