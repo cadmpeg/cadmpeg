@@ -47,6 +47,10 @@ pub(super) fn decode(
         ctx,
         "step_presentation_body_indices",
     )?;
+    let indices = PresentationIndices {
+        faces: &face_indices,
+        bodies: &body_indices,
+    };
     let entity_ids = EntityIds {
         edges: collect_borrowed_identity_set(ir.model.edges.iter().map(|item| item.id.as_str()), ctx, "step_presentation_edge_ids")?,
         vertices: collect_borrowed_identity_set(ir.model.vertices.iter().map(|item| item.id.as_str()), ctx, "step_presentation_vertex_ids")?,
@@ -197,8 +201,7 @@ pub(super) fn decode(
                 exchange,
                 topology,
                 &entity_ids,
-                &face_indices,
-                &body_indices,
+                indices,
                 &mut items,
                 ctx,
             )?;
@@ -215,28 +218,19 @@ pub(super) fn decode(
     let mut styles = Vec::new();
     for (&id, record) in exchange.records() {
         if styled_item_parts(record).is_some() {
-            push_presentation_vec(&mut styles, id, ctx, "step_presentation_style_ids")?;
+            let order = style_application_order(id, exchange, graph_limit, ctx)?;
+            push_presentation_vec(&mut styles, (id, order), ctx, "step_presentation_style_ids")?;
         }
     }
     let mut overridden_styles = BTreeSet::new();
-    for id in &styles {
+    for (id, _) in &styles {
         if let Some(overridden) = overridden_style(&exchange.records()[id]) {
             insert_presentation_set(&mut overridden_styles, overridden, ctx, "step_presentation_overridden_styles")?;
         }
     }
-    let mut ordered_styles = Vec::new();
-    for style_id in styles {
-        let order = style_application_order(style_id, exchange, graph_limit, ctx)?;
-        push_presentation_vec(
-            &mut ordered_styles,
-            (style_id, order),
-            ctx,
-            "step_presentation_style_order_items",
-        )?;
-    }
-    ordered_styles.sort_by_key(|(_, order)| *order);
+    styles.sort_by_key(|(_, order)| *order);
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
-    for (style_id, _) in ordered_styles {
+    for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             claim_presentation_typed(&mut typed, style_id, ctx)?;
             continue;
@@ -379,8 +373,7 @@ pub(super) fn decode(
                 exchange,
                 topology,
                 &entity_ids,
-                &face_indices,
-                &body_indices,
+                indices,
                 ctx,
             )?;
             if targets.is_empty() {
@@ -675,14 +668,13 @@ fn appearance_targets(
     exchange: &Exchange,
     topology: &TopologyData,
     entity_ids: &EntityIds<'_>,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
+    indices: PresentationIndices<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<AppearanceTarget>, CodecError> {
     let mut targets = Vec::new();
     if let Some(bodies) = topology.body_by_root.get(&id) {
         for body in bodies {
-            if body_indices.contains_key(body.as_str()) {
+            if indices.bodies.contains_key(body.as_str()) {
                 let body = clone_presentation_identity::<BodyId>(body.as_str(), ctx, "step_presentation_appearance_body_identity")?;
                 push_presentation_vec(&mut targets, AppearanceTarget::Body(body), ctx, "step_presentation_appearance_targets")?;
             }
@@ -691,7 +683,7 @@ fn appearance_targets(
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
         for face in faces {
-            if face_indices.contains_key(face.as_str()) {
+            if indices.faces.contains_key(face.as_str()) {
                 let face = clone_presentation_identity::<FaceId>(face.as_str(), ctx, "step_presentation_appearance_face_identity")?;
                 push_presentation_vec(&mut targets, AppearanceTarget::Face(face), ctx, "step_presentation_appearance_targets")?;
             }
@@ -723,9 +715,9 @@ fn appearance_targets(
     let curve_id = ids::data(kind!("curve"), id);
     let point_id = ids::data(kind!("point"), id);
     let tessellation_id = ids::tessellation(kind!("mesh"), id);
-    let target = if face_indices.contains_key(face_id.as_str()) {
+    let target = if indices.faces.contains_key(face_id.as_str()) {
         Some(AppearanceTarget::Face(FaceId::from(face_id)))
-    } else if body_indices.contains_key(body_id.as_str()) {
+    } else if indices.bodies.contains_key(body_id.as_str()) {
         Some(AppearanceTarget::Body(BodyId::from(body_id)))
     } else if entity_ids.edges.contains(edge_id.as_str()) {
         Some(AppearanceTarget::Edge(EdgeId::from(edge_id)))
@@ -753,14 +745,13 @@ fn append_presentation_items(
     exchange: &Exchange,
     topology: &TopologyData,
     entity_ids: &EntityIds<'_>,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
+    indices: PresentationIndices<'_>,
     items: &mut Vec<PresentationItem>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
     if let Some(bodies) = topology.body_by_root.get(&id) {
         for body in bodies {
-            if body_indices.contains_key(body.as_str()) {
+            if indices.bodies.contains_key(body.as_str()) {
                 let body = clone_presentation_identity::<BodyId>(body.as_str(), ctx, "step_presentation_layer_body_identity")?;
                 push_presentation_vec(items, PresentationItem::Body { body }, ctx, "step_presentation_layer_items")?;
             }
@@ -769,7 +760,7 @@ fn append_presentation_items(
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
         for face in faces {
-            if face_indices.contains_key(face.as_str()) {
+            if indices.faces.contains_key(face.as_str()) {
                 let face = clone_presentation_identity::<FaceId>(face.as_str(), ctx, "step_presentation_layer_face_identity")?;
                 push_presentation_vec(items, PresentationItem::Face { face }, ctx, "step_presentation_layer_items")?;
             }
@@ -803,7 +794,7 @@ fn append_presentation_items(
     }
     push_presentation_vec(
         items,
-        presentation_item_one(id, exchange, entity_ids, face_indices, body_indices),
+        presentation_item_one(id, exchange, entity_ids, indices),
         ctx,
         "step_presentation_layer_items",
     )
@@ -813,18 +804,17 @@ fn presentation_item_one(
     id: u64,
     exchange: &Exchange,
     entity_ids: &EntityIds<'_>,
-    face_indices: &BTreeMap<String, usize>,
-    body_indices: &BTreeMap<String, usize>,
+    indices: PresentationIndices<'_>,
 ) -> PresentationItem {
     let candidate = |kind: &crate::ids::IdentityKind| ids::data(kind, id);
     let body = candidate(kind!("body"));
-    if body_indices.contains_key(body.as_str()) {
+    if indices.bodies.contains_key(body.as_str()) {
         return PresentationItem::Body {
             body: BodyId::from(body),
         };
     }
     let face = candidate(kind!("face"));
-    if face_indices.contains_key(face.as_str()) {
+    if indices.faces.contains_key(face.as_str()) {
         return PresentationItem::Face {
             face: FaceId::from(face),
         };
@@ -916,6 +906,12 @@ struct EntityIds<'a> {
     tessellations: BTreeSet<&'a str>,
 }
 
+#[derive(Clone, Copy)]
+struct PresentationIndices<'a> {
+    faces: &'a BTreeMap<String, usize>,
+    bodies: &'a BTreeMap<String, usize>,
+}
+
 fn collect_borrowed_identity_set<'a>(
     identities: impl IntoIterator<Item = &'a str>,
     ctx: Option<&DecodeContext<'_>>,
@@ -923,12 +919,7 @@ fn collect_borrowed_identity_set<'a>(
 ) -> Result<BTreeSet<&'a str>, CodecError> {
     let mut result = BTreeSet::new();
     for identity in identities {
-        if !result.contains(identity) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, operation)?;
-            }
-            result.insert(identity);
-        }
+        insert_presentation_set(&mut result, identity, ctx, operation)?;
     }
     Ok(result)
 }
@@ -1080,14 +1071,8 @@ fn collect_identity_indices<'a>(
         }
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, operation)?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(identity.len()), operation)?;
         }
-        let mut copy = String::new();
-        copy.try_reserve_exact(identity.len()).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
-        })?;
-        copy.push_str(identity);
+        let copy = clone_presentation_text(identity, ctx, operation)?;
         result.insert(copy, index);
     }
     Ok(result)
@@ -1275,7 +1260,6 @@ enum SurfaceSideRank {
     Both,
 }
 
-#[derive(Clone)]
 struct ColorCandidate {
     rank: SurfaceSideRank,
     id: u64,
@@ -1283,7 +1267,6 @@ struct ColorCandidate {
     name: Option<String>,
 }
 
-#[derive(Clone)]
 enum ColorResolution {
     Candidate(ColorCandidate),
     Ambiguous { rank: SurfaceSideRank },
