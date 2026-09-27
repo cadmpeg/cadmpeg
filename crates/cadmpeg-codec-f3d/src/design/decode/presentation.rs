@@ -310,7 +310,7 @@ fn presentation_material(
     let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID);
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
         let Some((physical_guid_at, physical_guid)) = preceding_lp_utf16(bytes, start, physical_at)
         else {
@@ -411,7 +411,10 @@ fn presentation_material(
                 value.starts_with("Prism-").then_some((at, value))
             })
             .flatten();
-        candidates.push(PresentationMaterial {
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
             physical_token_offset: (token_at + 4) as u64,
@@ -423,10 +426,7 @@ fn presentation_material(
             }),
         });
     }
-    match candidates.as_slice() {
-        [material] => Some(material.clone()),
-        _ => None,
-    }
+    candidate
 }
 
 /// Parse the material envelope of a body-presentation owner whose indexed
@@ -444,7 +444,7 @@ fn bare_presentation_material(
         .collect::<Vec<_>>();
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for marker_at in find_all(bytes, start, end, &marker) {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
             continue;
@@ -515,7 +515,10 @@ fn bare_presentation_material(
         {
             continue;
         }
-        candidates.push(PresentationMaterial {
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
             physical_token_offset: (token_at + 4) as u64,
@@ -524,10 +527,7 @@ fn bare_presentation_material(
             visual_preset: None,
         });
     }
-    match candidates.as_slice() {
-        [material] => Some(material.clone()),
-        _ => None,
-    }
+    candidate
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -595,7 +595,7 @@ fn skip_zeros_capped(bytes: &[u8], start: usize, end: usize, cap: usize) -> Opti
 }
 
 fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(usize, String)> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for gap in 0..=MAX_ENVELOPE_GAP {
         let Some(end) = marker_at.checked_sub(gap) else {
             continue;
@@ -613,16 +613,14 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
                 continue;
             };
             if after == end {
-                candidates.push((at, value));
+                if candidate.is_some() {
+                    return None;
+                }
+                candidate = Some((at, value));
             }
         }
     }
-    candidates.sort_by_key(|(at, _)| *at);
-    candidates.dedup();
-    match candidates.as_slice() {
-        [candidate] => Some(candidate.clone()),
-        _ => None,
-    }
+    candidate
 }
 
 #[cfg(test)]
