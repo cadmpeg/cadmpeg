@@ -154,19 +154,16 @@ pub(super) fn pair_stream_indices(
         {
             continue;
         }
-        ctx.charge_work(
-            u64::try_from(delta).unwrap_or(u64::MAX),
-            "nx delta partition scan",
-        )?;
-        let partition = streams[..delta]
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, candidate)| {
-                candidate.kind() == StreamKind::Partition
-                    && candidate.schema_token() == stream.schema_token()
-            })
-            .map(|(partition, _)| partition);
+        let mut partition = None;
+        for (ordinal, candidate) in streams[..delta].iter().enumerate().rev() {
+            ctx.charge_work(1, "nx delta partition scan")?;
+            if candidate.kind() == StreamKind::Partition
+                && candidate.schema_token() == stream.schema_token()
+            {
+                partition = Some(ordinal);
+                break;
+            }
+        }
         if let Some(partition) = partition {
             if !pairs.contains_key(&partition) {
                 ctx.charge_collection_items(1, "nx delta pair partitions")?;
@@ -682,6 +679,25 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "nx delta partition scan"
         ));
+    }
+
+    #[test]
+    fn delta_pairing_charges_only_examined_partitions() {
+        let mut streams = vec![crate::parasolid::Stream {
+            file_offset: 10,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }];
+        streams.extend(one_delta_pair());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let pairs = super::pair_stream_indices(&ctx, &streams, None)
+            .expect("the preceding partition matches within one work unit");
+        assert_eq!(pairs, std::collections::BTreeMap::from([(1, vec![2])]));
     }
 
     #[test]
