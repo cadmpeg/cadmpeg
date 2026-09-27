@@ -12,6 +12,58 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 #[test]
+fn incidence_component_preflight_refuses_new_nested_support_allocations() {
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::incidence::component_incidence_pair_solutions(
+            ctx,
+            &choices,
+            &edge_faces,
+            1,
+            4,
+            None,
+            None,
+            None,
+            &|_| Ok(true),
+        )
+    };
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(run(ctx).expect("service budget").expect("solutions").len(), 4);
+    });
+    let mut refusals = BTreeSet::new();
+    let mut completed = false;
+    for cap in 0..=2_000 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(Some(solutions)) => {
+                assert_eq!(solutions.len(), 4);
+                completed = true;
+                break;
+            }
+            other => panic!("unexpected incidence outcome: {other:?}"),
+        }
+    }
+    assert!(completed, "fixture must fit the final cap");
+    for operation in [
+        "catia_incidence_base_choice_rows",
+        "catia_incidence_base_choice_pairs",
+        "catia_incidence_explicit_support_rows",
+        "catia_incidence_explicit_support_keys",
+        "catia_incidence_explicit_support_pairs",
+        "catia_incidence_degree_copy_rows",
+        "catia_incidence_degree_copy_entries",
+    ] {
+        assert!(refusals.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn incidence_components_join_only_through_shared_face_vertices() {
     catia_test_context!(ctx);
     let choices = vec![
