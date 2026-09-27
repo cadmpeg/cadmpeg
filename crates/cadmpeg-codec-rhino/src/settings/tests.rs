@@ -1624,6 +1624,40 @@ fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     );
 }
 
+#[test]
+fn missing_layer_parent_diagnostic_refuses_collection_limit() {
+    let (mut metadata, _) = layer_metadata(&[0], Some(200_912_010));
+    metadata.layers[0].id = None;
+    metadata.layers[0].hierarchy = Some(settings::LayerHierarchy {
+        parent_id: Uuid::from_canonical([0x44; 16]),
+        expanded: false,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal = super::report_layer_parent_references(
+        &ctx,
+        &metadata.layers,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("one missing-parent warning exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let mut warnings = Diagnostics::new();
+    super::report_layer_parent_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &metadata.layers,
+        &mut warnings,
+    )
+    .expect("service profile admits warning");
+    assert_eq!(warnings.iter().count(), 1);
+}
+
 fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
     let mut extension = vec![37];
     extension.extend(utf16_bytes(description));

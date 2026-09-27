@@ -1851,7 +1851,7 @@ pub(crate) fn parse_rendering_attributes(
                 ));
             }
             if let Some(warning) = checksum_warning(data, &mapping)? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
             }
             let mut mapping_payload =
                 BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
@@ -1877,7 +1877,7 @@ pub(crate) fn parse_rendering_attributes(
         }
         material_payload.skip_remaining()?;
         if let Some(warning) = checksum_warning_excluding(data, &material, &obsolete_mappings)? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
         }
         children.push(material.range());
         payload.skip(material.next_offset() - payload.position())?;
@@ -1937,7 +1937,7 @@ pub(crate) fn parse_rendering_attributes(
                     ));
                 }
                 if let Some(warning) = checksum_warning(data, &channel)? {
-                    warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
                 }
                 let mut channel_payload =
                     BoundedReader::new(data, channel.body().start, channel.body().end)?;
@@ -1964,7 +1964,7 @@ pub(crate) fn parse_rendering_attributes(
             }
             mapping_payload.skip_remaining()?;
             if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
             }
             children.push(mapping.range());
             payload.skip(mapping.next_offset() - payload.position())?;
@@ -1979,7 +1979,7 @@ pub(crate) fn parse_rendering_attributes(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(start..reader.position())
@@ -2004,6 +2004,7 @@ fn begin_direct_object<'a>(
 }
 
 fn skip_model_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     payload: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -2017,7 +2018,7 @@ fn skip_model_attributes(
         ));
     }
     if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
     }
     payload.skip(chunk.next_offset() - payload.position())?;
     Ok(chunk.range())
@@ -2080,6 +2081,7 @@ pub(crate) fn parse_direct_linetype<'a>(
             "Rhino embedded linetype checksum children",
         )?;
         children.push(skip_model_attributes(
+            ctx,
             data,
             &mut payload,
             archive,
@@ -2135,7 +2137,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2170,6 +2172,7 @@ pub(crate) fn parse_direct_section_style<'a>(
         "Rhino embedded section-style checksum children",
     )?;
     children.push(skip_model_attributes(
+        ctx,
         data,
         &mut payload,
         archive,
@@ -2261,7 +2264,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     // result because the cascade has passed it.
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{warning}"))?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2463,10 +2466,10 @@ fn parse_layer(
             Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 source_requires_opaque = true;
-                warnings.push(format!(
+                warnings.push_admitted(ctx, format_args!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
                     descriptor.range.start
-                ));
+                ))?;
             }
         }
     }
@@ -2668,12 +2671,12 @@ pub(crate) fn parse_metadata(
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
                             if ids.contains(&id) {
-                                warnings.push_coded(
+                                warnings.push_coded_admitted(ctx,
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                                    format!(
+                                    format_args!(
                                     "duplicate layer UUID {id}; first record owns archive identity"
                                 ),
-                                );
+                                )?;
                             } else {
                                 id_workspace.grow(cadmpeg_core::decode::u64_from_index(
                                     std::mem::size_of::<Uuid>(),
@@ -2742,13 +2745,13 @@ pub(crate) fn parse_metadata(
                     _ => {}
                 }
                 if duplicate_singleton {
-                    warnings.push_coded(
+                    warnings.push_coded_admitted(ctx,
                         crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                        format!(
+                        format_args!(
                             "duplicate singleton metadata record {:#x}; later record wins",
                             record.typecode
                         ),
-                    );
+                    )?;
                 }
             }
             if let Err(error) = result {
@@ -2769,10 +2772,10 @@ pub(crate) fn parse_metadata(
                         record: record.clone(),
                     });
                 }
-                warnings.push(format!(
+                warnings.push_admitted(ctx, format_args!(
                     "metadata record {:#x} at {} degraded: {}",
                     record.typecode, record.range.start, error
-                ));
+                ))?;
             }
         }
     }
@@ -2797,12 +2800,12 @@ pub(crate) fn parse_metadata(
     }
     for (index, count) in layer_index_counts {
         if count > 1 {
-            warnings.push_coded(
+            warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                format!(
+                format_args!(
                     "duplicate layer index {index} occurs {count} times; raw indexes preserved and object bindings withheld"
                 ),
-            );
+            )?;
         }
     }
     metadata.opaque_records = opaque_records;
@@ -2840,18 +2843,18 @@ fn report_layer_parent_references(
             continue;
         };
         match id_counts.get(&parent).copied() {
-            None => warnings.push(format!(
+            None => warnings.push_admitted(ctx, format_args!(
                 "layer {} references missing parent UUID {parent}",
                 layer.index
-            )),
+            ))?,
             Some(1) => {}
-            Some(count) => warnings.push_coded(
+            Some(count) => warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                format!(
+                format_args!(
                     "layer {} references ambiguous parent UUID {parent}; {count} layer records carry that UUID",
                     layer.index
                 ),
-            ),
+            )?,
         }
     }
     Ok(())
