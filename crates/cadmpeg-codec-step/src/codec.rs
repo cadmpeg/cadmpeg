@@ -3,8 +3,10 @@
 
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
+use std::fmt;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
@@ -108,6 +110,56 @@ struct InspectedExchange {
     notes: Vec<String>,
 }
 
+fn push_entry(
+    ctx: &DecodeContext<'_>,
+    entries: &mut Vec<ContainerEntry>,
+    entry: ContainerEntry,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "step_inspect_entries")?;
+    entries
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_inspect_entries", 0, 1))?;
+    entries.push(entry);
+    Ok(())
+}
+
+fn insert_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "step_inspect_attributes")?;
+    attributes.insert(key.into(), value);
+    Ok(())
+}
+
+fn append_notes(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    additional: impl IntoIterator<Item = String>,
+) -> Result<(), CodecError> {
+    for note in additional {
+        ctx.charge_collection_items(1, "step_codec_notes")?;
+        notes
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("step_codec_notes", 0, 1))?;
+        notes.push(note);
+    }
+    Ok(())
+}
+
+struct CountItem<'a> {
+    name: &'a str,
+    count: usize,
+}
+
+impl fmt::Display for CountItem<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(output, "{}:{}", self.name, self.count)
+    }
+}
+
 /// Deep semantic analysis of a STEP exchange, exposed as container inspect.
 ///
 /// Runs the semantic decode path to populate `unknown_entities` and related
@@ -137,68 +189,75 @@ fn inspect_parsed_exchange(
         matched,
         opaque_offsets,
     } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
-    let mut entries = vec![ContainerEntry {
+    let mut entries = Vec::new();
+    push_entry(ctx, &mut entries, ContainerEntry {
         name: "HEADER".into(),
         role: ContainerRole::Metadata,
         storage: EntryStorage::unreported(VerbatimLabel::None),
         attributes: BTreeMap::default(),
-    }];
+    })?;
     if !exchange.anchors().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert("anchor_count".into(), exchange.anchors().len().to_string());
-        entries.push(ContainerEntry {
+        insert_attribute(ctx, &mut attributes, "anchor_count", exchange.anchors().len().to_string())?;
+        push_entry(ctx, &mut entries, ContainerEntry {
             name: "ANCHOR".into(),
             role: ContainerRole::InFileAnchors,
             storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
-        });
+        })?;
     }
     if !exchange.references().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert(
-            "external_count".into(),
-            exchange.references().len().to_string(),
-        );
-        attributes.insert(
-            "external_uris".into(),
-            exchange
-                .references()
-                .iter()
-                .map(|entry| entry.uri.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-        );
-        entries.push(ContainerEntry {
+        insert_attribute(ctx, &mut attributes, "external_count", exchange.references().len().to_string())?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "external_uris",
+            crate::decode_alloc::charged_join(
+                ctx,
+                "step_inspect_external_uris",
+                exchange.references().iter().map(|entry| entry.uri.as_str()),
+                ",",
+            )?,
+        )?;
+        push_entry(ctx, &mut entries, ContainerEntry {
             name: "REFERENCE".into(),
             role: ContainerRole::ExternalReferences,
             storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
-        });
+        })?;
     }
     for (index, section) in exchange.data().iter().enumerate() {
-        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+        let mut counts = BTreeMap::<&str, usize>::new();
         for id in &section.records {
             if !opaque_offsets.contains(&exchange.records()[id].span.start) {
                 continue;
             }
             for partial in &exchange.records()[id].partials {
-                *counts.entry(partial.name.clone()).or_default() += 1;
+                match counts.entry(partial.name.as_str()) {
+                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                    Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "step_inspect_unknown_counts")?;
+                        entry.insert(1);
+                    }
+                }
             }
         }
-        let unknown = counts
-            .iter()
-            .map(|(name, count)| format!("{name}:{count}"))
-            .collect::<Vec<_>>()
-            .join(",");
+        let unknown = crate::decode_alloc::charged_join(
+            ctx,
+            "step_inspect_unknown_entities",
+            counts.iter().map(|(&name, &count)| CountItem { name, count }),
+            ",",
+        )?;
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert("entity_count".into(), section.records.len().to_string());
-        attributes.insert("unknown_entities".into(), unknown);
-        entries.push(ContainerEntry {
+        insert_attribute(ctx, &mut attributes, "entity_count", section.records.len().to_string())?;
+        insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
+        push_entry(ctx, &mut entries, ContainerEntry {
             name: format!("DATA[{index}]"),
             role: ContainerRole::EntityRecords,
             storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
-        });
+        })?;
     }
     let external_dependencies = decoded
         .body
@@ -206,25 +265,31 @@ fn inspect_parsed_exchange(
         .iter()
         .filter(|note| {
             note.starts_with("external document ") || note.starts_with("external source ")
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if !external_dependencies.is_empty() {
+        });
+    let dependency_count = external_dependencies.clone().count();
+    if dependency_count > 0 {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert(
-            "dependency_count".into(),
-            external_dependencies.len().to_string(),
-        );
-        attributes.insert("dependencies".into(), external_dependencies.join(","));
-        entries.push(ContainerEntry {
+        insert_attribute(ctx, &mut attributes, "dependency_count", dependency_count.to_string())?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "dependencies",
+            crate::decode_alloc::charged_join(
+                ctx,
+                "step_inspect_dependency_text",
+                external_dependencies.map(String::as_str),
+                ",",
+            )?,
+        )?;
+        push_entry(ctx, &mut entries, ContainerEntry {
             name: "EXTERNAL_DEPENDENCIES".into(),
             role: ContainerRole::ExternalReferences,
             storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes,
-        });
+        })?;
     }
     for (index, signature) in exchange.signatures().iter().enumerate() {
-        entries.push(ContainerEntry {
+        push_entry(ctx, &mut entries, ContainerEntry {
             name: if index == 0 {
                 "SIGNATURE".into()
             } else {
@@ -233,7 +298,7 @@ fn inspect_parsed_exchange(
             role: ContainerRole::Signature,
             storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
             attributes: BTreeMap::default(),
-        });
+        })?;
     }
     let identifiers = exchange.joined_schema_identifiers(Some(ctx))?;
     let schema = if identifiers.is_empty() {
@@ -242,12 +307,24 @@ fn inspect_parsed_exchange(
         identifiers
     };
     let dialect = matched.dialect();
-    let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
-    notes.extend(
-        diagnostics
-            .iter()
-            .map(|diagnostic| diagnostic.message.clone()),
-    );
+    let mut notes = Vec::new();
+    append_notes(
+        ctx,
+        &mut notes,
+        [crate::decode_alloc::charged_format(
+            ctx,
+            "step_inspect_schema_note",
+            format_args!("schema {schema}; dialect {dialect}"),
+        )?],
+    )?;
+    for diagnostic in diagnostics {
+        let note = crate::decode_alloc::charged_format(
+            ctx,
+            "step_inspect_diagnostic_copy",
+            format_args!("{}", diagnostic.message),
+        )?;
+        append_notes(ctx, &mut notes, [note])?;
+    }
     Ok(InspectedExchange {
         matched,
         entries,
@@ -317,28 +394,27 @@ fn inspect_zip(
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
-    let logical_entries = inspected
-        .entries
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
+    let logical_entries = crate::decode_alloc::charged_join(
+        ctx,
+        "step_inspect_logical_sections",
+        inspected.entries.iter().map(|entry| entry.name.as_str()),
+        ",",
+    )?;
     let mut entries = archive.container_entries(archive::classify_entry);
     if let Some(root_entry) = entries
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
     {
-        root_entry
-            .attributes
-            .insert("logical_sections".into(), logical_entries);
+        insert_attribute(ctx, &mut root_entry.attributes, "logical_sections", logical_entries)?;
     }
-    let mut notes = vec![
+    let mut notes = Vec::new();
+    append_notes(ctx, &mut notes, [
         format!("root {}", archive::ROOT_NAME),
         format!("archive entries={entry_count}; root data offset={root_data_offset}"),
-    ];
-    notes.extend(std::mem::take(&mut inspected.notes));
+    ])?;
+    append_notes(ctx, &mut notes, std::mem::take(&mut inspected.notes))?;
     let losses = std::mem::take(&mut inspected.losses);
-    notes.extend(resource_notes);
+    append_notes(ctx, &mut notes, resource_notes)?;
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
     // document, so the root's own match is this summary's match.
@@ -373,11 +449,11 @@ fn decode_zip(
             root_data_offset,
         },
     )?;
-    decoded.body.notes.push(format!(
+    append_notes(ctx, &mut decoded.body.notes, [format!(
         "container root {}; archive entries={entry_count}",
         archive::ROOT_NAME
-    ));
-    decoded.body.notes.extend(resource_notes);
+    )])?;
+    append_notes(ctx, &mut decoded.body.notes, resource_notes)?;
     Ok(decoded)
 }
 
@@ -598,10 +674,166 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-    use super::{starts_with_step_magic, StepCodec};
+    use super::{append_notes, insert_attribute, push_entry, starts_with_step_magic, StepCodec};
+
+    #[test]
+    fn inspect_entry_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits selected policy");
+        let mut entries = Vec::new();
+        assert!(matches!(
+            push_entry(&ctx, &mut entries, cadmpeg_core::ContainerEntry {
+                name: "HEADER".into(),
+                role: cadmpeg_core::container::ContainerRole::Metadata,
+                storage: cadmpeg_core::container::EntryStorage::unreported(
+                    cadmpeg_core::container::VerbatimLabel::None,
+                ),
+                attributes: std::collections::BTreeMap::new(),
+            }),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_inspect_entries"
+        ));
+    }
+
+    #[test]
+    fn inspect_attribute_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits selected policy");
+        let mut attributes = std::collections::BTreeMap::new();
+        assert!(matches!(
+            insert_attribute(&ctx, &mut attributes, "unknown_entities", "ITEM:1".into()),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_inspect_attributes"
+        ));
+    }
+
+    #[test]
+    fn codec_note_append_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits selected policy");
+        let mut notes = Vec::new();
+        assert!(matches!(
+            append_notes(&ctx, &mut notes, [String::from("container root")]),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_codec_notes"
+        ));
+    }
+
+    fn inspect_text_refuses(source: &[u8], operation: &str) {
+        let mut limit = 0u64;
+        for _ in 0..512 {
+            let (mut exchange, diagnostics) = crate::parse::parse(source)
+                .expect("valid inspect source");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits retained policy");
+            match super::inspect_parsed_exchange(source, &ctx, &mut exchange, &diagnostics) {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("retained requirement fits u64");
+                    assert!(next > limit, "retained limit must advance");
+                    limit = next;
+                }
+                Ok(_) => panic!("inspect completed before {operation}"),
+                Err(error) => panic!("inspect did not reach {operation}: {error}"),
+            }
+        }
+        panic!("inspect never reached {operation}");
+    }
+
+    #[test]
+    fn inspect_external_uris_refuse_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_external_uris");
+    }
+
+    #[test]
+    fn inspect_unknown_entities_refuse_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_unknown_entities");
+    }
+
+    #[test]
+    fn inspect_schema_note_refuses_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_schema_note");
+    }
+
+    #[test]
+    fn inspect_diagnostic_copy_refuses_retained_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        inspect_text_refuses(SOURCE, "step_inspect_diagnostic_copy");
+    }
+
+    #[test]
+    fn inspect_dependency_text_refuses_retained_limit() {
+        let source = include_bytes!("../tests/fixtures/ap242_external_documents.p21");
+        inspect_text_refuses(source, "step_inspect_dependency_text");
+    }
+
+    #[test]
+    fn inspect_unknown_count_entries_refuse_collection_limit() {
+        const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let mut limit = 0u64;
+        for _ in 0..512 {
+            let (mut exchange, diagnostics) = crate::parse::parse(SOURCE)
+                .expect("valid inspect source");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+                .expect("root fits collection policy");
+            match super::inspect_parsed_exchange(SOURCE, &ctx, &mut exchange, &diagnostics) {
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == "step_inspect_unknown_counts" =>
+                {
+                    return;
+                }
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems =>
+                {
+                    let next = refusal
+                        .used
+                        .checked_add(refusal.additional)
+                        .expect("collection requirement fits u64");
+                    assert!(next > limit, "collection limit must advance");
+                    limit = next;
+                }
+                Ok(_) => panic!("inspect completed before count admission"),
+                Err(error) => panic!("inspect did not reach count admission: {error}"),
+            }
+        }
+        panic!("inspect never reached count admission");
+    }
 
     #[test]
     fn detects_magic_after_ignored_controls_and_inside_token() {
