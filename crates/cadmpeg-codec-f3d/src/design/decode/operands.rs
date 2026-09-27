@@ -74,12 +74,13 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
-use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
 pub(crate) fn decode_edge_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -154,9 +155,12 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -204,6 +208,7 @@ pub(crate) fn decode_edge_operands(
 
 /// Decode vertex-recipe members retained inside edge-treatment groups.
 pub(crate) fn decode_edge_treatment_vertex_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -228,9 +233,12 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -286,6 +294,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
 pub(crate) fn bind_work_point_input_carriers(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -330,9 +339,12 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream.clone())
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -475,6 +487,7 @@ pub(crate) fn bind_work_point_input_carriers(
 
 /// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
 pub(crate) fn bind_work_plane_constructions(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -507,9 +520,12 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream.clone())
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -728,6 +744,7 @@ pub(crate) fn decode_edge_identity_operands(
 
 /// Decode face-recipe operand frames named by grouped and direct feature references.
 pub(crate) fn decode_face_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -837,9 +854,12 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         for (group_member_index, record_index) in group
             .members()
             .iter()
@@ -919,9 +939,12 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let ordinals = if scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length(),
@@ -987,6 +1010,7 @@ pub(crate) fn decode_face_operands(
 /// source envelopes. The source envelope is distinct from a face-regeneration
 /// recipe: its members can name curves and vertices in one operation.
 pub(crate) fn decode_face_source_groups(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
@@ -1004,9 +1028,12 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
@@ -3555,6 +3582,7 @@ pub(super) fn parse_entity_selection_frame(
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3605,9 +3633,12 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3650,9 +3681,12 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offset_index
-            .entry(stream)
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()
@@ -3730,7 +3764,7 @@ fn unique_body_recipe<'a>(
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     unique_body_recipe_with_index(&records, header, recipes)
 }
 
@@ -3760,7 +3794,7 @@ fn unique_body_recipe_with_index<'a>(
 /// candidate recipes against one header resolves it once.
 #[cfg(test)]
 fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     body_recipe_prologue_end_with_index(&records, start, record_index)
 }
 
@@ -3792,7 +3826,7 @@ fn body_recipe_operand_end(
     record_index: u32,
     recipe_at: usize,
 ) -> Option<usize> {
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     body_recipe_operand_end_with_index(&records, prologue_end, record_index, recipe_at)
 }
 
@@ -3816,7 +3850,7 @@ fn parse_body_recipe_operand(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     parse_body_recipe_operand_with_index(
         bytes,
         &records,

@@ -3,7 +3,6 @@ use super::exact_hole_construction;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
 use super::HOLE_POINT_DATA_TYPE_GUID;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -82,7 +81,7 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
 #[test]
 fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     let (bytes, scope, position_at, input_reference_at) = hole_point_stream();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -150,7 +149,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
 #[test]
 fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangent_data() {
     let (bytes, scope, position_at, input_reference_at) = hole_point_stream_version(1);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -257,7 +256,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         .unwrap();
     let selection = exact_hole_face_selection(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
     )

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
@@ -37,7 +36,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+    let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
         .expect("class-380 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
@@ -83,7 +82,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-256 WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(
@@ -116,7 +115,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         })
         .unwrap();
     assert_eq!(
-        exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
+        exact_work_plane_frame(&invalid, &crate::design::test_support::indexed_record_offsets_for_test(&invalid), &scope),
         None
     );
 }
@@ -188,7 +187,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("opaque-prefix WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_offset, matrix as u64);
@@ -220,7 +219,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         })
         .unwrap();
     assert_eq!(
-        exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
+        exact_work_plane_frame(&invalid, &crate::design::test_support::indexed_record_offsets_for_test(&invalid), &scope),
         None
     );
 }

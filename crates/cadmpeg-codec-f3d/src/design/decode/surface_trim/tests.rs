@@ -6,7 +6,6 @@
     clippy::uninlined_format_args
 )]
 use super::exact_surface_trim_operation;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -75,7 +74,7 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let operation =
-        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .unwrap()
             .expect("exact SurfaceTrim cell carrier");
 
@@ -129,7 +128,7 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
     );
     bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
     assert!(
-        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .unwrap()
             .is_none()
     );
@@ -147,7 +146,7 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
     let tail_zero = table_start + 67;
     bytes[tail_zero] = 1;
     assert!(
-        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .unwrap()
             .is_none()
     );
@@ -159,7 +158,7 @@ fn surface_trim_refusal(maximum: u64) -> CodecError {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = maximum;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+    exact_surface_trim_operation(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
         .expect_err("two cell entries exceed the selected collection limit")
 }
 

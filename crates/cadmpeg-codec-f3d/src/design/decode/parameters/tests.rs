@@ -943,11 +943,14 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let mut exact = parameter_owner_frame();
     exact.extend_from_slice(&paired_header());
     let owners = with_scan(&archive(stream, &exact), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::decode::parameters::decode_parameter_owners(
+                ctx,
+                scan,
             std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
+                std::slice::from_ref(&header),
+            )
+        })
     })
     .expect("exact owner frame");
     let [owner] = owners.as_slice() else {
@@ -957,11 +960,14 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.evaluated_value_offset(), 40);
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::decode::parameters::decode_parameter_owners(
+                ctx,
+                scan,
             std::slice::from_ref(&parameter),
-            &[],
-        )
+                &[],
+            )
+        })
     })
     .expect("missing owner frame is retained as an unresolved binding");
     assert!(unresolved.is_empty());
@@ -970,11 +976,14 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     extended.push(0);
     extended.extend_from_slice(&paired_header());
     let error = with_scan(&archive(stream, &extended), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            crate::design::decode::parameters::decode_parameter_owners(
+                ctx,
+                scan,
             std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
+                std::slice::from_ref(&header),
+            )
+        })
     })
     .expect_err("an owner-shaped prefix must not shorten the exact frame");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));

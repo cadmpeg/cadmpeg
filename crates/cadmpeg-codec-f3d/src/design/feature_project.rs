@@ -4290,6 +4290,7 @@ pub(crate) fn direct_face_selection(
 /// reaches a surface record, and the serializer naming that surface supplies
 /// the archive entry identity of the neutral cage.
 pub(crate) fn bind_form_cages(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     features: &mut [cadmpeg_ir::features::Feature],
@@ -4305,7 +4306,7 @@ pub(crate) fn bind_form_cages(
             continue;
         };
         let bytes = scan.entry_bytes(stream)?;
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let cage_lists = scope
             .reference_members()
             .values()

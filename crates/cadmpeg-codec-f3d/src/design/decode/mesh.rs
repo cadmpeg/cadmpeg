@@ -6,6 +6,7 @@
 //! optional texture resources, and Scene state ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 
 use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::bytes::{lp_ascii_strict, lp_utf16_bounded, take_reference};
 use crate::container::ContainerScan;
@@ -1036,6 +1037,7 @@ fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
 }
 
 fn parse_mesh_design_records<F>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     source_entry_name: &str,
@@ -1045,7 +1047,7 @@ where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
     let stream = ids::native_scope(source_entry_name);
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = IndexedRecordOffsets::build(ctx, bytes)?;
     let collection_frames =
         typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     if collection_frames.is_empty() {
@@ -1381,6 +1383,7 @@ where
 }
 
 fn decode_mesh_design_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<Vec<DesignMeshFeature>>, CodecError> {
     let mut out = Vec::new();
@@ -1408,6 +1411,7 @@ fn decode_mesh_design_records(
             ))
         };
         let records = parse_mesh_design_records(
+            ctx,
             scan.entry_bytes(&entry.name)?,
             &meta,
             &entry.name,
@@ -1446,8 +1450,8 @@ fn resolve_mesh_body(
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
 /// mesh-body record that names its GUID record.
-pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, CodecError> {
-    let mut design_records = decode_mesh_design_records(scan)?;
+pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MeshDecode, CodecError> {
+    let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
     for entry in scan
         .entries
@@ -1518,7 +1522,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 #[cfg(test)]
 mod tests {
     use super::{
-        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_design_records,
+        mesh_body_transform, parse_mesh_collection_owner_record,
         parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
         parse_scene_node_record, resolve_mesh_body, MeshBody, COMMON_DATA_MODULE,
         DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
@@ -1557,6 +1561,20 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
+
+    fn parse_mesh_design_records<F>(
+        bytes: &[u8],
+        meta: &crate::metastream::MetaStream,
+        source_entry_name: &str,
+        asset_for_filename: &mut F,
+    ) -> Result<Vec<crate::records::mesh::DesignMeshFeature>, CodecError>
+    where
+        F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
+    {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            super::parse_mesh_design_records(ctx, bytes, meta, source_entry_name, asset_for_filename)
+        })
+    }
 
     #[test]
     fn anisotropic_mesh_normal_preserves_orientation_without_cofactor_overflow() {

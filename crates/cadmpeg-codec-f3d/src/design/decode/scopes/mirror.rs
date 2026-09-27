@@ -225,6 +225,7 @@ fn exact_legacy_mirror_scope_tolerance(
 /// Join a Mirror scope's two operand groups and fixed parameters with either a
 /// referenced `WorkPlane` or a persistent plane-face selection.
 pub(crate) fn bind_mirror_constructions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -302,9 +303,12 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records = record_offset_index
-                .entry(stream.clone())
-                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let records = match record_offset_index.entry(stream.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+                }
+            };
             parse_face_operand(
                 bytes,
                 records,
@@ -359,9 +363,12 @@ pub(crate) fn bind_mirror_constructions(
                     && owner.scope_record_index() == scope_record_index
             })
             .collect::<Vec<_>>();
-        let records = record_offset_index
-            .entry(stream.clone())
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offset_index.entry(stream.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+        };
         let count = scope_owners
             .iter()
             .copied()

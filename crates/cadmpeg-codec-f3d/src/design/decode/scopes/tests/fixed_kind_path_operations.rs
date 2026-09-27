@@ -3,7 +3,6 @@
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::parameter_record;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
@@ -45,7 +44,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &loft_scope,
             &[],
         ),
@@ -400,7 +399,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
         ),
@@ -420,7 +419,7 @@ pub(super) fn fixed_kind_path_operations(
     {
         let value = exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
         );
@@ -746,7 +745,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &pipe_scope,
             &[],
         ),
@@ -840,7 +839,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &owner_pipe_owners,
         ),
@@ -869,7 +868,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &wrong_owner_class,
         ),
@@ -944,7 +943,7 @@ pub(super) fn fixed_kind_path_operations(
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
-                &IndexedRecordOffsets::build(&bytes),
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &legacy_scope,
                 &[],
             ),

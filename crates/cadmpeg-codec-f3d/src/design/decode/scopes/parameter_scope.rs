@@ -67,6 +67,7 @@ use std::collections::HashMap;
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::entity_header::SegmentType],
@@ -83,7 +84,7 @@ pub(crate) fn decode_parameter_scopes(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {

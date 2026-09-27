@@ -4,7 +4,6 @@ use super::{
     append_axial_test_component_operand, axial_test_alignment, axial_test_component_scope,
 };
 use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
 use crate::records::feature::scope::DesignParameterScope;
 
@@ -68,7 +67,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     ];
     let unresolved_scopes = scopes.clone();
 
-    bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
+    bind_axial_assembly_operand_targets(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes);
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
@@ -137,7 +136,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let mut mismatched_scopes = unresolved_scopes;
     bind_axial_assembly_operand_targets(
         &mismatched,
-        &IndexedRecordOffsets::build(&mismatched),
+        &crate::design::test_support::indexed_record_offsets_for_test(&mismatched),
         &mut mismatched_scopes,
     );
     assert!(mismatched_scopes[0]
@@ -204,7 +203,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     origin.with_joint_origin_transform(second_transform.try_into().unwrap());
     let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
 
-    bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
+    bind_axial_assembly_operand_targets(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes);
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {

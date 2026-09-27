@@ -28,7 +28,7 @@ use crate::records::{
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
 };
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -52,15 +52,26 @@ pub(in crate::design) struct IndexedRecordOffsets {
 
 impl IndexedRecordOffsets {
     /// Index every exact indexed-record header in `bytes` in one forward pass.
-    pub(in crate::design) fn build(bytes: &[u8]) -> Self {
+    pub(in crate::design) fn build(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Self, CodecError> {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
         for header in indexed_record_offsets(bytes) {
-            by_record_index
-                .entry(header.record_index)
-                .or_default()
-                .push(header.offset);
+            if !by_record_index.contains_key(&header.record_index) {
+                ctx.charge_collection_items(1, "f3d indexed record key")?;
+                by_record_index.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d indexed record map allocation", 0, 1)
+                })?;
+            }
+            let offsets = by_record_index.entry(header.record_index).or_default();
+            ctx.charge_collection_items(1, "f3d indexed record offset")?;
+            offsets.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d indexed record offset allocation", 0, 1)
+            })?;
+            offsets.push(header.offset);
         }
-        Self { by_record_index }
+        Ok(Self { by_record_index })
     }
 
     /// Ascending header offsets carrying `record_index`.
@@ -103,6 +114,7 @@ impl IndexedRecordOffsets {
 /// stream interval even though its generic reference table does not repeat
 /// the entity suffix.
 pub(crate) fn decode_sketch_placements(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
@@ -118,7 +130,7 @@ pub(crate) fn decode_sketch_placements(
         let bytes = scan.entry_bytes(&entry.name)?;
         record_offsets.insert(
             ids::native_scope(&entry.name),
-            IndexedRecordOffsets::build(bytes),
+            IndexedRecordOffsets::build(ctx, bytes)?,
         );
         let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
@@ -940,6 +952,7 @@ fn parse_legacy_sketch_container_members(
 /// sketch-typed entities, the trailing reference-list header. Headers occur in
 /// the fixed layout or in the `EntityGenesis` layout.
 pub(crate) fn decode_entity_headers(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
@@ -1056,7 +1069,7 @@ pub(crate) fn decode_entity_headers(
         if candidates.is_empty() {
             continue;
         }
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let scope = ids::native_scope(&entry.name);
         let mut existing = out
             .iter()

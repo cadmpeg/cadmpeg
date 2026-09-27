@@ -2,7 +2,6 @@
 
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::test_support::lp_utf16;
 
@@ -54,7 +53,7 @@ fn parameter_scope_parses_named_variable_tail() {
     };
     let scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
@@ -131,7 +130,7 @@ fn parameter_scope_parses_named_variable_tail() {
     ];
     let operation = exact_draft_operation_with_owners(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &owner_scope,
         &owners,
     )

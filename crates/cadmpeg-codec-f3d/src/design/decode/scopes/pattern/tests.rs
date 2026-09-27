@@ -5,7 +5,6 @@ use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from
 use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
 use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -35,12 +34,12 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
     indexed_header(&mut bytes, *b"308", record_index + 3);
 
     assert_eq!(
-        exact_pattern_identity_wrapper(&bytes, &IndexedRecordOffsets::build(&bytes), record_index,),
+        exact_pattern_identity_wrapper(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), record_index,),
         Some((503, identity_offset as u64))
     );
     bytes[identity_offset - 1] = 1;
     assert_eq!(
-        exact_pattern_identity_wrapper(&bytes, &IndexedRecordOffsets::build(&bytes), record_index,),
+        exact_pattern_identity_wrapper(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), record_index,),
         None
     );
 }
@@ -294,7 +293,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[]
         ),
@@ -326,7 +325,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     }
     let normalized = exact_circular_pattern_construction_with_owners(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[],
     )
@@ -345,7 +344,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     zero_displacement[axis_start + 49..axis_start + 73].fill(0);
     assert!(exact_circular_pattern_construction_with_owners(
         &zero_displacement,
-        &IndexedRecordOffsets::build(&zero_displacement),
+        &crate::design::test_support::indexed_record_offsets_for_test(&zero_displacement),
         &scope,
         &[],
     )
@@ -380,7 +379,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     ];
     let owner_backed = exact_circular_pattern_construction_with_owners(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -395,7 +394,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[axis_start + 89..axis_start + 93].copy_from_slice(&6_u32.to_le_bytes());
     assert!(exact_circular_pattern_construction_with_owners(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[]
     )
@@ -404,7 +403,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[]
         ),
@@ -416,7 +415,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[]
         ),
@@ -439,7 +438,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[]
         ),
@@ -461,7 +460,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     ];
     let rectangular = exact_rectangular_pattern_construction(
         &[],
-        &IndexedRecordOffsets::build(&[]),
+        &crate::design::test_support::indexed_record_offsets_for_test(&[]),
         &scope,
         &rectangular_owners,
     )
@@ -495,7 +494,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let rectangular = exact_rectangular_pattern_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &rectangular_owners,
     )
@@ -528,7 +527,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
-            &IndexedRecordOffsets::build(&[]),
+            &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
             &invalid_inactive_spacing
         ),
@@ -545,7 +544,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
-            &IndexedRecordOffsets::build(&[]),
+            &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
             &duplicate_lane
         ),
@@ -556,7 +555,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         exact_rectangular_pattern_construction(
             &[],
-            &IndexedRecordOffsets::build(&[]),
+            &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
             &excess_lane
         ),
@@ -578,7 +577,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &rectangular_owners,
     )
@@ -623,7 +622,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
     )
@@ -637,7 +636,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
     )
@@ -661,7 +660,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let datum_envelope_alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
     )
@@ -692,7 +691,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &short_axial_owners,
     )
@@ -706,7 +705,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let short_axial_alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &short_axial_owners,
     )
@@ -729,7 +728,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &legacy_alignment_owners,
     )
@@ -743,7 +742,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &legacy_alignment_owners,
     )
@@ -789,7 +788,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     let frames = exact_assembly_alignment(
         &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -839,7 +838,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     let legacy_frames = exact_assembly_alignment(
         &legacy_assembly_bytes,
-        &IndexedRecordOffsets::build(&legacy_assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
         &legacy_assembly_scope,
         &rectangular_owners,
     )
@@ -863,7 +862,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     assert!(exact_assembly_alignment(
         &dynamic_standard_bytes,
-        &IndexedRecordOffsets::build(&dynamic_standard_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
         &dynamic_standard_scope,
         &rectangular_owners,
     )
@@ -884,7 +883,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     assert!(exact_assembly_alignment(
         &dynamic_compact_bytes,
-        &IndexedRecordOffsets::build(&dynamic_compact_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
         &dynamic_compact_scope,
         &rectangular_owners,
     )
@@ -922,7 +921,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     let axial_alignment = exact_assembly_alignment(
         &axial_assembly_bytes,
-        &IndexedRecordOffsets::build(&axial_assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
         &axial_assembly_scope,
         &legacy_alignment_owners,
     )
@@ -957,7 +956,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     let short_axial_alignment = exact_assembly_alignment(
         &short_axial_bytes,
-        &IndexedRecordOffsets::build(&short_axial_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
         &short_axial_scope,
         &short_axial_owners,
     )
@@ -1150,7 +1149,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &compact_bytes,
-        &IndexedRecordOffsets::build(&compact_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
         &rectangular_owners,
     )
@@ -1219,7 +1218,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
         .unwrap();
     let instances = super::exact_rectangular_pattern_instances(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &construction,
     )

@@ -5,7 +5,6 @@ use crate::design::decode::scopes::fixed_parameters::{
     exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters,
 };
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::fixed_parameters::{
@@ -79,7 +78,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
         ),
@@ -103,7 +102,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
         ),
@@ -125,7 +124,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
         ),
@@ -145,7 +144,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &draft_scope,
             &[],
         ),
@@ -199,7 +198,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
                 Some(crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
@@ -246,7 +245,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![
                 crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
@@ -295,7 +294,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
+        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
             groups: vec![
                 crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
@@ -344,7 +343,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     let fixed =
-        exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
+        exact_fixed_fillet_parameters(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &fillet_scope)
             .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
     assert_eq!(
@@ -399,7 +398,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             &[],
         ),
@@ -433,7 +432,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             &[],
         ),
@@ -473,7 +472,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &chamfer_scope,
             std::slice::from_ref(&indexed_owner),
         ),
@@ -520,7 +519,7 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     let revolve_construction = exact_path_feature_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &revolve_scope,
         &[],
     );
@@ -598,7 +597,7 @@ fn fixed_kind_edge_and_revolve_operations(
     .unwrap();
     let indexed_revolve_construction = exact_path_feature_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &indexed_revolve_scope,
         std::slice::from_ref(&indexed_angle),
     );
@@ -664,7 +663,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
         ),
@@ -683,7 +682,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &class403_scope,
             std::slice::from_ref(&class403_angle),
         ),
@@ -753,7 +752,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),
@@ -793,7 +792,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),
@@ -831,7 +830,7 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),

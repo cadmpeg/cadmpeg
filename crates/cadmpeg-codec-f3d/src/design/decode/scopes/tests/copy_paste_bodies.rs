@@ -4,7 +4,7 @@
 fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let headers =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
             &bytes, &records,

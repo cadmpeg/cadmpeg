@@ -3,7 +3,6 @@
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::thread::ThreadPrefix;
 use crate::design::decode::scopes::thread::{exact_thread_construction, parse_thread_payload};
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm};
@@ -429,7 +428,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
@@ -61,7 +60,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let mut bytes = assembly_operand_frame_fixture(scope_record_index);
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -160,7 +159,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     bytes.extend_from_slice(&71_u32.to_le_bytes());
     let paths = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -179,7 +178,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &wrong_generation,
         &owners,
     )

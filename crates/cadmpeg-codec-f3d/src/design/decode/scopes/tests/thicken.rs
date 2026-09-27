@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
@@ -65,7 +64,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -78,7 +77,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
         None
     );
 }

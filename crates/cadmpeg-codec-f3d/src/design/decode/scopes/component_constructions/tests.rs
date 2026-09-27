@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::exact_component_insert_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
@@ -89,7 +88,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("component insert construction");
 
     assert_eq!(construction.relation_record_index, 20);
@@ -154,7 +153,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         .unwrap();
         let construction = exact_component_insert_construction(
             &legacy,
-            &IndexedRecordOffsets::build(&legacy),
+            &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
             &legacy_scope,
         )
         .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
@@ -228,7 +227,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     .unwrap();
     let construction = exact_component_insert_construction(
         &expanded,
-        &IndexedRecordOffsets::build(&expanded),
+        &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
         &expanded_scope,
     )
     .expect("404-byte component insert construction");
@@ -306,7 +305,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     .unwrap();
     let construction = exact_component_insert_construction(
         &legacy,
-        &IndexedRecordOffsets::build(&legacy),
+        &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
         &legacy_scope,
     )
     .expect("class-288 legacy component insert construction");
@@ -441,7 +440,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("compact identity component insert construction");
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);
@@ -570,7 +569,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-410 component insert construction");
     assert_eq!(construction.relation_record_index, 167);
     assert_eq!(construction.carrier_record_index, 166);
@@ -587,7 +586,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     bytes[4..7].copy_from_slice(b"382");
     assert!(exact_component_insert_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
     )
     .is_none());
@@ -708,7 +707,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-434 component insert construction");
     assert_eq!(construction.relation_record_index, 167);
     assert_eq!(construction.carrier_record_index, 166);
@@ -852,7 +851,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-426 component insert construction");
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);
@@ -898,7 +897,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         .unwrap();
     let external_construction = exact_component_insert_construction(
         &external_bytes,
-        &IndexedRecordOffsets::build(&external_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&external_bytes),
         &external_scope,
     )
     .expect("class-426 external-role component insert construction");
@@ -908,7 +907,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     bytes[4..7].copy_from_slice(b"380");
     assert!(exact_component_insert_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
     )
     .is_none());
@@ -1040,7 +1039,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 
     let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let construction = exact_component_insert_construction(&bytes, &records, &scope)
         .expect("class-283 compact component insert construction");
     assert_eq!(construction.carrier_record_index, 10);
@@ -1062,7 +1061,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     ];
     let (bytes, scope, scope_at) = make_fixture(385, transformed);
     let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-283 transformed component insert construction");
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);

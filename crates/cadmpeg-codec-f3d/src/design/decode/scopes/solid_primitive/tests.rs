@@ -7,7 +7,6 @@
 )]
 
 use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::primitives::DesignSolidPrimitive;
 use crate::records::feature::scope::DesignParameterScope;
@@ -68,7 +67,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         owner(12, 23, 3, 0.5),
         owner(12, 24, 4, -0.25),
     ];
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
         Some(DesignSolidPrimitive::Box(
@@ -254,7 +253,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
     assert!(matches!(
         exact_solid_primitive(
             &compact,
-            &IndexedRecordOffsets::build(&compact),
+            &crate::design::test_support::indexed_record_offsets_for_test(&compact),
             &compact_scope,
             &compact_owners,
         ),
@@ -303,7 +302,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         assert!(matches!(
             exact_solid_primitive(
                 &expanded,
-                &IndexedRecordOffsets::build(&expanded),
+                &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
                 &expanded_scope,
                 &expanded_owners,
             ),
@@ -323,7 +322,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         translated[72 + 3 * 8..72 + 4 * 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert!(exact_solid_primitive(
             &translated,
-            &IndexedRecordOffsets::build(&translated),
+            &crate::design::test_support::indexed_record_offsets_for_test(&translated),
             &expanded_scope,
             &expanded_owners,
         )
