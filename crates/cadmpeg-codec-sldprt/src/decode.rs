@@ -709,16 +709,21 @@ fn append_design_losses(
             )));
     }
 
-    let bound_pmi = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|parameter| parameter.pmi.as_ref())
-        .map(|pmi| pmi.native_ref.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    let unbound_pmi_dimensions = native.as_ref().map_or(0, |native| {
-        crate::pmi::unbound_dimension_count(&native.pmi_dimensions, &bound_pmi)
-    });
+    let mut bound_pmi = std::collections::HashSet::new();
+    for pmi in ir.model.parameters.iter().filter_map(|parameter| parameter.pmi.as_ref()) {
+        let id = pmi.native_ref.as_str();
+        if !bound_pmi.contains(id) {
+            ctx.charge_collection_items(1, "index SLDPRT bound PMI IDs")?;
+            bound_pmi.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT bound PMI IDs", u64::MAX - 1, u64::MAX)
+            })?;
+            bound_pmi.insert(id);
+        }
+    }
+    let unbound_pmi_dimensions = match native.as_ref() {
+        Some(native) => crate::pmi::unbound_dimension_count(ctx, &native.pmi_dimensions, &bound_pmi)?,
+        None => 0,
+    };
     let native_pmi_subtypes = ir
         .model
         .parameters

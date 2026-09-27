@@ -116,14 +116,18 @@ fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDimension> {
 /// Count native semantic dimensions not represented by a bound record or one
 /// of its semantically identical retained aliases.
 pub(crate) fn unbound_dimension_count(
+    ctx: &DecodeContext<'_>,
     records: &[PmiDimension],
     bound_ids: &HashSet<&str>,
-) -> usize {
-    let bound = records
-        .iter()
-        .filter(|record| bound_ids.contains(record.id.as_str()))
-        .collect::<Vec<_>>();
-    records
+) -> Result<usize, CodecError> {
+    let mut bound = Vec::new();
+    for record in records {
+        if bound_ids.contains(record.id.as_str()) {
+            ctx.reserve_collection_vec(&mut bound, 1, "collect SLDPRT bound PMI dimensions")?;
+            bound.push(record);
+        }
+    }
+    Ok(records
         .iter()
         .filter(|record| {
             !bound_ids.contains(record.id.as_str())
@@ -131,7 +135,7 @@ pub(crate) fn unbound_dimension_count(
                     .iter()
                     .any(|candidate| equivalent_dimensions(record, candidate))
         })
-        .count()
+        .count())
 }
 
 /// Add uniquely owner-qualified PMI dimensions to a projection copy of history.
