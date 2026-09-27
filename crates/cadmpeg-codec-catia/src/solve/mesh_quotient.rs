@@ -9847,6 +9847,97 @@ fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
 }
 
 #[test]
+fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let edge_rows = (0..3)
+        .map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let selected = [MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 2,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 2,
+                start: 2,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    }];
+    let directions = [vec![vec![false, false, false]]];
+    let identities = [[0, 1], [1, 2], [2, 0]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        resolve_singleton_mesh_selection(
+            ctx,
+            &edge_rows,
+            &vertex_points,
+            &candidates,
+            &selected,
+            &directions,
+            &identities,
+            &budget,
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(matches!(
+        run(&service_ctx).expect("service resource budget"),
+        Some(MeshSolve::Solved(_))
+    ));
+
+    let mut refused = HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(Some(MeshSolve::Solved(_))) => {
+                completed = true;
+                break;
+            }
+            Ok(outcome) => panic!("singleton cycle must solve, got {outcome:?}"),
+            Err(error) => panic!("unexpected singleton refusal: {error}"),
+        }
+    }
+    assert!(completed, "adaptive caps must admit the singleton cycle");
+    for operation in [
+        "catia_reduced_matching",
+        "catia_reduced_matching_used",
+        "catia_mesh_edge_use_counts",
+        "catia_selection_singleton_point_assignment",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
