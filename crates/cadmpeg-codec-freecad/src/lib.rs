@@ -130,7 +130,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    match design::census(&objects, &ir.model.features) {
+    match design::census(ctx, &objects, &ir.model.features) {
         Ok(expected) if design_census == expected => {}
         Ok(expected) => {
             let detail = design_census
@@ -970,7 +970,7 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            let design_census = design::census(&graph.objects, &ir.model.features)?;
+            let design_census = design::census(ctx, &graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "design_census", &design_census)?;
