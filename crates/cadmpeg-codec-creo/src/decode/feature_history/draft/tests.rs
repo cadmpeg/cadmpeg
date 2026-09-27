@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{schema_feature_definition, unbounded_feature_plane_definition};
+use super::{schema_feature_definition, thicken_feature_definition, unbounded_feature_plane_definition};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::UnresolvedFamily;
@@ -10,6 +10,130 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
+
+fn thicken_scan() -> crate::container::ContainerScan<'static> {
+    let entry = |entity_id, class_id, related_entity_id| {
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(
+                class_id,
+                None,
+                related_entity_id,
+                related_entity_id.map(|_| 0),
+            ),
+            entity_id,
+            prefixed: true,
+            offset: entity_id as usize,
+            end_offset: entity_id as usize,
+        }
+    };
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            17,
+            80,
+            vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([201]),
+    );
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            3,
+            67,
+            vec![entry(11, 0, None)],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([11]),
+    );
+    let row = |id, feature_id| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    scan.surfaces.rows = vec![row(11, 3), row(201, 17)];
+    scan
+}
+
+fn thicken_resource_error(
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = thicken_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = thicken_feature_definition(&ctx, &scan, &CadIr::empty(), 17)
+        .expect_err("one thicken selection exceeds the resource limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn thicken_source_surface_ids_refuse_collection_limit() {
+    thicken_resource_error(Some(4), None, "creo thicken source surface IDs");
+}
+
+#[test]
+fn thicken_native_selection_refuses_retained_limit() {
+    let identities = "creo:model:feature#3".len() + "creo:model:feature#17".len();
+    thicken_resource_error(None, Some(identities as u64), "creo thicken native selection");
+}
+
+#[test]
+fn thicken_face_ids_refuse_retained_limit() {
+    let prior = "creo:model:feature#3".len()
+        + "creo:model:feature#17".len()
+        + "creo:allfeatur:thicken_source_surfaces#17:11".len();
+    thicken_resource_error(None, Some(prior as u64), "creo thicken face IDs");
+}
+
+#[test]
+fn thicken_face_identities_refuse_collection_limit() {
+    thicken_resource_error(Some(23), None, "creo thicken face identities");
+}
+
+#[test]
+fn thicken_generated_native_copy_refuses_retained_limit() {
+    let prior = "creo:model:feature#3".len() * 2
+        + "creo:model:feature#17".len()
+        + "creo:allfeatur:thicken_source_surfaces#17:11".len()
+        + "creo:visibgeom:face#11".len()
+        + "surface#11".len();
+    thicken_resource_error(
+        None,
+        Some(prior as u64),
+        "creo thicken generated native selection",
+    );
+}
+
+#[test]
+fn thicken_fixture_generates_a_face_under_service_policy() {
+    let scan = thicken_scan();
+    let definition = crate::decode::with_test_decode_ctx(|ctx| {
+        thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
+    })
+    .expect("service profile admits generated thicken face");
+    assert!(matches!(definition,
+        IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
+            faces: cadmpeg_ir::features::FaceSelection::Generated { .. }, ..
+        })
+    ));
+}
 
 #[test]
 fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {

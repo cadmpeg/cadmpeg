@@ -39,7 +39,7 @@ use super::named::{
     reference_named_feature_definition, unresolved_extrude_extent,
 };
 use super::outputs::{
-    feature_parameters, feature_reference_name, schema_operation_kind,
+    feature_parameters, feature_reference_name, schema_operation_kind, CommaList,
     section_definition_for_history_feature, sweep_output_kind, sweep_solid,
 };
 use super::round::{
@@ -102,28 +102,33 @@ pub(super) fn thicken_feature_definition(
         &scan.surfaces.rows,
     )?;
     let faces = if let Some(transitions) = transitions.as_ref() {
-            let source_ids = transitions
-                .iter()
-                .map(|(source_id, _)| *source_id)
-                .collect::<Vec<_>>();
+            let mut source_ids = Vec::new();
+            ctx.try_reserve_items(&mut source_ids, transitions.len(), "creo thicken source surface IDs")?;
+            source_ids.extend(transitions.iter().map(|(source_id, _)| *source_id));
             let available_features = model_feature_ids(ctx, scan)?;
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 ctx,
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             )?;
-            let native = format!(
-                "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
-                source_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-            let faces = source_ids
-                .iter()
-                .map(|surface_id| FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id))
-                .collect::<Vec<_>>();
+            let native = ctx.format_retained(
+                format_args!(
+                    "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
+                    CommaList(&source_ids)
+                ),
+                "creo thicken native selection",
+            )?;
+            let mut faces = Vec::new();
+            for surface_id in &source_ids {
+                let text = ctx.format_retained(
+                    format_args!("creo:visibgeom:face#{surface_id}"),
+                    "creo thicken face IDs",
+                )?;
+                let face = FaceId::mint(text)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                ctx.try_reserve_items(&mut faces, 1, "creo thicken face identities")?;
+                faces.push(face);
+            }
             if faces
                 .iter()
                 .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
@@ -136,7 +141,10 @@ pub(super) fn thicken_feature_definition(
                 &result_surface_ids,
                 &available_features,
             )? {
-                FaceSelection::generated(faces, native.clone())
+                FaceSelection::generated(
+                    faces,
+                    ctx.copy_retained_text(&native, "creo thicken generated native selection")?,
+                )
                     .unwrap_or(FaceSelection::Native(native))
             } else {
                 FaceSelection::Native(native)
