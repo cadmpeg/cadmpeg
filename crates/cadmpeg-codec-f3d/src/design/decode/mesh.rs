@@ -9,7 +9,8 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::DecodeContext;
 use std::fmt::Write;
 
-use crate::bytes::{lp_ascii_strict, lp_utf16_bounded, take_reference};
+use crate::bytes::{lp_ascii_strict, take_reference};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
@@ -533,6 +534,7 @@ fn counted_local_record_indices(
 }
 
 fn parse_mesh_entry_name_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshEntryNameRecord, CodecError> {
@@ -545,19 +547,21 @@ fn parse_mesh_entry_name_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-entry-name")?;
-    let parsed = (|| {
-        (record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
-            == Some(&[0; 10]))
-        .then_some(())?;
-        let guid_record_index =
-            exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)?;
-        let (entry_name, _) = lp_utf16_bounded(record, entry_name_prefix::LEN, 1..=1024)?;
-        Some(MeshEntryNameRecord {
-            entry: DesignMeshEntryName::new(identity, entry_name).ok()?,
-            guid_record_index,
-        })
-    })();
-    parsed.ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))
+    if record.get(entry_name_prefix::ZERO_RUN_10..entry_name_prefix::GUID_RECORD_REFERENCE)
+        != Some(&[0; 10])
+    {
+        return Err(malformed_frame("mesh-entry-name", frame.entity_id));
+    }
+    let guid_record_index =
+        exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)
+            .ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))?;
+    let (entry_name, _) = lp_utf16_bounded_charged(ctx, record, entry_name_prefix::LEN, 1..=1024)?
+        .ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))?;
+    Ok(MeshEntryNameRecord {
+        entry: DesignMeshEntryName::new(identity, entry_name)
+            .map_err(|_| malformed_frame("mesh-entry-name", frame.entity_id))?,
+        guid_record_index,
+    })
 }
 
 fn parse_mesh_guid_record(
@@ -1086,6 +1090,7 @@ fn parse_mesh_collection_owner_record(
 }
 
 fn parse_mesh_texture_filename_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<(DesignMeshRecordIdentity, String), CodecError> {
@@ -1098,15 +1103,19 @@ fn parse_mesh_texture_filename_record(
         "mesh-texture-filename",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let parsed = (|| {
-        (record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
-            == Some(&[0; 10]))
-        .then_some(())?;
-        let (filename, end) =
-            lp_utf16_bounded(record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024)?;
-        (end == record.len()).then_some((identity, filename))
-    })();
-    parsed.ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))
+    if record.get(texture_filename::ZERO_RUN_10..texture_filename::BASENAME_CODE_UNIT_COUNT)
+        != Some(&[0; 10])
+    {
+        return Err(malformed_frame("mesh-texture-filename", frame.entity_id));
+    }
+    let (filename, end) = lp_utf16_bounded_charged(
+        ctx, record, texture_filename::BASENAME_CODE_UNIT_COUNT, 1..=1024,
+    )?
+    .ok_or_else(|| malformed_frame("mesh-texture-filename", frame.entity_id))?;
+    if end != record.len() {
+        return Err(malformed_frame("mesh-texture-filename", frame.entity_id));
+    }
+    Ok((identity, filename))
 }
 
 fn unique_record_map<T>(
@@ -1293,7 +1302,7 @@ where
             ctx,
             typed_primary_frames(ctx, bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
                 .into_iter()
-                .map(|frame| parse_mesh_entry_name_record(bytes, frame)),
+                .map(|frame| parse_mesh_entry_name_record(ctx, bytes, frame)),
             "f3d mesh entry-name records",
         )?,
         |record| record.entry.record().record_index(),
@@ -1528,7 +1537,7 @@ where
                     stream_error("each texture filename reference targets a filename record")
                 })?;
             let (filename_record, filename) =
-                parse_mesh_texture_filename_record(bytes, filename_frame)?;
+                parse_mesh_texture_filename_record(ctx, bytes, filename_frame)?;
             let (archive_entry_name, asset) = asset_for_filename(&filename)?;
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
@@ -2866,6 +2875,39 @@ mod tests {
         assert_eq!(textures[1].flags, 258);
         assert_eq!(textures[1].file.filename(), "mesh-b.jpg");
         assert_eq!(textures[1].filename_ordinal, 0);
+    }
+
+    #[test]
+    fn mesh_entry_and_texture_filename_refuse_retained_text_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        const ENTRY_NAME: &str = "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh";
+        let graph = synthetic_mesh_graph(false);
+        let frame = sole_typed_frame(&graph, MESH_ENTRY_NAME_TYPE_GUID);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(ENTRY_NAME.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_mesh_entry_name_record(&ctx, &graph.bytes, frame)
+            .err().unwrap();
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+
+        let graph = synthetic_mesh_graph(true);
+        let frames = typed_primary_frames(
+            &graph.bytes, &graph.meta, MESH_TEXTURE_FILENAME_TYPE_GUID, "mesh-texture-filename",
+        ).unwrap();
+        let frame = frames[0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from("mesh-a.png".len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_mesh_texture_filename_record(&ctx, &graph.bytes, frame)
+            .err().unwrap();
+        assert!(matches!(error, CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
     }
 
     #[test]
