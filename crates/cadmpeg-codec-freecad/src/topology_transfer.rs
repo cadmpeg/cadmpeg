@@ -1777,9 +1777,14 @@ fn connected_components(
             reserve_vec_items(ctx, &mut component, 1, "FreeCAD connected-component members")?;
             component.push(current);
             for candidate in 0..connectivity.len() {
-                if !assigned[candidate]
-                    && !connectivity[current].is_disjoint(&connectivity[candidate])
-                {
+                if assigned[candidate] {
+                    continue;
+                }
+                let probe = connectivity[current].len().min(connectivity[candidate].len());
+                let work = u64::try_from(probe).unwrap_or(u64::MAX)
+                    .checked_add(1).unwrap_or(u64::MAX);
+                ctx.charge_work(work, "FreeCAD connected-component comparison")?;
+                if !connectivity[current].is_disjoint(&connectivity[candidate]) {
                     assigned[candidate] = true;
                     reserve_vec_items(ctx, &mut stack, 1, "FreeCAD connected-component stack")?;
                     stack.push(candidate);

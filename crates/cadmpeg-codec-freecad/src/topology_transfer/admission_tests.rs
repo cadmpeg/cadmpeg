@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive};
-use super::{copy_shape_for_transfer, pcurve_geometry, pcurve_loss, transform_curve, transform_surface, Builder, PcurveGeometryError};
+use super::{connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss, transform_curve, transform_surface, Builder, PcurveGeometryError};
 use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -13,6 +13,18 @@ use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::ids::{CurveId, RegionId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
+
+#[test]
+fn connected_component_comparison_refuses_at_work_limit() {
+    let connected = std::collections::HashSet::from(["edge".to_owned()]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(connected_components(&ctx, &[connected.clone(), connected]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD connected-component comparison"));
+}
 
 #[test]
 fn pcurve_loss_message_refuses_at_retained_limit() {
