@@ -16,6 +16,8 @@ use crate::test_support::test_dump::{
 };
 use crate::RhinoCodec;
 
+mod resource_limits;
+
 fn checksum_warning(
     data: &[u8],
     typecode: u32,
