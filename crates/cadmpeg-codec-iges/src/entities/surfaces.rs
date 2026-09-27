@@ -421,39 +421,33 @@ fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
     Some(value)
 }
 
-fn homogeneous_product_with_scalar(
+fn homogeneous_product_control(
     vector_controls: &[[f64; 4]],
     scalar_controls: &[[f64; 4]],
-) -> Option<Vec<[f64; 4]>> {
+    index: usize,
+) -> Option<[f64; 4]> {
     // For homogeneous rails C1=A/a and C2=B/b, the ruled blend is
     // ((1-v)A*b + v*B*a)/(a*b). Multiplying Bernstein polynomials gives the
     // exact u-direction poles without fitting the Euclidean curve.
     let vector_degree = vector_controls.len().checked_sub(1)?;
     let scalar_degree = scalar_controls.len().checked_sub(1)?;
     let degree = vector_degree.checked_add(scalar_degree)?;
-    let mut product = Vec::with_capacity(degree.checked_add(1)?);
-    for index in 0..=degree {
-        let denominator = bernstein_binomial(degree, index)?;
-        let lower = index.saturating_sub(scalar_degree);
-        let upper = index.min(vector_degree);
-        let mut control = [0.0; 4];
-        for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
-            let vector_index = lower + offset;
-            let scalar_index = index - vector_index;
-            let coefficient = bernstein_binomial(vector_degree, vector_index)?
-                * bernstein_binomial(scalar_degree, scalar_index)?
-                / denominator;
-            let scalar = scalar_controls[scalar_index][3];
-            for axis in 0..4 {
-                control[axis] += coefficient * vector_control[axis] * scalar;
-            }
+    let denominator = bernstein_binomial(degree, index)?;
+    let lower = index.saturating_sub(scalar_degree);
+    let upper = index.min(vector_degree);
+    let mut control = [0.0; 4];
+    for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
+        let vector_index = lower + offset;
+        let scalar_index = index - vector_index;
+        let coefficient = bernstein_binomial(vector_degree, vector_index)?
+            * bernstein_binomial(scalar_degree, scalar_index)?
+            / denominator;
+        let scalar = scalar_controls[scalar_index][3];
+        for axis in 0..4 {
+            control[axis] += coefficient * vector_control[axis] * scalar;
         }
-        if control.iter().any(|value| !value.is_finite()) {
-            return None;
-        }
-        product.push(control);
     }
-    Some(product)
+    control.iter().all(|value| value.is_finite()).then_some(control)
 }
 
 fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
@@ -786,7 +780,7 @@ fn ruled_surface_span_lanes(
         return Ok(None);
     };
     admit_surface_pole_count(ctx, pole_count)?;
-    let mut homogeneous = Vec::with_capacity(pole_count);
+    let mut homogeneous = reserve_optional_vec(ctx, pole_count, "iges ruled homogeneous controls")?;
     let Some(knot_count) = u_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
@@ -798,24 +792,11 @@ fn ruled_surface_span_lanes(
     else {
         return Ok(None);
     };
-    let mut u_knots = Vec::with_capacity(knot_count);
+    let mut u_knots = reserve_optional_vec(ctx, knot_count, "iges ruled homogeneous knots")?;
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
         if first_span.controls.len() != first_control_count
             || second_span.controls.len() != second_control_count
         {
-            return Ok(None);
-        }
-        let Some(first_times_second) =
-            homogeneous_product_with_scalar(&first_span.controls, &second_span.controls)
-        else {
-            return Ok(None);
-        };
-        let Some(second_times_first) =
-            homogeneous_product_with_scalar(&second_span.controls, &first_span.controls)
-        else {
-            return Ok(None);
-        };
-        if first_times_second.len() != degree + 1 || second_times_first.len() != degree + 1 {
             return Ok(None);
         }
         if span_index == 0 {
@@ -824,8 +805,12 @@ fn ruled_surface_span_lanes(
             u_knots.extend(std::iter::repeat_n(first_span.domain[0], degree));
         }
         let start = usize::from(span_index > 0);
-        for index in start..=degree {
-            homogeneous.extend([first_times_second[index], second_times_first[index]]);
+        for index in 0..=degree {
+            let Some(first_times_second) = homogeneous_product_control(&first_span.controls, &second_span.controls, index) else { return Ok(None); };
+            let Some(second_times_first) = homogeneous_product_control(&second_span.controls, &first_span.controls, index) else { return Ok(None); };
+            if index >= start {
+                homogeneous.extend([first_times_second, second_times_first]);
+            }
         }
         if span_index + 1 == spans.len() {
             u_knots.extend(std::iter::repeat_n(first_span.domain[1], degree + 1));
@@ -834,8 +819,8 @@ fn ruled_surface_span_lanes(
     if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
         return Ok(None);
     }
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = Vec::with_capacity(pole_count);
+    let mut control_points = reserve_optional_vec(ctx, pole_count, "iges ruled surface controls")?;
+    let mut weights = reserve_optional_vec(ctx, pole_count, "iges ruled surface weights")?;
     for control in homogeneous {
         let weight = control[3];
         let Some(weight) = PositiveReal::new(weight) else {

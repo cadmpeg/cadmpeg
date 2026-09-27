@@ -63,7 +63,8 @@ fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
                 if limit.operation == operation { return; }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
-            other => panic!("expected surface collection refusal at {operation}: {other:?}"),
+            Ok(_) => panic!("expected surface collection refusal at {operation}, but decode succeeded"),
+            Err(error) => panic!("expected surface collection refusal at {operation}: {error:?}"),
         }
     }
     panic!("surface collection refusal was not reached: {operation}");
@@ -114,6 +115,21 @@ fn interval_certified_ruled_rails_refuse_coordinate_arrays() {
         "iges ruled linear x uncertainties",
         "iges ruled linear y uncertainties",
         "iges ruled linear z uncertainties",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(!service.ir().model.surfaces.is_empty());
+}
+
+#[test]
+fn homogeneous_ruled_surface_refuses_control_and_knot_lanes() {
+    let bytes = rational_ruled_surface_file();
+    for operation in [
+        "iges ruled homogeneous controls",
+        "iges ruled homogeneous knots",
+        "iges ruled surface controls",
+        "iges ruled surface weights",
     ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
