@@ -157,6 +157,15 @@ fn drawing_source_type_text_refuses_retained_limit() {
 }
 
 #[test]
+fn drawing_native_target_identity_copy_refuses_retained_limit() {
+    drawing_retained_refuses_with_typed(
+        TYPED_TARGET_SOURCE,
+        "step_drawing_native_target_identity_copy",
+        &[3],
+    );
+}
+
+#[test]
 fn drawing_native_target_items_refuse_collection_limit() {
     let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
     drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_target_items", &[3]);
