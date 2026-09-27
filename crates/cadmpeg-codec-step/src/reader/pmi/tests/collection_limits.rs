@@ -624,3 +624,56 @@ fn pmi_usage_annotation_indices_refuse_collection_limit() {
                 && refusal.operation == "step_pmi_usage_annotation_indices"
     ));
 }
+
+fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
+    let source = format!("{HEADER}#1=MEASURE_REPRESENTATION_ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid measure exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    if let Some(depth_limit) = depth_limit {
+        policy.limits.max_recursion_depth = depth_limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    super::super::collect_measure_ids(
+        &crate::parse::Value::Reference(1),
+        &exchange,
+        &mut std::collections::BTreeSet::new(),
+        0,
+        64,
+        &mut std::collections::BTreeSet::new(),
+        Some(&ctx),
+    )
+    .expect_err("measure ID walk exceeds the limit")
+}
+
+#[test]
+fn pmi_measure_active_ids_refuse_collection_limit() {
+    assert!(matches!(
+        measure_id_refusal(0, None),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_measure_active_ids"
+    ));
+}
+
+#[test]
+fn pmi_measure_ids_refuse_collection_limit() {
+    assert!(matches!(
+        measure_id_refusal(1, None),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_measure_ids"
+    ));
+}
+
+#[test]
+fn pmi_measure_id_walk_refuses_depth_limit() {
+    assert!(matches!(
+        measure_id_refusal(8, Some(0)),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_measure_id_walk"
+    ));
+}
