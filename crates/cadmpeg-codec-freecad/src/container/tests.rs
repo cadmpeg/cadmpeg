@@ -21,6 +21,164 @@ fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) ->
     f(&ctx)
 }
 
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive(document);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("archive is within input limits");
+    let mut scan = super::scan(&ctx, root).expect("valid scanned document");
+    f(&mut scan)
+}
+
+#[test]
+fn source_domain_list_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        scan.document.domains.push("Part".into());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = "Part".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::source_attributes(&ctx, scan),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FCStd source domain list"));
+    });
+}
+
+#[test]
+fn source_program_version_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        scan.document.program_version = Some("1.2.3".into());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = "1.2.3".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::source_attributes(&ctx, scan),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FCStd source program version"));
+    });
+}
+
+#[test]
+fn entry_record_vector_refuses_at_collection_limit() {
+    with_scanned_document(|scan| {
+        collection_context(0, |ctx| {
+            assert!(matches!(super::entry_records(ctx, scan, &[]),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "FCStd entry records"));
+        });
+    });
+}
+
+#[test]
+fn entry_referencing_property_refuses_at_collection_limit() {
+    with_scanned_document(|scan| {
+        let entry_name = &scan.entries[0].name;
+        let property = crate::native::PropertyRecord {
+            id: "fcstd:native:property#Entry".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "Entry".into(),
+            type_name: "App::PropertyFileIncluded".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec![entry_name.clone()],
+                dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        };
+        collection_context(scan.entries.len() as u64, |ctx| {
+            assert!(matches!(super::entry_records(ctx, scan, &[property]),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "FCStd entry referencing properties"));
+        });
+    });
+}
+
+#[test]
+fn entry_referencing_identity_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        let property = crate::native::PropertyRecord {
+            id: "fcstd:native:property#Entry".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "Entry".into(),
+            type_name: "App::PropertyFileIncluded".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec![scan.entries[0].name.clone()],
+                dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = property.id.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::entry_records(&ctx, scan, &[property]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FCStd entry referencing identity"));
+    });
+}
+
+#[test]
+fn entry_identity_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        let name = &scan.entries[0].name;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::native_id("entry", name).len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::entry_records(&ctx, scan, &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD native identity"));
+    });
+}
+
+#[test]
+fn entry_name_copy_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        let name = &scan.entries[0].name;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = (crate::native::native_id("entry", name).len() + name.len()) as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::entry_records(&ctx, scan, &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "FCStd entry record name"));
+    });
+}
+
+#[test]
+fn entry_data_copy_refuses_at_retained_limit() {
+    with_scanned_document(|scan| {
+        let name = &scan.entries[0].name;
+        let byte_len = scan.data.get(name).expect("entry data").window().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = (crate::native::native_id("entry", name).len() + name.len() + byte_len) as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::entry_records(&ctx, scan, &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "retain FCStd entry"));
+    });
+}
+
 #[test]
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";

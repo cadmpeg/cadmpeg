@@ -10,6 +10,7 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -125,6 +126,58 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         ledger,
         data,
     })
+}
+
+pub(crate) fn entry_records(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    properties: &[PropertyRecord],
+) -> Result<Vec<EntryRecord>, CodecError> {
+    let mut records = collection_vec(ctx, scan.entries.len(), "FCStd entry records")?;
+    for entry in &scan.entries {
+        let bytes = scan.data.get(&entry.name).map(|view| view.window()).ok_or_else(|| {
+            CodecError::malformed(format_args!("entry {} disappeared after scan", entry.name))
+        })?;
+        let mut referenced_by = Vec::new();
+        for property in properties.iter().filter(|property| property.side_entries().contains(&entry.name)) {
+            reserve_vec_items(ctx, &mut referenced_by, 1, "FCStd entry referencing properties")?;
+            referenced_by.push(retained_string(ctx, &property.id, "FCStd entry referencing identity")?);
+        }
+        records.push(EntryRecord {
+            id: crate::native::native_id_charged(ctx, "entry", &entry.name)?,
+            name: retained_string(ctx, &entry.name, "FCStd entry record name")?,
+            role: entry.role,
+            referenced_by,
+            data: ctx.copy_retained(bytes, "retain FCStd entry")?,
+        });
+    }
+    Ok(records)
+}
+
+pub(crate) fn source_attributes(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
+    let mut attributes = BTreeMap::new();
+    attributes.insert(cadmpeg_core::nonblank_literal!("document_root"), scan.document.root_name.clone());
+    attributes.insert(cadmpeg_core::nonblank_literal!("object_count"), scan.document.object_count.to_string());
+    attributes.insert(cadmpeg_core::nonblank_literal!("document_kind"), scan.document.document_kind().as_str().to_owned());
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("application_domains"),
+        crate::resource::retained_join(ctx, &scan.document.domains, ",", "FCStd source domain list")?,
+    );
+    attributes.insert(cadmpeg_core::nonblank_literal!("archive_entry_count"), scan.entries.len().to_string());
+    attributes.insert(cadmpeg_core::nonblank_literal!("physical_ledger_spans"), scan.ledger.len().to_string());
+    if let Some(last) = scan.ledger.last() {
+        attributes.insert(cadmpeg_core::nonblank_literal!("physical_archive_bytes"), last.span.end().to_string());
+    }
+    if let Some(value) = &scan.document.program_version {
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("program_version"),
+            retained_string(ctx, value, "FCStd source program version")?,
+        );
+    }
+    Ok(attributes)
 }
 
 /// Summarize one scan.

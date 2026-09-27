@@ -806,43 +806,7 @@ impl CodecBackend for FcstdCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let scan = container::scan(ctx, root)?;
         let mut admitted_entities = 0_u64;
-        let mut attributes = BTreeMap::new();
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("document_root"),
-            scan.document.root_name.clone(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("object_count"),
-            scan.document.object_count.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("document_kind"),
-            scan.document.document_kind().as_str().to_owned(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("application_domains"),
-            scan.document.domains.join(","),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("archive_entry_count"),
-            scan.entries.len().to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("physical_ledger_spans"),
-            scan.ledger.len().to_string(),
-        );
-        if let Some(last) = scan.ledger.last() {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("physical_archive_bytes"),
-                last.span.end().to_string(),
-            );
-        }
-        if let Some(value) = &scan.document.program_version {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("program_version"),
-                value.clone(),
-            );
-        }
+        let mut attributes = container::source_attributes(ctx, &scan)?;
         let thumbnail = scan
             .data
             .get("thumbnails/Thumbnail.png")
@@ -853,10 +817,7 @@ impl CodecBackend for FcstdCodec {
                     .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
-                thumbnail.len().to_string(),
-            );
+            attributes.insert(cadmpeg_core::nonblank_literal!("thumbnail_bytes"), thumbnail.len().to_string());
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
@@ -868,7 +829,6 @@ impl CodecBackend for FcstdCodec {
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
         let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
-            ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail")?;
             source_fidelity.attach_native_unknown_records(
                 &mut ir,
                 "fcstd",
@@ -878,7 +838,7 @@ impl CodecBackend for FcstdCodec {
                         cadmpeg_ir::ids::IdentityKey::encode_segment(name),
                     ),
                     0,
-                    bytes.to_vec(),
+                    ctx.copy_retained(bytes, "retain FCStd thumbnail")?,
                     vec![native::native_id("document", "0")],
                 )],
             )?;
@@ -907,36 +867,7 @@ impl CodecBackend for FcstdCodec {
                     }
                 }
             }
-            let mut entry_records = scan
-                .entries
-                .iter()
-                .map(|entry| {
-                    let bytes = scan
-                        .data
-                        .get(&entry.name)
-                        .map(|view| view.window())
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "entry {} disappeared after scan",
-                                entry.name
-                            ))
-                        })?;
-                    let referenced_by = graph
-                        .properties
-                        .iter()
-                        .filter(|property| property.side_entries().contains(&entry.name))
-                        .map(|property| property.id.clone())
-                        .collect();
-                    ctx.charge_retained(bytes.len() as u64, "retain FCStd entry")?;
-                    Ok(native::EntryRecord {
-                        id: native::native_id("entry", &entry.name),
-                        name: entry.name.clone(),
-                        role: entry.role,
-                        referenced_by,
-                        data: bytes.to_vec(),
-                    })
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
+            let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
