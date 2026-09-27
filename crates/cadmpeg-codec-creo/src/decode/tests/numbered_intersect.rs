@@ -57,6 +57,15 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+fn feature_edge_selection_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<EdgeSelection> {
+    crate::decode::with_test_decode_ctx(|ctx| feature_edge_selection(ctx, scan, ir, feature_id))
+        .expect("service profile admits feature edge selection")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -981,7 +990,7 @@ fn mixed_current_and_generated_edges_remain_native() {
     });
 
     assert_eq!(
-        feature_edge_selection(&scan, &ir, 10),
+        feature_edge_selection_with_service(&scan, &ir, 10),
         Some(EdgeSelection::Native(
             "creo:allfeatur:edgs_affected#10:45,46".to_string()
         ))
@@ -1007,7 +1016,7 @@ fn agreed_empty_edge_selection_is_resolved() {
     ]);
 
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(), 10),
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:edgs_affected#10:".to_string(),
@@ -1027,7 +1036,7 @@ fn agreed_empty_edge_selection_is_resolved() {
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&replay_scan, &CadIr::empty(), 10),
+        feature_edge_selection_with_service(&replay_scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Resolved {
             edges: Vec::new(),
             native: "creo:allfeatur:replay_edgs_affected#10:".to_string(),
@@ -1053,7 +1062,7 @@ fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
         },
     ]);
 
-    assert_eq!(feature_edge_selection(&scan, &CadIr::empty(), 10), None);
+    assert_eq!(feature_edge_selection_with_service(&scan, &CadIr::empty(), 10), None);
 }
 
 #[test]
@@ -1165,7 +1174,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             offset: 0,
         });
     assert_eq!(
-        feature_edge_selection(&scan, &CadIr::empty(), 10),
+        feature_edge_selection_with_service(&scan, &CadIr::empty(), 10),
         Some(
             EdgeSelection::generated(
                 vec![GeneratedEdgeRef::new(
