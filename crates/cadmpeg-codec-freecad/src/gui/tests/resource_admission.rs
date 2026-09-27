@@ -139,6 +139,46 @@ fn gui_object_name_index_refuses_at_caller_limit() {
             if limit.operation == "FCStd GUI object names"));
 }
 
+#[test]
+fn gui_presentation_document_refuses_at_caller_limit() {
+    let graph = super::super::Graph {
+        documents: vec![crate::native::GuiDocumentRecord {
+            id: "fcstd:gui:document#0".into(), schema_version: None,
+            attributes: std::collections::BTreeMap::new(), states: Vec::new(),
+        }],
+        ..Default::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
+        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd presentation documents"));
+}
+
+#[test]
+fn gui_view_presentation_refuses_at_caller_limit() {
+    let graph = super::super::Graph {
+        providers: vec![crate::native::GuiViewProviderRecord {
+            id: "fcstd:gui:view-provider#P".into(), object: None, name: "P".into(),
+            expanded: None, order: 0, raw_xml: String::new(),
+        }],
+        ..Default::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
+        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd view presentations"));
+}
+
 fn assert_gui_state_service(xml: &str) {
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
