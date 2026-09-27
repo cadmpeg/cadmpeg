@@ -19,7 +19,6 @@ use crate::curve::topology_rows_with_face_ids;
 use crate::curve::topology_suffix_candidates;
 use crate::curve::topology_suffix_with_face_ids;
 use crate::curve::two_chart_pcurve_samples;
-use crate::curve::uniquely_bounded_parameter_records;
 use crate::curve::CurveExpressionHelix;
 use crate::curve::CurveParameterOpaqueSpan;
 use crate::curve::CurveParameterRecord;
@@ -57,6 +56,16 @@ fn pcurve_endpoints_service(
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     pcurve_endpoints(&ctx, parameters, topology).expect("service pcurve endpoints")
+}
+
+fn fc02_short_pcurve_endpoints_service(
+    parameters: &[CurveParameterRecord],
+    topology: &[CurveTopologyRow],
+) -> Vec<Fc02ShortPcurveEndpoints> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        fc02_short_pcurve_endpoints(ctx, parameters, topology)
+    })
+    .expect("service FC02 short pcurve endpoints")
 }
 
 fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
@@ -243,10 +252,23 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
 fn typed_parameter_rows_require_unique_identity() {
     let unique = parameter_record(7);
     assert_eq!(
-        uniquely_bounded_parameter_records(std::slice::from_ref(&unique)).len(),
+        crate::decode::with_test_decode_ctx(|ctx| crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            std::slice::from_ref(&unique),
+            |record| record.curve_id,
+        ))
+        .expect("service unique rows")
+        .len(),
         1
     );
-    assert!(uniquely_bounded_parameter_records(&[unique.clone(), unique]).is_empty());
+    let duplicates = [unique.clone(), unique];
+    assert!(crate::decode::with_test_decode_ctx(|ctx| crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &duplicates,
+        |record| record.curve_id,
+    ))
+    .expect("service duplicate rows")
+    .is_empty());
 }
 
 #[test]
@@ -360,8 +382,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     }
 }
 
-#[test]
-fn decodes_only_complete_fc02_short_pcurve_endpoints() {
+fn fc02_short_input() -> (CurveParameterRecord, CurveTopologyRow) {
     let token_specs = [
         (-14.5, vec![0x48, 0x45, 0x00]),
         (0.75, vec![0x2a, 0xe8, 0x00]),
@@ -408,9 +429,15 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
         next_edges: [841, 164],
         offset: 100,
     };
+    (record, topology)
+}
+
+#[test]
+fn decodes_only_complete_fc02_short_pcurve_endpoints() {
+    let (record, topology) = fc02_short_input();
 
     assert_eq!(
-        fc02_short_pcurve_endpoints(
+        fc02_short_pcurve_endpoints_service(
             std::slice::from_ref(&record),
             std::slice::from_ref(&topology),
         ),
@@ -424,11 +451,39 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
 
     let mut malformed = record.clone();
     malformed.scalar_tokens[3].value = 2.0;
-    assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
+    assert!(fc02_short_pcurve_endpoints_service(&[malformed], std::slice::from_ref(&topology)).is_empty());
 
     let mut malformed = record;
     malformed.scalar_tokens[6].raw[2] = 0xfe;
-    assert!(fc02_short_pcurve_endpoints(&[malformed], &[topology]).is_empty());
+    assert!(fc02_short_pcurve_endpoints_service(&[malformed], &[topology]).is_empty());
+}
+
+fn assert_fc02_short_collection_refusal(limit: u64, operation: &'static str) {
+    let (record, topology) = fc02_short_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = fc02_short_pcurve_endpoints(&ctx, &[record], &[topology])
+        .expect_err("one complete FC02 path exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn fc02_short_pcurve_refuses_unique_parameter_node() {
+    assert_fc02_short_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc02_short_pcurve_refuses_unique_parameter_projection() {
+    assert_fc02_short_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn fc02_short_pcurve_refuses_endpoint_output() {
+    assert_fc02_short_collection_refusal(2, "creo FC02 short pcurve endpoints");
 }
 
 #[test]

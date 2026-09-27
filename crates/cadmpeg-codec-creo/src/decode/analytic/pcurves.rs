@@ -813,34 +813,37 @@ fn pcurve_mismatch_detail(
 }
 
 pub(in crate::decode) fn pcurve_edge_endpoint_evidence(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> BTreeMap<u32, PcurveEndpointEvidence> {
-    pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir, source_carriers).0
+) -> Result<BTreeMap<u32, PcurveEndpointEvidence>, cadmpeg_core::CodecError> {
+    Ok(pcurve_edge_endpoint_evidence_with_diagnostics(ctx, scan, ir, source_carriers)?.0)
 }
 
 fn pcurve_edge_endpoint_evidence_with_diagnostics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> (
+) -> Result<(
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
-) {
+), cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir, source_carriers);
-    pcurve_edge_endpoint_evidence_with_carriers(scan, ir, &carriers, source_carriers)
+    pcurve_edge_endpoint_evidence_with_carriers(ctx, scan, ir, &carriers, source_carriers)
 }
 
 pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> (
+) -> Result<(
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
-) {
+), cadmpeg_core::CodecError> {
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let path_activity = PcurvePathActivity::from_scan(scan);
@@ -1042,9 +1045,10 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         );
     }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
+        ctx,
         &scan.curves.parameters,
         &scan.curves.topology_rows,
-    );
+    )?;
     for pcurve in short_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
@@ -1097,18 +1101,19 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     }
     diagnostics.evidence = evidence.len();
     diagnostics.complete_evidence = evidence.values().filter(|value| value.complete).count();
-    (evidence, diagnostics)
+    Ok((evidence, diagnostics))
 }
 
 fn pcurve_edge_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> BTreeMap<u32, [[f64; 3]; 2]> {
-    pcurve_edge_endpoint_evidence(scan, ir, source_carriers)
+) -> Result<BTreeMap<u32, [[f64; 3]; 2]>, cadmpeg_core::CodecError> {
+    Ok(pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?
         .into_iter()
         .map(|(curve_id, evidence)| (curve_id, evidence.points))
-        .collect()
+        .collect())
 }
 
 /// Keep the surface frame, with the reference reversed when `sign` is
@@ -1364,7 +1369,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
-    let reconciled_endpoints = pcurve_edge_endpoints(scan, ir, source_carriers);
+    let reconciled_endpoints = pcurve_edge_endpoints(ctx, scan, ir, source_carriers)?;
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
@@ -1437,9 +1442,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             }
         }
         for pcurve in crate::curve::fc02_short_pcurve_endpoints(
+            ctx,
             &scan.curves.parameters,
             &scan.curves.topology_rows,
-        ) {
+        )? {
             let faces = pcurve.faces.map(NonZeroU32::new);
             let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
                 scan,
@@ -2242,12 +2248,12 @@ mod tests {
                 }),
             ),
         ]);
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_carriers(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_carriers(ctx,
             &scan,
             &ir,
             &carriers,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
 
         assert_eq!(diagnostics.two_chart_surface_mismatch_records, 1);
         assert_eq!(diagnostics.carrier_validated_paths, 2);
@@ -2339,11 +2345,11 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_diagnostics(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]], true))
@@ -2431,11 +2437,11 @@ mod tests {
             source_object: None,
         });
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_diagnostics(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
         assert_eq!(
             evidence
                 .get(&846)
@@ -2577,11 +2583,11 @@ mod tests {
             },
         ]);
 
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_diagnostics(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
         assert_eq!(
             evidence.get(&7).map(|value| (value.points, value.complete)),
             Some(([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], false)),
@@ -2800,11 +2806,11 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_plane_surface(11)]);
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_diagnostics(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
@@ -2981,11 +2987,11 @@ mod tests {
         ir.model
             .surfaces
             .extend([unit_plane_surface(10), overflowing_placed_plane_surface(11)]);
-        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| pcurve_edge_endpoint_evidence_with_diagnostics(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve evidence");
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
