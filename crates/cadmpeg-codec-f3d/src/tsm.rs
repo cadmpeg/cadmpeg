@@ -256,6 +256,32 @@ fn malformed(ctx: &DecodeContext<'_>, name: &str, message: impl std::fmt::Displa
     }
 }
 
+fn subd_id_charged(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    source_key: &str,
+) -> Result<cadmpeg_ir::ids::SubdId, CodecError> {
+    const PREFIX: &str = "f3d:tspline:subd#";
+    let key_text = copy_string_charged(ctx, source_key, "retain T-spline identity key")?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key_text)
+        .map_err(|error| malformed(ctx, name, format_args!("invalid subd identity: {error}")))?;
+    let operation = "retain T-spline identity";
+    let length = PREFIX
+        .len()
+        .checked_add(key.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    text.push_str(PREFIX);
+    text.push_str(key.as_str());
+    cadmpeg_ir::ids::SubdId::mint(text)
+        .map_err(|error| malformed(ctx, name, format_args!("invalid subd identity: {error}")))
+}
+
 fn parse_int<T: std::str::FromStr>(
     ctx: &DecodeContext<'_>,
     name: &str,
@@ -1630,12 +1656,15 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: crate::ids::subd_id(source_key)
-                .map_err(|error| malformed(ctx, name, format_args!("invalid subd identity: {error}")))?,
+            id: subd_id_charged(ctx, name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,
-                object_id: cadmpeg_core::text::NonBlankString::new(name)
+                object_id: cadmpeg_core::text::NonBlankString::new(copy_string_charged(
+                    ctx,
+                    name,
+                    "retain T-spline source object ID",
+                )?)
                     .ok_or_else(|| malformed(ctx, name, "source object_id must not be empty"))?,
                 name: None,
                 color: None,
@@ -1783,6 +1812,37 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let error = super::parse(&ctx, "long-name.tsm", source).unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "describe malformed T-spline cage"));
+    }
+
+    #[test]
+    fn tsm_source_identity_key_refuses_retained_limit() {
+        let source = quad_source();
+        let error = parse_small_limit(&source, u64::MAX, 8);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain T-spline identity key"));
+    }
+
+    #[test]
+    fn tsm_source_identity_refuses_retained_limit() {
+        let source = quad_source();
+        let error = parse_small_limit(&source, u64::MAX, 34);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain T-spline identity"));
+    }
+
+    #[test]
+    fn tsm_source_object_id_refuses_retained_limit() {
+        let source = quad_source();
+        let error = parse_small_limit(&source, u64::MAX, 35);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain T-spline source object ID"));
+    }
+
+    #[test]
+    fn tsm_charged_source_identity_matches_composed_identity() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let actual = super::subd_id_charged(&ctx, "synthetic.tsm", "synthetic").unwrap();
+        assert_eq!(actual, crate::ids::subd_id("synthetic").unwrap());
     }
 
     #[test]
