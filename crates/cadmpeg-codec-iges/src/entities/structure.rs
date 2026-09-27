@@ -2838,14 +2838,13 @@ pub(super) fn project(
                     })
                 })
         });
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, |sequence| {
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, Some(ctx), |sequence| {
             flows
                 .get(&sequence)
                 .into_iter()
                 .flat_map(|flow| flow.continuations.iter().flatten().copied())
                 .filter(|target| flows.contains_key(target))
-                .collect()
-        });
+        })?;
         if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
@@ -3157,14 +3156,13 @@ pub(super) fn project(
                 break;
             }
         }
-        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
+        let cyclic = super::directed_cycle(*sequence, &mut visited, Some(ctx), |sequence| {
             assemblies
                 .get(&sequence)
                 .into_iter()
                 .flat_map(|definition| definition.items.iter().map(|(item, _)| *item))
                 .filter(|item| assemblies.contains_key(item))
-                .collect()
-        });
+        })?;
         let own_transform_valid =
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
