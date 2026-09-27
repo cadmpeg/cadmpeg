@@ -3949,17 +3949,21 @@ fn displayed_shape_bodies(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
-    Ok(displayed_shape_payload(ctx, object_id, properties, payloads)?
-        .into_iter()
-        .flat_map(|payload| {
-            let prefix = format!("{}:", crate::native::id_key(&payload.id));
-            ir.model
-                .bodies
-                .iter()
-                .filter(move |body| crate::native::id_key(body.id.as_str()).starts_with(&prefix))
-                .map(|body| body.id.clone())
-        })
-        .collect())
+    let mut body_ids = Vec::new();
+    let Some(payload) = displayed_shape_payload(ctx, object_id, properties, payloads)? else {
+        return Ok(body_ids);
+    };
+    let payload_key = crate::native::id_key(&payload.id);
+    for body in &ir.model.bodies {
+        let body_key = crate::native::id_key(body.id.as_str());
+        if body_key.strip_prefix(payload_key)
+            .is_some_and(|suffix| suffix.starts_with(':')) {
+            reserve_vec_items(ctx, &mut body_ids, 1, "FCStd GUI displayed shape bodies")?;
+            body_ids.push(crate::resource::copied_identity(ctx, body.id.as_str(),
+                "FCStd GUI displayed body identity")?);
+        }
+    }
+    Ok(body_ids)
 }
 
 fn displayed_shape_payload<'a>(
@@ -4393,7 +4397,7 @@ mod color_tests {
 
 #[cfg(test)]
 mod shape_association_tests {
-    use super::displayed_shape_group;
+    use super::{displayed_shape_bodies, displayed_shape_group};
     use crate::brep::{ShapePayload, ShapePayloadRecord};
     use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
     use crate::native::{PropertyFamily, PropertyRecord};
@@ -4448,6 +4452,54 @@ mod shape_association_tests {
             children: Vec::new(),
             names: Vec::new(),
         }
+    }
+
+    fn shape_ir() -> cadmpeg_ir::CadIr {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.bodies.push(cadmpeg_ir::topology::Body {
+            id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
+            kind: cadmpeg_ir::topology::BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir
+    }
+
+    #[test]
+    fn displayed_shape_body_collection_refuses_at_caller_limit() {
+        let ir = shape_ir();
+        let properties = [shape_property("property")];
+        let payloads = [shape_payload("payload", "property")];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error = displayed_shape_bodies(&ctx, &ir, "object", &properties, &payloads)
+            .expect_err("displayed body collection must be charged");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "FCStd GUI displayed shape bodies"), "{error:?}");
+    }
+
+    #[test]
+    fn displayed_shape_body_identity_refuses_at_retained_limit() {
+        let ir = shape_ir();
+        let properties = [shape_property("property")];
+        let payloads = [shape_payload("payload", "property")];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = ir.model.bodies[0].id.as_str().len() as u64 - 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error = displayed_shape_bodies(&ctx, &ir, "object", &properties, &payloads)
+            .expect_err("displayed body identity must be charged");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "FCStd GUI displayed body identity"), "{error:?}");
     }
 
     #[test]
