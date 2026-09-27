@@ -1236,6 +1236,7 @@ pub(crate) fn decode_sketch_relations(
                 _ => None,
             };
             let members = crate::records::sketch_relations::SketchRelationMembers::from_indices(
+                ctx,
                 parsed.members.into_iter().map(|member| {
                     (
                         member.reference.value,
@@ -1243,14 +1244,15 @@ pub(crate) fn decode_sketch_relations(
                         member.relation_ordinal,
                     )
                 }),
-            );
+            )?;
             let return_members =
                 crate::records::sketch_relations::SketchRelationReturnMembers::from_indices(
+                    ctx,
                     parsed
                         .return_members
                         .into_iter()
                         .map(|member| (member.value, member.offset as u32)),
-                );
+                )?;
             out.push(
                 SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
                     id: ids::native_sketch_relation_id(&entry.name, record.record_index),
@@ -2863,6 +2865,7 @@ pub(crate) fn decode_sketch_surfaces(
 
 /// Bind relation-connected sketch geometry to its unique owning sketch.
 pub(crate) fn bind_sketch_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entities: &[DesignEntityHeader],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
@@ -3062,7 +3065,7 @@ pub(crate) fn bind_sketch_graph(
                 .cloned()
                 .unwrap_or(SketchRelationOperand::Record { record_index })
         };
-        relation.resolve_members(resolve);
+        relation.resolve_members(ctx, resolve)?;
     }
     Ok(())
 }
