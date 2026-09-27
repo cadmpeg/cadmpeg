@@ -5,6 +5,23 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+std::thread_local! {
+    pub(crate) static PMDC_LIST_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct PmDcListCloneProbe;
+
+#[cfg(test)]
+impl Clone for PmDcListCloneProbe {
+    fn clone(&self) -> Self {
+        PMDC_LIST_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
 /// Lowercase hexadecimal digits, the only characters a hex rendering holds.
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
@@ -73,11 +90,35 @@ pub(crate) struct PmDcContentHeader {
 }
 
 /// A reference list with metadata, carrying the marker its format prefixes it with.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PmDcReferenceListWire")]
 pub(crate) struct PmDcReferenceList {
+    #[cfg(test)]
+    clone_probe: PmDcListCloneProbe,
     marker: u16,
     items: Option<(PmDcListMetadata, Vec<PmDcReference>)>,
+}
+
+#[derive(Serialize)]
+struct PmDcReferenceListRef<'a> {
+    marker: u16,
+    metadata: Option<&'a PmDcListMetadata>,
+    references: &'a [PmDcReference],
+}
+
+impl Serialize for PmDcReferenceList {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (metadata, references) = match self.items.as_ref() {
+            None => (None, &[][..]),
+            Some((metadata, references)) => (Some(metadata), references.as_slice()),
+        };
+        PmDcReferenceListRef {
+            marker: self.marker,
+            metadata,
+            references,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,6 +135,8 @@ impl PmDcReferenceList {
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
         Some(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
             marker,
             items: paired_items(metadata, references)?,
         })
@@ -136,12 +179,16 @@ impl TryFrom<PmDcReferenceListWire> for PmDcReferenceList {
 /// A reference list with metadata whose format prefixes it with no marker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PmDcPairedReferenceList<M> {
+    #[cfg(test)]
+    clone_probe: PmDcListCloneProbe,
     items: Option<(M, Vec<PmDcReference>)>,
 }
 
 impl<M> PmDcPairedReferenceList<M> {
     pub(crate) fn new(metadata: Option<M>, references: Vec<PmDcReference>) -> Option<Self> {
         Some(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
             items: paired_items(metadata, references)?,
         })
     }
@@ -165,15 +212,43 @@ impl<M> PmDcPairedReferenceList<M> {
 
 impl<M> Default for PmDcPairedReferenceList<M> {
     fn default() -> Self {
-        Self { items: None }
+        Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
+            items: None,
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PmDcU32ListWire", into = "PmDcU32ListWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PmDcU32ListWire")]
 pub(crate) struct PmDcU32List {
+    #[cfg(test)]
+    clone_probe: PmDcListCloneProbe,
     marker: u16,
     items: Option<(PmDcListMetadata, Vec<u32>)>,
+}
+
+#[derive(Serialize)]
+struct PmDcU32ListRef<'a> {
+    marker: u16,
+    metadata: Option<&'a PmDcListMetadata>,
+    values: &'a [u32],
+}
+
+impl Serialize for PmDcU32List {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (metadata, values) = match self.items.as_ref() {
+            None => (None, &[][..]),
+            Some((metadata, values)) => (Some(metadata), values.as_slice()),
+        };
+        PmDcU32ListRef {
+            marker: self.marker,
+            metadata,
+            values,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,6 +265,8 @@ impl PmDcU32List {
         values: Vec<u32>,
     ) -> Option<Self> {
         Some(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
             marker,
             items: paired_items(metadata, values)?,
         })
@@ -452,17 +529,31 @@ pub(crate) fn unique_by<'a, T, K: Eq + std::hash::Hash>(
 
 type PairedMapItems<V> = ([u32; 2], Vec<(PmDcReference, V)>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(
     try_from = "PmDcPairedMapWire<V>",
-    into = "PmDcPairedMapWire<V>",
-    bound(
-        serialize = "V: Serialize + Clone",
-        deserialize = "V: Deserialize<'de>"
-    )
+    bound(deserialize = "V: Deserialize<'de>")
 )]
 pub(crate) struct PmDcPairedMap<V> {
+    #[cfg(test)]
+    clone_probe: PmDcListCloneProbe,
     items: Option<PairedMapItems<V>>,
+}
+
+#[derive(Serialize)]
+struct PmDcPairedMapRef<'a, V> {
+    metadata: Option<[u32; 2]>,
+    entries: &'a [(PmDcReference, V)],
+}
+
+impl<V: Serialize> Serialize for PmDcPairedMap<V> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PmDcPairedMapRef {
+            metadata: self.metadata(),
+            entries: self.entries(),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -477,13 +568,19 @@ impl<V> PmDcPairedMap<V> {
         entries: Vec<(PmDcReference, V)>,
     ) -> Option<Self> {
         Some(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
             items: paired_items(metadata, entries)?,
         })
     }
 
     /// The map that carries no metadata and no entries.
     pub(crate) fn empty() -> Self {
-        Self { items: None }
+        Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
+            items: None,
+        }
     }
 
     pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
@@ -676,4 +773,6 @@ mod tests {
             "truncated input during list count at space 0 offset 4"
         );
     }
+
+    mod serialization;
 }
