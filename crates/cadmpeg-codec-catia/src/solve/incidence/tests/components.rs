@@ -723,7 +723,8 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -761,7 +762,8 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
@@ -1193,7 +1195,8 @@ fn deferred_faces_share_one_endpoint_quotient() {
     };
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -1242,10 +1245,12 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 3, 4]),
     ];
     let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &choices,
         4,
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
     )
+    .expect("service resource budget")
     .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
@@ -1286,7 +1291,8 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let assignment = [Some([0, 1]), Some([0, 1])];
     let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
     let first = domain(false);
@@ -1402,12 +1408,17 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
             missing_edges: Vec::new(),
         },
     );
-    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("initial quotient");
-    let budget = WorkBudget::new(10_000);
     catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let budget = WorkBudget::new(10_000);
     let service = crate::solve::incidence::advance_compact_boundary_domains(
         &service_ctx,
         [&domain],

@@ -342,18 +342,23 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
 
 #[test]
 fn standard_mesh_candidate_quotient_defers_occurrence_direction() {
+    catia_test_context!(ctx);
     let candidates = vec![vec![[1, 2]], vec![[0, 3]], vec![[0, 1]]];
     let local_ports = [[0, 1], [2, 3], [4, 5]];
     let prematurely_oriented_ports = [[0, 1], [1, 2], [3, 1]];
 
     assert!(
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &local_ports).is_some()
+        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 4, &local_ports)
+            .expect("service resource budget")
+            .is_some()
     );
     assert!(crate::solve::mesh_quotient::initial_mesh_quotient(
+        &ctx,
         &candidates,
         4,
         &prematurely_oriented_ports,
     )
+    .expect("service resource budget")
     .is_none());
 }
 

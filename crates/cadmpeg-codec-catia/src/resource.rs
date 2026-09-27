@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
@@ -73,4 +73,36 @@ pub(crate) fn reserve_set<T: Eq + Hash>(
     values
         .try_reserve(count)
         .map_err(|_| allocation_failed(values.len(), values.capacity(), count, operation))
+}
+
+pub(crate) fn insert_set<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if values.contains(&value) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+    Ok(values.insert(value))
+}
+
+pub(crate) fn insert_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !values.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+    }
+    Ok(values.insert(key, value))
 }

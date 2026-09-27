@@ -4768,7 +4768,8 @@ pub(crate) fn reconstruct_incidence_candidates(
     }
     let quotient = match edge_ports {
         Some(ports) => {
-            let Some(quotient) = initial_mesh_quotient(edge_candidates, vertex_points.len(), ports)
+            let Some(quotient) =
+                initial_mesh_quotient(ctx, edge_candidates, vertex_points.len(), ports)?
             else {
                 return Ok(None);
             };
