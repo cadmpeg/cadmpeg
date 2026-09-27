@@ -449,7 +449,14 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
     assert!(
-        crate::curve::pcurve_endpoints(&scan.curves.parameters, &mismatched_topology).is_empty()
+        {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            crate::curve::pcurve_endpoints(&ctx, &scan.curves.parameters, &mismatched_topology)
+                .expect("service pcurve endpoints")
+                .is_empty()
+        }
     );
 }
 

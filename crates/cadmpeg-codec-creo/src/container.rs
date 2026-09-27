@@ -2887,7 +2887,7 @@ pub(crate) fn scan_bytes<'a>(
         "creo prototype topology row aggregation",
     )?;
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
-    let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let mut pcurves = curve::pcurve_endpoints(ctx, &curve_parameters, &curve_topology_rows)?;
     let two_chart_pcurves = two_chart_pcurves(ctx, &model_geometry_sections, &topology_face_ids)?;
     if matches!(layout, Layout::LegacyAscii(_)) {
         append_legacy_curve_witnesses(

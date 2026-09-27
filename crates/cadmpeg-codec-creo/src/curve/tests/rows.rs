@@ -49,6 +49,68 @@ fn fc05_caps_service(
     fc05_cylinder_cap_pairs(&ctx, circles, topology, surfaces).expect("service cap pairs")
 }
 
+fn pcurve_endpoints_service(
+    parameters: &[CurveParameterRecord],
+    topology: &[CurveTopologyRow],
+) -> Vec<crate::curve::PcurveEndpoints> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    pcurve_endpoints(&ctx, parameters, topology).expect("service pcurve endpoints")
+}
+
+fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
+    let mut record = parameter_record(7);
+    record.body = vec![0x12; 8];
+    let topology = CurveTopologyRow {
+        id: 7,
+        type_byte: 0,
+        feature_id: 1,
+        directions: [1, 1],
+        faces: [NonZeroU32::new(2), NonZeroU32::new(3)],
+        next_edges: [7, 7],
+        offset: 1,
+    };
+    (record, topology)
+}
+
+fn assert_pcurve_endpoint_collection_refusal(limit: u64, operation: &'static str) {
+    let (record, topology) = pcurve_zero_lane_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = pcurve_endpoints(&ctx, &[record], &[topology])
+        .expect_err("one eight-slot pcurve exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn pcurve_endpoints_refuse_unique_parameter_count_node() {
+    assert_pcurve_endpoint_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn pcurve_endpoints_refuse_unique_parameter_projection() {
+    assert_pcurve_endpoint_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn pcurve_endpoints_refuse_output_vector() {
+    assert_pcurve_endpoint_collection_refusal(2, "creo pcurve endpoint rows");
+}
+
+#[test]
+fn pcurve_endpoints_preserve_eight_zero_slots() {
+    let (record, topology) = pcurve_zero_lane_input();
+    let endpoints = pcurve_endpoints_service(&[record], &[topology]);
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0]; 2]);
+    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0]; 2]);
+}
+
 fn fc05_caps_with_collection_limit(
     max_collection_items: u64,
 ) -> Result<Vec<Fc05CylinderCapPair>, CodecError> {
@@ -215,7 +277,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         offset: 1,
     };
 
-    assert!(pcurve_endpoints(&[record], &[topology]).is_empty());
+    assert!(pcurve_endpoints_service(&[record], &[topology]).is_empty());
 }
 
 #[test]
