@@ -31,6 +31,7 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -136,6 +137,22 @@ fn insert_geometry_hash_set<T: Eq + Hash>(
         values.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
         values.insert(value);
+    }
+    Ok(())
+}
+
+fn attach_geometry_source(
+    source: &mut Option<SourceObjectAssociation>,
+    id: u64,
+    name: Option<&str>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if source.is_none() {
+        let name = name
+            .map(|name| crate::decode_alloc::charged_format(ctx, operation, format_args!("{name}")))
+            .transpose()?;
+        *source = Some(super::step_source_association(id, name));
     }
     Ok(())
 }
@@ -2544,30 +2561,23 @@ pub(super) fn associate_free_geometric_set_members(
                 .transpose()?
                 .flatten()
                 .filter(|name| !name.is_empty());
-            let association = || super::step_source_association(member, name.clone());
             if let Some(index) = index.curves.get(&member) {
                 if owned.curves.contains(index) {
                     continue;
                 }
-                ir.model.curves[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(&mut ir.model.curves[index.0].source_object, member, name.as_deref(), ctx, "step_geometric_set_association_name_copy")?;
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                ir.model.points[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(&mut ir.model.points[index.0].source_object, member, name.as_deref(), ctx, "step_geometric_set_association_name_copy")?;
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                ir.model.surfaces[index.0]
-                    .source_object
-                    .get_or_insert_with(association);
+                attach_geometry_source(&mut ir.model.surfaces[index.0].source_object, member, name.as_deref(), ctx, "step_geometric_set_association_name_copy")?;
             }
         }
     }
@@ -2615,26 +2625,19 @@ pub(super) fn associate_free_representation_members(
                 .transpose()?
                 .flatten()
                 .filter(|name| !name.is_empty());
-            let association = || super::step_source_association(member, source_name.clone());
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
-                    ir.model.curves[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(&mut ir.model.curves[index.0].source_object, member, source_name.as_deref(), ctx, "step_representation_association_name_copy")?;
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
-                    ir.model.points[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(&mut ir.model.points[index.0].source_object, member, source_name.as_deref(), ctx, "step_representation_association_name_copy")?;
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
-                    ir.model.surfaces[index.0]
-                        .source_object
-                        .get_or_insert_with(association);
+                    attach_geometry_source(&mut ir.model.surfaces[index.0].source_object, member, source_name.as_deref(), ctx, "step_representation_association_name_copy")?;
                 }
             }
         }
@@ -2705,26 +2708,19 @@ fn associate_presentation_carrier(
         .transpose()?
         .flatten()
         .filter(|name| !name.is_empty());
-    let association = || super::step_source_association(source_id, name.clone());
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
-            ir.model.curves[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(&mut ir.model.curves[index.0].source_object, source_id, name.as_deref(), ctx, "step_presentation_association_name_copy")?;
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
-            ir.model.points[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(&mut ir.model.points[index.0].source_object, source_id, name.as_deref(), ctx, "step_presentation_association_name_copy")?;
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
-            ir.model.surfaces[index.0]
-                .source_object
-                .get_or_insert_with(association);
+            attach_geometry_source(&mut ir.model.surfaces[index.0].source_object, source_id, name.as_deref(), ctx, "step_presentation_association_name_copy")?;
         }
     }
     Ok(())
