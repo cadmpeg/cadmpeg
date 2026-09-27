@@ -563,11 +563,8 @@ pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> 
 }
 
 /// Named parameter declaration in a bounded NX expression object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ExpressionDeclarationWire",
-    into = "ExpressionDeclarationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ExpressionDeclarationWire")]
 pub(super) struct ExpressionDeclaration {
     /// Globally unique declaration identity.
     pub(super) id: String,
@@ -584,6 +581,41 @@ pub(super) struct ExpressionDeclaration {
     pub(super) source_entry: String,
     /// Absolute file offset of the declaration-name marker.
     pub(super) source_offset: u64,
+}
+
+#[cfg(test)]
+mod expression_wire_tests;
+
+#[derive(Serialize)]
+struct ExpressionDeclarationRef<'a> {
+    id: &'a str,
+    object_id: u32,
+    record: &'a str,
+    name: &'a str,
+    parameter_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    qualifier: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    literal: Option<&'a str>,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for ExpressionDeclaration {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ExpressionDeclarationRef {
+            id: &self.id,
+            object_id: self.object_id,
+            record: &self.record,
+            name: self.name.as_str(),
+            parameter_index: self.name.index(),
+            qualifier: self.name.qualifier(),
+            literal: self.literal.as_deref(),
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -618,6 +650,7 @@ struct ExpressionDeclarationWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ExpressionDeclaration> for ExpressionDeclarationWire {
     fn from(value: ExpressionDeclaration) -> Self {
         Self {
@@ -655,8 +688,8 @@ impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
 }
 
 /// Explicit numeric expression serialized in one NX OM entity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ExpressionWire", into = "ExpressionWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ExpressionWire")]
 pub(super) struct Expression {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -681,6 +714,46 @@ pub(super) struct Expression {
     pub(super) source_table: cadmpeg_core::text::NonBlankString,
     /// Absolute file offset of the expression text.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ExpressionRef<'a> {
+    id: &'a str,
+    object_id: Option<u32>,
+    record: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declaration: Option<&'a str>,
+    name: &'a str,
+    parameter_index: Option<u32>,
+    qualifier: Option<&'a str>,
+    unit: &'a ExpressionUnit,
+    expression: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<f64>,
+    source_entry: &'a str,
+    source_table: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for Expression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ExpressionRef {
+            id: &self.id,
+            object_id: self.owner.as_ref().map(|owner| owner.object_id),
+            record: self.owner.as_ref().map(|owner| owner.record.as_str()),
+            declaration: self.declaration.as_deref(),
+            name: self.name.as_str(),
+            parameter_index: self.name.index(),
+            qualifier: self.name.qualifier(),
+            unit: &self.unit,
+            expression: &self.expression,
+            value: self.value.map(FiniteReal::get),
+            source_entry: &self.source_entry,
+            source_table: self.source_table.as_str(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -730,6 +803,7 @@ struct ExpressionWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<Expression> for ExpressionWire {
     fn from(value: Expression) -> Self {
         let (object_id, record) = value.owner.map_or((None, None), |owner| {
