@@ -7615,26 +7615,28 @@ fn invariant_face_carrier_bindings(
     owner_count: usize,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<Option<Vec<Option<usize>>>, cadmpeg_core::CodecError> {
-    let normalized = face_edges
-        .iter()
-        .map(|edges| {
+    let mut normalized = Vec::new();
+    for edges in face_edges {
             let mut by_owner = BTreeMap::<usize, HashSet<usize>>::new();
             for (owner, carriers) in edges {
                 if *owner >= owner_count || carriers.is_empty() {
                     continue;
                 }
-                by_owner
-                    .entry(*owner)
-                    .or_default()
-                    .extend(carriers.iter().copied());
+                if !by_owner.contains_key(owner) {
+                    crate::resource::insert_btree_map(ctx, &mut by_owner, *owner, HashSet::new(), "catia_a5_owner_domain_rows")?;
+                }
+                let Some(domain) = by_owner.get_mut(owner) else { continue };
+                for carrier in carriers.iter().copied() {
+                    crate::resource::insert_set(ctx, domain, carrier, "catia_a5_owner_domain_carriers")?;
+                }
             }
-            by_owner
-        })
-        .collect::<Vec<_>>();
-    let mut domains = normalized
-        .iter()
-        .map(|edges| edges.keys().copied().collect::<Vec<_>>())
-        .collect::<Vec<_>>();
+            crate::resource::push(ctx, &mut normalized, by_owner, "catia_a5_normalized_faces")?;
+    }
+    let mut domains = Vec::new();
+    for edges in &normalized {
+        let domain = crate::resource::collect_vec(ctx, edges.keys().copied(), "catia_a5_owner_domain_keys")?;
+        crate::resource::push(ctx, &mut domains, domain, "catia_a5_owner_domains")?;
+    }
     let matching = distinct_domain_matching_with_budget(
         ctx,
         domains.iter().map(Vec::as_slice),
@@ -7650,24 +7652,19 @@ fn invariant_face_carrier_bindings(
     else {
         return Ok(None);
     };
-    Ok(Some(
-        domains
-            .iter()
-            .zip(&normalized)
-            .map(|(owners, labels)| {
-                let carriers = owners
-                    .iter()
-                    .filter_map(|owner| labels.get(owner))
-                    .flatten()
-                    .copied()
-                    .collect::<HashSet<_>>();
-                if carriers.len() != 1 {
-                    return None;
+    let mut bindings = Vec::new();
+    for (owners, labels) in domains.iter().zip(&normalized) {
+                let mut carriers = HashSet::new();
+                for carrier in owners.iter().filter_map(|owner| labels.get(owner)).flatten().copied() {
+                    crate::resource::insert_set(ctx, &mut carriers, carrier, "catia_a5_reachable_carriers")?;
                 }
-                carriers.into_iter().next()
-            })
-            .collect(),
-    ))
+                if carriers.len() != 1 {
+                    crate::resource::push(ctx, &mut bindings, None, "catia_a5_invariant_bindings")?;
+                } else {
+                    crate::resource::push(ctx, &mut bindings, carriers.into_iter().next(), "catia_a5_invariant_bindings")?;
+                }
+    }
+    Ok(Some(bindings))
 }
 
 fn owner_matches_a5_carrier(
@@ -7718,86 +7715,72 @@ fn owner_contains_face_bounds(
     })
 }
 
-fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
-    let point_positions = ir
-        .model
-        .points
-        .iter()
-        .map(|point| (point.id.clone(), point.position().get()))
-        .collect::<HashMap<_, _>>();
-    let vertex_positions = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
-        .collect::<HashMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.clone(), edge))
-        .collect::<HashMap<_, _>>();
-    let coedges = ir
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| (coedge.id.clone(), coedge))
-        .collect::<HashMap<_, _>>();
-    let loops = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.clone(), loop_))
-        .collect::<HashMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (curve.id.clone(), curve))
-        .collect::<HashMap<_, _>>();
-    ir.model
-        .faces
-        .iter()
-        .map(|face| {
-            let mut witnesses = Vec::new();
-            for edge in face
-                .loops
-                .iter()
-                .filter_map(|id| loops.get(id))
-                .flat_map(|loop_| loop_.coedges())
-                .filter_map(|id| coedges.get(id))
-                .filter_map(|coedge| edges.get(&coedge.edge))
-            {
-                witnesses.extend(
-                    [&edge.start, &edge.end]
-                        .into_iter()
-                        .filter_map(|id| vertex_positions.get(id).copied()),
-                );
-                let Some((curve, [start, end])) = edge
-                    .curve()
-                    .and_then(|id| curves.get(id))
-                    .zip(edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
-                else {
-                    continue;
-                };
-                if let Ok(point) =
-                    cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end))
-                {
-                    witnesses.push(point.get());
+fn standard_face_boundary_witnesses(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Vec<Point3>>, CodecError> {
+    let mut point_positions = HashMap::new();
+    for point in &ir.model.points {
+        crate::resource::insert_map(ctx, &mut point_positions, point.id.as_str(), point.position().get(), "catia_a5_witness_point_positions")?;
+    }
+    let mut vertex_positions = HashMap::new();
+    for vertex in &ir.model.vertices {
+        if let Some(&position) = point_positions.get(vertex.point.as_str()) {
+            crate::resource::insert_map(ctx, &mut vertex_positions, vertex.id.as_str(), position, "catia_a5_witness_vertex_positions")?;
+        }
+    }
+    let mut edges = HashMap::new();
+    for edge in &ir.model.edges {
+        crate::resource::insert_map(ctx, &mut edges, edge.id.as_str(), edge, "catia_a5_witness_edges")?;
+    }
+    let mut coedges = HashMap::new();
+    for coedge in &ir.model.coedges {
+        crate::resource::insert_map(ctx, &mut coedges, coedge.id.as_str(), coedge, "catia_a5_witness_coedges")?;
+    }
+    let mut loops = HashMap::new();
+    for loop_ in &ir.model.loops {
+        crate::resource::insert_map(ctx, &mut loops, loop_.id.as_str(), loop_, "catia_a5_witness_loops")?;
+    }
+    let mut curves = HashMap::new();
+    for curve in &ir.model.curves {
+        crate::resource::insert_map(ctx, &mut curves, curve.id.as_str(), curve, "catia_a5_witness_curves")?;
+    }
+    let mut face_witnesses = Vec::new();
+    for face in &ir.model.faces {
+        let mut witnesses = Vec::new();
+        for edge in face
+            .loops
+            .iter()
+            .filter_map(|id| loops.get(id.as_str()))
+            .flat_map(|loop_| loop_.coedges())
+            .filter_map(|id| coedges.get(id.as_str()))
+            .filter_map(|coedge| edges.get(coedge.edge.as_str()))
+        {
+            for id in [&edge.start, &edge.end] {
+                if let Some(&position) = vertex_positions.get(id.as_str()) {
+                    crate::resource::push(ctx, &mut witnesses, position, "catia_a5_face_witness_points")?;
                 }
             }
-            let mut distinct = Vec::<Point3>::new();
-            for point in witnesses {
-                if distinct
-                    .iter()
-                    .all(|stored| stored.distance(point) > NURBS_SURFACE_MEMBERSHIP_TOLERANCE)
-                {
-                    distinct.push(point);
-                }
+            let Some((curve, [start, end])) = edge
+                .curve()
+                .and_then(|id| curves.get(id.as_str()))
+                .zip(edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
+            else {
+                continue;
+            };
+            if let Ok(point) = cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end)) {
+                crate::resource::push(ctx, &mut witnesses, point.get(), "catia_a5_face_witness_points")?;
             }
-            distinct
-        })
-        .collect()
+        }
+        let mut distinct = Vec::new();
+        for point in witnesses {
+            if distinct.iter().all(|stored: &Point3| stored.distance(point) > NURBS_SURFACE_MEMBERSHIP_TOLERANCE) {
+                crate::resource::push(ctx, &mut distinct, point, "catia_a5_distinct_face_witnesses")?;
+            }
+        }
+        crate::resource::push(ctx, &mut face_witnesses, distinct, "catia_a5_face_witness_rows")?;
+    }
+    Ok(face_witnesses)
 }
 
 #[derive(Clone, Copy)]
@@ -7834,7 +7817,7 @@ fn bind_standard_a5_owner_surfaces(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let witnesses = standard_face_boundary_witnesses(ir);
+    let witnesses = standard_face_boundary_witnesses(ctx, ir)?;
     let surface_indices = ir
         .model
         .surfaces
