@@ -1034,49 +1034,65 @@ pub(crate) fn checked_object_node_id(
     Ok(id)
 }
 
-fn parent_object_offsets(scopes: &[Scope]) -> BTreeMap<usize, usize> {
+fn declaration_index<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: &'a Scope,
+) -> Result<BTreeMap<u32, &'a AttributeDeclaration>, CodecError> {
+    let mut declarations = BTreeMap::new();
+    for declaration in &scope.declarations {
+        if !declarations.contains_key(&declaration.id) {
+            ctx.charge_collection_items(1, "creo legacy declaration lookup nodes")?;
+        }
+        declarations.insert(declaration.id, declaration);
+    }
+    Ok(declarations)
+}
+
+fn parent_object_offsets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scopes: &[Scope],
+) -> Result<BTreeMap<usize, usize>, CodecError> {
     let mut parents = BTreeMap::new();
     for scope in scopes {
-        let declarations = scope
-            .declarations
-            .iter()
-            .map(|declaration| (declaration.id, declaration))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = declaration_index(ctx, scope)?;
         let mut active_objects = BTreeMap::<u32, usize>::new();
         for value in &scope.values {
-            drop(active_objects.split_off(&value.depth));
+            active_objects.retain(|depth, _| *depth < value.depth);
             if let Some(parent) = value
                 .depth
                 .checked_sub(1)
                 .and_then(|depth| active_objects.get(&depth))
             {
+                if !parents.contains_key(&value.offset) {
+                    ctx.charge_collection_items(1, "creo legacy parent offset nodes")?;
+                }
                 parents.insert(value.offset, *parent);
             }
             if declarations
                 .get(&value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             {
+                if !active_objects.contains_key(&value.depth) {
+                    ctx.charge_collection_items(1, "creo legacy active object nodes")?;
+                }
                 active_objects.insert(value.depth, value.offset);
             }
         }
     }
-    parents
+    Ok(parents)
 }
 
 fn object_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<ObjectRecord>, usize, usize) {
+) -> Result<(Vec<ObjectRecord>, usize, usize), CodecError> {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
     for scope in scopes {
-        let declarations = scope
-            .declarations
-            .iter()
-            .map(|declaration| (declaration.id, declaration))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = declaration_index(ctx, scope)?;
         let value_attributes = scope
             .values
             .iter()
@@ -1144,7 +1160,7 @@ fn object_records(
             });
         }
     }
-    (records, incomplete_arrays, unresolved)
+    Ok((records, incomplete_arrays, unresolved))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1172,20 +1188,17 @@ fn string_value(bytes: &[u8]) -> StringValue {
 }
 
 fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
     identity_kind: ValueKind<K>,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
-) -> TypedValues<ValueRecord<K>> {
+) -> Result<TypedValues<ValueRecord<K>>, CodecError> {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
-        let declarations = scope
-            .declarations
-            .iter()
-            .map(|declaration| (declaration.id, declaration))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = declaration_index(ctx, scope)?;
         for value in &scope.values {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
@@ -1213,26 +1226,23 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
             });
         }
     }
-    TypedValues {
+    Ok(TypedValues {
         rows: records,
         unresolved_count: unresolved,
-    }
+    })
 }
 
 fn string_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<StringRecord>, usize, usize) {
+) -> Result<(Vec<StringRecord>, usize, usize), CodecError> {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
     for scope in scopes {
-        let declarations = scope
-            .declarations
-            .iter()
-            .map(|declaration| (declaration.id, declaration))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = declaration_index(ctx, scope)?;
         let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
         let mut array_children = BTreeMap::<usize, Vec<&AttributeValue>>::new();
         let mut array_element_offsets = BTreeSet::new();
@@ -1312,27 +1322,24 @@ fn string_records(
             });
         }
     }
-    (records, incomplete_arrays, unresolved)
+    Ok((records, incomplete_arrays, unresolved))
 }
 
 fn numeric_records<K, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     scopes: &[Scope],
     identity_kind: ValueKind<K>,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
-) -> TypedValues<ValueRecord<K>>
+) -> Result<TypedValues<ValueRecord<K>>, CodecError>
 where
     K: LegacyCode<Payload = NumericPayload<T>>,
 {
     let mut records = Vec::new();
     let mut unresolved = 0usize;
     for scope in scopes {
-        let declarations = scope
-            .declarations
-            .iter()
-            .map(|declaration| (declaration.id, declaration))
-            .collect::<BTreeMap<_, _>>();
+        let declarations = declaration_index(ctx, scope)?;
         let mut index = 0;
         while let Some(value) = scope.values.get(index) {
             let Some(declaration) = declarations
@@ -1421,10 +1428,10 @@ where
             index = next_index;
         }
     }
-    TypedValues {
+    Ok(TypedValues {
         rows: records,
         unresolved_count: unresolved,
-    }
+    })
 }
 
 fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
@@ -1558,37 +1565,39 @@ pub(crate) fn scan(
             scopes.push(scan_scope(ctx, data, range)?);
         }
     }
-    let parents = parent_object_offsets(&scopes);
+    let parents = parent_object_offsets(ctx, &scopes)?;
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
-        object_records(data, &scopes, &parents);
+        object_records(ctx, data, &scopes, &parents)?;
     let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
-        string_records(data, &scopes, &parents);
+        string_records(ctx, data, &scopes, &parents)?;
     let type_3_values = scalar_string_records(
+        ctx,
         data,
         &scopes,
         ValueKind::TYPE3,
         NullToken::RepresentsNull,
         &parents,
-    );
+    )?;
     let type_4_values = scalar_string_records(
+        ctx,
         data,
         &scopes,
         ValueKind::TYPE4,
         NullToken::RepresentsBytes,
         &parents,
-    );
-    let real_values = numeric_records(data, &scopes, ValueKind::REAL, compact_real, &parents);
+    )?;
+    let real_values = numeric_records(ctx, data, &scopes, ValueKind::REAL, compact_real, &parents)?;
     let integer_values =
-        numeric_records(data, &scopes, ValueKind::INTEGER, signed_integer, &parents);
+        numeric_records(ctx, data, &scopes, ValueKind::INTEGER, signed_integer, &parents)?;
     let type_5_values =
-        numeric_records(data, &scopes, ValueKind::TYPE5, unsigned_integer, &parents);
-    let type_6_values = numeric_records(data, &scopes, ValueKind::TYPE6, compact_real, &parents);
+        numeric_records(ctx, data, &scopes, ValueKind::TYPE5, unsigned_integer, &parents)?;
+    let type_6_values = numeric_records(ctx, data, &scopes, ValueKind::TYPE6, compact_real, &parents)?;
     let type_7_values =
-        numeric_records(data, &scopes, ValueKind::TYPE7, unsigned_integer, &parents);
+        numeric_records(ctx, data, &scopes, ValueKind::TYPE7, unsigned_integer, &parents)?;
     let type_9_values =
-        numeric_records(data, &scopes, ValueKind::TYPE9, unsigned_integer, &parents);
+        numeric_records(ctx, data, &scopes, ValueKind::TYPE9, unsigned_integer, &parents)?;
     let type_11_values =
-        numeric_records(data, &scopes, ValueKind::TYPE11, unsigned_integer, &parents);
+        numeric_records(ctx, data, &scopes, ValueKind::TYPE11, unsigned_integer, &parents)?;
     Ok(Persistence {
         scopes,
         real_values,
