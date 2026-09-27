@@ -2499,10 +2499,10 @@ impl<'a> DecodeContext<'a> {
         }
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
-        let outcomes = self.class_outcomes();
+        let outcomes = self.class_outcomes()?;
         let decoded = outcomes
-            .values()
-            .map(|outcome| outcome.decoded)
+            .iter()
+            .map(|(_, outcome)| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
         losses.push(
@@ -3632,19 +3632,22 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn class_outcomes(&self) -> BTreeMap<String, ClassOutcome<'a>> {
-        let mut outcomes = BTreeMap::new();
+    fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
+        let ctx = self.expand.ctx();
+        let mut outcomes = HashMap::new();
         for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
-            let outcome = outcomes
-                .entry(report_class(object))
-                .or_insert_with(|| ClassOutcome {
-                    decoded: 0,
-                    retained: 0,
-                    native: None,
-                    attribute_degraded: 0,
-                    failed_framed: 0,
-                    first_object: object,
-                });
+            let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
+            if !outcomes.contains_key(&class) {
+                reserve_transaction_map(ctx, &mut outcomes, 1, "Rhino class outcome keys")?;
+            }
+            let outcome = outcomes.entry(class).or_insert_with(|| ClassOutcome {
+                decoded: 0,
+                retained: 0,
+                native: None,
+                attribute_degraded: 0,
+                failed_framed: 0,
+                first_object: object,
+            });
             // Keep the first framed source, or the last degraded source if none was framed.
             if outcome.first_object.is_degraded() {
                 outcome.first_object = object;
@@ -3662,12 +3665,30 @@ impl<'a> DecodeContext<'a> {
                     let count = outcome
                         .native
                         .as_ref()
-                        .map_or(NonZeroUsize::MIN, |(_, count)| count.saturating_add(1));
+                        .map_or(Some(NonZeroUsize::MIN), |(_, count)| {
+                            count.get().checked_add(1).and_then(NonZeroUsize::new)
+                        })
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Rhino class outcome count overflow",
+                            )
+                        })?;
                     outcome.native = Some((*code, count));
                 }
             }
         }
-        outcomes
+        let mut sorted = Vec::new();
+        reserve_transaction_vec(ctx, &mut sorted, outcomes.len(), "Rhino class outcome rows")?;
+        for (class, outcome) in outcomes {
+            let label = crate::wire::admitted_format(
+                ctx,
+                format_args!("{class}"),
+                "Rhino class outcome label",
+            )?;
+            sorted.push((label, outcome));
+        }
+        sorted.sort_unstable_by(|(first, _), (second, _)| first.cmp(second));
+        Ok(sorted)
     }
 }
 

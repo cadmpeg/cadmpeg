@@ -2,9 +2,10 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    commit_curve_tree, hatch_loop_ids, hatch_source_links, one_child_compound, stage_curve_tree,
-    test_association, with_collection_limit, BrepDraft, CadIr, CandidateError, CurveCommitSource,
-    DecodeContext,
+    commit_curve_tree, hatch_loop_ids, hatch_source_links, object_record, one_child_compound,
+    scan_with_objects, stage_curve_tree, test_association, with_collection_limit,
+    with_transaction_limits, ArchiveVersion, BrepDraft, CadIr, CandidateError, CurveCommitSource,
+    DecodeContext, POINT_CLASS,
 };
 
 fn staged_curve_tree_refusal(limit: u64, operation: &str) {
@@ -149,4 +150,59 @@ fn hatch_feature_link_text_refuses_retained_limit() {
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino hatch feature link text"
     ));
+}
+
+#[test]
+fn class_outcome_keys_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let error = with_transaction_limits(&scan, 4, None, |expand| {
+        let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .class_outcomes()
+            .expect_err("class key exceeds four collection items")
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino class outcome keys")
+    );
+    let outcomes = with_transaction_limits(&scan, 6, None, |expand| {
+        let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .class_outcomes()
+            .expect("service-size class outcome")
+            .len()
+    });
+    assert_eq!(outcomes, 1);
+}
+
+#[test]
+fn class_outcome_rows_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let error = with_transaction_limits(&scan, 5, None, |expand| {
+        let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .class_outcomes()
+            .expect_err("class row exceeds five collection items")
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino class outcome rows")
+    );
+}
+
+#[test]
+fn class_outcome_label_refuses_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let retained_record_bytes =
+        u64::try_from(scan.objects[0].range().len()).expect("bounded point-cloud fixture");
+    let error = with_transaction_limits(&scan, 6, Some(retained_record_bytes), |expand| {
+        let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .class_outcomes()
+            .expect_err("class label exceeds retained record bytes")
+    });
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino class outcome label")
+    );
 }
