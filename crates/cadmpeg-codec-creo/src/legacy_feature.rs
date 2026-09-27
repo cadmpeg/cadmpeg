@@ -63,7 +63,11 @@ impl<'a> Index<'a> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in &persistence.objects {
-            let id = legacy::checked_object_node_id(ctx, object.offset)?;
+            let id = legacy::checked_object_node_id(
+                ctx,
+                object.offset,
+                "creo legacy feature object index IDs",
+            )?;
             match objects.entry(id) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     ctx.charge_collection_items(1, "creo legacy feature object index nodes")?;
@@ -355,6 +359,18 @@ mod tests {
         scan_checked(&ctx, persistence, topology_rows)
     }
 
+    fn scan_with_retained_limit(
+        persistence: &Persistence,
+        limit: u64,
+    ) -> Result<super::LegacyFeatureScan, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence, &[])
+    }
+
     fn assert_collection_refusal(
         persistence: &Persistence,
         topology_rows: &[CurveTopologyRow],
@@ -532,6 +548,18 @@ mod tests {
         let fixture = persistence(&[2.0]);
         assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
         assert_collection_refusal(&fixture, &[], "creo legacy feature object index nodes");
+    }
+
+    #[test]
+    fn legacy_feature_object_index_ids_refuse_before_string_growth() {
+        let fixture = persistence(&[2.0]);
+        assert_eq!(scan(&fixture, &[]).rounds.len(), 1);
+        assert!(matches!(
+            scan_with_retained_limit(&fixture, 0),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "creo legacy feature object index IDs"
+        ));
     }
 
     #[test]
