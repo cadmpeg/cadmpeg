@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::{OccurrenceDefinition, OccurrenceExpansion, RealPrecision};
@@ -39,6 +40,8 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
         },
     )]);
     let neutral_links = BTreeMap::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let expansion = OccurrenceExpansion {
         entries: &entries,
         records: &records,
@@ -51,7 +54,7 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
         },
         output_limit: 10,
         depth_limit: 10,
-        ctx: None,
+        ctx: &ctx,
     };
     let mut path = Vec::new();
     let mut occurrences = Vec::new();

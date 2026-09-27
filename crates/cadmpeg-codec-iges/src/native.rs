@@ -1227,6 +1227,7 @@ struct NativeUnitsData {
 /// be set independently: [`NativeProductOccurrence::new`] derives both from the
 /// instance path and the optional member, and the id from the same path.
 mod occurrence {
+    use super::{collect_result_vec, format_retained, CodecError, DecodeContext};
     use serde::{Serialize, Serializer};
 
     /// What one product occurrence record is: the assembly root, a nested
@@ -1263,12 +1264,27 @@ mod occurrence {
         world_transform: [[f64; 4]; 3],
     }
 
+    struct OccurrencePath<'a>(&'a [u32]);
+
+    impl std::fmt::Display for OccurrencePath<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for (index, sequence) in self.0.iter().enumerate() {
+                if index != 0 {
+                    formatter.write_str("/")?;
+                }
+                write!(formatter, "{sequence}")?;
+            }
+            Ok(())
+        }
+    }
+
     impl NativeProductOccurrence {
         /// The occurrence reached by `path`, or one member of its definition.
         ///
         /// The assembly root is the occurrence at the head of the path that
         /// names no member; every other record is nested or a member.
         pub(super) fn new(
+            ctx: &DecodeContext<'_>,
             path: &[u32],
             member: Option<u32>,
             instance_sequence: u32,
@@ -1276,39 +1292,34 @@ mod occurrence {
             neutral_links: Vec<String>,
             local_transform: [[f64; 4]; 3],
             world_transform: [[f64; 4]; 3],
-        ) -> Self {
-            let path_key = path
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join("/");
+        ) -> Result<Self, CodecError> {
+            let path_key = OccurrencePath(path);
             let (id, role) = match member {
                 Some(member) => (
-                    format!("iges:product:occurrence#{path_key}/D{member}"),
-                    OccurrenceRole::Member(format!("iges:entity:directory#{member}")),
+                    format_retained(ctx, format_args!("iges:product:occurrence#{path_key}/D{member}"), "iges native occurrence id")?,
+                    OccurrenceRole::Member(format_retained(ctx, format_args!("iges:entity:directory#{member}"), "iges native occurrence member")?),
                 ),
                 None if path.len() == 1 => (
-                    format!("iges:product:occurrence#{path_key}"),
+                    format_retained(ctx, format_args!("iges:product:occurrence#{path_key}"), "iges native occurrence id")?,
                     OccurrenceRole::Root,
                 ),
                 None => (
-                    format!("iges:product:occurrence#{path_key}"),
+                    format_retained(ctx, format_args!("iges:product:occurrence#{path_key}"), "iges native occurrence id")?,
                     OccurrenceRole::Nested,
                 ),
             };
-            Self {
+            Ok(Self {
                 id,
                 role,
-                source_instance: format!("iges:entity:directory#{instance_sequence}"),
-                definition: format!("iges:entity:directory#{definition_sequence}"),
+                source_instance: format_retained(ctx, format_args!("iges:entity:directory#{instance_sequence}"), "iges native occurrence instance")?,
+                definition: format_retained(ctx, format_args!("iges:entity:directory#{definition_sequence}"), "iges native occurrence definition")?,
                 neutral_links,
-                instance_path: path
-                    .iter()
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
+                instance_path: collect_result_vec(ctx, path.len(), "iges native occurrence path slots", |index| {
+                    format_retained(ctx, format_args!("iges:entity:directory#{}", path[index]), "iges native occurrence path entry")
+                })?,
                 local_transform,
                 world_transform,
-            }
+            })
         }
     }
 
@@ -1985,7 +1996,7 @@ fn member_affine(
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
     precision: RealPrecision,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Transform, TransformResolutionError> {
     if entry.transform == 0 {
         return Ok(Transform::identity());
@@ -1997,7 +2008,7 @@ fn member_affine(
         length_factor,
         precision,
         &mut std::collections::BTreeSet::new(),
-        ctx,
+        Some(ctx),
     )
 }
 
@@ -2010,10 +2021,19 @@ struct OccurrenceExpansion<'a, 'ctx> {
     precision: RealPrecision,
     output_limit: usize,
     depth_limit: usize,
-    ctx: Option<&'a DecodeContext<'ctx>>,
+    ctx: &'a DecodeContext<'ctx>,
 }
 
 impl OccurrenceExpansion<'_, '_> {
+    fn record_malformed(
+        &self,
+        malformed: &mut BTreeSet<u32>,
+        sequence: u32,
+    ) -> Result<(), CodecError> {
+        insert_optional_btree_set(Some(self.ctx), malformed, sequence, "iges malformed occurrence placement nodes")?;
+        Ok(())
+    }
+
     fn expand(
         &self,
         instance_sequence: u32,
@@ -2023,10 +2043,7 @@ impl OccurrenceExpansion<'_, '_> {
         depth_truncated_at: &mut Option<u32>,
         malformed_placement_sequences: &mut std::collections::BTreeSet<u32>,
     ) -> Result<Option<u32>, CodecError> {
-        let _depth = self
-            .ctx
-            .map(|ctx| ctx.enter_nested("iges_product_occurrence"))
-            .transpose()?;
+        let _depth = self.ctx.enter_nested("iges_product_occurrence")?;
         if occurrences.len() >= self.output_limit {
             return Ok(Some(instance_sequence));
         }
@@ -2043,7 +2060,7 @@ impl OccurrenceExpansion<'_, '_> {
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
-            malformed_placement_sequences.insert(instance_sequence);
+            self.record_malformed(malformed_placement_sequences, instance_sequence)?;
             return Ok(None);
         };
         let (definition_sequence, local) = match placement_affine(
@@ -2053,31 +2070,31 @@ impl OccurrenceExpansion<'_, '_> {
             self.records,
             self.length_factor,
             self.precision,
-            self.ctx,
+            Some(self.ctx),
         ) {
             Ok(placement) => placement,
             Err(error) => {
                 error.non_resource()?;
-                malformed_placement_sequences.insert(instance_sequence);
+                self.record_malformed(malformed_placement_sequences, instance_sequence)?;
                 return Ok(None);
             }
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
-            malformed_placement_sequences.insert(instance_sequence);
+            self.record_malformed(malformed_placement_sequences, instance_sequence)?;
             return Ok(None);
         };
         let Ok(definition_world) = parent
             .compose(local)
             .and_then(|world| world.compose(definition.transform))
         else {
-            malformed_placement_sequences.insert(instance_sequence);
+            self.record_malformed(malformed_placement_sequences, instance_sequence)?;
             return Ok(None);
         };
+        reserve_vec_growth(self.ctx, path, 1, "iges occurrence expansion path slots")?;
         path.push(instance_sequence);
-        if let Some(ctx) = self.ctx {
-            ctx.charge_collection_items(1, "iges_product_occurrences")?;
-        }
+        reserve_vec_growth(self.ctx, occurrences, 1, "iges_product_occurrences")?;
         occurrences.push(NativeProductOccurrence::new(
+            self.ctx,
             path,
             None,
             instance_sequence,
@@ -2085,7 +2102,7 @@ impl OccurrenceExpansion<'_, '_> {
             Vec::new(),
             local.affine_rows(),
             definition_world.affine_rows(),
-        ));
+        )?);
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
@@ -2110,7 +2127,7 @@ impl OccurrenceExpansion<'_, '_> {
                 continue;
             }
             let Some(member_entry) = self.entries.get(member).copied() else {
-                malformed_placement_sequences.insert(instance_sequence);
+                self.record_malformed(malformed_placement_sequences, instance_sequence)?;
                 continue;
             };
             let member_local = match member_affine(
@@ -2124,26 +2141,30 @@ impl OccurrenceExpansion<'_, '_> {
                 Ok(transform) => transform,
                 Err(error) => {
                     error.non_resource()?;
-                    malformed_placement_sequences.insert(*member);
+                    self.record_malformed(malformed_placement_sequences, *member)?;
                     continue;
                 }
             };
-            if let Some(ctx) = self.ctx {
-                ctx.charge_collection_items(1, "iges_product_occurrences")?;
-            }
             let Ok(member_world) = definition_world.compose(member_local) else {
-                malformed_placement_sequences.insert(*member);
+                self.record_malformed(malformed_placement_sequences, *member)?;
                 continue;
             };
+            reserve_vec_growth(self.ctx, occurrences, 1, "iges_product_occurrences")?;
+            let neutral_links = self.neutral_links.get(member).map_or(Ok(Vec::new()), |links| {
+                collect_result_vec(self.ctx, links.len(), "iges occurrence neutral link copy slots", |index| {
+                    format_retained(self.ctx, format_args!("{}", links[index]), "iges occurrence neutral link copy")
+                })
+            })?;
             occurrences.push(NativeProductOccurrence::new(
+                self.ctx,
                 path,
                 Some(*member),
                 instance_sequence,
                 definition_sequence,
-                self.neutral_links.get(member).cloned().unwrap_or_default(),
+                neutral_links,
                 member_local.affine_rows(),
                 member_world.affine_rows(),
-            ));
+            )?);
         }
         path.pop();
         Ok(None)
@@ -2206,6 +2227,36 @@ fn native_entity_ids(
         )?);
     }
     Ok(ids)
+}
+
+fn push_occurrence_neutral_link(
+    ctx: &DecodeContext<'_>,
+    links: &mut BTreeMap<u32, Vec<String>>,
+    sequence: u32,
+    id: &str,
+) -> Result<(), CodecError> {
+    if !links.contains_key(&sequence) {
+        insert_optional_btree_map(Some(ctx), links, sequence, Vec::new(), "iges occurrence neutral link map nodes")?;
+    }
+    if let Some(group) = links.get_mut(&sequence) {
+        reserve_vec_growth(ctx, group, 1, "iges occurrence neutral link slots")?;
+        group.push(format_retained(ctx, format_args!("{id}"), "iges occurrence neutral link id")?);
+    }
+    Ok(())
+}
+
+struct ColonsAsUnderscores<'a>(&'a str);
+
+impl std::fmt::Display for ColonsAsUnderscores<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, part) in self.0.split(':').enumerate() {
+            if index != 0 {
+                formatter.write_str("_")?;
+            }
+            formatter.write_str(part)?;
+        }
+        Ok(())
+    }
 }
 
 fn copy_native_parameter_record(
@@ -6323,7 +6374,8 @@ pub(crate) fn store(
     // not traversed below, but one of its admitted child instances must not be
     // promoted to a root. Container-only decode passes None and retains every
     // parseable structure record for expansion.
-    let contained_instances = all_occurrence_definitions
+    let mut contained_instances = BTreeSet::new();
+    for sequence in all_occurrence_definitions
         .values()
         .flat_map(|definition| definition.members.iter().copied())
         .filter(|sequence| {
@@ -6331,13 +6383,15 @@ pub(crate) fn store(
                 .get(sequence)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
         })
-        .collect::<std::collections::BTreeSet<_>>();
-    let occurrence_definitions = all_occurrence_definitions
-        .into_iter()
-        .filter(|(sequence, _)| {
-            structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
-        })
-        .collect::<BTreeMap<_, _>>();
+    {
+        insert_optional_btree_set(Some(ctx), &mut contained_instances, sequence, "iges contained occurrence instances")?;
+    }
+    let mut occurrence_definitions = BTreeMap::new();
+    for (sequence, definition) in all_occurrence_definitions.into_iter().filter(|(sequence, _)| {
+        structure_admitted.is_none_or(|admitted| admitted.decoded.contains(sequence))
+    }) {
+        insert_optional_btree_map(Some(ctx), &mut occurrence_definitions, sequence, definition, "iges admitted occurrence definition nodes")?;
+    }
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
     for curve in &ir.model.curves {
         if let Some(sequence) = curve
@@ -6346,10 +6400,7 @@ pub(crate) fn store(
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|_| sequences.curve(&curve.id))
         {
-            occurrence_neutral_links
-                .entry(sequence)
-                .or_default()
-                .push(curve.id.as_str().to_owned());
+            push_occurrence_neutral_link(ctx, &mut occurrence_neutral_links, sequence, curve.id.as_str())?;
         }
     }
     for surface in &ir.model.surfaces {
@@ -6359,26 +6410,17 @@ pub(crate) fn store(
             .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|_| sequences.surface(&surface.id))
         {
-            occurrence_neutral_links
-                .entry(sequence)
-                .or_default()
-                .push(surface.id.as_str().to_owned());
+            push_occurrence_neutral_link(ctx, &mut occurrence_neutral_links, sequence, surface.id.as_str())?;
         }
     }
     for body in &ir.model.bodies {
         if let Some(sequence) = sequences.body_neutral_form(&body.id) {
-            occurrence_neutral_links
-                .entry(sequence)
-                .or_default()
-                .push(body.id.as_str().to_owned());
+            push_occurrence_neutral_link(ctx, &mut occurrence_neutral_links, sequence, body.id.as_str())?;
         }
     }
     for point in &ir.model.points {
         if let Some(sequence) = sequences.point(&point.id) {
-            occurrence_neutral_links
-                .entry(sequence)
-                .or_default()
-                .push(point.id.as_str().to_owned());
+            push_occurrence_neutral_link(ctx, &mut occurrence_neutral_links, sequence, point.id.as_str())?;
         }
     }
     let mut product_occurrences = Vec::new();
@@ -6387,7 +6429,7 @@ pub(crate) fn store(
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
     if let Some(length_factor) = occurrence_length_factor {
         if let Some(admission) = structure_admitted {
-            malformed_placement_sequences.extend(admission.placement_rejections.iter().filter_map(
+            for sequence in admission.placement_rejections.iter().filter_map(
                 |(sequence, reason)| match reason {
                     PlacementRejection::MissingRecord
                     | PlacementRejection::InvalidDefinition
@@ -6396,7 +6438,9 @@ pub(crate) fn store(
                         (!occurrence_definitions.contains_key(definition)).then_some(*sequence)
                     }
                 },
-            ));
+            ) {
+                insert_optional_btree_set(Some(ctx), &mut malformed_placement_sequences, sequence, "iges malformed occurrence placement nodes")?;
+            }
         }
         let expansion = OccurrenceExpansion {
             entries: &entries,
@@ -6407,7 +6451,7 @@ pub(crate) fn store(
             precision: global.real_precision(),
             output_limit: limits.output,
             depth_limit: limits.depth,
-            ctx: Some(ctx),
+            ctx,
         };
         if malformed_definition_sequences.is_empty() {
             for root in directory.iter().filter(|entry| {
@@ -6431,7 +6475,7 @@ pub(crate) fn store(
             }
         }
     }
-    let issues = [
+    let issues = collect_native_items(ctx, [
         output_truncated_at
             .is_some()
             .then_some(ProductOccurrenceIssue::OutputLimit),
@@ -6444,29 +6488,24 @@ pub(crate) fn store(
             .then_some(ProductOccurrenceIssue::MalformedPlacement),
     ]
     .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    .flatten(), "iges occurrence issue slots", Ok)?;
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
-        id: "iges:product:occurrence-expansion#state".into(),
+        id: format_retained(ctx, format_args!("iges:product:occurrence-expansion#state"), "iges occurrence expansion state id")?,
         output_limit: limits.output,
         depth_limit: limits.depth,
         emitted: product_occurrences.len(),
         issues,
     }];
-    let boundary_vertex_sewing = boundary_vertex_derivations
-        .iter()
-        .map(|derivation| NativeBoundaryVertex {
-            id: format!(
-                "iges:topology:boundary-vertex#{}",
-                derivation
-                    .vertex
-                    .as_str()
-                    .strip_prefix("iges:model:vertex#")
-                    .unwrap_or(derivation.vertex.as_str())
-                    .replace(':', "_")
-            ),
-            source_entity: derivation.source_entity.clone(),
-            vertex: derivation.vertex.as_str().to_owned(),
+    let boundary_vertex_sewing = collect_native_items(
+        ctx,
+        boundary_vertex_derivations.iter(),
+        "iges boundary vertex sewing slots",
+        |derivation| Ok(NativeBoundaryVertex {
+            id: format_retained(ctx, format_args!("iges:topology:boundary-vertex#{}", ColonsAsUnderscores(
+                derivation.vertex.as_str().strip_prefix("iges:model:vertex#").unwrap_or(derivation.vertex.as_str())
+            )), "iges boundary vertex sewing id")?,
+            source_entity: format_retained(ctx, format_args!("{}", derivation.source_entity), "iges boundary vertex sewing source")?,
+            vertex: format_retained(ctx, format_args!("{}", derivation.vertex.as_str()), "iges boundary vertex sewing vertex")?,
             representative: [
                 derivation.representative.x,
                 derivation.representative.y,
@@ -6477,34 +6516,30 @@ pub(crate) fn store(
                 .source_endpoints
                 .iter()
                 .any(|endpoint| endpoint.position != derivation.representative),
-            source_endpoints: derivation
-                .source_endpoints
-                .iter()
-                .map(|endpoint| NativeBoundaryVertexEndpoint {
-                    edge: endpoint.edge.clone(),
+            source_endpoints: collect_native_items(ctx, derivation.source_endpoints.iter(), "iges boundary vertex endpoint slots", |endpoint| Ok(NativeBoundaryVertexEndpoint {
+                    edge: format_retained(ctx, format_args!("{}", endpoint.edge), "iges boundary vertex endpoint edge")?,
                     endpoint: endpoint.endpoint,
                     position: [
                         endpoint.position.x,
                         endpoint.position.y,
                         endpoint.position.z,
                     ],
-                })
-                .collect(),
-        })
-        .collect::<Vec<_>>();
+                }))?,
+        }),
+    )?;
     parameter_resolver.append_to(references)?;
     for entity in &mut entities {
-        entity.links = references
-            .get(&entity.directory_sequence)
-            .into_iter()
-            .flatten()
-            .filter_map(ReferenceEdge::target_sequence)
-            .map(|sequence| format!("iges:entity:directory#{sequence}"))
-            .collect();
-        entity.references = references
-            .get(&entity.directory_sequence)
-            .cloned()
-            .unwrap_or_default();
+        entity.links = native_entity_ids(ctx, references.get(&entity.directory_sequence).into_iter().flatten().filter_map(ReferenceEdge::target_sequence), "iges resolved native reference link slots")?;
+        entity.references = match references.get(&entity.directory_sequence) {
+            Some(edges) => {
+                let mut copies = reserve_vec(ctx, edges.len(), "iges resolved native reference slots")?;
+                for edge in edges {
+                    copies.push(edge.copy_for_native(ctx)?);
+                }
+                copies
+            }
+            None => Vec::new(),
+        };
     }
     let native_entity_count = [
         directions.len(),
@@ -6631,7 +6666,11 @@ pub(crate) fn store(
             output_truncated_at,
             depth_truncated_at,
             malformed_definition_sequences,
-            malformed_placement_sequences: malformed_placement_sequences.into_iter().collect(),
+            malformed_placement_sequences: {
+                let mut sequences = reserve_vec(ctx, malformed_placement_sequences.len(), "iges malformed occurrence placement result slots")?;
+                sequences.extend(malformed_placement_sequences);
+                sequences
+            },
         },
         ambiguous_parameter_boundaries,
         overdeclared_counts: overdeclared_counts.0,

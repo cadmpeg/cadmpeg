@@ -12,7 +12,10 @@ use crate::test_support::test_drawing_and_trimming::{
     associativity_definition_file, bounded_associativity_forms_file,
     flow_associativity_forms_file, legacy_associativity_forms_file,
     recalculable_dimension_associativity_file,
+    malformed_occurrence_definition_file, malformed_occurrence_placement_file,
+    nested_subfigure_file,
 };
+use crate::test_support::test_surface_fixtures::bounded_plane_with_significance_gap_file;
 use crate::test_support::test_solids_and_structure::{
     drawing_with_conflicting_size_properties_file, drawing_with_properties_file,
     segmented_view_visibility_file, view_forms_file, view_visibility_forms_file,
@@ -921,4 +924,63 @@ fn native_drawing_view_annotation_and_property_bytes_refuse_limits() {
     }
     let conflicting = drawing_with_conflicting_size_properties_file();
     assert_collection_refusal_at(&conflicting, "iges native drawing ambiguous property slots");
+}
+
+#[test]
+fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
+    let bytes = nested_subfigure_file();
+    for operation in [
+        "iges contained occurrence instances",
+        "iges admitted occurrence definition nodes",
+        "iges occurrence neutral link map nodes",
+        "iges occurrence neutral link slots",
+        "iges occurrence expansion path slots",
+        "iges_product_occurrences",
+        "iges native occurrence path slots",
+        "iges occurrence neutral link copy slots",
+        "iges resolved native reference link slots",
+        "iges resolved native reference slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges occurrence neutral link id",
+        "iges native occurrence id",
+        "iges native occurrence member",
+        "iges native occurrence instance",
+        "iges native occurrence definition",
+        "iges native occurrence path entry",
+        "iges occurrence neutral link copy",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_occurrence_issues_and_malformed_placements_refuse_limits() {
+    let malformed_definition = malformed_occurrence_definition_file();
+    assert_collection_refusal_at(&malformed_definition, "iges occurrence issue slots");
+    let malformed_placement = malformed_occurrence_placement_file();
+    assert_collection_refusal_at(&malformed_placement, "iges malformed occurrence placement nodes");
+    assert_collection_refusal_at(&malformed_placement, "iges malformed occurrence placement result slots");
+    assert_retained_refusal_at(&malformed_placement, "iges occurrence expansion state id");
+}
+
+#[test]
+fn native_boundary_vertex_sewing_nested_endpoints_refuse_limits() {
+    let bytes = bounded_plane_with_significance_gap_file();
+    for operation in [
+        "iges boundary vertex sewing slots",
+        "iges boundary vertex endpoint slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges boundary vertex sewing id",
+        "iges boundary vertex sewing source",
+        "iges boundary vertex sewing vertex",
+        "iges boundary vertex endpoint edge",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
 }
