@@ -174,6 +174,51 @@ fn face_operand_wire_derives_node_offsets() {
     }
 }
 
+fn face_operand_for_borrowed(grouped: bool) -> super::DesignFaceOperand {
+    let mut wire = serde_json::json!({
+        "id": "f3d:native:face-operand#0", "scope_record_index": 1,
+        "scope_reference_ordinal": 0, "record_index": 2, "byte_offset": 10,
+        "class_tag": "346", "paired_byte_offset": 20, "paired_class_tag": "262",
+        "recipe_record_index": 5, "recipe_record_byte_offset": 30,
+        "recipe_id": "recipe", "recipe_prefix_offset": 41,
+        "recipe_prefix_bytes": "", "recipe_references": [],
+        "recipe_kind": "bounded_face", "recipe_program_offset": 50,
+        "recipe_program": [0, -1, 1], "recipe_node_offsets": [100],
+        "recipe_nodes": [{"byte_offset": 100, "end_byte_offset": 116,
+            "program": [-1, -1, 2, 7], "recipe_structure": null}],
+        "candidate_faces": [], "resolved_face_slots": [],
+        "next_record_index": 4, "next_byte_offset": 200
+    });
+    if grouped {
+        wire["group_record_index"] = serde_json::json!(5);
+        wire["group_member_ordinal"] = serde_json::json!(0);
+    }
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
+    for grouped in [false, true] {
+        let operand = face_operand_for_borrowed(grouped);
+        let owned = super::DesignFaceOperandWire::from(operand.clone());
+        assert_eq!(
+            serde_json::to_vec(&operand).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn face_operand_native_retained_limit_refuses_before_clone() {
+    let operand = face_operand_for_borrowed(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &operand,
+        "design_face_operands",
+        || super::FACE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
+        || super::FACE_OPERAND_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
     let side = r#"{"field_count":2,"header_value":0,"scalars":[0],"payload_prefix":[0],"payload_entry_count":0,"entries":[]}"#;
