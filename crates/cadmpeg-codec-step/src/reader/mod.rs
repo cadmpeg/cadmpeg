@@ -822,6 +822,23 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
         .fold(0, u64::saturating_add)
 }
 
+fn insert_retained_identity(
+    identities: &mut BTreeSet<String>,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !identities.contains(identity) {
+        ctx.charge_collection_items(1, "step_owned_pcurve_ids")?;
+        let copy = crate::decode_alloc::charged_format(
+            ctx,
+            "step_owned_pcurve_identity",
+            format_args!("{identity}"),
+        )?;
+        identities.insert(copy);
+    }
+    Ok(())
+}
+
 fn retain_unowned_carriers(
     exchange: &Exchange,
     ir: &mut CadIr,
@@ -829,53 +846,40 @@ fn retain_unowned_carriers(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let owned = ir
-        .model
-        .coedges
-        .iter()
-        .flat_map(|coedge| {
-            coedge
-                .pcurves
-                .iter()
-                .map(|use_| use_.pcurve.as_str().to_owned())
-        })
-        .chain(ir.model.loops.iter().flat_map(|loop_| {
-            loop_
-                .vertex_pcurves()
-                .map(|pcurve| pcurve.pcurve.as_str().to_owned())
-        }))
-        .chain(
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .filter_map(|surface| {
-                    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
-                        boundary_pcurves,
-                        ..
-                    } = surface.definition()
-                    else {
-                        return None;
-                    };
-                    Some(boundary_pcurves)
-                })
-                .flatten()
-                .map(|pcurve| pcurve.as_str().to_owned()),
-        )
-        .collect::<BTreeSet<_>>();
-    let unowned_pcurves = exchange
-        .records()
-        .iter()
-        .filter(|(_, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| partial.name == "PCURVE")
-        })
-        .map(|(&id, _)| id)
-        .filter(|id| !owned.contains(ids::data(kind!("pcurve"), id).as_str()))
-        .collect::<BTreeSet<_>>();
+    let mut owned = BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        for use_ in &coedge.pcurves {
+            insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx)?;
+        }
+    }
+    for loop_ in &ir.model.loops {
+        for pcurve in loop_.vertex_pcurves() {
+            insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)?;
+        }
+    }
+    for surface in &ir.model.procedural_surfaces {
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves,
+            ..
+        } = surface.definition()
+        else {
+            continue;
+        };
+        for pcurve in boundary_pcurves {
+            insert_retained_identity(&mut owned, pcurve.as_str(), ctx)?;
+        }
+    }
+    let mut unowned_pcurves = BTreeSet::new();
+    for (&id, record) in exchange.records() {
+        if record.partials.iter().any(|partial| partial.name == "PCURVE")
+            && !owned.contains(ids::data(kind!("pcurve"), id).as_str())
+        {
+            ctx.charge_collection_items(1, "step_unowned_pcurves")?;
+            unowned_pcurves.insert(id);
+        }
+    }
     let referenced = referenced_record_ids(exchange, ctx)?;
-    let unowned_direct_carriers = ir
+    let direct_carriers = ir
         .model
         .points
         .iter()
@@ -896,8 +900,14 @@ fn retain_unowned_carriers(
                 .map(|surface| surface.id.as_str()),
         )
         .filter_map(step_instance_id)
-        .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id))
-        .collect::<BTreeSet<_>>();
+        .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id));
+    let mut unowned_direct_carriers = BTreeSet::new();
+    for id in direct_carriers {
+        if !unowned_direct_carriers.contains(&id) {
+            ctx.charge_collection_items(1, "step_unowned_direct_carriers")?;
+            unowned_direct_carriers.insert(id);
+        }
+    }
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
     if unowned_pcurves.is_empty() {
         return Ok(());
@@ -963,12 +973,16 @@ fn retain_unowned_carriers(
         )
         .filter_map(step_instance_id)
     {
-        roots.insert(identity);
+        if !roots.contains(&identity) {
+            ctx.charge_collection_items(1, "step_unowned_protected_roots")?;
+            roots.insert(identity);
+        }
     }
-    let protected_roots = roots
-        .into_iter()
-        .filter(|id| !unowned_pcurves.contains(id))
-        .collect::<BTreeSet<_>>();
+    let mut protected_roots = BTreeSet::new();
+    for id in roots.into_iter().filter(|id| !unowned_pcurves.contains(id)) {
+        ctx.charge_collection_items(1, "step_unowned_protected_root_copy")?;
+        protected_roots.insert(id);
+    }
     let protected = record_closure(&protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(&unowned_pcurves, exchange, ctx)?;
     let deleted_pcurves = ir
