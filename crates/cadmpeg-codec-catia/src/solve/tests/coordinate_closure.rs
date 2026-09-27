@@ -1512,9 +1512,10 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
 
 #[test]
 fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
+    catia_test_context!(ctx);
     let serialized = [[0, 0], [0, 1], [1, 1]];
     let allowed = [vec![1, 2], Vec::new(), vec![0, 2]];
-    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 3, |faces| {
+    let resolved = unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 3, |faces| {
         Ok(faces == [[0, 2], [0, 1], [1, 0]])
     })
     .expect("service resource budget")
@@ -1522,11 +1523,12 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
     assert_eq!(resolved, [[0, 2], [0, 1], [1, 0]]);
 
     assert!(
-        unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| Ok(true))
+        unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 3, |_| Ok(true))
             .expect("service resource budget")
             .is_none()
     );
     assert!(unique_duplicate_face_assignment(
+        &ctx,
         &serialized,
         &[vec![3], Vec::new(), vec![0]],
         3,
@@ -1538,10 +1540,11 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
 
 #[test]
 fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
+    catia_test_context!(ctx);
     let serialized = [[0, 0], [0, 0]];
     let allowed = [Vec::new(), vec![1]];
 
-    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
+    let resolved = unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 2, |faces| {
         Ok(faces == [[0, 0], [0, 1]])
     })
     .expect("service resource budget")
@@ -1591,12 +1594,13 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 
 #[test]
 fn one_admitted_alternate_does_not_force_a_second_face() {
+    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 8;
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
     assert!(
-        unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
+        unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 2, |_| Ok(true))
             .expect("service resource budget")
             .is_none()
     );
