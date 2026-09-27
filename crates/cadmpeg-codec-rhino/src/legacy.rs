@@ -2997,9 +2997,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let primary = ArchiveVersion::V1.classify(None);
 
     let mut ir = CadIr::decoded(crate::container::source_meta(
+        ctx,
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
-    ));
+    )?);
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;
     let mut decoded_meshes = 0_usize;
