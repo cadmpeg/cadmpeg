@@ -208,10 +208,72 @@ fn xref_occurrence_transform_aggregation_refuses_collection_limit() {
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
     let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
     let limit_arena = cadmpeg_core::decode::DecodeArena::new();
-    let limit_ctx = redirections_limit_context(&limit_arena, 4);
+    let limit_ctx = redirections_limit_context(&limit_arena, 5);
     let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D xref occurrence transforms"));
+}
+
+#[test]
+fn xref_stream_collection_refuses_collection_limit() {
+    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let archive = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
+        "assembly-design", "root.f3d", "part.f3d", XREF_ROLE, identity,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &policy,
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
+    let limit_arena = cadmpeg_core::decode::DecodeArena::new();
+    let limit_ctx = redirections_limit_context(&limit_arena, 3);
+    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref streams"));
+}
+
+#[test]
+fn xref_expanded_reference_refuses_collection_limit() {
+    let archive = f3d_without_brep("assembly-design", "root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &policy,
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
+    let limit_arena = cadmpeg_core::decode::DecodeArena::new();
+    let limit_ctx = redirections_limit_context(&limit_arena, 0);
+    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "expand F3D xref references"));
+}
+
+#[test]
+fn xref_reference_copy_refuses_retained_limit() {
+    let archive = f3d_without_brep("assembly-design", "root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &policy,
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
+    let limit_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
+    limit_policy.limits.max_retained_bytes = 0;
+    let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &limit_arena, &limit_policy,
+    ).unwrap().0;
+    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref reference"));
 }
 
 #[test]
