@@ -4280,12 +4280,14 @@ fn resolve_standard_limit_curve_binding(
     bindings: &[StandardLimitCurveBinding],
     points: [usize; 2],
 ) -> Option<StandardLimitCurveBinding> {
-    let matches = bindings
+    let mut matches = bindings
         .iter()
         .filter(|binding| missing_edge::same_unordered_pair(binding.points, points))
-        .copied()
-        .collect::<Vec<_>>();
-    let [mut binding] = <[StandardLimitCurveBinding; 1]>::try_from(matches).ok()?;
+        .copied();
+    let mut binding = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
     if binding.points != points {
         binding.points.reverse();
         binding.parameter_range.reverse();
@@ -6185,11 +6187,9 @@ fn standard_native_support_endpoint_pair(
 ) -> Option<[usize; 2]> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| {
+    let lifted = [0, 1].map(|index| {
+            let carrier = &support.carriers[index];
+            let pcurve = &support.pcurves[index];
             let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
             else {
                 return None;
@@ -6202,11 +6202,12 @@ fn standard_native_support_endpoint_pair(
                     Err(failure) => failure.non_finite(),
                 }
             }))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        });
+    let [first, second] = lifted;
+    let [first_start, first_end] = first?;
+    let first = [first_start?, first_end?];
+    let [second_start, second_end] = second?;
+    let second = [second_start?, second_end?];
     let direct = first
         .iter()
         .zip(&second)
@@ -6220,10 +6221,8 @@ fn standard_native_support_endpoint_pair(
     if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
         return None;
     }
-    let pair = first
-        .into_iter()
-        .map(|expected| {
-            let matches = candidates
+    let point_for = |expected: Point3| {
+            let mut matches = candidates
                 .iter()
                 .copied()
                 .filter(|point| {
@@ -6231,13 +6230,12 @@ fn standard_native_support_endpoint_pair(
                         point.position().get().distance_squared(expected).sqrt()
                             <= VERTEX_MATCH_TOLERANCE
                     })
-                })
-                .collect::<Vec<_>>();
-            <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    <[usize; 2]>::try_from(pair)
-        .ok()
+                });
+            let point = matches.next()?;
+            matches.next().is_none().then_some(point)
+        };
+    let pair = [point_for(first[0])?, point_for(first[1])?];
+    Some(pair)
         .filter(|pair| pair[0] != pair[1])
         .filter(|pair| {
             required_pair.is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
