@@ -36,21 +36,20 @@ pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool
     if points.len() < 3 {
         return false;
     }
-    let mut points = points.to_vec();
     let last = points.len() - 1;
-    points[last] = points[0];
+    let point_at = |index: usize| if index == last { points[0] } else { points[index] };
     for first_index in 0..last {
         for second_index in first_index + 1..last {
             let allowed_endpoint = if second_index == first_index + 1 {
-                Some(points[second_index])
+                Some(point_at(second_index))
             } else if first_index == 0 && second_index + 1 == last {
                 Some(points[0])
             } else {
                 None
             };
             if planar_segments_intersect_beyond_endpoint(
-                [points[first_index], points[first_index + 1]],
-                [points[second_index], points[second_index + 1]],
+                [point_at(first_index), point_at(first_index + 1)],
+                [point_at(second_index), point_at(second_index + 1)],
                 allowed_endpoint,
             ) {
                 return true;
@@ -2264,7 +2263,7 @@ pub(crate) fn project_geometry(
     super::conics::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
         .merge_into(&mut decoded, &mut losses, &mut wire_edges);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    super::copious::project(ir, directory, parameters, global, Some(ctx), &mut sequences)?
+    super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(
             &mut decoded,
             &mut losses,

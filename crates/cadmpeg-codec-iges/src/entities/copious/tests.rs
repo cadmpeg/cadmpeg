@@ -8,10 +8,9 @@ use crate::directory::UseFlag;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::copious_data_file;
@@ -21,7 +20,82 @@ use crate::test_support::test_owned::{
 };
 use crate::IgesCodec;
 
-use super::presentation_use_flag_valid;
+use super::{has_forbidden_form_63_duplicate, has_form_63_self_intersection, presentation_use_flag_valid};
+
+fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn copious_tuple_and_path_arrays_refuse_collection_limits() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    for operation in [
+        "iges copious parameter index",
+        "iges copious directory index",
+        "iges copious tuple values",
+        "iges copious definition points",
+        "iges copious positioned points",
+        "iges copious path points",
+        "iges copious knots",
+        "iges copious finite knots",
+        "iges copious neutral curves",
+        "iges copious neutral edges",
+        "iges copious wire edges",
+        "iges copious decoded sequences",
+    ] {
+        assert_copious_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn copious_form63_scratch_indices_refuse_collection_limits() {
+    let points = [
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    for (resolution, operation) in [
+        (0.0, "iges copious exact-point index"),
+        (0.001, "iges copious proximity cells"),
+    ] {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = has_forbidden_form_63_duplicate(&points, resolution, &ctx).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = has_form_63_self_intersection(&points, &ctx).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges copious planar points"));
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(!has_forbidden_form_63_duplicate(&points, 0.001, &ctx).unwrap());
+    assert!(!has_form_63_self_intersection(&points, &ctx).unwrap());
+}
 
 #[test]
 fn presentation_copious_forms_require_the_annotation_use_flag() {
