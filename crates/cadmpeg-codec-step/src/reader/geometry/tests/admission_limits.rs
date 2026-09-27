@@ -398,6 +398,128 @@ association_name_refusal_test!(geometric_set_association_name_copy_refuses_retai
 association_name_refusal_test!(representation_association_name_copy_refuses_retained_limit, "step_representation_association_name_copy");
 association_name_refusal_test!(presentation_association_name_copy_refuses_retained_limit, "step_presentation_association_name_copy");
 
+fn line_scale_refusal(source: &[u8], collection_limit: u64, depth_limit: u64) -> CodecError {
+    let (exchange, _) = crate::parse::parse(source).expect("valid curve record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_recursion_depth = depth_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    super::super::line_parameter_scale(
+        &exchange, 1,
+        cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive scale"),
+        &mut Vec::new(), &ctx,
+    ).expect_err("line scale exceeds limit")
+}
+
+#[test]
+fn line_parameter_scale_active_refuses_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
+    assert!(matches!(line_scale_refusal(source, 0, 128), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_line_parameter_scale_active"));
+}
+
+#[test]
+fn line_parameter_scale_walk_refuses_depth_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
+    assert!(matches!(line_scale_refusal(source, 1, 0), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RecursionDepth
+            && refusal.operation == "step_line_parameter_scale_walk"));
+}
+
+#[test]
+fn line_parameter_scale_losses_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=LINE('',#2,#3);#2=CARTESIAN_POINT('',(0.,0.,0.));#3=VECTOR('',#4,-1.);#4=DIRECTION('',(1.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    assert!(matches!(line_scale_refusal(source, 1, 128), CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_line_parameter_scale_losses"));
+}
+
+fn trim_fallback_refusal(master: super::super::TrimMasterRepresentation) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let points = BTreeMap::new();
+    let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None },
+    );
+    let mut losses = Vec::new();
+    let mut context = super::super::TrimParameterContext {
+        points: &points, geometry: &geometry, angle_scale: 1.0,
+        linear_parameter_scale: 1.0, parameter_offset: 0.0,
+        tolerance: 1.0, master_representation: master, record_id: 1,
+        losses: &mut losses, ctx: &ctx,
+    };
+    let parameter = crate::parse::Value::Integer(1);
+    let cartesian = crate::parse::Value::Reference(2);
+    let (parameter, cartesian) = match master {
+        super::super::TrimMasterRepresentation::Parameter => (None, Some(&cartesian)),
+        super::super::TrimMasterRepresentation::Cartesian => (Some(&parameter), None),
+        super::super::TrimMasterRepresentation::Unspecified => (None, None),
+    };
+    super::super::select_trim_parameter(parameter, cartesian, &mut context)
+        .expect_err("fallback loss exceeds limit")
+}
+
+#[test]
+fn parameter_trim_fallback_loss_refuses_collection_limit() {
+    assert!(matches!(trim_fallback_refusal(super::super::TrimMasterRepresentation::Parameter),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_trim_parameter_fallback_losses"));
+}
+
+#[test]
+fn cartesian_trim_fallback_loss_refuses_collection_limit() {
+    assert!(matches!(trim_fallback_refusal(super::super::TrimMasterRepresentation::Cartesian),
+        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_trim_parameter_fallback_losses"));
+}
+
+#[test]
+fn trim_parameter_scale_walk_refuses_depth_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(super::super::parameter_scale(
+        &cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None }, 1.0, 1.0, &ctx,
+    ), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == ResourceDimension::RecursionDepth
+            && refusal.operation == "step_trim_parameter_scale_walk"));
+}
+
+#[test]
+fn trim_parameter_value_walk_refuses_depth_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let points = BTreeMap::new();
+    let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None },
+    );
+    let mut losses = Vec::new();
+    let context = super::super::TrimParameterContext {
+        points: &points, geometry: &geometry, angle_scale: 1.0,
+        linear_parameter_scale: 1.0, parameter_offset: 0.0,
+        tolerance: 1.0,
+        master_representation: super::super::TrimMasterRepresentation::Parameter,
+        record_id: 1, losses: &mut losses, ctx: &ctx,
+    };
+    assert!(matches!(
+        super::super::trim_parameter_value(&crate::parse::Value::Integer(1), &context),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_trim_parameter_value_walk"
+    ));
+}
+
 #[test]
 fn curve_bounded_pcurve_set_refuses_collection_limit() {
     let arena = DecodeArena::new();
