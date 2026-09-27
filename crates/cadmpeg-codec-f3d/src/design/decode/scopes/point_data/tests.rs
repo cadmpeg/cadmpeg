@@ -100,13 +100,13 @@ fn work_point_stream(
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("WorkPoint scope");
     (bytes, scope, position_at)
 }
@@ -416,13 +416,13 @@ fn work_point_direct_record_carries_model_space_position() {
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("WorkPoint scope");
     let frame = exact_work_point_construction(
         &bytes,
@@ -514,13 +514,13 @@ fn work_point_input_count_frames_the_rule_inputs() {
         byte_offset: 0,
     };
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("WorkPoint scope");
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");

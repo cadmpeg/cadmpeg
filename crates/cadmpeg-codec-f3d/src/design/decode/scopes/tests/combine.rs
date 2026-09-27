@@ -90,13 +90,13 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let mut scope = parse_parameter_scope(
+    let mut scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("Combine scope");
     let operation = exact_combine_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
         .expect("Combine construction");

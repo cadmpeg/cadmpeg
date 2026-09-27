@@ -89,12 +89,13 @@ pub(crate) fn decode_parameter_scopes(
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {
             let Some(mut scope) = parse_parameter_scope(
+                ctx,
                 bytes,
                 &records,
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset,
-            ) else {
+            )? else {
                 continue;
             };
             scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset());
@@ -681,12 +682,14 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 pub(in crate::design::decode) fn parse_parameter_scope(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
-) -> Option<DesignParameterScope> {
+) -> Result<Option<DesignParameterScope>, CodecError> {
+    (|| {
     let start = usize::try_from(byte_offset).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
     let (paired_class_tag, _) =
@@ -797,7 +800,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         None
     };
     let surface_patch_boundaries = if kind == scope::DesignFeatureKind::SurfacePatch {
-        crate::design::decode::patch::surface_patch_boundaries(bytes, records, reference_members)
+        match crate::design::decode::patch::surface_patch_boundaries(ctx, bytes, records, reference_members) {
+            Ok(boundaries) => boundaries,
+            Err(error) => return Some(Err(error)),
+        }
     } else {
         Vec::new()
     };
@@ -1003,7 +1009,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             }
         }
     }
-    Some(scope)
+    Some(Ok(scope))
+    })()
+    .transpose()
 }
 
 fn named_parameter_scope_tail_is_valid(

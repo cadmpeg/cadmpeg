@@ -5,7 +5,8 @@
 use super::sketch::IndexedRecordOffsets;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// Payload offset of the record's class level, past the indexed header of a
 /// record whose display name is empty.
@@ -19,21 +20,31 @@ const PAYLOAD: usize = 19;
 /// offered to the record grammar and only the members it closes are kept. The
 /// single-group path form carries no settings record and therefore yields none.
 pub(super) fn surface_patch_boundaries(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     reference_members: &[u32],
-) -> Vec<DesignSurfacePatchBoundary> {
-    reference_members
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, record_index)| {
-            let at = records.first_at_or_after(0, *record_index)?;
-            let mut boundary = exact_surface_patch_boundary(bytes, at)?;
-            boundary.scope_reference_ordinal = u32::try_from(ordinal).ok()?;
-            boundary.record_index = *record_index;
-            Some(boundary)
-        })
-        .collect()
+) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
+    let mut boundaries = Vec::new();
+    for (ordinal, record_index) in reference_members.iter().enumerate() {
+        let Some(mut boundary) = records
+            .first_at_or_after(0, *record_index)
+            .and_then(|at| exact_surface_patch_boundary(bytes, at))
+        else {
+            continue;
+        };
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            continue;
+        };
+        boundary.scope_reference_ordinal = ordinal;
+        boundary.record_index = *record_index;
+        ctx.charge_collection_items(1, "f3d SurfacePatch boundaries")?;
+        boundaries.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d SurfacePatch boundaries allocation", 0, 1)
+        })?;
+        boundaries.push(boundary);
+    }
+    Ok(boundaries)
 }
 
 /// One boundary-settings record read at the indexed header offset `at`.

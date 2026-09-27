@@ -524,13 +524,13 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("localized Sketch scope");
     assert_eq!(
         scope.kind(),
