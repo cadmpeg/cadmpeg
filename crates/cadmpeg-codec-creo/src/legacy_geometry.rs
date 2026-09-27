@@ -2,7 +2,8 @@
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
 use crate::legacy::value_index;
-use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::BTreeMap;
 
@@ -122,12 +123,16 @@ type IntegerFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerR
 type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
 
 /// Decode the surface portions of one legacy persistence object graph.
-pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
+pub(crate) fn scan(
+    ctx: &DecodeContext<'_>,
+    persistence: &Persistence,
+) -> Result<LegacyGeometryScan, CodecError> {
     let object_ids = object_id_index(&persistence.objects);
     let children = child_index(&persistence.objects);
     let integer_fields = value_index(&persistence.integer_values.rows);
     let real_fields = value_index(&persistence.real_values.rows);
     let (rows, mut carriers) = namespace(
+        ctx,
         &persistence.objects,
         &object_ids,
         &children,
@@ -136,8 +141,9 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
         "Sld_VisGeom",
         "active_geom",
         LegacySurfaceNamespace::Visible,
-    );
+    )?;
     let (nonvisible_rows, mut nonvisible_carriers) = namespace(
+        ctx,
         &persistence.objects,
         &object_ids,
         &children,
@@ -146,7 +152,7 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
         "Sld_NonVisGeom",
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
-    );
+    )?;
     carriers.append(&mut nonvisible_carriers);
     carriers.sort_by_key(|carrier| carrier.offset);
     let (topology_rows, pcurves) = curve_namespace(
@@ -155,13 +161,13 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
         &integer_fields,
         &real_fields,
     );
-    LegacyGeometryScan {
+    Ok(LegacyGeometryScan {
         rows,
         nonvisible_rows,
         carriers,
         topology_rows,
         pcurves,
-    }
+    })
 }
 
 fn curve_namespace(
@@ -331,6 +337,7 @@ fn legacy_direction(value: i32) -> Option<u8> {
 
 #[expect(clippy::too_many_arguments)]
 fn namespace(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     object_ids: &ObjectIdIndex<'_>,
     children: &ChildIndex<'_>,
@@ -339,11 +346,11 @@ fn namespace(
     root_name: &str,
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
-) -> (Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>) {
+) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
     let Some(elements) =
         geometry_array_elements(objects, object_ids, root_name, branch_name, "srf_array")
     else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
 
     let mut rows = Vec::new();
@@ -352,14 +359,78 @@ fn namespace(
         let Some(row) = surface_row(row_object, integer_fields) else {
             continue;
         };
-        if let Some(carrier) = surface_carrier(row_object, &row, children, real_fields, namespace) {
+        let carrier = if row.kind == SurfaceKind::Spline {
+            spline_surface_carrier(ctx, row_object, &row, children, real_fields, namespace)?
+        } else {
+            surface_carrier(row_object, &row, children, real_fields, namespace)
+        };
+        if let Some(carrier) = carrier {
             carriers.push(carrier);
         }
         rows.push(row);
     }
     rows.sort_by_key(|row| row.offset);
     carriers.sort_by_key(|carrier| carrier.offset);
-    (rows, carriers)
+    Ok((rows, carriers))
+}
+
+fn spline_surface_carrier(
+    ctx: &DecodeContext<'_>,
+    row_object: &ObjectRecord,
+    row: &SurfaceRow,
+    children: &ChildIndex<'_>,
+    reals: &RealFieldIndex<'_>,
+    namespace: LegacySurfaceNamespace,
+) -> Result<Option<LegacySurfaceCarrier>, CodecError> {
+    let Some((
+        primitive,
+        points,
+        u_parameters,
+        v_parameters,
+        u_tangents,
+        v_tangents,
+        mixed_derivatives,
+    )) = (|| {
+        let primitive = unique_primitive(children, row_object.offset)?;
+        (primitive.name == "srf_prim_ptr(splsrf)").then_some(())?;
+        Some((
+            primitive,
+            real_vector_array(reals, primitive.offset, "i_points")?,
+            real_scalar_array(reals, primitive.offset, "u_params")?,
+            real_scalar_array(reals, primitive.offset, "v_params")?,
+            real_vector_array(reals, primitive.offset, "u_tangts")?,
+            real_vector_array(reals, primitive.offset, "v_tangts")?,
+            real_vector_array(reals, primitive.offset, "uv_deriv")?,
+        ))
+    })()
+    else {
+        return Ok(None);
+    };
+    let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
+        ctx,
+        points,
+        u_parameters,
+        v_parameters,
+        &u_tangents,
+        &v_tangents,
+        &mixed_derivatives,
+    )?;
+    Ok(spline.map(|spline| LegacySurfaceCarrier {
+        namespace,
+        surface_id: row.id,
+        geometry: LegacySurfaceGeometry::Spline(spline),
+        offset: primitive.offset,
+    }))
+}
+
+fn unique_primitive<'a>(children: &ChildIndex<'a>, row_offset: usize) -> Option<&'a ObjectRecord> {
+    let mut primitives = children
+        .get(&row_offset)?
+        .iter()
+        .copied()
+        .filter(|object| object.name.starts_with("srf_prim_ptr("));
+    let primitive = primitives.next()?;
+    primitives.next().is_none().then_some(primitive)
 }
 
 fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> Option<SurfaceRow> {
@@ -434,41 +505,13 @@ fn surface_carrier(
         TorusOrSphere,
     }
 
-    let mut primitives = children
-        .get(&row_object.offset)?
-        .iter()
-        .copied()
-        .filter(|object| object.name.starts_with("srf_prim_ptr("));
-    let primitive = primitives.next()?;
-    primitives.next().is_none().then_some(())?;
+    let primitive = unique_primitive(children, row_object.offset)?;
     let (family, expected_name) = match row.kind {
         SurfaceKind::Plane => (AnalyticFamily::Plane, "srf_prim_ptr(plane)"),
         SurfaceKind::Cylinder => (AnalyticFamily::Cylinder, "srf_prim_ptr(cylinder)"),
         SurfaceKind::Cone => (AnalyticFamily::Cone, "srf_prim_ptr(cone)"),
         SurfaceKind::TorusOrSphere => (AnalyticFamily::TorusOrSphere, "srf_prim_ptr(torus)"),
-        SurfaceKind::Spline => {
-            (primitive.name == "srf_prim_ptr(splsrf)").then_some(())?;
-            let points = real_vector_array(reals, primitive.offset, "i_points")?;
-            let u_parameters = real_scalar_array(reals, primitive.offset, "u_params")?;
-            let v_parameters = real_scalar_array(reals, primitive.offset, "v_params")?;
-            let u_tangents = real_vector_array(reals, primitive.offset, "u_tangts")?;
-            let v_tangents = real_vector_array(reals, primitive.offset, "v_tangts")?;
-            let mixed_derivatives = real_vector_array(reals, primitive.offset, "uv_deriv")?;
-            let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
-                points,
-                u_parameters,
-                v_parameters,
-                &u_tangents,
-                &v_tangents,
-                &mixed_derivatives,
-            )?;
-            return Some(LegacySurfaceCarrier {
-                namespace,
-                surface_id: row.id,
-                geometry: LegacySurfaceGeometry::Spline(spline),
-                offset: primitive.offset,
-            });
-        }
+        SurfaceKind::Spline => return None,
         SurfaceKind::Fillet | SurfaceKind::Extrusion(_) => return None,
     };
     (primitive.name == expected_name).then_some(())?;
@@ -677,7 +720,7 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        canonicalize_legacy_cone_pcurve_endpoints, scan, LegacySurfaceCarrier,
+        canonicalize_legacy_cone_pcurve_endpoints, scan as scan_checked, LegacySurfaceCarrier,
         LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
@@ -685,6 +728,15 @@ mod tests {
         RealRun, ValueRecord,
     };
     use crate::test_support::{fixture_offset, object};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence).expect("service admits legacy geometry")
+    }
     use cadmpeg_ir::scalar::PositiveLength;
 
     fn real(value: f64) -> String {
@@ -1178,7 +1230,12 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .map(|value| vector(f64::from(value)))
             .collect::<Vec<_>>();
 
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
+            &ctx,
             points,
             u_parameters.to_vec(),
             v_parameters.to_vec(),
@@ -1186,6 +1243,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             &v_tangents,
             &mixed_derivatives,
         )
+        .expect("service admits derivative vectors")
         .expect("complete full derivative grid");
         let u_derivatives = spline.u_derivatives();
         let v_derivatives = spline.v_derivatives();
