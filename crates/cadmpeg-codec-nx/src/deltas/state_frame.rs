@@ -12,12 +12,15 @@ pub(crate) struct ReferenceStateFrame {
     pub(crate) state_byte: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "Vec<ReferenceStateFrame>",
-    into = "Vec<ReferenceStateFrame>"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Vec<ReferenceStateFrame>")]
 pub(crate) struct StateFrames(Vec<ReferenceStateFrame>);
+
+impl Serialize for StateFrames {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
 
 impl StateFrames {
     pub(super) fn new(first: ReferenceStateFrame) -> Self {
@@ -42,24 +45,58 @@ impl TryFrom<Vec<ReferenceStateFrame>> for StateFrames {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static STATE_FRAMES_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<StateFrames> for Vec<ReferenceStateFrame> {
     fn from(frames: StateFrames) -> Self {
+        STATE_FRAMES_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         frames.0
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::StateFrames;
+    use super::{StateFrames, STATE_FRAMES_INTO_WIRE_COUNT};
 
     #[test]
     fn state_frames_preserve_array_wire_and_reject_empty_packets() {
         let json = r#"[{"references":[2,3,4,1],"state_words":[34,6,11,22362,1],"state_byte":65}]"#;
         let frames: StateFrames = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&frames).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&frames).unwrap(),
+            serde_json::to_vec(&Vec::<super::ReferenceStateFrame>::from(frames.clone())).unwrap()
+        );
         assert!(serde_json::from_str::<StateFrames>("[]")
             .unwrap_err()
             .to_string()
             .contains("frames"));
+    }
+
+    #[test]
+    fn state_frames_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            frames: &'a StateFrames,
+        }
+        let frames: StateFrames = serde_json::from_str(
+            r#"[{"references":[2,3,4,1],"state_words":[34,6,11,22362,1],"state_byte":65}]"#,
+        )
+        .unwrap();
+        let record = Record {
+            id: "nx:deltas:state-frames#0",
+            frames: &frames,
+        };
+        STATE_FRAMES_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id": "nx:deltas:state-frames#0", "frames": frames}),
+        );
+        STATE_FRAMES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }
