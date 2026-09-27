@@ -1081,6 +1081,66 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
 }
 
 #[test]
+fn layered_endpoint_relations_and_support_maps_refuse_before_growth() {
+    let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+            ctx,
+            &assignment,
+            None,
+            |edge| {
+                candidates.get(edge).map(|values| {
+                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                })
+            },
+            |_, _| true,
+        )
+    };
+    let support = crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .expect("bounded layered support");
+    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+    let mut operations = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                operations.insert(refusal.operation);
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("fixture must admit layered support"),
+            Err(error) => panic!("unexpected layered support refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_endpoint_layer_values",
+        "catia_endpoint_layer_retained_pairs",
+        "catia_endpoint_layer_points",
+        "catia_endpoint_layer_relation",
+        "catia_endpoint_layers",
+        "catia_endpoint_identity_relation",
+        "catia_endpoint_prefix_identity",
+        "catia_endpoint_prefixes",
+        "catia_endpoint_relation_composition",
+        "catia_endpoint_suffixes",
+        "catia_endpoint_layer_support",
+        "catia_endpoint_boundary_support",
+        "catia_endpoint_assignment_support",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
     catia_test_context!(ctx);
     let candidates = [vec![[0, 1]]];
@@ -1143,15 +1203,23 @@ fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
         .by_edge
         .is_empty());
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = run(&ctx).expect_err("suffix array exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_endpoint_suffixes"));
+    let mut observed_suffix = false;
+    for cap in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                observed_suffix |= limit.operation == "catia_endpoint_suffixes";
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected layered support result"),
+        }
+    }
+    assert!(observed_suffix, "suffix array must refuse below its need");
 }
 
 #[test]
@@ -1240,24 +1308,31 @@ fn implicit_ordered_face_pruning_propagates_suffix_collection_refusal() {
         .expect("service resource budget")
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let budget = WorkBudget::new(10_000);
-    let mut limited_choices = choices;
-    let error = crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
-        &ctx,
-        &domains,
-        &mut limited_choices,
-        &coordinate_domains,
-        &budget,
-    )
-    .expect_err("suffix array exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_endpoint_suffixes"));
+    let mut observed_suffix = false;
+    for cap in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(10_000);
+        let mut limited_choices = choices.clone();
+        match crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &ctx,
+            &domains,
+            &mut limited_choices,
+            &coordinate_domains,
+            &budget,
+        ) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                observed_suffix |= limit.operation == "catia_endpoint_suffixes";
+            }
+            Ok(true) => break,
+            _ => panic!("unexpected implicit ordered face result"),
+        }
+    }
+    assert!(observed_suffix, "suffix array must refuse below its need");
 }
 
 #[test]
