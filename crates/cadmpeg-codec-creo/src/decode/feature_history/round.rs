@@ -1146,29 +1146,37 @@ fn chamfer_cone_equation(
 }
 
 pub(in super::super) fn chamfer_constant_distance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let rows = || scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id);
     let mut candidates = rows();
-    let first = candidates.next()?;
-    (first.kind == crate::surface::SurfaceKind::Cone
-        && candidates.all(|row| row.kind == crate::surface::SurfaceKind::Cone))
-        .then_some(())?;
-    let cones = rows()
-        .map(|row| chamfer_cone_equation(scan, ir, source_carriers, row))
-        .collect::<Option<Vec<_>>>()?;
-    let affected_ids = agreed_feature_geometry_ids(
+    let Some(first) = candidates.next() else { return Ok(None) };
+    if first.kind != crate::surface::SurfaceKind::Cone
+        || !candidates.all(|row| row.kind == crate::surface::SurfaceKind::Cone)
+    {
+        return Ok(None);
+    }
+    let mut cones = Vec::new();
+    for row in rows() {
+        let Some(cone) = chamfer_cone_equation(scan, ir, source_carriers, row) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut cones, 1, "creo chamfer cone witnesses")?;
+        cones.push(cone);
+    }
+    let Some(affected_ids) = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )?;
+    ) else { return Ok(None) };
     let local_planes = placed_planes(scan);
     let mut support_planes = Vec::new();
     let mut support_plane_ids = BTreeSet::new();
@@ -1201,7 +1209,7 @@ pub(in super::super) fn chamfer_constant_distance(
                         source_carriers.surface_geometry(surface).solved(),
                         Some(SolvedSurfaceGeometry::Plane(_))
                     ),
-                    _ => return None,
+                    _ => return Ok(None),
                 }
             }
             (Some(row), None) => row.kind == crate::surface::SurfaceKind::Plane,
@@ -1210,17 +1218,22 @@ pub(in super::super) fn chamfer_constant_distance(
                     || second.kind == crate::surface::SurfaceKind::Plane
                     || rows.any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
             {
-                return None;
+                return Ok(None);
             }
             _ => continue,
         };
-        if !is_support_plane || !support_plane_ids.insert(*id) {
+        if !is_support_plane || support_plane_ids.contains(id) {
             continue;
         }
-        let plane = reconciled_model_plane(&local_planes, ir, source_carriers, *id)?;
+        ctx.charge_collection_items(1, "creo chamfer support plane IDs")?;
+        support_plane_ids.insert(*id);
+        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut support_planes, 1, "creo chamfer support planes")?;
         support_planes.push(plane);
     }
-    equal_distance_chamfer_setback(&cones, &support_planes)
+    Ok(equal_distance_chamfer_setback(&cones, &support_planes))
 }
 
 #[cfg(test)]

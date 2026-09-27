@@ -594,7 +594,7 @@ pub(in super::super) fn schema_feature_definition(
                     cadmpeg_ir::features::edge_treatments::ChamferGroup {
                         edges: feature_edge_selection(ctx, scan, ir, feature_id)?
                             .unwrap_or(EdgeSelection::Unresolved),
-                        spec: chamfer_constant_distance(scan, ir, source_carriers, feature_id)
+                        spec: chamfer_constant_distance(ctx, scan, ir, source_carriers, feature_id)?
                             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                             .map_or_else(
                                 || ChamferSpec::Unresolved { form: None },
