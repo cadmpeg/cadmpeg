@@ -66,6 +66,20 @@ impl Clone for SavedToggleEntry {
 
 struct EntryId(u32);
 
+fn is_canonical_entry_id(id: &str, ordinal: usize) -> bool {
+    const PREFIX: &str = "nx:saved-toggle:entry#";
+    let Some(decimal) = id.strip_prefix(PREFIX) else {
+        return false;
+    };
+    let mut value = ordinal;
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    decimal.len() == digits && decimal.parse::<usize>() == Ok(ordinal)
+}
+
 impl std::fmt::Display for EntryId {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "nx:saved-toggle:entry#{}", self.0)
@@ -139,7 +153,10 @@ struct SavedToggleEntryWire {
 impl TryFrom<SavedToggleEntryWire> for SavedToggleEntry {
     type Error = &'static str;
     fn try_from(wire: SavedToggleEntryWire) -> Result<Self, Self::Error> {
-        if wire.id != format!("nx:saved-toggle:entry#{}", wire.ordinal) {
+        if !usize::try_from(wire.ordinal)
+            .ok()
+            .is_some_and(|ordinal| is_canonical_entry_id(&wire.id, ordinal))
+        {
             return Err("SavedToggleEntry.id disagrees with ordinal");
         }
         if wire.raw_byte_len != wire.state.byte_len().to_le_bytes() {
@@ -253,7 +270,7 @@ impl TryFrom<SavedToggleStreamWire> for SavedToggleStream {
             .entries
             .iter()
             .enumerate()
-            .any(|(ordinal, id)| *id != format!("nx:saved-toggle:entry#{ordinal}"))
+            .any(|(ordinal, id)| !is_canonical_entry_id(id, ordinal))
         {
             return Err("SavedToggleStream.entries must match their ordinal identities");
         }
@@ -656,6 +673,7 @@ mod tests {
             ["nx:saved-toggle:entry#1", "nx:saved-toggle:entry#0"],
             ["nx:saved-toggle:entry#0", "nx:saved-toggle:entry#0"],
             ["other", "nx:saved-toggle:entry#1"],
+            ["nx:saved-toggle:entry#00", "nx:saved-toggle:entry#1"],
         ] {
             let mut invalid = wire.clone();
             invalid["entries"] = serde_json::json!(entries);
@@ -694,6 +712,7 @@ mod tests {
         );
         for (field, invalid) in [
             ("id", serde_json::json!("other")),
+            ("id", serde_json::json!("nx:saved-toggle:entry#00")),
             ("raw_byte_len", serde_json::json!([35, 0])),
             ("value_source_offset", serde_json::json!(108)),
         ] {
