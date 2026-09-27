@@ -12,17 +12,18 @@ use crate::StepCodec;
 
 const VALIDATION_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);ENDSEC;END-ISO-10303-21;";
 const VALIDATION_COLLECTION_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=CARTESIAN_POINT('point',(1.,2.,3.));#5=ITEM(#4);ENDSEC;END-ISO-10303-21;";
+const VALIDATION_UNSUPPORTED_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=ITEM();ENDSEC;END-ISO-10303-21;";
 
-fn validation_collection_refuses(operation: &str) {
+fn validation_resource_refuses(source: &[u8], operation: &str, dimension: cadmpeg_core::decode::ResourceDimension) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) = crate::parse::parse(VALIDATION_COLLECTION_SOURCE)
+    let (exchange, _) = crate::parse::parse(source)
         .expect("valid validation collection source");
     let setup_arena = DecodeArena::new();
     let setup_policy = DecodePolicy::service();
     let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        VALIDATION_COLLECTION_SOURCE,
+        source,
         &setup_arena,
         &setup_policy,
     )
@@ -33,25 +34,33 @@ fn validation_collection_refuses(operation: &str) {
     let refused = (0..=64).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_COLLECTION_SOURCE, &arena, &policy)
-            .expect("root fits collection policy");
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => unreachable!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
         let mut ir = setup_ir.clone();
         matches!(
             super::decode(&exchange, &geometry.value, &mut ir, &ctx),
             Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
+                if refusal.dimension == dimension
                     && refusal.operation == operation
         )
     });
-    assert!(refused, "no collection limit refused {operation}");
+    assert!(refused, "no {dimension:?} limit refused {operation}");
 }
 
 macro_rules! validation_collection_test {
     ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            validation_collection_refuses($operation);
+            validation_resource_refuses(
+                VALIDATION_COLLECTION_SOURCE,
+                $operation,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            );
         }
     };
 }
@@ -62,6 +71,25 @@ validation_collection_test!(validation_used_representations_refuse_collection_li
 validation_collection_test!(validation_points_refuse_collection_limit, "step_validation_points");
 validation_collection_test!(validation_claims_refuse_collection_limit, "step_validation_claims");
 validation_collection_test!(validation_referenced_points_refuse_collection_limit, "step_validation_referenced_points");
+validation_collection_test!(validation_notes_refuse_collection_limit, "step_validation_notes");
+
+#[test]
+fn validation_note_text_refuses_retained_limit() {
+    validation_resource_refuses(
+        VALIDATION_COLLECTION_SOURCE,
+        "step_validation_note_text",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn validation_losses_refuse_collection_limit() {
+    validation_resource_refuses(
+        VALIDATION_UNSUPPORTED_SOURCE,
+        "step_validation_losses",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
+}
 
 fn validation_limit_result(
     retained_limit: Option<u64>,

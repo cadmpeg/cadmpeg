@@ -132,11 +132,16 @@ pub(super) fn decode(
                 continue;
             };
             let scale = geometry.units.length([item_id, representation_id]).get();
-            let expected = expected_value(item_id, item, exchange, scale, &mut losses);
+            let expected = expected_value(item_id, item, exchange, scale, &mut losses, ctx)?;
             let Some(expected) = expected else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "geometric validation property #{property_id} has unsupported item #{item_id}"
-                )));
+                push_validation_loss(
+                    &mut losses,
+                    StepLossCode::DecodeWarning,
+                    format!(
+                        "geometric validation property #{property_id} has unsupported item #{item_id}"
+                    ),
+                    ctx,
+                )?;
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
@@ -171,13 +176,19 @@ pub(super) fn decode(
                     Expected::Centroid(_) => format!("distance {actual}"),
                     _ => actual.to_string(),
                 };
-                notes.push(format!(
-                    "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-                ));
+                push_validation_note(
+                    &mut notes,
+                    format_args!(
+                        "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
+                    ),
+                    ctx,
+                )?;
             } else {
-                notes.push(format!(
-                    "geometric validation {kind} {description}: expected {expected_text}"
-                ));
+                push_validation_note(
+                    &mut notes,
+                    format_args!("geometric validation {kind} {description}: expected {expected_text}"),
+                    ctx,
+                )?;
             }
         }
     }
@@ -222,30 +233,44 @@ fn expected_value(
     exchange: &Exchange,
     scale: f64,
     losses: &mut Vec<LossNote>,
-) -> Option<Expected> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Expected>, CodecError> {
     if let Some(point) = record.partial("CARTESIAN_POINT") {
-        let values = point.parameters.get(1)?.list()?;
+        let Some(values) = point.parameters.get(1).and_then(ValueExt::list) else {
+            return Ok(None);
+        };
         if values.len() != 3 {
-            return None;
+            return Ok(None);
         }
-        return Some(Expected::Centroid(Point3::new(
-            values[0].number()? * scale,
-            values[1].number()? * scale,
-            values[2].number()? * scale,
-        )));
+        let [Some(x), Some(y), Some(z)] = [
+            values[0].number(),
+            values[1].number(),
+            values[2].number(),
+        ] else {
+            return Ok(None);
+        };
+        return Ok(Some(Expected::Centroid(Point3::new(
+            x * scale,
+            y * scale,
+            z * scale,
+        ))));
     }
-    record.partial("MEASURE_REPRESENTATION_ITEM")?;
-    let (kind, value) = record
+    if record.partial("MEASURE_REPRESENTATION_ITEM").is_none() {
+        return Ok(None);
+    }
+    let Some((kind, value)) = record
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
-        .find_map(area_or_volume_measure)?;
-    let scale = measure_scale(id, record, exchange, scale, kind, losses);
-    Some(match kind {
+        .find_map(area_or_volume_measure) else {
+            return Ok(None);
+        };
+    let scale = measure_scale(id, record, exchange, scale, kind, losses, ctx)?;
+    Ok(Some(match kind {
         "AREA_MEASURE" => Expected::Area(value * scale),
         "VOLUME_MEASURE" => Expected::Volume(value * scale),
-        _ => return None,
-    })
+        _ => return Ok(None),
+    }))
 }
 
 fn measure_scale(
@@ -255,8 +280,9 @@ fn measure_scale(
     fallback: f64,
     kind: &str,
     losses: &mut Vec<LossNote>,
-) -> f64 {
-    measure_unit(record)
+    ctx: &DecodeContext<'_>,
+) -> Result<f64, CodecError> {
+    let resolved = measure_unit(record)
         .and_then(|unit| exchange.records().get(&unit))
         .and_then(derived_unit_elements)
         .and_then(ValueExt::list)
@@ -270,13 +296,49 @@ fn measure_scale(
                     super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
                 Some(scale * base.get().powf(exponent))
             })
-        })
-        .unwrap_or_else(|| {
-            losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
+        });
+    match resolved {
+        Some(scale) => Ok(scale),
+        None => {
+            push_validation_loss(
+                losses,
+                StepLossCode::ValidationMeasureUnitUnresolved,
+                format!(
                     "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
-                )));
-            fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
-        })
+                ),
+                ctx,
+            )?;
+            Ok(fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 }))
+        }
+    }
+}
+
+fn push_validation_loss(
+    losses: &mut Vec<LossNote>,
+    code: StepLossCode,
+    message: String,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "step_validation_losses")?;
+    losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_validation_losses", 0, 1))?;
+    losses.push(code.note(message));
+    Ok(())
+}
+
+fn push_validation_note(
+    notes: &mut Vec<String>,
+    arguments: std::fmt::Arguments<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let note = crate::decode_alloc::charged_format(ctx, "step_validation_note_text", arguments)?;
+    ctx.charge_collection_items(1, "step_validation_notes")?;
+    notes
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_validation_notes", 0, 1))?;
+    notes.push(note);
+    Ok(())
 }
 
 fn area_or_volume_measure(value: &Value) -> Option<(&str, f64)> {
@@ -360,7 +422,7 @@ impl MeshProperties {
 }
 
 fn mesh_properties(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Option<MeshProperties>, CodecError> {
-    let Some(body) = (ir.model.bodies.len() == 1).then_some(&ir.model.bodies[0].id) else {
+    let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
     let meshes = ir
