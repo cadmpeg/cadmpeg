@@ -48,6 +48,71 @@ fn bulk_metadata_reuses_the_parsed_type_table() {
 }
 
 #[test]
+fn design_type_copy_refuses_table_entities_module_and_id_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let meta_name = "FusionAssetName[Active]/Design1/MetaStream.dat";
+    let meta = design_metastream_with_records(
+        &[(
+            "11111111-2222-3333-4444-555555555555",
+            "21F379C8-CAFD-4985-B461-767673A4C502",
+            0,
+            "Component",
+            &[17],
+        )],
+        &[],
+    );
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&[]).unwrap();
+    zip.start_file(meta_name, stored).unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    for (allowance, operation) in [
+        (0, "f3d design type table"),
+        (1, "f3d design type registered entities"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    let module_len = "Component".len() as u64;
+    let prefix_len = crate::ids::native_scope(meta_name).len() as u64;
+    let suffix_len = ":design-type#0".len() as u64;
+    for (allowance, operation) in [
+        (module_len - 1, "f3d design type module"),
+        (module_len + prefix_len - 1, "f3d native stream key"),
+        (module_len + prefix_len + suffix_len - 1, "f3d design type id suffix"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let types = with_scan(&archive, |scan| super::decode_types(&ctx, scan)).unwrap();
+    assert_eq!(types.len(), 1);
+    assert_eq!(types[0].module, "Component");
+    assert_eq!(types[0].entities.values().copied().collect::<Vec<_>>(), [17]);
+    assert_eq!(types[0].id, crate::ids::native_design_type_id(meta_name, types[0].byte_offset));
+}
+
+#[test]
 fn design_primary_frames_charge_registration_and_frame_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

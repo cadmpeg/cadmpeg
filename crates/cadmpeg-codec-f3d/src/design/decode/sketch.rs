@@ -1063,7 +1063,7 @@ pub(crate) fn decode_entity_headers(
     let mut out = Vec::new();
     // Entity ids are unique per Design stream, not archive-wide.
     let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
-    let types = decode_types(scan)?;
+    let types = decode_types(ctx, scan)?;
     let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
     for design_type in types {
         if let Some(stream) = native_stream(&design_type.id) {
@@ -1293,6 +1293,7 @@ fn decode_headers_for_indices(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub(crate) fn decode_sketch_relations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
@@ -1300,7 +1301,7 @@ pub(crate) fn decode_sketch_relations(
     // A record carries no class identity of its own: its class tag selects an
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
-    let types = decode_types(scan)?;
+    let types = decode_types(ctx, scan)?;
     for entry in scan
         .entries
         .iter()
