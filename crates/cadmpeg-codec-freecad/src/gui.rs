@@ -54,6 +54,20 @@ struct BodyUpdate {
     color: Option<Color>,
 }
 
+fn push_body_update(
+    ctx: &DecodeContext<'_>,
+    plan: &mut AppearancePlan,
+    id: &cadmpeg_ir::ids::BodyId,
+    visible: Assignment<Option<bool>>,
+    color: Result<Option<Color>, CodecError>,
+) -> Result<(), CodecError> {
+    let id = crate::resource::copied_identity(ctx, id.as_str(), "FCStd GUI body update identity")?;
+    let color = color?;
+    reserve_vec_items(ctx, &mut plan.body_updates, 1, "FCStd GUI body updates")?;
+    plan.body_updates.push(BodyUpdate { id, visible, color });
+    Ok(())
+}
+
 enum Assignment<T> {
     Keep,
     Set(T),
@@ -453,13 +467,10 @@ fn transfer_schema_one(
             .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
             .map(|(_, _, payload)| *payload))?;
         for body_id in &body_ids {
-            plan.body_updates.push(BodyUpdate {
-                id: body_id.clone(),
-                visible: Assignment::Set(visibility),
-                color: packed_color
+            push_body_update(ctx, &mut plan, body_id, Assignment::Set(visibility),
+                packed_color
                     .map(|packed| decode_color(packed, transparency))
-                    .transpose()?,
-            });
+                    .transpose())?;
         }
         if let Some(file) = values
             .get("DiffuseColor")
@@ -3894,14 +3905,11 @@ fn transfer_shape_appearances(
             )?);
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
-                    plan.body_updates.push(BodyUpdate {
-                        id: body.clone(),
-                        visible: Assignment::Keep,
-                        color: Some(decode_color(
+                    push_body_update(ctx, plan, body, Assignment::Keep,
+                        decode_color(
                             material.diffuse,
                             Some(material.transparency.get()),
-                        )?),
-                    });
+                        ).map(Some))?;
                     plan.bindings.push(AppearanceBinding {
                         id: binding_id(ctx, format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"

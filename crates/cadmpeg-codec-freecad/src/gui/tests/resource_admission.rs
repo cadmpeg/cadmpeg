@@ -94,6 +94,50 @@ fn neutral_view_presentations_refuse_at_caller_limit() {
 }
 
 #[test]
+fn gui_body_update_refuses_at_caller_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample")
+        .expect("valid body identity");
+    let error = super::super::push_body_update(
+        &ctx,
+        &mut super::super::AppearancePlan::default(),
+        &id,
+        super::super::Assignment::Keep,
+        Ok(None),
+    )
+    .expect_err("body update must charge its collection slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI body updates"), "{error:?}");
+}
+
+#[test]
+fn gui_body_update_identity_refuses_at_caller_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample")
+        .expect("valid body identity");
+    let error = super::super::push_body_update(
+        &ctx,
+        &mut super::super::AppearancePlan::default(),
+        &id,
+        super::super::Assignment::Keep,
+        Ok(None),
+    )
+    .expect_err("body update must charge its identity copy");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI body update identity"), "{error:?}");
+}
+
+#[test]
 fn gui_color_list_refuses_at_caller_limit() {
     let bytes = [1_u32.to_le_bytes(), 0x1122_3344_u32.to_le_bytes()].concat();
     let arena = cadmpeg_core::decode::DecodeArena::new();
