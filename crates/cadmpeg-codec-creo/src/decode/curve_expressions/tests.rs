@@ -198,3 +198,139 @@ fn curve_expression_assigned_ordinals_refuse_before_allocation() {
             if limit.operation == "creo curve-expression assigned ordinals"
     ));
 }
+
+#[test]
+fn curve_expression_unique_name_refuses_before_tree_insert() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let names = crate::decode::with_test_decode_ctx(|ctx| {
+        super::curve_expression_parameter_names(ctx, &record.assignments)
+    })
+    .expect("service profile admits names");
+    assert_eq!(names, vec![Some("a".to_owned())]);
+    let error = with_collection_limit(0, |ctx| {
+        super::curve_expression_parameter_names(ctx, &record.assignments)
+    })
+    .expect_err("the first unique name needs one tree entry");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression unique names"
+    ));
+}
+
+#[test]
+fn curve_expression_occurrence_refuses_before_tree_insert() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02a=1\0a=2\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let names = crate::decode::with_test_decode_ctx(|ctx| {
+        super::curve_expression_parameter_names(ctx, &record.assignments)
+    })
+    .expect("service profile admits duplicate names");
+    assert_eq!(names, vec![Some("a#1".to_owned()), Some("a#2".to_owned())]);
+    let error = with_collection_limit(1, |ctx| {
+        super::curve_expression_parameter_names(ctx, &record.assignments)
+    })
+    .expect_err("the occurrence follows one unique name");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression occurrences"
+    ));
+}
+
+#[test]
+fn curve_expression_name_slots_refuse_before_vector_growth() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let error = with_collection_limit(1, |ctx| {
+        super::curve_expression_parameter_names(ctx, &record.assignments)
+    })
+    .expect_err("the name slot follows one unique name");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo curve-expression parameter name slots"
+    ));
+}
+
+#[test]
+fn curve_expression_name_key_refuses_before_text_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("input fits the root limit");
+    let error = super::curve_expression_parameter_names(&ctx, &record.assignments)
+        .expect_err("the first name needs one retained byte");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo curve-expression name key"
+    ));
+}
+
+#[test]
+fn curve_expression_name_suffix_refuses_before_text_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02a=1\0a=2\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("input fits the root limit");
+    let error = super::curve_expression_parameter_names(&ctx, &record.assignments)
+        .expect_err("the first suffix needs two more retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo curve-expression parameter suffix"
+    ));
+}
+
+#[test]
+fn curve_expression_parameter_name_refuses_before_text_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01a=1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("input fits the root limit");
+    let error = super::curve_expression_parameter_names(&ctx, &record.assignments)
+        .expect_err("the output name follows two admitted key copies");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo curve-expression parameter name"
+    ));
+}

@@ -247,6 +247,31 @@ impl<'a> DecodeContext<'a> {
         Ok(copy)
     }
 
+    /// Reserves growth of a session-retained string after charging its bytes.
+    pub fn try_reserve_retained_text(
+        &self,
+        text: &mut String,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let bytes = u64_from_index(additional);
+        self.charge_retained(bytes, operation)?;
+        text.try_reserve(additional)
+            .map_err(|_| self.budget.retained_allocation_failed(bytes, operation))
+    }
+
+    /// Copies UTF-8 text into session-retained storage after admission.
+    pub fn copy_retained_text(
+        &self,
+        value: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut text = String::new();
+        self.try_reserve_retained_text(&mut text, value.len(), operation)?;
+        text.push_str(value);
+        Ok(text)
+    }
+
     /// Allocates `count` copies of `value` after charging collection items and
     /// reserving without panicking on allocator refusal.
     ///
