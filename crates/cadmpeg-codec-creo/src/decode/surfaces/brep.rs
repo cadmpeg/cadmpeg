@@ -1146,9 +1146,10 @@ pub(in super::super) fn transfer_native_brep(
         }
     }
     for pcurve in crate::curve::fc02_short_pcurve_endpoints(
+        ctx,
         &scan.curves.parameters,
         &scan.curves.topology_rows,
-    ) {
+    )? {
         let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
             scan,
             pcurve.faces.map(std::num::NonZeroU32::new),

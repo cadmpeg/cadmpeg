@@ -6273,19 +6273,6 @@ pub(crate) fn parameter_records_with_face_ids(
     Ok(records)
 }
 
-fn uniquely_bounded_parameter_records(
-    records: &[CurveParameterRecord],
-) -> Vec<&CurveParameterRecord> {
-    let mut counts = BTreeMap::new();
-    for record in records {
-        *counts.entry(record.curve_id).or_insert(0usize) += 1;
-    }
-    records
-        .iter()
-        .filter(|record| counts.get(&record.curve_id) == Some(&1))
-        .collect()
-}
-
 fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
     const HELD_SCALAR_OPEN: &[u8] = &[0xd7, 0xe8, 0x03];
     const HELD_SCALAR_CLOSE: u8 = 0x1e;
@@ -6533,27 +6520,34 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
 /// complete seven-scalar lane, and the bounded terminal operand. Other fc 02
 /// bodies remain native parameter records until their grammar is settled.
 pub(crate) fn fc02_short_pcurve_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
-) -> Vec<Fc02ShortPcurveEndpoints> {
-    let mut result = uniquely_bounded_parameter_records(parameters)
-        .into_iter()
-        .filter_map(|record| {
-            let face_0_endpoints = complete_fc02_short_pcurve_values(record)?;
+) -> Result<Vec<Fc02ShortPcurveEndpoints>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for record in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        parameters,
+        |record| record.curve_id,
+    )? {
+        let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
+            continue;
+        };
             let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-            let topology = matching.next()?;
-            matching.next().is_none().then_some(())?;
-            (topology.type_byte == record.type_byte).then_some(())?;
-            Some(Fc02ShortPcurveEndpoints {
+            let Some(topology) = matching.next() else { continue; };
+            if matching.next().is_some() || topology.type_byte != record.type_byte {
+                continue;
+            }
+            ctx.try_reserve_items(&mut result, 1, "creo FC02 short pcurve endpoints")?;
+            result.push(Fc02ShortPcurveEndpoints {
                 curve_id: record.curve_id,
                 faces: topology.faces.map(stored_face_reference),
                 face_0_endpoints,
                 offset: record.offset,
-            })
-        })
-        .collect::<Vec<_>>();
+            });
+    }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
