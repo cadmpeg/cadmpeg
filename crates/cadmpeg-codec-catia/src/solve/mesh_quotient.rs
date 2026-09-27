@@ -865,11 +865,24 @@ impl MeshCoordinateRootDomains {
         mut propagate_all_different: bool,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Option<RefinedCoordinateDomains>, CodecError> {
-        let mut affected_edges = initial_edges.to_vec();
-        let mut coverage_matching = self.coverage_matching.clone();
+        let mut affected_edges =
+            crate::resource::copy_slice(ctx, initial_edges, "catia_quotient_refine_initial_edges")?;
+        let mut coverage_matching = crate::resource::copy_slice(
+            ctx,
+            &self.coverage_matching,
+            "catia_quotient_refine_coverage_matching",
+        )?;
         let propagate_globally = propagate_all_different;
         loop {
-            let domain_lengths = domains.iter().map(Vec::len).collect::<Vec<_>>();
+            let mut domain_lengths = Vec::new();
+            for domain in &domains {
+                crate::resource::push(
+                    ctx,
+                    &mut domain_lengths,
+                    domain.len(),
+                    "catia_quotient_refine_domain_lengths",
+                )?;
+            }
             if !enforce_edge_arc_consistency_from(
                 ctx,
                 &mut domains,
@@ -911,14 +924,28 @@ impl MeshCoordinateRootDomains {
                     coverage_matching,
                 }));
             }
-            let changed_roots = domains
-                .iter()
-                .zip(domain_lengths)
-                .enumerate()
-                .filter_map(|(root, (domain, before))| (domain.len() != before).then_some(root))
-                .collect::<Vec<_>>();
+            let mut changed_roots = Vec::new();
+            for (root, (domain, before)) in domains.iter().zip(domain_lengths).enumerate() {
+                if domain.len() != before {
+                    crate::resource::push(
+                        ctx,
+                        &mut changed_roots,
+                        root,
+                        "catia_quotient_refine_changed_roots",
+                    )?;
+                }
+            }
             let affected_points = if propagate_globally {
-                (0..self.point_count).collect::<Vec<_>>()
+                let mut all_points = Vec::new();
+                for point in 0..self.point_count {
+                    crate::resource::push(
+                        ctx,
+                        &mut all_points,
+                        point,
+                        "catia_quotient_refine_all_points",
+                    )?;
+                }
+                all_points
             } else {
                 if changed_roots.is_empty() {
                     return Ok(Some(RefinedCoordinateDomains {
@@ -930,7 +957,15 @@ impl MeshCoordinateRootDomains {
                     ctx.alloc_filled(domains.len(), false, "catia_quotient_reached_roots")?;
                 let mut reached_points =
                     ctx.alloc_filled(self.point_count, false, "catia_quotient_reached_points")?;
-                let mut root_queue = VecDeque::from(changed_roots);
+                let mut root_queue = VecDeque::new();
+                for root in changed_roots {
+                    crate::resource::push_back(
+                        ctx,
+                        &mut root_queue,
+                        root,
+                        "catia_quotient_refine_root_queue",
+                    )?;
+                }
                 while let Some(root) = root_queue.pop_front() {
                     if reached_roots[root] {
                         continue;
@@ -943,25 +978,50 @@ impl MeshCoordinateRootDomains {
                         reached_points[point] = true;
                         for &neighbor in &roots_by_point[point] {
                             if !reached_roots[neighbor] {
-                                root_queue.push_back(neighbor);
+                                crate::resource::push_back(
+                                    ctx,
+                                    &mut root_queue,
+                                    neighbor,
+                                    "catia_quotient_refine_root_queue",
+                                )?;
                             }
                         }
                     }
                 }
-                reached_points
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(point, reached)| reached.then_some(point))
-                    .collect()
+                let mut points = Vec::new();
+                for (point, reached) in reached_points.into_iter().enumerate() {
+                    if reached {
+                        crate::resource::push(
+                            ctx,
+                            &mut points,
+                            point,
+                            "catia_quotient_refine_reached_points_list",
+                        )?;
+                    }
+                }
+                points
             };
-            let mut affected_domains = affected_points
-                .iter()
-                .map(|point| roots_by_point[*point].clone())
-                .collect::<Vec<_>>();
-            let affected_matching = affected_points
-                .iter()
-                .map(|point| coverage_matching[*point])
-                .collect::<Vec<_>>();
+            let mut affected_domains = Vec::new();
+            let mut affected_matching = Vec::new();
+            for &point in &affected_points {
+                let domain = crate::resource::copy_slice(
+                    ctx,
+                    &roots_by_point[point],
+                    "catia_quotient_refine_affected_domain_roots",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    &mut affected_domains,
+                    domain,
+                    "catia_quotient_refine_affected_domains",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    &mut affected_matching,
+                    coverage_matching[point],
+                    "catia_quotient_refine_affected_matching",
+                )?;
+            }
             let support_count = affected_domains.iter().map(Vec::len).sum::<usize>();
             let propagation_work = support_count.saturating_mul(4);
             if budget.is_some_and(|budget| propagation_work > budget.remaining()) {
@@ -991,7 +1051,12 @@ impl MeshCoordinateRootDomains {
                     return Ok(None);
                 }
                 if domain.len() != before {
-                    affected_roots.push(root);
+                    crate::resource::push(
+                        ctx,
+                        &mut affected_roots,
+                        root,
+                        "catia_quotient_refine_affected_roots",
+                    )?;
                 }
             }
             if affected_roots.is_empty() {
@@ -1000,10 +1065,17 @@ impl MeshCoordinateRootDomains {
                     coverage_matching,
                 }));
             }
-            affected_edges = affected_roots
-                .into_iter()
-                .flat_map(|root| self.root_edges[root].iter().copied())
-                .collect();
+            affected_edges = Vec::new();
+            for root in affected_roots {
+                for &edge in &self.root_edges[root] {
+                    crate::resource::push(
+                        ctx,
+                        &mut affected_edges,
+                        edge,
+                        "catia_quotient_refine_affected_edges",
+                    )?;
+                }
+            }
             affected_edges.sort_unstable();
             affected_edges.dedup();
         }
@@ -13470,6 +13542,7 @@ fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
     assert!(refused.contains("catia_quotient_root_edge_entries"));
     assert!(refused.contains("catia_quotient_roots_by_point"));
     assert!(refused.contains("catia_quotient_refine_roots"));
+    assert!(refused.contains("catia_quotient_refine_all_points"));
 }
 
 #[test]
@@ -13494,15 +13567,23 @@ fn local_coordinate_refinement_charges_inner_root_entries() {
         .expect("service resource budget")
         .is_none());
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = domains.refine_candidates(&ctx, &candidates, None);
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_quotient_refine_root_entries"));
+    let mut refused = HashSet::new();
+    for limit in 0..=128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match domains.refine_candidates(&ctx, &candidates, None) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+            }
+            Ok(None) => break,
+            _ => panic!("unexpected local refinement result"),
+        }
+    }
+    assert!(refused.contains("catia_quotient_refine_root_entries"));
 }
 
 #[test]
@@ -13525,7 +13606,7 @@ fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
         .is_some());
 
     let mut refused = HashSet::new();
-    for limit in 0..=64 {
+    for limit in 0..=256 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
@@ -13544,6 +13625,61 @@ fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
     assert!(refused.contains("catia_quotient_refine_roots"));
     assert!(refused.contains("catia_quotient_reached_roots"));
     assert!(refused.contains("catia_quotient_reached_points"));
+    for operation in [
+        "catia_quotient_refine_initial_edges",
+        "catia_quotient_refine_coverage_matching",
+        "catia_quotient_refine_domain_lengths",
+        "catia_quotient_refine_changed_roots",
+        "catia_quotient_refine_root_queue",
+        "catia_quotient_refine_reached_points_list",
+        "catia_quotient_refine_affected_domain_roots",
+        "catia_quotient_refine_affected_domains",
+        "catia_quotient_refine_affected_matching",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn coordinate_refinement_charges_hall_changed_roots_and_edges() {
+    let domains = MeshCoordinateRootDomains {
+        domains: vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]],
+        edges: Arc::new(vec![[0, 2]]),
+        root_edges: Arc::new(vec![vec![0], vec![], vec![0]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [0, 2], [1, 2]]]),
+        coverage_matching: vec![0, 1, 2],
+        point_count: 3,
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        domains.refine_domains(
+            ctx,
+            domains.domains.clone(),
+            domains.edge_candidates.as_ref(),
+            &[],
+            true,
+            None,
+        )
+    };
+    let service = crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .expect("Hall refinement is feasible");
+    assert_eq!(service.domains[2], vec![2]);
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected Hall refinement result"),
+        }
+    }
+    for operation in [
+        "catia_quotient_refine_affected_roots",
+        "catia_quotient_refine_affected_edges",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
