@@ -584,12 +584,9 @@ impl ValidatedRawBrep {
             ),
         ] {
             if mismatch {
-                warnings.push_coded(
-                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                    format!(
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
                     "redundant Brep {label} positional index mismatch; serialized array order used"
-                ),
-                );
+                ))?;
             }
         }
         let mut resolved = ResolvedBrep {
@@ -783,10 +780,7 @@ impl ValidatedRawBrep {
                 Err(_) => {
                     raw.face_sides.clear();
                     raw.regions.clear();
-                    warnings.push_coded(
-                        crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                        "invalid optional Brep region topology discarded".to_string(),
-                    );
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!("invalid optional Brep region topology discarded"))?;
                 }
             }
         }
@@ -991,10 +985,7 @@ pub(crate) fn parse(
     let is_solid = if minor >= 2 {
         let flag = RawSolidFlag::parse(reader.i32()?);
         if let RawSolidFlag::OutOfRange(value) = flag {
-            warnings.push_coded(
-                crate::loss::RhinoLossCode::EnumerationValueDegraded,
-                format!("invalid Brep is_solid value {value}; retained for native fidelity"),
-            );
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::EnumerationValueDegraded, format_args!("invalid Brep is_solid value {value}; retained for native fidelity"))?;
         }
         flag
     } else {
@@ -1029,16 +1020,13 @@ pub(crate) fn parse(
                     regions = topology_regions;
                 }
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(error) => warnings.push_coded(
-                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                    format!("invalid optional Brep region topology discarded: {error}"),
-                ),
+                Err(error) => warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!("invalid optional Brep region topology discarded: {error}"))?,
             }
         }
     }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
-        warnings.push(format!("ON_Brep skipped {skipped} trailing bytes"));
+        warnings.push_admitted(ctx, format_args!("ON_Brep skipped {skipped} trailing bytes"))?;
     }
     let mut raw = RawBrep {
         losses,
@@ -1297,9 +1285,9 @@ fn parse_legacy_major2(
                 let trim_index = i32::try_from(trim_position)
                     .map_err(|_| error(trim_source_start, "legacy Brep trim index overflow"))?;
                 if stored_trim_index != trim_index {
-                    warnings.push(format!(
+                    warnings.push_admitted(ctx, format_args!(
                         "legacy Brep trim index {stored_trim_index} disagrees with array position {trim_index}"
-                    ));
+                    ))?;
                 }
                 let edge = match position(Some(edge_index)).filter(|edge| *edge < edge_count) {
                     Some(_) => Some(edge_index),
@@ -1612,7 +1600,7 @@ fn parse_legacy_major2(
     };
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
-        warnings.push(format!("legacy ON_Brep skipped {skipped} trailing bytes"));
+        warnings.push_admitted(ctx, format_args!("legacy ON_Brep skipped {skipped} trailing bytes"))?;
     }
     let mut c2_slots = charged_vec(ctx, c2_meta.len(), "Rhino legacy Brep C2 slots")?;
     for curve in c2_meta {
@@ -1841,10 +1829,7 @@ fn read_legacy_mesh_sides(
             Err(error) => {
                 reader.skip_remaining()?;
                 let degraded = empty_mesh_slots(ctx, face_count)?;
-                warnings.push_coded(
-                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                    format!("legacy Brep mesh cache degraded: {error}"),
-                );
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("legacy Brep mesh cache degraded: {error}"))?;
                 return Ok((degraded, start..reader.position()));
             }
         };
@@ -1855,20 +1840,14 @@ fn read_legacy_mesh_sides(
                 Err(error) => {
                     reader.skip_remaining()?;
                     let degraded = empty_mesh_slots(ctx, face_count)?;
-                    warnings.push_coded(
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        format!("legacy Brep mesh cache degraded: {error}"),
-                    );
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("legacy Brep mesh cache degraded: {error}"))?;
                     return Ok((degraded, start..reader.position()));
                 }
             };
             if let Err(error) = reader.skip(object.next_offset() - object_start) {
                 reader.skip_remaining()?;
                 let degraded = empty_mesh_slots(ctx, face_count)?;
-                warnings.push_coded(
-                    crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                    format!("legacy Brep mesh cache degraded: {error}"),
-                );
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("legacy Brep mesh cache degraded: {error}"))?;
                 return Ok((degraded, start..reader.position()));
             }
             match parse_class_wrapper_with_userdata(ctx, bytes, object.range(), archive, warnings) {
@@ -1881,10 +1860,7 @@ fn read_legacy_mesh_sides(
                     userdata,
                 }),
                 Ok(_) => {
-                    warnings.push_coded(
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        "legacy Brep mesh cache slot has wrong class".to_string(),
-                    );
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("legacy Brep mesh cache slot has wrong class"))?;
                     None
                 }
                 Err(FramingError::Resource(limit)) => {
@@ -1893,10 +1869,7 @@ fn read_legacy_mesh_sides(
                     ));
                 }
                 Err(error) => {
-                    warnings.push_coded(
-                        crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                        format!("legacy Brep mesh cache slot degraded: {error}"),
-                    );
+                    warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("legacy Brep mesh cache slot degraded: {error}"))?;
                     None
                 }
             }
@@ -1972,7 +1945,7 @@ fn read_children(
             }
         }
     }
-    finish_anonymous_ranges(
+    finish_anonymous_ranges(ctx,
         bytes,
         reader,
         &chunk,
@@ -2013,7 +1986,7 @@ fn read_vertices(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous(ctx, bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -2030,16 +2003,23 @@ fn read_vertices(
 /// `raw_array_start` cannot rule that out either: its record width is a minimum
 /// size check for the allocation, not the stride of the reading that follows.
 fn unstamped_legacy_layout(
+    ctx: &DecodeContext<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     count: usize,
     field: &str,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
-        crate::loss::writer_stamp_unverified(format!(
-            "Brep {field} read with the pre-2002 layout for {count} records because the archive has no writer-version stamp"
-        ))
-    })
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), GeometryError> {
+    if archive.value() >= 3 && writer_version.is_none() && count > 0 {
+        crate::wire::reserve_collection(ctx, losses, 1, "Rhino Brep unstamped layout losses")?;
+        losses.push(crate::wire::admitted_loss(
+            ctx,
+            crate::loss::RhinoLossCode::SourceWriterStampUnverified,
+            format_args!("Brep {field} read with the pre-2002 layout for {count} records because the archive has no writer-version stamp"),
+            "Rhino Brep unstamped layout loss text",
+        )?);
+    }
+    Ok(())
 }
 
 fn read_edges(
@@ -2055,9 +2035,7 @@ fn read_edges(
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
-    if let Some(loss) = unstamped_legacy_layout(archive, writer_version, count, "edge domains") {
-        losses.push(loss);
-    }
+    unstamped_legacy_layout(ctx, archive, writer_version, count, "edge domains", losses)?;
     let mut result = charged_vec(ctx, count, "Rhino Brep edges")?;
     for _ in 0..count {
         let start = child.position();
@@ -2090,7 +2068,7 @@ fn read_edges(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous(ctx, bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -2107,14 +2085,14 @@ fn read_trims(
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
-    if let Some(loss) = unstamped_legacy_layout(
+    unstamped_legacy_layout(
+        ctx,
         archive,
         writer_version,
         count,
         "trim domains and proxy senses",
-    ) {
-        losses.push(loss);
-    }
+        losses,
+    )?;
     let mut result = charged_vec(ctx, count, "Rhino Brep trims")?;
     for _ in 0..count {
         let start = child.position();
@@ -2167,7 +2145,7 @@ fn read_trims(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous(ctx, bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -2198,7 +2176,7 @@ fn read_loops(
         });
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous(ctx, bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -2268,7 +2246,7 @@ fn read_faces(
         }
     }
     let range = chunk.range();
-    finish_anonymous(bytes, reader, &chunk, child, warnings)?;
+    finish_anonymous(ctx, bytes, reader, &chunk, child, warnings)?;
     Ok((result, range))
 }
 
@@ -2318,10 +2296,7 @@ fn read_mesh_sides(
                         })
                     }
                     Ok(_) => {
-                        warnings.push_coded(
-                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                            "Brep mesh cache slot has wrong class".to_string(),
-                        );
+                        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("Brep mesh cache slot has wrong class"))?;
                         None
                     }
                     Err(FramingError::Resource(limit)) => {
@@ -2330,10 +2305,7 @@ fn read_mesh_sides(
                         ));
                     }
                     Err(error) => {
-                        warnings.push_coded(
-                            crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                            format!("Brep mesh cache slot degraded: {error}"),
-                        );
+                        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("Brep mesh cache slot degraded: {error}"))?;
                         None
                     }
                 }
@@ -2342,7 +2314,7 @@ fn read_mesh_sides(
             };
             *slot = mesh;
         }
-        finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
+        finish_anonymous_children(ctx, bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
@@ -2351,10 +2323,7 @@ fn read_mesh_sides(
         Err(error) => {
             let degraded = ctx.alloc_filled(face_count, None, "Rhino Brep degraded mesh slots")?;
             reader.skip(chunk.next_offset() - reader.position())?;
-            warnings.push_coded(
-                crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
-                format!("Brep mesh cache degraded: {error}"),
-            );
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::BrepMeshCacheDegraded, format_args!("Brep mesh cache degraded: {error}"))?;
             Ok((degraded, chunk.range()))
         }
     }
@@ -2397,7 +2366,7 @@ fn read_regions(
         let regions_start = topology.position();
         let regions = read_region_records(ctx, bytes, &mut topology, archive, warnings)?;
         let regions_range = regions_start..topology.position();
-        finish_anonymous_children(
+        finish_anonymous_children(ctx,
             bytes,
             &mut outer,
             &nested_chunk,
@@ -2422,19 +2391,13 @@ fn read_regions(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
-                warnings.push_coded(
-                    crate::loss::RhinoLossCode::IntegrityFailure,
-                    "Brep region wrapper checksum mismatch".to_string(),
-                );
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("Brep region wrapper checksum mismatch"))?;
             }
             Ok((sides, regions, Some(chunk.range()), inline_region_loaded))
         }
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
-            warnings.push_coded(
-                crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                format!("invalid optional Brep region topology discarded: {error}"),
-            );
+            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!("invalid optional Brep region topology discarded: {error}"))?;
             Ok((Vec::new(), Vec::new(), Some(chunk.range()), false))
         }
     }
@@ -2465,7 +2428,7 @@ fn read_region_topology_userdata(
     let regions_start = topology.position();
     let regions = read_region_records(ctx, bytes, &mut topology, archive, warnings)?;
     let regions_range = regions_start..topology.position();
-    finish_anonymous_children(
+    finish_anonymous_children(ctx,
         bytes,
         &mut parent,
         &topology_chunk,
@@ -2475,9 +2438,9 @@ fn read_region_topology_userdata(
     )?;
     let skipped = parent.skip_remaining()?;
     if skipped != 0 {
-        warnings.push(format!(
+        warnings.push_admitted(ctx, format_args!(
             "Brep region-topology userdata skipped {skipped} trailing bytes"
-        ));
+        ))?;
     }
     if sides.len() != face_count.saturating_mul(2) {
         return Err(error(
@@ -2511,7 +2474,7 @@ fn read_region_sides<'a>(
         });
         child.skip_remaining()?;
     }
-    finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
+    finish_anonymous_children(ctx, bytes, reader, &chunk, child, &children, warnings)?;
     Ok(result)
 }
 
@@ -2543,13 +2506,10 @@ fn read_region_records<'a>(
             source_range: source,
         });
     }
-    finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
+    finish_anonymous_children(ctx, bytes, reader, &chunk, child, &children, warnings)?;
     if index_mismatch {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::RedundantFieldRepaired,
-            "redundant Brep region positional index mismatch; serialized array order used"
-                .to_string(),
-        );
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!("redundant Brep region positional index mismatch; serialized array order used"
+                ))?;
     }
     Ok(result)
 }
@@ -2998,6 +2958,7 @@ fn body_reader<'a>(bytes: &'a [u8], chunk: &Chunk) -> Result<BoundedReader<'a>, 
 }
 
 fn finish_anonymous(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
@@ -3005,28 +2966,26 @@ fn finish_anonymous(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     if child.remaining() != 0 {
-        warnings.push(format!(
+        warnings.push_admitted(ctx, format_args!(
             "Brep anonymous chunk skipped {} trailing bytes",
             child.remaining()
-        ));
+        ))?;
     }
     if matches!(
         verify_checksum(bytes, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!(
                 "Brep anonymous CRC mismatch at offset {}",
                 chunk.header_start
-            ),
-        );
+            ))?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
 fn finish_anonymous_children(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
@@ -3035,10 +2994,11 @@ fn finish_anonymous_children(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
-    finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
+    finish_anonymous_ranges(ctx, bytes, parent, chunk, child, &direct, warnings)
 }
 
 fn finish_anonymous_ranges<I>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
@@ -3051,22 +3011,19 @@ where
     I::Item: std::borrow::Borrow<Range<usize>>,
 {
     if child.remaining() != 0 {
-        warnings.push(format!(
+        warnings.push_admitted(ctx, format_args!(
             "Brep anonymous chunk skipped {} trailing bytes",
             child.remaining()
-        ));
+        ))?;
     }
     if matches!(
         verify_checksum_ranges(bytes, chunk, direct_ranges)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
+        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!(
                 "Brep anonymous CRC mismatch at offset {}",
                 chunk.header_start
-            ),
-        );
+            ))?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
@@ -4117,6 +4074,43 @@ mod tests {
     }
 
     #[test]
+    fn raw_array_crc_mismatch_refuses_diagnostic_collection_limit() {
+        let mut bytes = packed_array(0, &[]);
+        let crc = bytes.len() - 1;
+        bytes[crc] ^= 1;
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let error = with_collection_limit(&bytes, 0, |ctx| {
+            read_vertices(ctx, &bytes, &mut reader, ArchiveVersion::V5, &mut Diagnostics::new())
+        })
+        .expect_err("checksum warning requires one diagnostic slot");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
+    }
+
+    #[test]
+    fn unstamped_layout_loss_refuses_collection_limit() {
+        let mut losses = Vec::new();
+        let error = with_collection_limit(&[], 0, |ctx| {
+            super::unstamped_legacy_layout(ctx, ArchiveVersion::V5, None, 1, "edge domains", &mut losses)
+        })
+        .expect_err("unstamped layout loss requires one slot");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep unstamped layout losses"
+        ));
+        assert!(losses.is_empty());
+        with_test_context(&[], |ctx| {
+            super::unstamped_legacy_layout(ctx, ArchiveVersion::V5, None, 1, "edge domains", &mut losses)
+        })
+        .expect("service profile admits the loss");
+        assert_eq!(losses.len(), 1);
+    }
+
+    #[test]
     fn face_reader_accepts_all_packed_minors() {
         for version in [0x10_u8, 0x11, 0x12] {
             let mut body = vec![version, 0, 0, 0, 0];
@@ -4758,6 +4752,19 @@ mod tests {
         let validated = with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw))
             .expect("positional indexes are redundant");
         assert_eq!(validated.warnings().len(), 5);
+    }
+
+    #[test]
+    fn positional_index_diagnostic_refuses_collection_limit() {
+        let mut raw = one_face_raw();
+        raw.vertices[0].index = 9;
+        let error = with_collection_limit(&[], 0, |ctx| ValidatedRawBrep::try_new(ctx, raw))
+            .expect_err("positional mismatch requires one diagnostic slot");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
+        ));
     }
 
     #[test]
