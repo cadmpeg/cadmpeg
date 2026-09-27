@@ -1511,7 +1511,7 @@ impl MeshQuotient {
             .union
             .clone_charged(ctx, "catia_quotient_clone_union")?;
         let domains =
-            crate::resource::copy_slice(ctx, &self.domains, "catia_quotient_clone_domains")?;
+            crate::resource::copy_retained_slice(ctx, &self.domains, "catia_quotient_clone_domains")?;
         let mut members = Vec::new();
         crate::resource::reserve_vec(
             ctx,
@@ -1520,7 +1520,7 @@ impl MeshQuotient {
             "catia_quotient_clone_member_rows",
         )?;
         for row in &self.members {
-            members.push(crate::resource::copy_slice(
+            members.push(crate::resource::copy_retained_slice(
                 ctx,
                 row,
                 "catia_quotient_clone_member_nodes",
@@ -3505,6 +3505,30 @@ impl MeshQuotient {
             }
             Ok(PointAssignmentOutcome::Complete(completed))
         }
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn quotient_clone_refuses_retained_domains_and_member_nodes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0usize]))]);
+    catia_test_context!(service_ctx);
+    assert_eq!(quotient.clone_charged(&service_ctx).expect("service budget").len(), 1);
+    for (limit, operation) in [
+        (std::mem::size_of::<usize>() as u64, "catia_quotient_clone_domains"),
+        ((std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>()) as u64, "catia_quotient_clone_member_nodes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits retained limit");
+        assert!(matches!(
+            quotient.clone_charged(&ctx),
+            Err(CodecError::ResourceLimit(error)) if error.operation == operation
+        ));
     }
 }
 

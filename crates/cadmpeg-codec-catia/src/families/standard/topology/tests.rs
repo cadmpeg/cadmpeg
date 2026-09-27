@@ -1,6 +1,70 @@
 use super::{incidence_cycles, solve_boundary_orientation_constraints, StandardTopology};
 use std::collections::HashMap;
 
+fn with_zero_retained<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits retained limit");
+    run(&ctx)
+}
+
+#[test]
+fn standard_topology_copies_refuse_retained_bytes_before_growth() {
+    use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, NonEmptyCoedges};
+    use cadmpeg_core::CodecError;
+
+    let coedge = CoedgeUse { edge_row: 0, reversed: false, start_vertex: 0, end_vertex: 0 };
+    let face_topology = StandardTopology {
+        faces: vec![FaceTopology { boundaries: vec![Boundary { coedges: NonEmptyCoedges::one(coedge) }] }],
+        edge_rows: Vec::new(), vertex_points: Vec::new(), logical_vertex_count: 0,
+    };
+    assert!(matches!(
+        with_zero_retained(|ctx| face_topology.clone_charged(ctx)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_topology_copy_coedges"
+    ));
+    let row = EdgeRow { kind: 1, handles: vec![7], boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun };
+    assert!(matches!(
+        with_zero_retained(|ctx| row.clone_charged(ctx)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_edge_row_copy_handles"
+    ));
+    let point_topology = StandardTopology {
+        faces: Vec::new(), edge_rows: Vec::new(), vertex_points: vec![[0.0, 0.0, 0.0]], logical_vertex_count: 1,
+    };
+    assert!(matches!(
+        with_zero_retained(|ctx| point_topology.clone_charged(ctx)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_topology_copy_vertex_points"
+    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(face_topology.clone_charged(ctx).expect("service budget"), face_topology);
+        assert_eq!(row.clone_charged(ctx).expect("service budget"), row);
+        assert_eq!(point_topology.clone_charged(ctx).expect("service budget"), point_topology);
+    });
+}
+
+#[test]
+fn reconstructed_mesh_copies_refuse_retained_bytes_before_growth() {
+    use super::{reconstruct_mesh_selection, EdgeBoundaryLayout, EdgeRow};
+    use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+    use cadmpeg_core::CodecError;
+
+    let row = EdgeRow { kind: 1, handles: vec![7], boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun };
+    let selected = [] as [MeshFaceBoundaryAssignment; 0];
+    assert!(matches!(
+        with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, &[row.clone()], &[], &selected, &[])),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_mesh_selection_handle_copy"
+    ));
+    assert!(matches!(
+        with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, &[], &[[0.0, 0.0, 0.0]], &selected, &[])),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_mesh_selection_point_copy"
+    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(reconstruct_mesh_selection(ctx, &[row], &[], &selected, &[]).expect("service budget").is_some());
+        assert!(reconstruct_mesh_selection(ctx, &[], &[[0.0, 0.0, 0.0]], &selected, &[]).expect("service budget").is_some());
+    });
+}
+
 #[test]
 fn standard_topology_copy_refuses_each_nested_collection_limit() {
     use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, NonEmptyCoedges};
