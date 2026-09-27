@@ -32,6 +32,72 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroUsize;
 
+fn insert_feature_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let value = crate::wire::admitted_format(ctx, value, "Rhino feature property value")?;
+    insert_feature_property_owned(ctx, properties, key, value)
+}
+
+fn insert_feature_property_owned(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: std::fmt::Arguments<'_>,
+    value: String,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let key = crate::wire::admitted_format(ctx, key, "Rhino feature property key")?;
+    let key = cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino property key"))?;
+    ctx.charge_collection_items(1, "Rhino feature property entries")?;
+    properties.insert(key, value);
+    Ok(())
+}
+
+struct CageFiniteList<'a>(&'a [cadmpeg_ir::scalar::FiniteReal]);
+
+impl std::fmt::Display for CageFiniteList<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{}", value.get())?;
+        }
+        Ok(())
+    }
+}
+
+struct CageWeightList<'a>(&'a [cadmpeg_ir::scalar::NonZeroReal]);
+
+impl std::fmt::Display for CageWeightList<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "{}", value.get())?;
+        }
+        Ok(())
+    }
+}
+
+struct CagePointList<'a>(&'a [Vec<cadmpeg_ir::scalar::FiniteReal>]);
+
+impl std::fmt::Display for CagePointList<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, point) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(";")?;
+            }
+            write!(f, "{}", CageFiniteList(point))?;
+        }
+        Ok(())
+    }
+}
+
 use crate::chunks::ArchiveVersion;
 use crate::container::{OpaqueRecord, Scan};
 use crate::loss::RhinoLossCode;
@@ -693,28 +759,6 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryOutcome::NativeRetained(code))
     }
 
-    /// Keys one source record's open property set, charging every key the
-    /// reader cannot key.
-    ///
-    /// A blank key cannot be asked for and a restated key is already taken, so
-    /// the property either carries cannot reach the document. The record is
-    /// still transferred; the charge names the record, and the key when the
-    /// record states it twice.
-    fn named_record_entries(
-        &mut self,
-        record: &str,
-        entries: impl IntoIterator<Item = (String, String)>,
-    ) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-        let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
-        for key in refused {
-            self.report.typed_losses.push(
-                RhinoLossCode::ObjectAttributesDegraded
-                    .note(format_args!("{key}; the property is not transferred")),
-            );
-        }
-        kept
-    }
-
     /// Resolves one foreign object UUID to the single record that owns it.
     fn resolve_object(&self, id: crate::wire::Uuid) -> ObjectReference {
         match self
@@ -735,21 +779,29 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         role: &str,
         id: crate::wire::Uuid,
-    ) -> Option<String> {
+    ) -> Result<Option<String>, cadmpeg_core::CodecError> {
         if id.is_nil() {
-            return None;
+            return Ok(None);
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Some(Self::mint_unknown_id(order).to_string());
+                return Ok(Some(crate::wire::admitted_format(
+                    self.expand.ctx(),
+                    format_args!("{}", Self::mint_unknown_id(order)),
+                    "Rhino resolved object record ID",
+                )?));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
         };
-        self.report.typed_losses.push(code.note(format!(
-            "{role} in object record {source_order} references object {id}"
-        )));
-        None
+        crate::wire::reserve_collection(self.expand.ctx(), &mut self.report.typed_losses, 1, "Rhino typed decode losses")?;
+        self.report.typed_losses.push(crate::wire::admitted_loss(
+            self.expand.ctx(),
+            code,
+            format_args!("{role} in object record {source_order} references object {id}"),
+            "Rhino unresolved object reference loss",
+        )?);
+        Ok(None)
     }
 
     /// Decode and atomically commit supported simple geometry.
@@ -1209,37 +1261,29 @@ impl<'a> DecodeContext<'a> {
             key.as_str(),
             hatch.loops.iter().map(|hatch_loop| hatch_loop.kind),
         )?;
-        let mut parameters = BTreeMap::from([
-            ("pattern_index".to_string(), hatch.pattern_index.to_string()),
-            (
-                "pattern_scale".to_string(),
-                hatch.pattern_scale.get().to_string(),
-            ),
-            (
-                "pattern_rotation".to_string(),
-                hatch.pattern_rotation.get().to_string(),
-            ),
-            (
-                "basepoint".to_string(),
-                format!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()),
-            ),
-        ]);
-        if let Some(gradient) = hatch.gradient.as_ref().map(crate::hatch::gradient_json) {
-            parameters.insert("gradient".to_string(), gradient);
+        let mut parameters = BTreeMap::new();
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_index"), format_args!("{}", hatch.pattern_index))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_scale"), format_args!("{}", hatch.pattern_scale.get()))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("pattern_rotation"), format_args!("{}", hatch.pattern_rotation.get()))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("basepoint"), format_args!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()))?;
+        if let Some(gradient) = hatch.gradient.as_ref() {
+            let gradient = crate::hatch::gradient_json(self.expand.ctx(), gradient)?;
+            insert_feature_property_owned(self.expand.ctx(), &mut parameters, format_args!("gradient"), gradient)?;
         }
         for (index, (kind, id)) in loop_ids.iter().enumerate() {
-            parameters.insert(
-                format!("loop_{index}"),
-                format!(
+            insert_feature_property(
+                self.expand.ctx(),
+                &mut parameters,
+                format_args!("loop_{index}"),
+                format_args!(
                     "{}:{id}",
                     match kind {
                         crate::hatch::LoopKind::Outer => "outer",
                         crate::hatch::LoopKind::Inner => "inner",
                     }
                 ),
-            );
+            )?;
         }
-        let parameters = self.named_record_entries(feature_id.as_str(), parameters);
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: hatch.source_range.start as u64,
@@ -1333,20 +1377,28 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "polyedge", "feature"),
             key.clone(),
         );
-        let parameters = polyedge
-            .segments
-            .iter()
-            .enumerate()
-            .filter_map(|(index, segment)| {
-                self.resolve_object_record(
-                    source_order,
-                    "polyedge segment",
-                    segment.reference.object_id,
-                )
-                .map(|record| (format!("segment_{index}_object"), record))
-            })
-            .collect::<BTreeMap<_, _>>();
-        let parameters = self.named_record_entries(id.as_str(), parameters);
+        let mut parameters = BTreeMap::new();
+        for (index, segment) in polyedge.segments.iter().enumerate() {
+            if let Some(record) = self.resolve_object_record(
+                source_order,
+                "polyedge segment",
+                segment.reference.object_id,
+            )? {
+                insert_feature_property_owned(
+                    self.expand.ctx(),
+                    &mut parameters,
+                    format_args!("segment_{index}_object"),
+                    record,
+                )?;
+            }
+        }
+        let mut source_properties = BTreeMap::new();
+        insert_feature_property_owned(
+            self.expand.ctx(),
+            &mut source_properties,
+            format_args!("construction"),
+            construction,
+        )?;
         let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
@@ -1354,10 +1406,7 @@ impl<'a> DecodeContext<'a> {
             name,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("construction"),
-                construction,
-            )]),
+            source_properties,
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1433,22 +1482,19 @@ impl<'a> DecodeContext<'a> {
             key.clone(),
         );
         let view = &self.scan.data[detail.view_range.clone()];
+        let mut source_properties = BTreeMap::new();
+        insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("view_bytes"), format_args!("{}", view.len()))?;
+        insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("view_sha256"), format_args!("{}", sha256_hex(view)))?;
+        let mut parameters = BTreeMap::new();
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("boundary"), format_args!("{curve_id}"))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("page_per_model_ratio"), format_args!("{}", detail.page_per_model_ratio.get()))?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: detail.source_range.start as u64,
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::from([
-                (
-                    cadmpeg_core::nonblank_literal!("view_bytes"),
-                    view.len().to_string(),
-                ),
-                (
-                    cadmpeg_core::nonblank_literal!("view_sha256"),
-                    sha256_hex(view),
-                ),
-            ]),
+            source_properties,
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1456,16 +1502,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
-                    parameters: BTreeMap::from([
-                        (
-                            cadmpeg_core::nonblank_literal!("boundary"),
-                            curve_id.clone(),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("page_per_model_ratio"),
-                            detail.page_per_model_ratio.get().to_string(),
-                        ),
-                    ]),
+                    parameters,
                 }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
@@ -1547,45 +1584,34 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "cage", "feature"),
             key.clone(),
         );
-        let knots = cage
-            .knots
-            .iter()
-            .map(|axis| {
-                axis.iter()
-                    .map(|knot| knot.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            })
-            .collect::<Vec<_>>();
-        let control_points = cage
-            .control_points
-            .iter()
-            .map(|point| {
-                point
-                    .iter()
-                    .map(|coordinate| coordinate.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            })
-            .collect::<Vec<_>>()
-            .join(";");
-        let mut properties = BTreeMap::from([
-            ("u_knots".to_string(), knots[0].clone()),
-            ("v_knots".to_string(), knots[1].clone()),
-            ("w_knots".to_string(), knots[2].clone()),
-            ("control_points".to_string(), control_points),
-        ]);
-        if let Some(weights) = &cage.weights {
-            properties.insert(
-                "weights".to_string(),
-                weights
-                    .iter()
-                    .map(|weight| weight.get().to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
+        let mut properties = BTreeMap::new();
+        for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
+            insert_feature_property(
+                self.expand.ctx(),
+                &mut properties,
+                format_args!("{axis}_knots"),
+                format_args!("{}", CageFiniteList(knots)),
+            )?;
         }
-        let properties = self.named_record_entries(feature_id.as_str(), properties);
+        insert_feature_property(
+            self.expand.ctx(),
+            &mut properties,
+            format_args!("control_points"),
+            format_args!("{}", CagePointList(&cage.control_points)),
+        )?;
+        if let Some(weights) = &cage.weights {
+            insert_feature_property(
+                self.expand.ctx(),
+                &mut properties,
+                format_args!("weights"),
+                format_args!("{}", CageWeightList(weights)),
+            )?;
+        }
+        let mut parameters = BTreeMap::new();
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("dimension"), format_args!("{}", cage.dimension))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("rational"), format_args!("{}", cage.rational()))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("orders"), format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("counts"), format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]))?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: cage.source_range.start as u64,
@@ -1600,24 +1626,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
-                    parameters: BTreeMap::from([
-                        (
-                            cadmpeg_core::nonblank_literal!("dimension"),
-                            cage.dimension.to_string(),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("rational"),
-                            cage.rational().to_string(),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("orders"),
-                            format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("counts"),
-                            format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
-                        ),
-                    ]),
+                    parameters,
                 }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
@@ -1689,6 +1698,7 @@ impl<'a> DecodeContext<'a> {
             |id| self.resolve_object_record(source_order, "morph captive", id),
         ) {
             Ok(feature) => feature,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 self.scan_warning(source_order, &format!("morph control failed: {error}"));
                 self.mark_failed(source_order);
@@ -1771,18 +1781,20 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "curve-on-surface", "feature"),
             key.clone(),
         );
+        let mut source_properties = BTreeMap::new();
+        if let Some(id) = model_id.as_ref() {
+            insert_feature_property(self.expand.ctx(), &mut source_properties, format_args!("model_curve"), format_args!("{id}"))?;
+        }
+        let mut parameters = BTreeMap::new();
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("parameter_curve"), format_args!("{parameter_id}"))?;
+        insert_feature_property(self.expand.ctx(), &mut parameters, format_args!("support_surface"), format_args!("{surface_id}"))?;
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: construction.source_range.start as u64,
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: model_id
-                .as_ref()
-                .map(|id| {
-                    BTreeMap::from([(cadmpeg_core::nonblank_literal!("model_curve"), id.clone())])
-                })
-                .unwrap_or_default(),
+            source_properties,
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1790,16 +1802,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
-                    parameters: BTreeMap::from([
-                        (
-                            cadmpeg_core::nonblank_literal!("parameter_curve"),
-                            parameter_id.clone(),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("support_surface"),
-                            surface_id.to_string(),
-                        ),
-                    ]),
+                    parameters,
                 }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),

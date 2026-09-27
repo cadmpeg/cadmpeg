@@ -128,6 +128,33 @@ fn full_source_attributes_refuse_collection_limit() {
 }
 
 #[test]
+fn feature_property_map_refuses_collection_limit() {
+    let error = with_collection_limit(0, |ctx| {
+        super::insert_feature_property(
+            ctx,
+            &mut std::collections::BTreeMap::new(),
+            format_args!("dimension"),
+            format_args!("3"),
+        )
+        .expect_err("one generated feature property exceeds zero collection items")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino feature property entries"
+    ));
+    let mut properties = std::collections::BTreeMap::new();
+    super::insert_feature_property(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut properties,
+        format_args!("dimension"),
+        format_args!("3"),
+    )
+    .expect("service profile admits the property");
+    assert_eq!(properties["dimension"], "3");
+}
+
+#[test]
 fn point_commit_propagates_entity_limit() {
     let object = object_record_with_payload(
         ArchiveVersion::V5,
