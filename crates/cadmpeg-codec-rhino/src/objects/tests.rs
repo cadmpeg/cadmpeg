@@ -769,8 +769,12 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
     let mut warnings = Diagnostics::new();
     let material = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(), material, &metadata, &mut warnings,
-    ).expect("service profile admits material identity");
+        &cadmpeg_test_support::service_decode_context(),
+        material,
+        &metadata,
+        &mut warnings,
+    )
+    .expect("service profile admits material identity");
     assert_eq!(
         material[0]
             .identity()
@@ -796,8 +800,12 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
     let parent = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(), parent, &metadata, &mut warnings,
-    ).expect("service profile admits parent identity");
+        &cadmpeg_test_support::service_decode_context(),
+        parent,
+        &metadata,
+        &mut warnings,
+    )
+    .expect("service profile admits parent identity");
     assert_eq!(
         parent[0]
             .identity()
@@ -846,7 +854,8 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
-    ).expect("service profile admits object identities");
+    )
+    .expect("service profile admits object identities");
     assert_ne!(
         objects[0].identity().expect("required invariant").source_id,
         objects[2].identity().expect("required invariant").source_id
@@ -1182,6 +1191,59 @@ fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
             .any(|warning| warning.contains("per-object mesh userdata")
                 && warning.contains("dropped"))
     );
+}
+
+#[test]
+fn custom_mesh_userdata_diagnostics_refuse_collection_limit() {
+    let bytes = [0_u8; 5];
+    for (class_uuid, parse) in [
+        (
+            crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA,
+            super::parse_obsolete_custom_mesh_userdata
+                as fn(
+                    &cadmpeg_core::decode::DecodeContext<'_>,
+                    &[u8],
+                    &[crate::objects::AttributeUserdataDescriptor],
+                    ArchiveVersion,
+                    &mut Diagnostics,
+                ) -> Result<
+                    Option<crate::settings::MeshParameters>,
+                    crate::chunks::FramingError,
+                >,
+        ),
+        (
+            crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA,
+            super::parse_per_object_mesh_userdata,
+        ),
+    ] {
+        let descriptors = [crate::objects::AttributeUserdataDescriptor::Known(
+            crate::objects::AttributeUserdata {
+                range: 0..bytes.len(),
+                class_uuid,
+                item_uuid: class_uuid,
+                application_uuid: None,
+                writer_version: None,
+                payload_range: 0..bytes.len(),
+            },
+        )];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let refused = parse(
+            &ctx,
+            &bytes,
+            &descriptors,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+        )
+        .expect_err("custom mesh diagnostic exceeds zero collection items");
+        assert!(
+            matches!(refused, crate::chunks::FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+        );
+    }
 }
 
 #[test]
