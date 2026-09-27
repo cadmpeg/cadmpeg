@@ -333,7 +333,16 @@ fn image_reference<'a>(
                 &value.content_hash.content_sha1,
                 "Rhino image content SHA-1",
             )?,
-            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+            embedded_file_uuid: value
+                .embedded_file_id
+                .map(|id| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino image embedded-file UUID",
+                    )
+                })
+                .transpose()?,
         },
         source_range,
     ))
@@ -544,6 +553,7 @@ fn parse_cplane(
 }
 
 fn parse_viewport(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -631,7 +641,10 @@ fn parse_viewport(
         port,
         source_uuid: viewport_id
             .filter(|id| !id.is_nil())
-            .map(|id| id.to_string()),
+            .map(|id| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino viewport UUID")
+            })
+            .transpose()?,
         camera_up_locked: locks[0],
         camera_direction_locked: locks[1],
         camera_location_locked: locks[2],
@@ -776,7 +789,11 @@ fn parse_attributes(
     }
     let display = if version[1] >= 2 {
         let id = uuid(&mut reader)?;
-        (!id.is_nil()).then(|| id.to_string())
+        (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino view display UUID")
+            })
+            .transpose()?
     } else {
         None
     };
@@ -918,7 +935,15 @@ fn parse_attributes(
             )?;
             result.clipping_planes.push(ClippingPlane {
                 equation_mm: equation,
-                plane_uuid: (!id.is_nil()).then(|| id.to_string()),
+                plane_uuid: (!id.is_nil())
+                    .then(|| {
+                        crate::wire::admitted_format(
+                            ctx,
+                            format_args!("{id}"),
+                            "Rhino view clipping plane UUID",
+                        )
+                    })
+                    .transpose()?,
                 enabled,
                 depth_mm: depth,
                 depth_enabled,
@@ -935,7 +960,11 @@ fn parse_attributes(
     }
     if version[1] >= 5 {
         let id = uuid(&mut reader)?;
-        result.named_view_uuid = (!id.is_nil()).then(|| id.to_string());
+        result.named_view_uuid = (!id.is_nil())
+            .then(|| {
+                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino named view UUID")
+            })
+            .transpose()?;
     }
     if version[1] >= 6 {
         result.show_construction_z_axis = reader.bool()?;
@@ -1124,21 +1153,16 @@ fn parse_view(
                 ));
             }
         }
-        reserve_admitted_vec(ctx, &mut children, 1, "Rhino view children")?;
-        children.push(ViewChild {
-            typecode: format!("{:#010x}", child.typecode),
-            kind: child_kind(child.typecode),
-            source_offset: offset as u64,
-            byte_len: (child.next_offset() - offset) as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset()]),
-        });
         match child.typecode {
             VIEW_CPLANE if !child.short() => {
                 construction_plane = Some(parse_cplane(ctx, data, child.body().clone(), scale)?);
             }
             VIEW_VIEWPORT if !child.short() => {
-                match parse_viewport(data, child.body().clone(), scale) {
+                match parse_viewport(ctx, data, child.body().clone(), scale) {
                     Ok(value) => viewport = Some(value),
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(FramingError::Resource(limit));
+                    }
                     Err(error) => {
                         let message = format!("viewport retained: {error}");
                         parse_warnings.push(message.clone());
@@ -1299,9 +1323,27 @@ fn parse_view(
                     ));
                 }
                 terminated = true;
-                break;
             }
             _ => {}
+        }
+        reserve_admitted_vec(ctx, &mut children, 1, "Rhino view children")?;
+        children.push(ViewChild {
+            typecode: crate::wire::admitted_format(
+                ctx,
+                format_args!("{:#010x}", child.typecode),
+                "Rhino view child typecode",
+            )?,
+            kind: child_kind(child.typecode),
+            source_offset: offset as u64,
+            byte_len: (child.next_offset() - offset) as u64,
+            sha256: crate::instances::hex(
+                ctx,
+                &cadmpeg_ir::hash::sha256(&data[offset..child.next_offset()]),
+                "Rhino view child SHA-256",
+            )?,
+        });
+        if terminated {
+            break;
         }
         offset = child.next_offset();
     }
@@ -1327,7 +1369,11 @@ fn parse_view(
         ));
     }
     Ok(ViewRecord {
-        id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+        id: crate::wire::admitted_format(
+            ctx,
+            format_args!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+            "Rhino view ID",
+        )?,
         source_offset: record.header_start as u64,
         list_kind,
         list_index,
@@ -1852,6 +1898,55 @@ mod tests {
         (bytes, record)
     }
 
+    fn view_record_retained_refusal(limit: u64) -> cadmpeg_core::CodecError {
+        let archive = ArchiveVersion::V5;
+        let (bytes, record) = one_end_marker_view(archive);
+        with_retained_limit(&bytes, limit, |ctx| {
+            parse_list(
+                ctx,
+                &bytes,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+            )
+            .expect_err("view record retained text exceeds limit")
+        })
+    }
+
+    #[test]
+    fn view_child_typecode_refuses_retained_limit() {
+        assert!(
+            matches!(view_record_retained_refusal(0), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view child typecode")
+        );
+    }
+
+    #[test]
+    fn view_child_sha256_refuses_retained_limit() {
+        assert!(
+            matches!(view_record_retained_refusal(10), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view child SHA-256")
+        );
+    }
+
+    #[test]
+    fn view_id_refuses_retained_limit() {
+        assert!(
+            matches!(view_record_retained_refusal(74), cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino view ID")
+        );
+        let archive = ArchiveVersion::V5;
+        let (bytes, record) = one_end_marker_view(archive);
+        let admitted = parse_list(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        )
+        .expect("view record fits service profile");
+        assert_eq!(admitted.0.len(), 1);
+    }
+
     #[test]
     fn view_name_refuses_retained_limit() {
         let archive = ArchiveVersion::V5;
@@ -1878,7 +1973,14 @@ mod tests {
         ));
     }
 
-    fn view_attributes_with_page(minor: u8, printer: &str, clipping: bool) -> Vec<u8> {
+    fn view_attributes_with_page(
+        minor: u8,
+        printer: &str,
+        clipping: bool,
+        display_id: [u8; 16],
+        plane_id: [u8; 16],
+        named_id: [u8; 16],
+    ) -> Vec<u8> {
         let archive = ArchiveVersion::V5;
         let mut page = Vec::new();
         page.extend(0_i32.to_le_bytes());
@@ -1894,7 +1996,7 @@ mod tests {
         for _ in 0..6 {
             bytes.extend(0.0_f64.to_le_bytes());
         }
-        bytes.extend([0; 16]);
+        bytes.extend(display_id);
         bytes.extend(anonymous_chunk(archive, 0, &page));
         if minor >= 3 {
             bytes.push(0);
@@ -1905,16 +2007,19 @@ mod tests {
             for _ in 0..4 {
                 plane.extend(0.0_f64.to_le_bytes());
             }
-            plane.extend([0; 16]);
+            plane.extend(plane_id);
             plane.push(1);
             bytes.extend(anonymous_chunk(archive, 0, &plane));
+        }
+        if minor >= 5 {
+            bytes.extend(named_id);
         }
         bytes
     }
 
     #[test]
     fn view_printer_name_refuses_retained_limit() {
-        let bytes = view_attributes_with_page(2, "printer", false);
+        let bytes = view_attributes_with_page(2, "printer", false, [0; 16], [0; 16], [0; 16]);
         let error = with_retained_limit(&bytes, 0, |ctx| {
             parse_attributes(
                 ctx,
@@ -1929,8 +2034,65 @@ mod tests {
     }
 
     #[test]
+    fn view_display_uuid_refuses_retained_limit() {
+        let bytes = view_attributes_with_page(2, "", false, [0x11; 16], [0; 16], [0; 16]);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_attributes(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("display UUID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino view display UUID");
+        let (admitted, _) = parse_attributes(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("display UUID fits service profile");
+        assert!(admitted.display.is_some());
+    }
+
+    #[test]
+    fn view_clipping_plane_uuid_refuses_retained_limit() {
+        let bytes = view_attributes_with_page(4, "", true, [0; 16], [0x11; 16], [0; 16]);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_attributes(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("clipping plane UUID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino view clipping plane UUID");
+    }
+
+    #[test]
+    fn named_view_uuid_refuses_retained_limit() {
+        let bytes = view_attributes_with_page(5, "", true, [0; 16], [0; 16], [0x11; 16]);
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_attributes(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("named-view UUID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino named view UUID");
+    }
+
+    #[test]
     fn view_attribute_checksum_children_refuse_collection_limit() {
-        let bytes = view_attributes_with_page(2, "", false);
+        let bytes = view_attributes_with_page(2, "", false, [0; 16], [0; 16], [0; 16]);
         let error = with_collection_limit(&bytes, 0, |ctx| {
             parse_attributes(
                 ctx,
@@ -1946,7 +2108,7 @@ mod tests {
 
     #[test]
     fn view_clipping_planes_refuse_collection_limit() {
-        let bytes = view_attributes_with_page(4, "", true);
+        let bytes = view_attributes_with_page(4, "", true, [0; 16], [0; 16], [0; 16]);
         let error = with_collection_limit(&bytes, 1, |ctx| {
             parse_attributes(
                 ctx,
@@ -2084,6 +2246,7 @@ mod tests {
     fn viewport_scales_spatial_state_but_not_frames_or_view_scale() {
         let bytes = viewport();
         let value: Viewport = parse_viewport(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(10.0),
@@ -2110,6 +2273,53 @@ mod tests {
             Some([1.0, 2.0, 3.0].map(crate::test_support::positive))
         );
         assert!(value.camera_valid && value.camera_location_locked);
+    }
+
+    #[test]
+    fn viewport_uuid_refuses_retained_limit() {
+        let bytes = viewport();
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_viewport(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                crate::settings::MillimeterScale::IDENTITY,
+            )
+            .expect_err("viewport UUID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino viewport UUID");
+        let admitted = parse_viewport(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            0..bytes.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("viewport UUID fits service profile");
+        assert!(admitted.source_uuid.is_some());
+    }
+
+    #[test]
+    fn viewport_uuid_resource_refusal_is_not_a_view_loss() {
+        let archive = ArchiveVersion::V5;
+        let mut body = crc_chunk(archive, super::VIEW_VIEWPORT, &viewport());
+        body.extend(short_chunk(archive, super::TCODE_ENDOFTABLE, 0));
+        let mut bytes = 1_i32.to_le_bytes().to_vec();
+        bytes.extend(crc_chunk(archive, super::VIEW_RECORD, &body));
+        let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
+        let error = with_retained_limit(&bytes, 0, |ctx| {
+            parse_list(
+                ctx,
+                &bytes,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+            )
+            .expect_err("viewport UUID exceeds retained limit")
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "Rhino viewport UUID")
+        );
     }
 
     #[test]
@@ -2807,6 +3017,34 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.operation == "Rhino file reference full path"
         ));
+    }
+
+    #[test]
+    fn image_embedded_file_uuid_refuses_retained_limit() {
+        let archive = ArchiveVersion::V6;
+        let bytes = file_reference(archive, "", "");
+        let error = with_retained_limit(&bytes, 40, |ctx| {
+            super::image_reference(
+                ctx,
+                &bytes,
+                &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+                    .expect("reference bounds"),
+                archive,
+                &mut crate::loss::Diagnostics::new(),
+            )
+            .expect_err("embedded-file UUID exceeds retained limit")
+        });
+        assert_resource(&error, "Rhino image embedded-file UUID");
+        let admitted = super::image_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+                .expect("reference bounds"),
+            archive,
+            &mut crate::loss::Diagnostics::new(),
+        )
+        .expect("embedded-file UUID fits service profile");
+        assert!(admitted.0.embedded_file_uuid.is_some());
     }
 
     #[test]
