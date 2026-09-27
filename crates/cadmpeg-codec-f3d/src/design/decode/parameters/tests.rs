@@ -367,7 +367,9 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let parameters = with_scan(&archive, decode_parameters).unwrap();
+    let parameters = with_scan(&archive, |scan| {
+        decode_parameters(&cadmpeg_test_support::service_decode_context(), scan)
+    }).unwrap();
     let [parameter] = parameters.as_slice() else {
         panic!("expected one canonical parameter");
     };
@@ -1265,13 +1267,79 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 
     let payload = parameter_record(None, "1", "User Parameter", None, "p", 1.0);
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    assert!(super::parse_design_parameter(&payload)
+    assert!(super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
+        .unwrap()
         .expect("parsed parameter")
         .into_record(stream, u64::MAX)
         .is_none());
 
-    let parsed = super::parse_design_parameter(&payload).expect("parsed parameter");
+    let parsed = super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
+        .unwrap().expect("parsed parameter");
     let error = super::locate_design_parameter(parsed, stream, usize::MAX)
         .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn design_parameter_text_fields_refuse_each_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
+    let mut charged = 0usize;
+    for field in ["1", "AlongDistance", "mm", "d71"] {
+        charged += field.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_design_parameter(&ctx, &payload).err().unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+    }
+    let parsed = super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
+        .unwrap().unwrap();
+    assert_eq!(parsed.name, "d71");
+
+    let legacy = class_287_parameter_record("HoleDepth", "d20");
+    let mut charged = 0usize;
+    for field in ["0.4375 in", "HoleDepth", "in", "d20"] {
+        charged += field.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_design_parameter(&ctx, &legacy).err().unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+    }
+}
+
+#[test]
+fn decoded_parameter_records_refuse_each_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0)).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    with_scan(&archive, |scan| {
+        for (limit, operation) in [
+            (0, "f3d parameter record index"),
+            (1, "f3d decoded parameter records"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = decode_parameters(&ctx, scan).err().unwrap();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation));
+        }
+    });
 }

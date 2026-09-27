@@ -512,7 +512,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         ((stream, 12), &entities[2]),
         ((stream, 13), &entities[3]),
     ]);
-    let parameter = crate::design::decode::parameters::parse_design_parameter(&parameter_record(
+    let parameter = crate::design::decode::parameters::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &parameter_record(
         Some(1),
         "135 deg",
         "Angular Dimension-2",
@@ -520,7 +520,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         "d1",
         3.0 * std::f64::consts::FRAC_PI_4,
     ))
-    .expect("angular parameter")
+    .unwrap().expect("angular parameter")
     .into_record("Design/BulkStream.dat", 100)
     .expect("located parameter");
     let parameter_id =
