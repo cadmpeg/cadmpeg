@@ -5,6 +5,7 @@ use crate::curve::CurveExpressionLine;
 use crate::curve::ExternalRelationSymbols;
 
 mod affine;
+mod allocation;
 mod dump;
 mod relations;
 mod rows;

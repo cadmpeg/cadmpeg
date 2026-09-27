@@ -901,6 +901,7 @@ pub(crate) fn expression_records_with_model_name(
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
         let mut start = 0;
         while let Some(offset) = find(payload, label, start) {
+            ctx.try_reserve_items(&mut labels, 1, "creo expression record labels")?;
             labels.push((offset, label.len(), backup));
             start = offset + label.len();
         }
@@ -921,27 +922,38 @@ pub(crate) fn expression_records_with_model_name(
         if after_id == id_start {
             continue;
         }
-        let local_system = find_in(payload, LOCAL_SYSTEM, after_id, end).and_then(|offset| {
-            let extents_start = offset + LOCAL_SYSTEM.len();
-            let (dimensions, dimensions_end) = compact_int(payload, extents_start);
-            let (count, body_start) = compact_int(payload, dimensions_end);
-            (dimensions_end > extents_start && body_start > dimensions_end && body_start <= end)
-                .then_some(())?;
-            let body_end = payload[body_start..end]
-                .windows(1)
-                .position(|window| window[0] == psb::token::NAMED_RECORD)
-                .map_or(end, |relative| body_start + relative);
-            let body = payload[body_start..body_end].to_vec();
-            Some(CurveExpressionLocalSystem {
-                dimensions,
-                count,
-                explicit_slots: ((dimensions, count) == (4, 3))
-                    .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
-                    .flatten(),
-                body,
-                offset,
-            })
-        });
+        let local_system =
+            (|| -> Result<Option<CurveExpressionLocalSystem>, cadmpeg_core::CodecError> {
+                let Some(offset) = find_in(payload, LOCAL_SYSTEM, after_id, end) else {
+                    return Ok(None);
+                };
+                let extents_start = offset + LOCAL_SYSTEM.len();
+                let (dimensions, dimensions_end) = compact_int(payload, extents_start);
+                let (count, body_start) = compact_int(payload, dimensions_end);
+                if dimensions_end <= extents_start
+                    || body_start <= dimensions_end
+                    || body_start > end
+                {
+                    return Ok(None);
+                }
+                let body_end = payload[body_start..end]
+                    .windows(1)
+                    .position(|window| window[0] == psb::token::NAMED_RECORD)
+                    .map_or(end, |relative| body_start + relative);
+                let body = ctx.copy_retained(
+                    &payload[body_start..body_end],
+                    "creo expression local-system body",
+                )?;
+                Ok(Some(CurveExpressionLocalSystem {
+                    dimensions,
+                    count,
+                    explicit_slots: ((dimensions, count) == (4, 3))
+                        .then(|| scalar::decode_explicit_local_system_slots(&body, &cache))
+                        .flatten(),
+                    body,
+                    offset,
+                }))
+            })()?;
         let Some(expression_offset) = find_in(payload, EXPRESSION, after_id, end) else {
             continue;
         };
@@ -964,8 +976,9 @@ pub(crate) fn expression_records_with_model_name(
                 lines.clear();
                 break;
             };
+            ctx.try_reserve_items(&mut lines, 1, "creo expression record lines")?;
             lines.push(CurveExpressionLine {
-                text: text.to_owned(),
+                text: ctx.copy_retained_text(text, "creo expression record line text")?,
                 offset: cursor,
             });
             cursor = line_end + 1;
@@ -990,6 +1003,7 @@ pub(crate) fn expression_records_with_model_name(
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
             );
+            ctx.try_reserve_items(&mut records, 1, "creo expression records")?;
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
