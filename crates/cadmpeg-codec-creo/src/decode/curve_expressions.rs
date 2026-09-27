@@ -313,6 +313,41 @@ fn curve_expression_parameter_names(
     Ok(names)
 }
 
+fn curve_expression_assignment_indices(
+    ctx: &DecodeContext<'_>,
+    record: &crate::curve::CurveExpressionRecord,
+) -> Result<(BTreeMap<String, Option<usize>>, BTreeMap<String, usize>), CodecError> {
+    let mut by_name = BTreeMap::<String, Option<usize>>::new();
+    for (ordinal, assignment) in record.assignments.iter().enumerate() {
+        if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
+            continue;
+        }
+        let Some((name, _)) = assignment.parameter_target() else {
+            continue;
+        };
+        let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
+        key.make_ascii_lowercase();
+        match by_name.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo curve-expression assignment indices")?;
+                entry.insert(Some(ordinal));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+    let mut unique = BTreeMap::new();
+    for (name, index) in &by_name {
+        if let Some(index) = index {
+            let key = ctx.copy_retained_text(name, "creo curve-expression unique key")?;
+            ctx.charge_collection_items(1, "creo curve-expression unique indices")?;
+            unique.insert(key, *index);
+        }
+    }
+    Ok((by_name, unique))
+}
+
 pub(super) fn transfer_curve_expression_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -342,23 +377,8 @@ pub(super) fn transfer_curve_expression_features(
             &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
             cadmpeg_ir::ids::IdentityKey::from(record.entity_id).dash(record.offset),
         );
-        let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
-        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
-            if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
-                continue;
-            }
-            let Some((name, _)) = assignment.parameter_target() else {
-                continue;
-            };
-            assignment_indices_by_name
-                .entry(crate::curve::expression_identifier_key(name))
-                .and_modify(|index| *index = None)
-                .or_insert(Some(assignment_ordinal));
-        }
-        let unique_assignment_indices = assignment_indices_by_name
-            .iter()
-            .filter_map(|(name, index)| index.map(|index| (name.clone(), index)))
-            .collect::<BTreeMap<_, _>>();
+        let (assignment_indices_by_name, unique_assignment_indices) =
+            curve_expression_assignment_indices(ctx, record)?;
         let Some((parameter_ordinals, cyclic_edges)) =
             curve_expression_parameter_order(ctx, record, &unique_assignment_indices)?
         else {
