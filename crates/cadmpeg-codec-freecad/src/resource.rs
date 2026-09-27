@@ -3,8 +3,33 @@
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
+
+pub(crate) fn named_entries_charged<V>(
+    ctx: &DecodeContext<'_>,
+    record: &str,
+    entries: BTreeMap<String, V>,
+    operation: &'static str,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, V>, CodecError> {
+    use cadmpeg_core::text::NonBlankString;
+    let mut keyed = BTreeMap::new();
+    for (name, value) in entries {
+        let Some(key) = NonBlankString::new(name) else {
+            return Err(CodecError::Malformed(retained_join(
+                ctx, &[record, " states a property with a blank key"], "", operation,
+            )?));
+        };
+        if keyed.contains_key(&key) {
+            return Err(CodecError::Malformed(retained_join(
+                ctx, &[record, " states the property ", key.as_str(), " a second time"], "", operation,
+            )?));
+        }
+        ctx.charge_collection_items(1, operation)?;
+        keyed.insert(key, value);
+    }
+    Ok(keyed)
+}
 
 pub(crate) fn insert_hash_map<K: Eq + Hash, V>(
     ctx: &DecodeContext<'_>,
@@ -250,6 +275,19 @@ pub(crate) fn collection_allocation_failed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn charged_named_entries_refuse_at_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let entries = std::collections::BTreeMap::from([("role".to_owned(), 1_u8)]);
+        assert!(matches!(super::named_entries_charged(&ctx, "owner", entries, "test keyed entries"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "test keyed entries"));
+    }
+
     #[test]
     fn charged_hash_index_refuses_at_caller_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
