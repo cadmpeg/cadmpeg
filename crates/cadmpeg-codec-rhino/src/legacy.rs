@@ -722,14 +722,28 @@ fn admit_v1_temporary_items<T>(
     let count_u64 = u64::try_from(count).map_err(|_| {
         CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
     })?;
+    let bytes = v1_temporary_bytes::<T>(count)?;
+    ctx.charge_collection_items(count_u64, operation)?;
+    workspace.grow(bytes)?;
+    Ok(bytes)
+}
+
+fn reserve_v1_temporary_bytes<T>(
+    workspace: &mut ScopedReservation<'_>,
+    count: usize,
+) -> Result<u64, CodecError> {
+    let bytes = v1_temporary_bytes::<T>(count)?;
+    workspace.grow(bytes)?;
+    Ok(bytes)
+}
+
+fn v1_temporary_bytes<T>(count: usize) -> Result<u64, CodecError> {
     let bytes = count
         .checked_mul(std::mem::size_of::<T>())
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
         })?;
-    ctx.charge_collection_items(count_u64, operation)?;
-    workspace.grow(bytes)?;
     Ok(bytes)
 }
 
@@ -2215,11 +2229,9 @@ fn append_legacy_brep(
         });
         vertex_by_class.insert(class, vertex_id);
     }
-    admit_v1_temporary_items::<(usize, [cadmpeg_ir::ids::VertexId; 2])>(
-        ctx,
+    reserve_v1_temporary_bytes::<(usize, [cadmpeg_ir::ids::VertexId; 2])>(
         &mut workspace,
         group_roots.len(),
-        "Rhino V1 Brep grouped vertices",
     )?;
     let mut group_vertices = BTreeMap::new();
     for root in &group_roots {
@@ -2233,13 +2245,12 @@ fn append_legacy_brep(
             .cloned()
             .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
         let ids = [start, end];
+        ctx.charge_collection_items(1, "Rhino V1 Brep grouped vertices")?;
         group_vertices.insert(*root, ids);
     }
-    admit_v1_temporary_items::<(usize, cadmpeg_ir::ids::EdgeId)>(
-        ctx,
+    reserve_v1_temporary_bytes::<(usize, cadmpeg_ir::ids::EdgeId)>(
         &mut workspace,
         group_roots.len(),
-        "Rhino V1 Brep grouped edges",
     )?;
     let mut group_edges = BTreeMap::new();
     for (edge_index, root) in group_roots.iter().copied().enumerate() {
@@ -2289,6 +2300,7 @@ fn append_legacy_brep(
                 })
                 .transpose()?,
         });
+        ctx.charge_collection_items(1, "Rhino V1 Brep grouped edges")?;
         group_edges.insert(root, edge_id);
     }
     let mut shell_faces =
@@ -2541,18 +2553,21 @@ fn append_legacy_brep(
         });
         shell_faces.push(face_id);
     }
-    admit_v1_temporary_items::<(cadmpeg_ir::ids::CoedgeId, usize)>(
-        ctx,
+    reserve_v1_temporary_bytes::<(cadmpeg_ir::ids::CoedgeId, usize)>(
         &mut workspace,
         model.coedges.len(),
-        "Rhino V1 Brep radial positions",
     )?;
-    let coedge_positions = model
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
+    let mut coedge_positions = BTreeMap::new();
+    for (index, coedge) in model.coedges.iter().enumerate() {
+        ctx.charge_collection_items(1, "Rhino V1 Brep radial positions")?;
+        let id = cadmpeg_ir::ids::CoedgeId::try_from(crate::wire::copy_retained_string(
+            ctx,
+            coedge.id.as_str(),
+            "Rhino V1 Brep radial position ID",
+        )?)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+        coedge_positions.insert(id, index);
+    }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
             model.coedges[coedge_positions[&ring[index]]].radial_next =

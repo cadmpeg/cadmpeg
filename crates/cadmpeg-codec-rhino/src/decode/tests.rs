@@ -364,6 +364,25 @@ fn curve_warning_tree_refuses_collection_limit() {
 }
 
 #[test]
+fn typed_install_loss_transfer_refuses_collection_limit() {
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let refusal = with_collection_limit(0, |ctx| {
+        super::append_report_losses(ctx, &mut Vec::new(), source)
+            .expect_err("typed loss transfer requires one report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino typed decode losses"
+    ));
+    let source = vec![RhinoLossCode::IntegrityFailure.note("invalid source record")];
+    let mut report = Vec::new();
+    super::append_report_losses(&cadmpeg_test_support::service_decode_context(), &mut report, source)
+        .expect("service profile admits the loss");
+    assert_eq!(report[0].message, "invalid source record");
+}
+
+#[test]
 fn candidate_validation_propagates_entity_limit() {
     let scan = scan_with_objects(&[]);
     let refusal = with_entity_limit(&scan, 0, |expand| {

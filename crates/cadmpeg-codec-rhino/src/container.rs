@@ -1048,6 +1048,18 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'
     scan_with_record_limit(ctx, data, TABLE_RECORD_CAP)
 }
 
+fn count_object_typecode(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<u32, usize>,
+    typecode: u32,
+) -> Result<(), CodecError> {
+    if !counts.contains_key(&typecode) {
+        ctx.charge_collection_items(1, "Rhino object typecode counts")?;
+    }
+    *counts.entry(typecode).or_insert(0) += 1;
+    Ok(())
+}
+
 fn scan_with_record_limit<'a>(
     ctx: &DecodeContext<'_>,
     data: &'a [u8],
@@ -1238,12 +1250,11 @@ fn scan_with_record_limit<'a>(
                         warnings.push_admitted(ctx, format_args!(
                             "bounded object record at {child_offset} is malformed: {error}"
                         ))?;
-                        degraded_object_record(&record, &error)
+                        degraded_object_record(ctx, &record, &error)?
                     }
                 };
-                *object_typecodes
-                    .entry(descriptor.framed().map_or(0, |object| object.object_type))
-                    .or_insert(0) += 1;
+                let typecode = descriptor.framed().map_or(0, |object| object.object_type);
+                count_object_typecode(ctx, &mut object_typecodes, typecode)?;
                 all_objects.push(descriptor);
             }
             if opaque {

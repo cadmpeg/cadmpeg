@@ -810,18 +810,20 @@ impl ValidatedRawBrep {
     /// Selects the serialized body kind and reports an unverified stamp-dependent gauge.
     pub(crate) fn body_kind(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         writer_version: Option<i64>,
-    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
-        body_kind(&self.raw, &self.resolved, writer_version)
+    ) -> Result<(BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>), cadmpeg_core::CodecError> {
+        body_kind(ctx, &self.raw, &self.resolved, writer_version)
     }
 }
 
 /// Classifies one B-rep body, reporting whether a missing stamp decided it.
 fn body_kind(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     raw: &RawBrep,
     resolved: &ResolvedBrep,
     writer_version: Option<i64>,
-) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
+) -> Result<(BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>), cadmpeg_core::CodecError> {
     let closed = !raw.faces.is_empty()
         && (0..resolved.edges.len()).all(|edge| {
             resolved
@@ -832,17 +834,17 @@ fn body_kind(
                 == 2
         });
     let kind = serialized_body_kind(raw.is_solid, writer_version, closed);
-    let loss = body_kind_rests_on_missing_stamp(raw.is_solid, writer_version, closed).then(|| {
-        let stored = match raw.is_solid.stored() {
-            Some(value) => value.to_string(),
-            None => "absent".to_owned(),
-        };
-        crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(format!(
-            "Brep body kind gauge substituted: stored solid flag {stored} was trusted over the \
-             closed-shell gauge because the writer-version stamp is absent"
-        ))
-    });
-    (kind, loss)
+    let loss = if body_kind_rests_on_missing_stamp(raw.is_solid, writer_version, closed) {
+        let code = crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted;
+        let operation = "Rhino Brep body-kind loss message";
+        Some(match raw.is_solid.stored() {
+            Some(stored) => crate::wire::admitted_loss(ctx, code, format_args!("Brep body kind gauge substituted: stored solid flag {stored} was trusted over the closed-shell gauge because the writer-version stamp is absent"), operation)?,
+            None => crate::wire::admitted_loss(ctx, code, format_args!("Brep body kind gauge substituted: stored solid flag absent was trusted over the closed-shell gauge because the writer-version stamp is absent"), operation)?,
+        })
+    } else {
+        None
+    };
+    Ok((kind, loss))
 }
 
 /// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
@@ -3640,13 +3642,36 @@ mod tests {
         raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
         let validated =
             with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw)).expect("valid Brep");
-        let (kind, substituted) = validated.body_kind(None);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let (kind, substituted) = validated.body_kind(&ctx, None).expect("body-kind loss admitted");
         assert_eq!(kind, BrepBodyKind::Solid);
         assert_eq!(
             substituted.as_ref().map(|loss| &loss.code),
             Some(&crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
         );
-        assert_eq!(validated.body_kind(Some(200_210_020)).1, None);
+        assert_eq!(validated.body_kind(&ctx, Some(200_210_020)).expect("no loss").1, None);
+    }
+
+    #[test]
+    fn body_kind_gauge_loss_refuses_retained_limit() {
+        let mut raw = one_face_raw();
+        raw.minor = 2;
+        raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
+        let validated =
+            with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw)).expect("valid Brep");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let refusal = validated
+            .body_kind(&ctx, None)
+            .expect_err("body-kind loss needs retained text");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino Brep body-kind loss message"
+        ));
     }
 
     fn degenerate_trim_raw(trim_type: RawTrimKind, curve: Option<i32>) -> RawBrep {

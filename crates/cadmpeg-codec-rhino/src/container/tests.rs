@@ -19,6 +19,26 @@ use crate::RhinoCodec;
 mod resource_limits;
 
 #[test]
+fn object_typecode_count_refuses_collection_limit_before_map_insertion() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::count_object_typecode(&ctx, &mut std::collections::BTreeMap::new(), 0x20)
+        .expect_err("one typecode map node exceeds zero items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit) if limit.operation == "Rhino object typecode counts"
+    ));
+    let mut counts = std::collections::BTreeMap::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("first count admitted");
+    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("existing count admitted");
+    assert_eq!(counts[&0x20], 2);
+}
+
+#[test]
 fn source_metadata_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();

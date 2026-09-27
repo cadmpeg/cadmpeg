@@ -48,6 +48,16 @@ fn push_report_loss(
     Ok(())
 }
 
+fn append_report_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    destination: &mut Vec<LossNote>,
+    mut source: Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    crate::wire::reserve_collection(ctx, destination, source.len(), "Rhino typed decode losses")?;
+    destination.append(&mut source);
+    Ok(())
+}
+
 fn insert_feature_property(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
@@ -2056,7 +2066,13 @@ impl<'a> DecodeContext<'a> {
         if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
             return Err(format!("definition {} has unset type", definition.id()).into());
         }
-        let unique_members = definition.members.iter().copied().collect::<BTreeSet<_>>();
+        let mut unique_members = BTreeSet::new();
+        for member in &definition.members {
+            if !unique_members.contains(member) {
+                self.expand.ctx().charge_collection_items(1, "Rhino instance unique members")?;
+                unique_members.insert(*member);
+            }
+        }
         if unique_members.len() != definition.members.len() {
             return Err(format!(
                 "definition {} contains duplicate member UUIDs",
@@ -2437,27 +2453,24 @@ impl<'a> DecodeContext<'a> {
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
-        self.report
-            .phase_losses
-            .extend(self.scan.metadata.losses.iter().cloned());
-        self.report
-            .typed_losses
-            .extend(crate::annotations::install(ctx, self.scan, &mut self.ir)?);
+        for loss in &self.scan.metadata.losses {
+            crate::wire::reserve_collection(ctx, &mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
+            self.report.phase_losses.push(loss.clone_admitted(ctx, "Rhino phase decode loss copy")?);
+        }
+        append_report_losses(ctx, &mut self.report.typed_losses, crate::annotations::install(ctx, self.scan, &mut self.ir)?)?;
         let document_data = crate::document_data::install(ctx, self.scan, &mut self.ir)?;
-        self.report.typed_losses.extend(document_data.losses);
+        append_report_losses(ctx, &mut self.report.typed_losses, document_data.losses)?;
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
         let presentation = crate::presentation::install(ctx, self.scan, &mut self.ir)?;
-        self.report.typed_losses.extend(presentation.losses);
+        append_report_losses(ctx, &mut self.report.typed_losses, presentation.losses)?;
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.report
-            .typed_losses
-            .extend(crate::product::install(ctx, self.scan, &mut self.ir)?);
+        append_report_losses(ctx, &mut self.report.typed_losses, crate::product::install(ctx, self.scan, &mut self.ir)?)?;
         let views = crate::views::install(ctx, self.scan, &mut self.ir)?;
-        self.report.typed_losses.extend(views.losses);
+        append_report_losses(ctx, &mut self.report.typed_losses, views.losses)?;
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
@@ -3546,12 +3559,16 @@ impl<'a> DecodeContext<'a> {
             }
         }
         let identity = &object.identity;
-        self.report
-            .phase_losses
-            .extend(raw.losses.iter().cloned().map(|mut loss| {
-                loss.message = format!("{}: {}", object.class_uuid, loss.message);
-                loss
-            }));
+        for loss in &raw.losses {
+            crate::wire::reserve_collection(self.expand.ctx(), &mut self.report.phase_losses, 1, "Rhino phase decode losses")?;
+            let mut copied = loss.clone_admitted(self.expand.ctx(), "Rhino phase decode loss copy")?;
+            copied.message = crate::wire::admitted_format(
+                self.expand.ctx(),
+                format_args!("{}: {}", object.class_uuid, loss.message),
+                "Rhino phase decode loss message",
+            )?;
+            self.report.phase_losses.push(copied);
+        }
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "Brep")?;
             return Ok(());
@@ -4929,8 +4946,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             .iter()
             .map(|region| region.id.clone()),
     );
-    let (body_kind, body_kind_substituted) = brep.body_kind(writer_version);
+    let (body_kind, body_kind_substituted) = brep.body_kind(ctx, writer_version)?;
     if let Some(loss) = body_kind_substituted {
+        crate::wire::reserve_collection(ctx, &mut staged.typed_losses, 1, "Rhino staged Brep typed losses")?;
         staged.typed_losses.push(loss);
     }
     crate::curves::reserve_collection(
@@ -5007,7 +5025,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     for id in derived_ids {
         staged.draft.exactness(id, Exactness::Derived);
     }
-    scale_plane_pcurves(&mut staged, scale)?;
+    scale_plane_pcurves(ctx, &mut staged, scale)?;
     Ok(staged)
 }
 
@@ -5132,54 +5150,57 @@ pub(crate) fn embedded_brep_json(
 /// the UV poles of pcurves on plane faces scale to match. NURBS surface
 /// parameters are knot-domain values and do not scale.
 fn scale_plane_pcurves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     staged: &mut BrepDraft,
     scale: MillimeterScale,
 ) -> Result<(), crate::curves::GeometryError> {
     if scale == MillimeterScale::IDENTITY {
         return Ok(());
     }
-    let plane_surfaces = staged
-        .draft
-        .model()
-        .surfaces
-        .iter()
-        .filter(|surface| {
-            matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-            )
-        })
-        .map(|surface| surface.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-    let plane_faces = staged
-        .draft
-        .model()
-        .faces
-        .iter()
-        .filter(|face| plane_surfaces.contains(face.surface.as_str()))
-        .map(|face| face.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-    let plane_loops = staged
-        .draft
-        .model()
-        .loops
-        .iter()
-        .filter(|value| plane_faces.contains(value.face.as_str()))
-        .map(|value| value.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
-    let plane_pcurves = staged
-        .draft
-        .model()
-        .coedges
-        .iter()
-        .filter(|coedge| plane_loops.contains(coedge.owner_loop.as_str()))
-        .flat_map(|coedge| {
-            coedge
-                .pcurves
-                .iter()
-                .map(|use_| use_.pcurve.as_str().to_owned())
-        })
-        .collect::<BTreeSet<_>>();
+    fn insert_id(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        values: &mut BTreeSet<String>,
+        id: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !values.contains(id) {
+            ctx.charge_collection_items(1, "Rhino plane pcurve lookup IDs")?;
+            values.insert(crate::wire::copy_retained_string(
+                ctx,
+                id,
+                "Rhino plane pcurve lookup ID text",
+            )?);
+        }
+        Ok(())
+    }
+    let mut plane_surfaces = BTreeSet::new();
+    for surface in &staged.draft.model().surfaces {
+        if matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+        ) {
+            insert_id(ctx, &mut plane_surfaces, surface.id.as_str())?;
+        }
+    }
+    let mut plane_faces = BTreeSet::new();
+    for face in &staged.draft.model().faces {
+        if plane_surfaces.contains(face.surface.as_str()) {
+            insert_id(ctx, &mut plane_faces, face.id.as_str())?;
+        }
+    }
+    let mut plane_loops = BTreeSet::new();
+    for value in &staged.draft.model().loops {
+        if plane_faces.contains(value.face.as_str()) {
+            insert_id(ctx, &mut plane_loops, value.id.as_str())?;
+        }
+    }
+    let mut plane_pcurves = BTreeSet::new();
+    for coedge in &staged.draft.model().coedges {
+        if plane_loops.contains(coedge.owner_loop.as_str()) {
+            for curve_use in &coedge.pcurves {
+                insert_id(ctx, &mut plane_pcurves, curve_use.pcurve.as_str())?;
+            }
+        }
+    }
     for pcurve in &mut staged.draft.model_mut().pcurves {
         if !plane_pcurves.contains(pcurve.id.as_str()) {
             continue;
