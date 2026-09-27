@@ -7,6 +7,7 @@ use crate::families::standard::decode::build_standard_edge_curve;
 use crate::families::standard::decode::circle_axis_from_endpoints;
 use crate::families::standard::decode::circular_range_choices_have_simple_selection;
 use crate::families::standard::decode::circular_ranges_are_nonoverlapping_or_coincident;
+use crate::families::standard::decode::copy_standard_extrusion_definition;
 use crate::families::standard::decode::native_support_circle_param_range;
 use crate::families::standard::decode::point_on_surface;
 use crate::families::standard::decode::refine_repeated_face_domains_by_geometry_and_bounds;
@@ -15,6 +16,7 @@ use crate::families::standard::decode::resolve_standard_limit_curve_binding;
 use crate::families::standard::decode::retry_rejected_mesh_solution;
 use crate::families::standard::decode::standard_circle_param_range;
 use crate::families::standard::decode::standard_edge_identity_is_admitted;
+use crate::families::standard::decode::standard_extrusion_support_id;
 use crate::families::standard::decode::standard_limit_curve_bindings;
 use crate::families::standard::decode::standard_limit_curve_point_parameter;
 use crate::families::standard::decode::standard_line_pair_solution_is_simple;
@@ -26,7 +28,6 @@ use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
 use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
-use crate::families::standard::decode::standard_extrusion_support_id;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
 use crate::families::standard::records::AnalyticSurfaceKind;
@@ -70,7 +71,14 @@ fn standard_shared_boundary_group_domains(
     boundary_witnesses: &[bool],
 ) {
     crate::test_support::with_service_context(|ctx| {
-        charged_shared_boundary_group_domains(ctx, supports, original, filtered, edge_identity_evidence, boundary_witnesses)
+        charged_shared_boundary_group_domains(
+            ctx,
+            supports,
+            original,
+            filtered,
+            edge_identity_evidence,
+            boundary_witnesses,
+        )
     })
     .expect("service context admits shared boundary groups");
 }
@@ -783,7 +791,10 @@ fn shared_boundary_group_entries_refuse_before_inner_row_growth() {
             &[true],
         )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     standard_shared_boundary_group_domains(&supports, &original, &mut filtered, &[false], &[true]);
     assert_eq!(filtered, original);
 }
@@ -895,9 +906,14 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     };
     let records = vec![plane(10), plane(20), plane(30)];
 
-    assert!(crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, &records, &[None, None, None])).expect("service resource budget").is_empty());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_plane_normals_from_face_frames(ctx, &records, &[None, None, None])
+    })
+    .expect("service resource budget")
+    .is_empty());
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, 
+        crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(
+            ctx,
             &records,
             &[
                 Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
@@ -906,7 +922,8 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
                     0.0, 0.0, -1.0
                 ]))
             ],
-        )).expect("service resource budget"),
+        ))
+        .expect("service resource budget"),
         HashMap::from([
             (
                 10,
@@ -920,15 +937,19 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     );
 
     let conflicting = vec![plane(10), plane(10)];
-    assert!(crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(ctx, 
-        &conflicting,
-        &[
-            Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
-            Some(crate::test_support::test_b5::finite_vector([
-                0.0, 0.0, -1.0
-            ]))
-        ],
-    )).expect("service resource budget")
+    assert!(crate::test_support::with_service_context(|ctx| {
+        standard_plane_normals_from_face_frames(
+            ctx,
+            &conflicting,
+            &[
+                Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
+                Some(crate::test_support::test_b5::finite_vector([
+                    0.0, 0.0, -1.0,
+                ])),
+            ],
+        )
+    })
+    .expect("service resource budget")
     .is_empty());
 }
 
@@ -939,7 +960,9 @@ fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
         target: 10,
         kind: AnalyticSurfaceKind::Plane,
     })];
-    let frames = [Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]))];
+    let frames = [Some(crate::test_support::test_b5::finite_vector([
+        0.0, 0.0, 1.0,
+    ]))];
     let normals = crate::test_support::with_service_context(|ctx| {
         standard_plane_normals_from_face_frames(ctx, &records, &frames)
     })
@@ -1187,7 +1210,13 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
     .expect("valid degree-5 NURBS");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.0, 0.0), 2e-3)).expect("service budget"),
+        crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(
+            ctx,
+            &curve,
+            Point3::new(0.0, 0.0, 0.0),
+            2e-3
+        ))
+        .expect("service budget"),
         None
     );
 }
@@ -1242,29 +1271,44 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
 
-    let limit_bindings = crate::test_support::with_service_context(|ctx| standard_limit_curve_bindings(
-        ctx,
-        &ir,
-        &bindings,
-        &surface_indices,
-        std::slice::from_ref(&support),
-        std::slice::from_ref(&limit_curve),
-    )).expect("service budget");
+    let limit_bindings = crate::test_support::with_service_context(|ctx| {
+        standard_limit_curve_bindings(
+            ctx,
+            &ir,
+            &bindings,
+            &surface_indices,
+            std::slice::from_ref(&support),
+            std::slice::from_ref(&limit_curve),
+        )
+    })
+    .expect("service budget");
     let mut refusal_operations = std::collections::HashSet::new();
     let mut admitted = false;
     for limit in 0..=256 {
         match crate::test_support::with_collection_limit(limit, |ctx| {
-            standard_limit_curve_bindings(ctx, &ir, &bindings, &surface_indices,
-                std::slice::from_ref(&support), std::slice::from_ref(&limit_curve))
+            standard_limit_curve_bindings(
+                ctx,
+                &ir,
+                &bindings,
+                &surface_indices,
+                std::slice::from_ref(&support),
+                std::slice::from_ref(&limit_curve),
+            )
         }) {
             Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
                 refusal_operations.insert(error.operation);
             }
-            Ok(result) if result == limit_bindings => { admitted = true; break; }
+            Ok(result) if result == limit_bindings => {
+                admitted = true;
+                break;
+            }
             outcome => panic!("unexpected limit curve binding outcome: {outcome:?}"),
         }
     }
-    assert!(admitted, "collection limit 256 must admit limit curve binding");
+    assert!(
+        admitted,
+        "collection limit 256 must admit limit curve binding"
+    );
     for operation in [
         "catia_limit_curve_point_rows",
         "catia_limit_curve_point_parameters",
@@ -1273,7 +1317,10 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         "catia_limit_curve_geometry_copy",
         "catia_limit_curve_edge_bindings",
     ] {
-        assert!(refusal_operations.contains(operation), "no refusal at {operation}");
+        assert!(
+            refusal_operations.contains(operation),
+            "no refusal at {operation}"
+        );
     }
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
@@ -1308,14 +1355,17 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) if curve == &limit_curve
     ));
-    let duplicated = crate::test_support::with_service_context(|ctx| standard_limit_curve_bindings(
-        ctx,
-        &ir,
-        &bindings,
-        &surface_indices,
-        &[support.clone(), support],
-        &[limit_curve],
-    )).expect("service budget");
+    let duplicated = crate::test_support::with_service_context(|ctx| {
+        standard_limit_curve_bindings(
+            ctx,
+            &ir,
+            &bindings,
+            &surface_indices,
+            &[support.clone(), support],
+            &[limit_curve],
+        )
+    })
+    .expect("service budget");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
@@ -1669,7 +1719,10 @@ fn standard_free_vertex_members_refuse_collection_limit() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
@@ -1695,7 +1748,10 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
             &mut admission,
         )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         standard_extrusion_support_id(
@@ -1711,6 +1767,33 @@ fn standard_extrusion_support_refuses_before_surface_storage() {
     .expect("service context admits support");
     assert_eq!(surfaces.len(), 1);
     assert_eq!(supports.len(), 1);
+}
+
+#[test]
+fn standard_extrusion_definition_copy_refuses_retained_id_limit() {
+    let directrix =
+        cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
+    let direction =
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+            .expect("finite direction");
+    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+        directrix, None, direction, None, None,
+    );
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        copy_standard_extrusion_definition(ctx, &definition)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let copied = crate::test_support::with_service_context(|ctx| {
+        copy_standard_extrusion_definition(ctx, &definition)
+    })
+    .expect("service context admits the retained directrix identity");
+    assert_eq!(
+        copied,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
+    );
 }
 
 #[test]
@@ -1771,14 +1854,16 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
             Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
         ));
     }
-    let choices = crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(
-        ctx,
-        &ir,
-        &bindings,
-        &indices,
-        &[support],
-        &[(0..138).collect()],
-    ))
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[(0..138).collect()],
+        )
+    })
     .expect("service budget")
     .expect("endpoint option pass");
     assert_eq!(choices[0].len(), 9_453);
@@ -1855,17 +1940,36 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
 
     let mut operations = HashSet::new();
     for limit in 0..=32 {
-        match crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[vec![0, 1, 2, 3]])) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            resolve_standard_endpoint_pairs(
+                ctx,
+                &ir,
+                &bindings,
+                &indices,
+                std::slice::from_ref(&support),
+                &[vec![0, 1, 2, 3]],
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
             Ok(Some(_)) => break,
             outcome => panic!("unexpected planar endpoint result: {outcome:?}"),
         }
     }
     assert!(operations.contains("catia_standard_line_singleton_pair"));
-    let choices =
-        crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1, 2, 3]]))
-            .expect("service budget")
-            .expect("endpoint option pass");
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[vec![0, 1, 2, 3]],
+        )
+    })
+    .expect("service budget")
+    .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 1]]]);
 }
@@ -1940,10 +2044,11 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
             Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
         ));
     }
-    let choices =
-        crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]]))
-            .expect("service budget")
-            .expect("endpoint option pass");
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]])
+    })
+    .expect("service budget")
+    .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
 }
@@ -2015,24 +2120,41 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
 
     let mut operations = HashSet::new();
     for limit in 0..=32 {
-        match crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
-            ctx, &ir, &bindings, &indices, &supports, &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]])) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            resolve_standard_endpoint_pairs(
+                ctx,
+                &ir,
+                &bindings,
+                &indices,
+                &supports,
+                &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
             Ok(Some(_)) => break,
             outcome => panic!("unexpected parallel line endpoint result: {outcome:?}"),
         }
     }
-    for operation in ["catia_standard_line_groups", "catia_standard_line_group_edges", "catia_standard_line_endpoint_pairs", "catia_standard_line_pair_copy"] {
+    for operation in [
+        "catia_standard_line_groups",
+        "catia_standard_line_group_edges",
+        "catia_standard_line_endpoint_pairs",
+        "catia_standard_line_pair_copy",
+    ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
-    let choices = crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(
-        ctx,
-        &ir,
-        &bindings,
-        &indices,
-        &supports,
-        &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
-    ))
+    let choices = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_endpoint_pairs(
+            ctx,
+            &ir,
+            &bindings,
+            &indices,
+            &supports,
+            &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
+        )
+    })
     .expect("service budget")
     .expect("endpoint option pass");
 

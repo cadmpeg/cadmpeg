@@ -998,12 +998,15 @@ pub(in crate::families) struct ResolvedExtrusionSurface {
 }
 
 impl ResolvedExtrusionSurface {
-    pub(in crate::families) fn supports(&self) -> Vec<&ResolvedExtrusionSupport> {
-        match &self.directrix {
-            ResolvedExtrusionDirectrix::Intersection { supports, .. } => supports.iter().collect(),
+    pub(in crate::families) fn supports(&self) -> impl Iterator<Item = &ResolvedExtrusionSupport> {
+        let (first, second) = match &self.directrix {
+            ResolvedExtrusionDirectrix::Intersection { supports, .. } => {
+                (Some(&supports[0]), Some(&supports[1]))
+            }
             ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
-            | ResolvedExtrusionDirectrix::Offset { support, .. } => vec![support],
-        }
+            | ResolvedExtrusionDirectrix::Offset { support, .. } => (Some(support), None),
+        };
+        first.into_iter().chain(second)
     }
 }
 
