@@ -27,15 +27,15 @@ ENDSEC;END-ISO-10303-21;",
     let graph_limit = 64;
 
     assert_eq!(
-        style_application_order(5, &exchange, graph_limit),
+        style_application_order(5, &exchange, graph_limit, None).expect("local style depth"),
         (false, Some(0))
     );
     assert_eq!(
-        style_application_order(6, &exchange, graph_limit),
+        style_application_order(6, &exchange, graph_limit, None).expect("local style depth"),
         (true, None)
     );
     let mut styles = vec![6_u64, 5_u64];
-    styles.sort_by_key(|id| style_application_order(*id, &exchange, graph_limit));
+    styles.sort_by_key(|id| style_application_order(*id, &exchange, graph_limit, None).expect("local style depth"));
     assert_eq!(styles, [5, 6]);
 }
 

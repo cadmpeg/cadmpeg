@@ -216,9 +216,19 @@ pub(super) fn decode(
             insert_presentation_set(&mut overridden_styles, overridden, ctx, "step_presentation_overridden_styles")?;
         }
     }
-    styles.sort_by_key(|id| style_application_order(*id, exchange, graph_limit));
-    let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
+    let mut ordered_styles = Vec::new();
     for style_id in styles {
+        let order = style_application_order(style_id, exchange, graph_limit, ctx)?;
+        push_presentation_vec(
+            &mut ordered_styles,
+            (style_id, order),
+            ctx,
+            "step_presentation_style_order_items",
+        )?;
+    }
+    ordered_styles.sort_by_key(|(_, order)| *order);
+    let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
+    for (style_id, _) in ordered_styles {
         if overridden_styles.contains(&style_id) {
             claim_presentation_typed(&mut typed, style_id, ctx)?;
             continue;
@@ -238,7 +248,7 @@ pub(super) fn decode(
             claim_presentation_typed(&mut typed, style_id, ctx)?;
             continue;
         }
-        let domain = style_domain(target_step, exchange);
+        let domain = style_domain(target_step, exchange, ctx)?;
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
         let mut invalid_surface_sides = BTreeSet::new();
@@ -312,7 +322,7 @@ pub(super) fn decode(
             }
             None => {
                 let mut visited = BTreeSet::new();
-                if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
+                if !contains_null_style(parts.styles, exchange, &mut visited, 0, ctx)? {
                     push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} has no resolved surface color"
                     )), ctx, "step_presentation_losses")?;
@@ -404,7 +414,8 @@ pub(super) fn decode(
                         &hidden_style_ids,
                         exchange,
                         &mut BTreeSet::new(),
-                    )
+                        ctx,
+                    )?
                     .then_some(false),
                     channels: BTreeMap::new(),
                 });
@@ -433,7 +444,7 @@ pub(super) fn decode(
                 else {
                     continue;
                 };
-                if style_inherits_from(binding_style_id, style_id, exchange, &mut BTreeSet::new()) {
+                if style_inherits_from(binding_style_id, style_id, exchange, &mut BTreeSet::new(), ctx)? {
                     binding.visible = Some(false);
                     matched = true;
                 }
@@ -1060,9 +1071,10 @@ fn style_application_order(
     id: u64,
     exchange: &Exchange,
     graph_limit: usize,
-) -> (bool, Option<u32>) {
-    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit);
-    (depth.is_none(), depth)
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(bool, Option<u32>), CodecError> {
+    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit, ctx)?;
+    Ok((depth.is_none(), depth))
 }
 
 fn style_depth(
@@ -1071,20 +1083,24 @@ fn style_depth(
     active: &mut BTreeSet<u64>,
     depth: usize,
     graph_limit: usize,
-) -> Option<u32> {
-    if depth >= graph_limit || !active.insert(id) {
-        return None;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<u32>, CodecError> {
+    if depth >= graph_limit || active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let style = exchange.records().get(&id)?;
+    let _nested = ctx.map(|ctx| ctx.enter_nested("step_presentation_style_depth_walk")).transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_style_depth_active")?;
+    let result = if let Some(style) = exchange.records().get(&id) {
         if let Some(base) = overridden_style(style) {
-            style_depth(base, exchange, active, depth + 1, graph_limit)?.checked_add(1)
+            style_depth(base, exchange, active, depth + 1, graph_limit, ctx)?.and_then(|depth| depth.checked_add(1))
         } else {
             Some(0)
         }
-    })();
+    } else {
+        None
+    };
     active.remove(&id);
-    result
+    Ok(result)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1523,17 +1539,30 @@ enum StyleDomain {
     Point,
 }
 
-fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
-    style_domain_at(id, exchange, &mut BTreeSet::new())
+fn style_domain(
+    id: u64,
+    exchange: &Exchange,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<StyleDomain, CodecError> {
+    style_domain_at(id, exchange, &mut BTreeSet::new(), ctx)
 }
 
-fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> StyleDomain {
-    if !active.insert(id) {
-        return StyleDomain::Any;
+fn style_domain_at(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<StyleDomain, CodecError> {
+    if active.contains(&id) {
+        return Ok(StyleDomain::Any);
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_style_domain_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_style_domain_active")?;
     let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
-        return StyleDomain::Any;
+        return Ok(StyleDomain::Any);
     };
     let set_name = record.partials.iter().find_map(|partial| {
         matches!(
@@ -1543,28 +1572,25 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
         .then_some(partial.name.as_str())
     });
     if let Some(set_name) = set_name {
-        let member_domains = named_parameter(record, set_name, 1)
+        let mut first = None;
+        let mut same = true;
+        for member in named_parameter(record, set_name, 1)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
             .filter_map(ValueExt::reference)
-            .map(|member| style_domain_at(member, exchange, active))
-            .collect::<Vec<_>>();
-        if !member_domains.is_empty() {
-            let first = member_domains[0];
-            if member_domains.iter().all(|domain| *domain == first) {
-                active.remove(&id);
-                return first;
+        {
+            let domain = style_domain_at(member, exchange, active, ctx)?;
+            if first.is_some_and(|first| first != domain) {
+                same = false;
             }
-            if member_domains.iter().any(|domain| {
-                matches!(
-                    domain,
-                    StyleDomain::Surface | StyleDomain::Curve | StyleDomain::Point
-                )
-            }) {
-                active.remove(&id);
-                return StyleDomain::Any;
+            if first.is_none() {
+                first = Some(domain);
             }
+        }
+        if let Some(first) = first {
+            active.remove(&id);
+            return Ok(if same { first } else { StyleDomain::Any });
         }
     }
     let has_point = record.partials.iter().any(|partial| {
@@ -1573,7 +1599,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
     });
     if has_point {
         active.remove(&id);
-        return StyleDomain::Point;
+        return Ok(StyleDomain::Point);
     }
     let has_curve = record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
@@ -1587,7 +1613,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
     });
     if has_curve {
         active.remove(&id);
-        return StyleDomain::Curve;
+        return Ok(StyleDomain::Curve);
     }
     let result = if record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
@@ -1605,7 +1631,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
         StyleDomain::Any
     };
     active.remove(&id);
-    result
+    Ok(result)
 }
 
 fn style_is_hidden(
@@ -1613,17 +1639,22 @@ fn style_is_hidden(
     hidden_style_ids: &BTreeSet<u64>,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> bool {
-    if hidden_style_ids.contains(&id) || !active.insert(id) {
-        return hidden_style_ids.contains(&id);
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if hidden_style_ids.contains(&id) || active.contains(&id) {
+        return Ok(hidden_style_ids.contains(&id));
     }
-    let hidden = exchange
-        .records()
-        .get(&id)
-        .and_then(overridden_style)
-        .is_some_and(|base| style_is_hidden(base, hidden_style_ids, exchange, active));
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_hidden_style_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_hidden_style_active")?;
+    let hidden = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+        style_is_hidden(base, hidden_style_ids, exchange, active, ctx)?
+    } else {
+        false
+    };
     active.remove(&id);
-    hidden
+    Ok(hidden)
 }
 
 fn style_inherits_from(
@@ -1631,17 +1662,22 @@ fn style_inherits_from(
     ancestor: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> bool {
-    if id == ancestor || !active.insert(id) {
-        return id == ancestor;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if id == ancestor || active.contains(&id) {
+        return Ok(id == ancestor);
     }
-    let inherits = exchange
-        .records()
-        .get(&id)
-        .and_then(overridden_style)
-        .is_some_and(|base| style_inherits_from(base, ancestor, exchange, active));
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_style_inheritance_walk"))
+        .transpose()?;
+    insert_presentation_set(active, id, ctx, "step_presentation_style_inheritance_active")?;
+    let inherits = if let Some(base) = exchange.records().get(&id).and_then(overridden_style) {
+        style_inherits_from(base, ancestor, exchange, active, ctx)?
+    } else {
+        false
+    };
     active.remove(&id);
-    inherits
+    Ok(inherits)
 }
 
 fn contains_null_style(
@@ -1649,39 +1685,59 @@ fn contains_null_style(
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
     depth: usize,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     if depth >= 256 {
-        return false;
+        return Ok(false);
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_presentation_null_style_walk"))
+        .transpose()?;
     match value {
-        Value::Typed(name, _) if name == "NULL_STYLE" => true,
-        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1),
-        Value::List(values) => values
-            .iter()
-            .any(|value| contains_null_style(value, exchange, visited, depth + 1)),
-        Value::Reference(id) if visited.insert(*id) => {
-            exchange.records().get(id).is_some_and(|r| {
-                r.partials
-                    .iter()
-                    .flat_map(|partial| partial.parameters.iter())
-                    .any(|value| contains_null_style(value, exchange, visited, depth + 1))
-            })
+        Value::Typed(name, _) if name == "NULL_STYLE" => Ok(true),
+        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1, ctx),
+        Value::List(values) => {
+            for value in values {
+                if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
-        _ => false,
+        Value::Reference(id) if !visited.contains(id) => {
+            insert_presentation_set(visited, *id, ctx, "step_presentation_null_style_visited")?;
+            if let Some(record) = exchange.records().get(id) {
+                for value in record.partials.iter().flat_map(|partial| partial.parameters.iter()) {
+                    if contains_null_style(value, exchange, visited, depth + 1, ctx)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }
+        _ => Ok(false),
     }
 }
 
 fn predefined(name: &str) -> Option<Color> {
-    let (r, g, b) = match name.to_ascii_lowercase().as_str() {
-        "black" => (0.0, 0.0, 0.0),
-        "white" => (1.0, 1.0, 1.0),
-        "red" => (1.0, 0.0, 0.0),
-        "green" => (0.0, 1.0, 0.0),
-        "blue" => (0.0, 0.0, 1.0),
-        "yellow" => (1.0, 1.0, 0.0),
-        "magenta" => (1.0, 0.0, 1.0),
-        "cyan" => (0.0, 1.0, 1.0),
-        _ => return None,
+    let (r, g, b) = if name.eq_ignore_ascii_case("black") {
+        (0.0, 0.0, 0.0)
+    } else if name.eq_ignore_ascii_case("white") {
+        (1.0, 1.0, 1.0)
+    } else if name.eq_ignore_ascii_case("red") {
+        (1.0, 0.0, 0.0)
+    } else if name.eq_ignore_ascii_case("green") {
+        (0.0, 1.0, 0.0)
+    } else if name.eq_ignore_ascii_case("blue") {
+        (0.0, 0.0, 1.0)
+    } else if name.eq_ignore_ascii_case("yellow") {
+        (1.0, 1.0, 0.0)
+    } else if name.eq_ignore_ascii_case("magenta") {
+        (1.0, 0.0, 1.0)
+    } else if name.eq_ignore_ascii_case("cyan") {
+        (0.0, 1.0, 1.0)
+    } else {
+        return None;
     };
     Color::new(r, g, b, 1.0)
 }
