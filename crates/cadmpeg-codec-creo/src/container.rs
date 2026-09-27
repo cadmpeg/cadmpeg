@@ -652,7 +652,11 @@ fn classify(name: &str) -> SectionRole {
 /// Enumerate binary sections from `body_start` to EOF by the `\n#<name>\n`
 /// header rule ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). A candidate header is accepted only when its name is
 /// a printable run and is not one of the header/TOC framing markers.
-fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_>>, CodecError> {
+fn scan_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    body_start: usize,
+) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
     let search_start = body_start.saturating_sub(1);
@@ -678,15 +682,16 @@ fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_
         {
             continue;
         }
-        let raw = String::from_utf8_lossy(name_bytes).to_string();
-        if FRAMING_NAMES.contains(&raw.as_str()) {
+        let name = std::str::from_utf8(name_bytes)
+            .map_err(|_| CodecError::malformed("non-ASCII Creo section name"))?;
+        if FRAMING_NAMES.contains(&name) {
             continue;
         }
         if toc_delimited {
             let directory_end = hits.first().map_or(body_start, |(offset, _)| *offset);
             let Some(directory) = data.get(..directory_end) else {
                 return Err(CodecError::malformed(format!(
-                    "creo section `{raw}` is TOC-delimited and its directory window ends at \
+                    "creo section `{name}` is TOC-delimited and its directory window ends at \
                      {directory_end}, past the file length {}",
                     data.len(),
                 )));
@@ -695,13 +700,17 @@ fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<ScannedSection<'_
                 continue;
             }
         }
+        let raw = ctx.copy_retained_text(name, "creo section header names")?;
+        ctx.try_reserve_items(&mut hits, 1, "creo section header hits")?;
         hits.push((hash_off, raw));
     }
 
-    let mut sections = Vec::with_capacity(hits.len());
+    let mut sections = Vec::new();
+    ctx.try_reserve_items(&mut sections, hits.len(), "creo scanned sections")?;
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
         let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
-        sections.extend(Section::scan(raw.clone(), *hdr_off, end, None, data));
+        let name = ctx.copy_retained_text(raw, "creo scanned section names")?;
+        sections.extend(Section::scan(name, *hdr_off, end, None, data));
     }
     Ok(sections)
 }
@@ -2484,7 +2493,7 @@ pub(crate) fn scan_bytes<'a>(
         |legacy| legacy_toc_sections(&data, legacy.banner_offset),
     );
     let sections = if sections.is_empty() {
-        scan_sections(&data, body_start)?
+        scan_sections(ctx, &data, body_start)?
     } else {
         sections
     };
