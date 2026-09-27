@@ -263,6 +263,55 @@ impl ScalarCache {
         }
     }
 
+    /// Build a scalar dictionary under the caller's decode budget.
+    pub(crate) fn from_section_checked(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        section: &[u8],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut entries = Vec::<f64>::new();
+        let mut seen = HashSet::<[u8; 8]>::new();
+        let mut paired_byte_1_by_tail = BTreeMap::new();
+        for offset in 0..section.len() {
+            if section[offset] != 0x46 {
+                continue;
+            }
+            let Some(&[byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7]) =
+                section.get(offset..offset + 8)
+            else {
+                continue;
+            };
+            let raw = [
+                byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
+            ];
+            if seen.contains(&raw) {
+                continue;
+            }
+            ctx.try_collection(1, "creo scalar cache unique images", || seen.try_reserve(1))?;
+            seen.insert(raw);
+            let mut ieee = raw;
+            ieee[0] = 0x40;
+            let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
+            match paired_byte_1_by_tail.entry(tail) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo scalar cache paired tails")?;
+                    entry.insert(Some(raw[1]));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if (*entry.get()).is_some_and(|existing| existing != raw[1]) {
+                        *entry.get_mut() = None;
+                    }
+                }
+            }
+            ctx.try_reserve_items(&mut entries, 1, "creo scalar cache entries")?;
+            // endian-exception: reconstructed-scalar
+            entries.push(f64::from_be_bytes(ieee));
+        }
+        Ok(Self {
+            entries,
+            paired_byte_1_by_tail,
+        })
+    }
+
     fn value(&self, index: u32) -> Option<f64> {
         self.entries.get(usize::try_from(index).ok()?).copied()
     }
@@ -2149,6 +2198,79 @@ mod tests {
     use cadmpeg_ir::units::FiniteVector;
     use std::collections::BTreeMap;
 
+    fn checked_cache_with_collection_limit(
+        limit: u64,
+    ) -> Result<ScalarCache, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("the scalar image fits the root limit");
+        ScalarCache::from_section_checked(&ctx, &bytes)
+    }
+
+    #[test]
+    fn scalar_cache_unique_image_refuses_before_hash_growth() {
+        let cache = checked_cache_with_collection_limit(3)
+            .expect("service-sized collection budget admits one scalar");
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
+        let error = checked_cache_with_collection_limit(0)
+            .expect_err("the unique image needs one collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache unique images"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_paired_tail_refuses_before_tree_insert() {
+        let error = checked_cache_with_collection_limit(1)
+            .expect_err("the paired tail follows the unique image");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache paired tails"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_entry_refuses_before_vector_growth() {
+        let error = checked_cache_with_collection_limit(2)
+            .expect_err("the scalar entry follows the hash and tree nodes");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache entries"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_checked_preserves_first_image_order_and_tail_conflicts() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let bytes = [
+            0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x09, 1, 2, 3, 4, 5, 6, 0x46, 0x08, 1, 2, 3, 4, 5,
+            6,
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("root input is admitted");
+        let checked =
+            ScalarCache::from_section_checked(&ctx, &bytes).expect("service profile admits cache");
+        let original = ScalarCache::from_section(&bytes);
+        assert_eq!(checked.entries, original.entries);
+        assert_eq!(
+            checked.paired_byte_1_by_tail,
+            original.paired_byte_1_by_tail
+        );
+        assert_eq!(checked.entries.len(), 2);
+        assert_eq!(checked.paired_byte_1(&[1, 2, 3, 4, 5, 6]), None);
+    }
     /// Every arm of the surface-row lane reads the bytes it reports: a decode
     /// that states a value advances the cursor and stops inside the body. The
     /// slot readers rest on that, so no caller tests the token for emptiness.
