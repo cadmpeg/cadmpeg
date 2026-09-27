@@ -194,6 +194,7 @@ pub(crate) fn project_derived_instance_features(
 /// occurrence in the product graph lets the feature retain its operation and
 /// transform while native storage retains the exact external-reference role.
 pub(crate) fn project_unresolved_component_insert_occurrences(
+    ctx: &DecodeContext<'_>,
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     ordinal_start: usize,
@@ -216,6 +217,10 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             continue;
         }
 
+        ctx.charge_collection_items(1, "f3d unresolved component occurrence")?;
+        occurrences.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d unresolved component occurrence allocation", 0, 1)
+        })?;
         let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
         feature
             .evaluation
@@ -228,13 +233,18 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             id: occurrence_id,
             prototype: PrototypeReference::Unresolved {},
             parent: OccurrenceParent::Root {},
-            ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len())).map_err(
-                |_| {
+            ordinal: u32::try_from(
+                ordinal_start.checked_add(occurrences.len()).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "Fusion Design occurrence ordinal exceeds u32",
                     )
-                },
-            )?,
+                })?,
+            )
+            .map_err(|_| {
+                cadmpeg_core::CodecError::malformed(
+                    "Fusion Design occurrence ordinal exceeds u32",
+                )
+            })?,
             transform: neutral_transform(*construction.transform())?,
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
@@ -443,6 +453,59 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d component output"));
+    }
+
+    #[test]
+    fn unresolved_component_occurrence_refuses_collection_limit() {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:synthetic:design-parameter-scope#7",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            7,
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+                relation_record_index: 8,
+                carrier_record_index: 9,
+                occurrence_identity: None,
+                neutron_role: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
+                neutron_role_offset: 0,
+                placement: None,
+            });
+        }
+        let feature = Feature {
+            id: FeatureId::mint("f3d:model:feature#component-insert").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "ComponentInsert".into(),
+                    parameters: std::collections::BTreeMap::new(),
+                }),
+            ),
+            native_ref: Some(scope.id.clone()),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_unresolved_component_insert_occurrences(
+            &ctx,
+            &mut [feature],
+            &[scope],
+            0,
+        )
+        .expect_err("one unresolved occurrence needs one collection item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d unresolved component occurrence"));
     }
 
     #[test]
