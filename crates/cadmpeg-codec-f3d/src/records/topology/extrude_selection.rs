@@ -6,17 +6,15 @@ use super::fillet::HistoricalBinding;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
+use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
 use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
 
 /// Counted selection group owned by an Extrude parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignExtrudeSelectionGroupWire",
-    into = "DesignExtrudeSelectionGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignExtrudeSelectionGroupWire")]
 pub(crate) struct DesignExtrudeSelectionGroup {
     /// Globally unique deterministic identifier for this native group.
     pub(crate) id: String,
@@ -41,6 +39,75 @@ pub(crate) struct DesignExtrudeSelectionGroup {
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: DesignClassTag,
     offsets: [u64; 4],
+}
+
+#[cfg(test)]
+thread_local! {
+    static EXTRUDE_SELECTION_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignExtrudeSelectionGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        EXTRUDE_SELECTION_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            members: self.members.clone(),
+            opaque_index: self.opaque_index,
+            opaque_scalar: self.opaque_scalar,
+            variant: self.variant,
+            paired_class_tag: self.paired_class_tag.clone(),
+            offsets: self.offsets,
+        }
+    }
+}
+
+impl Serialize for DesignExtrudeSelectionGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            scope_reference_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            member_count_offset: u64,
+            members: SliceColumn<'a, Located<u32>, u32>,
+            member_offsets: SliceColumn<'a, Located<u32>, u64>,
+            opaque_index: u32,
+            opaque_index_offset: u64,
+            opaque_scalar: f64,
+            opaque_scalar_offset: u64,
+            variant: bool,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            member_count_offset: self.member_count_offset(),
+            members: SliceColumn::new(&self.members, |member| member.value),
+            member_offsets: SliceColumn::new(&self.members, |member| member.offset),
+            opaque_index: self.opaque_index.get(),
+            opaque_index_offset: self.opaque_index_offset(),
+            opaque_scalar: self.opaque_scalar().get(),
+            opaque_scalar_offset: self.opaque_scalar_offset(),
+            variant: self.variant,
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Counted selection group owned by an Extrude parameter scope.
@@ -139,6 +206,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
     fn from(group: DesignExtrudeSelectionGroup) -> Self {
         let opaque_scalar = group.opaque_scalar().get();
@@ -325,11 +393,8 @@ pub(crate) enum DesignExtrudeFaceEncoding {
 }
 
 /// One fixed-width member named by an Extrude selection group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignExtrudeSelectionMemberDraft",
-    into = "DesignExtrudeSelectionMemberDraft"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignExtrudeSelectionMemberDraft")]
 pub(crate) struct DesignExtrudeSelectionMember {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native member.
@@ -367,6 +432,87 @@ pub(crate) struct DesignExtrudeSelectionMember {
     pub(crate) historical: Option<HistoricalBinding>,
     /// Identity of the indexed record immediately following this member.
     pub(crate) next_record_index: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static EXTRUDE_SELECTION_MEMBER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignExtrudeSelectionMember {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        EXTRUDE_SELECTION_MEMBER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            id: self.id.clone(),
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            class_tag: self.class_tag.clone(),
+            local_id: self.local_id,
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset,
+            resolved_geometry: self.resolved_geometry.clone(),
+            operand_identity_ids: self.operand_identity_ids.clone(),
+            historical: self.historical.clone(),
+            next_record_index: self.next_record_index,
+        }
+    }
+}
+
+impl Serialize for DesignExtrudeSelectionMember {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            group_record_index: u32,
+            group_member_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            local_id: u64,
+            local_id_offset: u64,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            tail_slot_present: bool,
+            tail_slot_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_geometry: Option<&'a SketchRelationOperand>,
+            #[serde(skip_serializing_if = "<[String]>::is_empty")]
+            operand_identity_ids: &'a [String],
+            #[serde(flatten, skip_serializing_if = "Option::is_none")]
+            historical: Option<&'a HistoricalBinding>,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            id: &self.id,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset,
+            resolved_geometry: self.resolved_geometry.as_ref(),
+            operand_identity_ids: &self.operand_identity_ids,
+            historical: self.historical.as_ref(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignExtrudeSelectionMember {
@@ -408,6 +554,7 @@ impl DesignExtrudeSelectionMember {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignExtrudeSelectionMemberDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -514,6 +661,7 @@ impl TryFrom<DesignExtrudeSelectionMemberDraft> for DesignExtrudeSelectionMember
     }
 }
 
+#[cfg(test)]
 impl From<DesignExtrudeSelectionMember> for DesignExtrudeSelectionMemberDraft {
     fn from(value: DesignExtrudeSelectionMember) -> Self {
         let value = value.into_draft();
