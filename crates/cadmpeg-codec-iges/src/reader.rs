@@ -457,11 +457,14 @@ fn decode_with_occurrence_limits(
         ));
     }
     losses.extend(projection.losses);
-    losses.extend(graph::losses(
-        &parse.references,
-        &parse.scan,
-        &parse.parameters,
-    ));
+    let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
+    reserve_vec_growth(
+        ctx,
+        &mut losses,
+        graph_losses.len(),
+        "iges combined graph losses",
+    )?;
+    losses.extend(graph_losses);
     losses.extend(parse.record_losses());
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         losses.push(occurrence_loss(

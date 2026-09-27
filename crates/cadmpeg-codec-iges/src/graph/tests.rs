@@ -372,7 +372,8 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
     resolver.append_to(&mut graph).unwrap();
     let source = point_file();
     let scan = crate::card::scan(&source).unwrap();
-    let messages = super::losses(&graph, &scan, &[])
+    let messages = super::losses(&graph, &scan, &[], &ctx)
+        .unwrap()
         .into_iter()
         .map(|note| note.message)
         .collect::<Vec<_>>();
@@ -382,6 +383,81 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
             "IGES Directory Entry D1 Parameter pointer 3 has dangling resolution; expected type-124-transformation",
             "IGES Directory Entry D1 Parameter pointer -3 has dangling resolution; expected type-310-form-0-font-definition",
         ]
+    );
+}
+
+#[test]
+fn graph_losses_admit_indexes_notes_and_provenance_text() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let graph = BTreeMap::from([(
+        1,
+        vec![ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+            raw_pointer: 3,
+            resolution: Resolution::Dangling,
+            expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+        }],
+    )]);
+    let source = point_file();
+    let scan = crate::card::scan(&source).unwrap();
+    let directory_count = scan.section(crate::card::Section::Directory).count() as u64;
+    let parameter_count = scan.section(crate::card::Section::Parameter).count() as u64;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::losses(&graph, &scan, &[], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == 0
+                && limit.additional == scan.lines.len() as u64 * 2
+                && limit.operation == "iges graph loss offset scans"
+    ));
+
+    for (cap, operation) in [
+        (0, "iges graph loss directory offsets"),
+        (directory_count, "iges graph loss parameter offsets"),
+        (directory_count + parameter_count, "iges graph loss notes"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::losses(&graph, &scan, &[], &ctx);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == cap
+                    && limit.additional == 1
+                    && limit.operation == operation
+        ));
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::losses(&graph, &scan, &[], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 2
+                && limit.operation == "iges graph loss tag"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let losses = super::losses(&graph, &scan, &[], &ctx).unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("D1")
     );
 }
 
