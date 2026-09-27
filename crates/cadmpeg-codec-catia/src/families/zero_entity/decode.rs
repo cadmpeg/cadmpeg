@@ -388,6 +388,12 @@ fn transfer_closed_wire_loops(
                     } else {
                         oriented_range
                     };
+                    crate::resource::admit_map_entry(
+                        admission.context(),
+                        &mut source_curve_geometries,
+                        curve,
+                        "catia_zero_wire_source_geometries",
+                    )?;
                     let source_geometry = source_curve_geometries
                         .entry(curve.clone())
                         .or_insert_with(|| {
@@ -423,6 +429,12 @@ fn transfer_closed_wire_loops(
                     } else if existing.is_none() && !reversed {
                         let procedural_available =
                             if matches!(&source_geometry, Some(CurveGeometry::Procedural { .. })) {
+                                crate::resource::admit_map_entry(
+                                    admission.context(),
+                                    &mut source_curve_procedurals,
+                                    curve,
+                                    "catia_zero_wire_source_procedurals",
+                                )?;
                                 source_curve_procedurals
                                     .entry(curve.clone())
                                     .or_insert_with(|| {
@@ -442,10 +454,22 @@ fn transfer_closed_wire_loops(
                                 source_range,
                                 edge_range: source_range,
                             };
-                            source_curve_orientations.insert(curve.clone(), orientation);
+                            crate::resource::insert_map(
+                                admission.context(),
+                                &mut source_curve_orientations,
+                                curve.clone(),
+                                orientation,
+                                "catia_zero_wire_source_orientations",
+                            )?;
                             (curve.clone(), Some(source_range))
                         }
                     } else if let Some(geometry) = source_geometry {
+                        crate::resource::admit_map_entry(
+                            admission.context(),
+                            &mut source_curve_procedurals,
+                            curve,
+                            "catia_zero_wire_source_procedurals",
+                        )?;
                         let source_procedural = source_curve_procedurals
                             .entry(curve.clone())
                             .or_insert_with(|| source_wire_procedural(ir, &geometry))
@@ -513,14 +537,17 @@ fn transfer_closed_wire_loops(
                                     true
                                 };
                                 if carrier_updated {
-                                    source_curve_orientations.insert(
+                                    crate::resource::insert_map(
+                                        admission.context(),
+                                        &mut source_curve_orientations,
                                         curve.clone(),
                                         WireCurveOrientation {
                                             reversed,
                                             source_range,
                                             edge_range,
                                         },
-                                    );
+                                        "catia_zero_wire_source_orientations",
+                                    )?;
                                     (curve.clone(), Some(edge_range))
                                 } else {
                                     (curve.clone(), None)

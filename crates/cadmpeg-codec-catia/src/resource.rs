@@ -145,6 +145,21 @@ pub(crate) fn insert_map<K: Eq + Hash, V>(
     Ok(values.insert(key, value))
 }
 
+pub(crate) fn admit_map_entry<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+    }
+    Ok(())
+}
+
 fn temporary_bytes<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
@@ -187,4 +202,48 @@ pub(crate) fn temporary_queue<'a, T>(
         .try_reserve(count)
         .map_err(|_| allocation_failed(0, values.capacity(), count, operation))?;
     Ok((values, reservation))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::admit_map_entry;
+    use std::collections::HashMap;
+
+    #[test]
+    fn zero_entity_source_cache_refuses_before_vacant_map_entry() {
+        let mut limited_map = HashMap::<u32, u32>::new();
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            admit_map_entry(
+                ctx,
+                &mut limited_map,
+                &7,
+                "catia_zero_wire_source_geometries",
+            )
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+        assert!(limited_map.is_empty());
+
+        crate::test_support::with_service_context(|ctx| {
+            let mut admitted_map = HashMap::<u32, u32>::new();
+            admit_map_entry(
+                ctx,
+                &mut admitted_map,
+                &7,
+                "catia_zero_wire_source_geometries",
+            )
+            .expect("service map entry budget");
+            admitted_map.insert(7, 11);
+            admit_map_entry(
+                ctx,
+                &mut admitted_map,
+                &7,
+                "catia_zero_wire_source_geometries",
+            )
+            .expect("existing entry needs no allocation");
+            assert_eq!(admitted_map.get(&7), Some(&11));
+        });
+    }
 }
