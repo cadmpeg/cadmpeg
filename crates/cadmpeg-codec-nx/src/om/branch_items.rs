@@ -27,6 +27,7 @@ impl<T> BranchItems<T> {
         &self.0
     }
 
+    #[cfg(test)]
     pub(crate) fn into_vec(self) -> Vec<T> {
         self.0
     }
