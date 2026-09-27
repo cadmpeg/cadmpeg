@@ -3977,6 +3977,7 @@ fn component_incidence_faces_viable(
                     if point >= point_count {
                         return Ok(false);
                     }
+                    crate::resource::admit_map_entry(ctx, &mut degrees, &point, "catia component incidence degree points")?;
                     let degree = degrees.entry(point).or_default();
                     let Some(next) = degree.checked_add(1) else {
                         return Ok(false);
@@ -4052,18 +4053,15 @@ pub(super) fn partial_face_orientability_viable(
     if !edge_faces.iter().any(|faces| faces[0] != faces[1]) {
         return Ok(true);
     }
-    let edge_points = assignment
-        .iter()
-        .map(|pair| pair.unwrap_or_default())
-        .collect::<Vec<_>>();
+    let mut edge_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut edge_points, assignment.len(), "catia orientability edge points")?;
+    edge_points.extend(assignment.iter().map(|pair| pair.unwrap_or_default()));
     let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
     let mut boundary_count = 0usize;
     for incident in face_edges {
-        let selected = incident
-            .iter()
-            .copied()
-            .filter(|edge| assignment[*edge].is_some())
-            .collect::<Vec<_>>();
+        let mut selected = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut selected, incident.len(), "catia orientability selected edges")?;
+        selected.extend(incident.iter().copied().filter(|edge| assignment[*edge].is_some()));
         if selected.is_empty() {
             continue;
         }
@@ -4074,7 +4072,9 @@ pub(super) fn partial_face_orientability_viable(
         let mut degrees = HashMap::<usize, u8>::new();
         for &edge in &selected {
             for point in edge_points[edge] {
-                edges_at_point.entry(point).or_default().push(edge);
+                crate::resource::admit_map_entry(ctx, &mut edges_at_point, &point, "catia orientability point indexes")?;
+                crate::resource::push(ctx, edges_at_point.entry(point).or_default(), edge, "catia orientability indexed edges")?;
+                crate::resource::admit_map_entry(ctx, &mut degrees, &point, "catia orientability degree points")?;
                 let degree = degrees.entry(point).or_default();
                 *degree = match degree.checked_add(1) {
                     Some(degree) => degree,
@@ -4085,21 +4085,25 @@ pub(super) fn partial_face_orientability_viable(
         if degrees.values().any(|degree| *degree > 2) {
             return Ok(false);
         }
-        let mut unseen = selected.iter().copied().collect::<HashSet<_>>();
+        let mut unseen = HashSet::new();
+        crate::resource::reserve_set(ctx, &mut unseen, selected.len(), "catia orientability unseen edges")?;
+        unseen.extend(selected.iter().copied());
         for first in selected {
             if !unseen.contains(&first) {
                 continue;
             }
-            let mut stack = vec![first];
+            let mut stack = Vec::new();
+            crate::resource::push(ctx, &mut stack, first, "catia orientability traversal stack")?;
             let mut component = Vec::new();
             let mut points = HashSet::new();
             while let Some(edge) = stack.pop() {
                 if !unseen.remove(&edge) {
                     continue;
                 }
-                component.push(edge);
+                crate::resource::push(ctx, &mut component, edge, "catia orientability component edges")?;
                 for point in edge_points[edge] {
-                    points.insert(point);
+                    crate::resource::insert_set(ctx, &mut points, point, "catia orientability component points")?;
+                    crate::resource::reserve_vec(ctx, &mut stack, edges_at_point[&point].len(), "catia orientability traversal stack")?;
                     stack.extend(edges_at_point[&point].iter().copied());
                 }
             }
@@ -4111,13 +4115,11 @@ pub(super) fn partial_face_orientability_viable(
                 let [cycle] = cycles.as_slice() else {
                     return Ok(false);
                 };
-                cycle.iter().copied().collect()
+                crate::resource::copy_slice(ctx, cycle, "catia orientability closed trail")?
             } else {
-                let mut endpoints = points
-                    .iter()
-                    .copied()
-                    .filter(|point| degrees[point] == 1)
-                    .collect::<Vec<_>>();
+                let mut endpoints = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut endpoints, points.len(), "catia orientability endpoints")?;
+                endpoints.extend(points.iter().copied().filter(|point| degrees[point] == 1));
                 endpoints.sort_unstable();
                 let [start, end] = endpoints.as_slice() else {
                     return Ok(false);
@@ -4128,9 +4130,12 @@ pub(super) fn partial_face_orientability_viable(
                 {
                     return Ok(false);
                 }
-                let mut remaining = component.iter().copied().collect::<HashSet<_>>();
+                let mut remaining = HashSet::new();
+                crate::resource::reserve_set(ctx, &mut remaining, component.len(), "catia orientability remaining edges")?;
+                remaining.extend(component.iter().copied());
                 let mut point = *start;
-                let mut trail = Vec::with_capacity(component.len());
+                let mut trail = Vec::new();
+                crate::resource::reserve_vec(ctx, &mut trail, component.len(), "catia orientability open trail")?;
                 while let Some(&edge) = edges_at_point[&point]
                     .iter()
                     .find(|edge| remaining.contains(edge))
@@ -4157,10 +4162,8 @@ pub(super) fn partial_face_orientability_viable(
                 None => return Ok(false),
             };
             for (edge, reversed) in trail {
-                edge_uses
-                    .entry(edge)
-                    .or_default()
-                    .push((boundary, reversed));
+                crate::resource::admit_map_entry(ctx, &mut edge_uses, &edge, "catia orientability edge use keys")?;
+                crate::resource::push(ctx, edge_uses.entry(edge).or_default(), (boundary, reversed), "catia orientability edge uses")?;
             }
         }
     }

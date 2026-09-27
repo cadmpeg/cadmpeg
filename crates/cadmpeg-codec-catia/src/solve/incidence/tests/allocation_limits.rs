@@ -149,6 +149,38 @@ fn deferred_cycle_assignment_refuses_each_inner_collection_limit() {
 }
 
 #[test]
+fn partial_orientability_refuses_nested_point_and_trail_growth() {
+    let edge_faces = [[0, 1], [1, 2], [2, 0]];
+    let face_edges = vec![vec![0, 2], vec![0, 1], vec![1, 2]];
+    let partial = [Some([0, 1]), Some([1, 2]), None];
+    let run = |ctx: &DecodeContext<'_>| {
+        super::super::partial_face_orientability_viable(
+            ctx, &partial, &edge_faces, &face_edges, &WorkBudget::new(10_000),
+        )
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(true) => break,
+            other => panic!("unexpected orientability result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia orientability edge points",
+        "catia orientability selected edges",
+        "catia orientability point indexes",
+        "catia orientability indexed edges",
+        "catia orientability traversal stack",
+        "catia orientability open trail",
+        "catia orientability edge uses",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn incidence_component_graph_refuses_each_collection_limit() {
     let choices = [
         vec![[0, 1], [0, 2]],
