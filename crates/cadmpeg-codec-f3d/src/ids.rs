@@ -804,11 +804,6 @@ native_record_id!(
     "design-parameter-owner"
 );
 native_record_id!(
-    /// The native design-parameter-companion record key.
-    native_design_parameter_companion_id,
-    "design-parameter-companion"
-);
-native_record_id!(
     /// The native design-parameter-scope record key.
     native_design_parameter_scope_id,
     "design-parameter-scope"

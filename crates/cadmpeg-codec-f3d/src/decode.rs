@@ -4290,6 +4290,7 @@ fn extend_related_design_records(
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
+            ctx,
             scan,
             &native.design_parameter_owners,
             &native.design_record_headers,
@@ -4821,6 +4822,7 @@ fn extend_related_design_records(
         .collect::<Result<_, _>>()?;
     native.design_parameter_companions =
         crate::design::decode::parameters::bind_parameter_companion_payloads(
+            ctx,
             std::mem::take(&mut native.design_parameter_companions),
             &crate::design::decode::parameters::ParameterCompanionInputs {
                 parameters: &native.design_parameters,
@@ -4831,7 +4833,7 @@ fn extend_related_design_records(
                 recipes: &native.construction_recipes,
                 stream_lengths: &stream_lengths,
             },
-        );
+        )?;
     native.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
             scan,
