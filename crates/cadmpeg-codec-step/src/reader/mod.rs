@@ -1262,6 +1262,44 @@ fn decode_text(
     }
 }
 
+fn decode_text_charged(
+    exchange: &Exchange,
+    value: &Value,
+    losses: &mut Vec<LossNote>,
+    record_id: u64,
+    field: &str,
+    code: StepLossCode,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    let Value::String(bytes) = value else {
+        return Ok(None);
+    };
+    match exchange.decode_string_with_context(bytes, ctx) {
+        Ok(text) => Ok(Some(text)),
+        Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
+            let message = if let Some(ctx) = ctx {
+                crate::decode_alloc::charged_format(
+                    ctx,
+                    "step_invalid_string_loss_text",
+                    format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
+                )?
+            } else {
+                format!("STEP record #{record_id} has an invalid {field} string: {error}")
+            };
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_invalid_string_losses")?;
+            }
+            losses.try_reserve(1).map_err(|_| match ctx {
+                Some(ctx) => ctx.refuse_codec_limit("step_invalid_string_losses", 0, 1),
+                None => cadmpeg_core::decode::refuse_local_limit("step_invalid_string_losses", 0, 1),
+            })?;
+            losses.push(code.note(message));
+            Ok(None)
+        }
+        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+    }
+}
+
 fn collect_references(value: &Value, output: &mut BTreeSet<u64>) {
     match value {
         Value::Reference(id) => {

@@ -10,7 +10,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
@@ -25,29 +25,35 @@ pub(super) fn decode(
         if let Some(parameters) = document_parameters(record) {
             let identifier = parameters
                 .first()
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "document identifier",
                         StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
             let name = parameters
                 .get(1)
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "document name",
                         StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
             ctx.charge_collection_items(1, "step_dependency_documents")?;
             documents.insert(id, (identifier, name, parameters.get(3).and_then(ValueExt::reference)));
@@ -56,7 +62,9 @@ pub(super) fn decode(
             let parameters = partial.parameters.as_slice();
             if let Some(source) = parameters
                 .first()
-                .and_then(|value| source_text(exchange, value, &mut losses, id, "external source"))
+                .map(|value| source_text(exchange, value, &mut losses, id, "external source", ctx))
+                .transpose()?
+                .flatten()
             {
                 ctx.charge_collection_items(1, "step_dependency_sources")?;
                 sources.insert(id, source);
@@ -76,16 +84,19 @@ pub(super) fn decode(
             };
             let source = parameters
                 .get(1)
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "document reference source",
                         StepLossCode::MetadataStringInvalid,
+                        Some(ctx),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
             insert_note(&mut notes, document_note(identifier, name, &source, ctx)?, ctx)?;
             insert_claim(&mut typed, id, ctx)?;
@@ -104,7 +115,9 @@ pub(super) fn decode(
             let item = partial
                 .parameters
                 .first()
-                .and_then(|value| source_text(exchange, value, &mut losses, id, "external item"))
+                .map(|value| source_text(exchange, value, &mut losses, id, "external item", ctx))
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
             insert_note(
                 &mut notes,
@@ -177,18 +190,20 @@ fn source_text(
     losses: &mut Vec<LossNote>,
     record_id: u64,
     field: &str,
-) -> Option<String> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
     match value {
-        Value::String(_) => decode_text(
+        Value::String(_) => decode_text_charged(
             exchange,
             value,
             losses,
             record_id,
             field,
             StepLossCode::MetadataStringInvalid,
+            Some(ctx),
         ),
-        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
-        _ => None,
+        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field, ctx),
+        _ => Ok(None),
     }
 }
 

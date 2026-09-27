@@ -74,6 +74,45 @@ fn dependency_note_text_refuses_retained_limit() {
 }
 
 #[test]
+fn dependency_string_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DEPENDENCY_LIMIT_SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn dependency_invalid_string_loss_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DOCUMENT_TYPE('type');#2=DOCUMENT('\\X\\GG','name','',#1);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_invalid_string_loss_text"
+    ));
+}
+
+#[test]
 pub(crate) fn decode_reports_data_section_external_dependencies() {
     let bytes = include_bytes!("../../../tests/fixtures/ap242_external_documents.p21");
     let result = StepCodec::default()
