@@ -5,8 +5,6 @@ use crate::feature::definitions::dimension_unit;
 use crate::feature::definitions::DimensionUnit;
 use crate::feature::entity::entity_graph;
 use crate::feature::entity::read_entries;
-use crate::feature::rows::choice_fields;
-use crate::feature::rows::choices;
 use crate::feature::rows::geometry_tables;
 use crate::feature::rows::loop_history_entries;
 use crate::feature::rows::loop_history_roster;
@@ -27,7 +25,19 @@ use crate::psb;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod resource_limits;
+
 const SINGLE_ROW: &[u8] = &[40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
+
+fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
+    crate::decode::with_test_decode_ctx(|ctx| super::choices(ctx, rows))
+        .expect("choice records are admitted")
+}
+
+fn choice_fields(choices: &[FeatureChoice]) -> Vec<super::FeatureChoiceField> {
+    crate::decode::with_test_decode_ctx(|ctx| super::choice_fields(ctx, choices))
+        .expect("choice fields are admitted")
+}
 
 fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {
     let arena = DecodeArena::new();

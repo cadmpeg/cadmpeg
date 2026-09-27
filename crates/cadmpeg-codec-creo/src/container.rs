@@ -2623,8 +2623,8 @@ pub(crate) fn scan_bytes<'a>(
     feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
     let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(&feature_rows);
-    let feature_choices = feature::rows::choices(&feature_rows);
-    let feature_choice_fields = feature::rows::choice_fields(&feature_choices);
+    let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
+    let feature_choice_fields = feature::rows::choice_fields(ctx, &feature_choices)?;
     let depdb_recipe_rows = depdb_recipe_rows(ctx, &sections)?;
     let mut feature_geometry_tables = feature::rows::geometry_tables(&feature_rows);
     feature_geometry_tables.extend(feature::rows::geometry_tables(&depdb_recipe_rows));
