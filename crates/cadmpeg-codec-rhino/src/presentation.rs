@@ -1723,6 +1723,7 @@ fn class_data_prefix(
 }
 
 fn parse_light_record_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1797,6 +1798,7 @@ fn parse_light_record_attributes(
         .as_ref()
         .map(|chunk| {
             parse_attributes(
+                ctx,
                 data,
                 chunk.body(),
                 chunk.range(),
@@ -4445,6 +4447,7 @@ pub(crate) fn install(
                         parse_light(scan.data, range, scale, record.range.start, None)
                     {
                         match parse_light_record_attributes(
+                            ctx,
                             scan.data,
                             record,
                             scan.archive,
@@ -4461,6 +4464,9 @@ pub(crate) fn install(
                                     }
                                     light.attributes = Some(value);
                                 }
+                            }
+                            Err(FramingError::Resource(limit)) => {
+                                return Err(CodecError::ResourceLimit(limit));
                             }
                             Err(error) => {
                                 losses.push(RhinoLossCode::ObjectAttributesDegraded.note(

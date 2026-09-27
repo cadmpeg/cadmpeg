@@ -919,6 +919,7 @@ impl AttributeItem {
 }
 
 pub(crate) fn parse_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     body_range: Range<usize>,
     source_range: Range<usize>,
@@ -1012,6 +1013,7 @@ pub(crate) fn parse_attributes(
         };
         let rendering_range = if version.1 >= 7 {
             Some(settings::parse_rendering_attributes(
+                ctx,
                 bytes,
                 &mut reader,
                 archive,
@@ -1186,6 +1188,7 @@ pub(crate) fn parse_attributes(
             AttributeItem::MaterialIndex => attributes.material_index = reader.i32()?,
             AttributeItem::RenderingAttributes => {
                 attributes.rendering_range = Some(settings::parse_rendering_attributes(
+                    ctx,
                     bytes,
                     &mut reader,
                     archive,
@@ -1771,27 +1774,29 @@ pub(crate) fn parse_object_record(
             "object record is missing object end",
         ));
     }
-    let mut attributes = attributes_chunk
-        .as_ref()
-        .map_or(AttributeState::Missing, |chunk| {
-            match parse_attributes(
-                bytes,
-                chunk.body(),
-                chunk.range(),
-                archive,
-                writer_version,
-                &mut warnings,
-            ) {
-                Ok(value) => AttributeState::Parsed(Box::new(value)),
-                Err(error) => {
-                    warnings.push(format!(
-                        "object attributes at {} degraded: {error}",
-                        chunk.body().start
-                    ));
-                    AttributeState::Degraded
-                }
+    let mut attributes = if let Some(chunk) = attributes_chunk.as_ref() {
+        match parse_attributes(
+            ctx,
+            bytes,
+            chunk.body(),
+            chunk.range(),
+            archive,
+            writer_version,
+            &mut warnings,
+        ) {
+            Ok(value) => AttributeState::Parsed(Box::new(value)),
+            Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+            Err(error) => {
+                warnings.push(format!(
+                    "object attributes at {} degraded: {error}",
+                    chunk.body().start
+                ));
+                AttributeState::Degraded
             }
-        });
+        }
+    } else {
+        AttributeState::Missing
+    };
     if let Some(item) = attributes_chunk.as_ref() {
         let rendering_range = attributes
             .parsed()

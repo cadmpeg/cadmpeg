@@ -1145,6 +1145,7 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -1213,6 +1214,7 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
         let mut warnings = Diagnostics::new();
         let result = settings::parse_rendering_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &mut reader,
             ArchiveVersion::V8,
@@ -1486,6 +1488,7 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -1541,6 +1544,7 @@ fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded rendering chunk");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         archive,

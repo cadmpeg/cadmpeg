@@ -1714,6 +1714,7 @@ pub(crate) enum RenderingAttributesKind {
 
 /// Parses and consumes one bounded rendering-attributes payload.
 pub(crate) fn parse_rendering_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1746,7 +1747,8 @@ pub(crate) fn parse_rendering_attributes(
         payload.position(),
     )?;
     let count = count_bytes;
-    let mut children = Vec::with_capacity(count);
+    let mut children =
+        crate::chunks::admitted_vec(ctx, count, "Rhino rendering material references")?;
     for _ in 0..count {
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
@@ -1774,7 +1776,11 @@ pub(crate) fn parse_rendering_attributes(
             MAX_ARRAY_ITEMS,
             material_payload.position(),
         )?;
-        let mut obsolete_mappings = Vec::with_capacity(obsolete_mapping_count);
+        let mut obsolete_mappings = crate::chunks::admitted_vec(
+            ctx,
+            obsolete_mapping_count,
+            "Rhino obsolete rendering mappings",
+        )?;
         for _ in 0..obsolete_mapping_count {
             let mapping = crate::chunks::chunk_at(
                 data,
@@ -1856,7 +1862,11 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
-            let mut channels = Vec::with_capacity(channel_count);
+            let mut channels = crate::chunks::admitted_vec(
+                ctx,
+                channel_count,
+                "Rhino rendering mapping channels",
+            )?;
             for _ in 0..channel_count {
                 let channel = crate::chunks::chunk_at(
                     data,
@@ -2293,14 +2303,16 @@ fn parse_layer(
     let rendering_range = if version.1 >= 7 {
         Some(
             parse_rendering_attributes(
+                ctx,
                 data,
                 &mut reader,
                 archive,
                 RenderingAttributesKind::Layer,
                 warnings,
             )
-            .map_err(|error| {
-                FramingError::structural(reader.position(), format!("rendering: {error}"))
+            .map_err(|error| match error {
+                FramingError::Resource(_) => error,
+                other => FramingError::structural(reader.position(), format!("rendering: {other}")),
             })?,
         )
     } else {
