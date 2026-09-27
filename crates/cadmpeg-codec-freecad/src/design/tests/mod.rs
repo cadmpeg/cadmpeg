@@ -587,6 +587,69 @@ fn design_parameter_cycle_owners_refuse_at_collection_limit() {
 }
 
 #[test]
+fn design_spreadsheet_value_diagnostic_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse("<Property/>").expect("valid XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design diagnostic",
+        |ctx| super::direct_spreadsheet_value(ctx, &xml, "Cells", "spreadsheet-property"),
+    );
+}
+
+#[test]
+fn design_sketch_carrier_diagnostic_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse("<Wrong/>").expect("valid XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design diagnostic",
+        |ctx| super::validate_sketch_carrier(
+            ctx, "Part::GeomLineSegment", &xml.root_element(), 1,
+        ),
+    );
+}
+
+#[test]
+fn design_external_geometry_diagnostic_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse(
+        "<Geometry><GeoExtensions><GeoExtension type=\"Sketcher::ExternalGeometryExtension\"/><GeoExtension type=\"Sketcher::ExternalGeometryExtension\"/></GeoExtensions></Geometry>",
+    ).expect("valid XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design diagnostic",
+        |ctx| super::external_geometry_metadata(ctx, xml.root_element(), 1),
+    );
+}
+
+#[test]
+fn design_counted_record_diagnostic_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse("<Property/>").expect("valid XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design diagnostic",
+        |ctx| super::direct_counted_records(
+            ctx, &xml, "GeometryList", "Geometry", "geometry-property",
+        ),
+    );
+}
+
+#[test]
+fn design_taper_diagnostic_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "taper-property".into(),
+        owner: "feature".into(),
+        name: "TaperAngle".into(),
+        type_name: "App::PropertyAngle".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Float value=\"180\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design diagnostic",
+        |ctx| super::taper_angle(ctx, &[&property], "TaperAngle"),
+    );
+}
+
+#[test]
 fn design_expression_copy_refuses_at_retained_limit() {
     let property = crate::native::PropertyRecord {
         id: "expression-property".into(),
