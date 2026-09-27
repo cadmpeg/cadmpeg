@@ -916,9 +916,13 @@ impl Parser<'_, '_, '_> {
                     btree_node_storage::<u64, RawRecord>(),
                     "step_parse_record_table_storage",
                 )?;
-                if records.insert(id, record).is_some() {
+                if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_parse_record_table_items")?;
+                }
+                records.insert(id, record);
                 push_charged(self.budget, &mut ids, id, "step_parse_section_ids")?;
             }
             self.name("ENDSEC")?;
@@ -997,6 +1001,9 @@ impl Parser<'_, '_, '_> {
         if !anchors.is_empty() {
             for anchor in &anchors {
                 self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_anchor_binding_items")?;
+                }
                 self.charge_retained(
                     btree_node_storage::<String, Value>(),
                     "step_anchor_binding_storage",
