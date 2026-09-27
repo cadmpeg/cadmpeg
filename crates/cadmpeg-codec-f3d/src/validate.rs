@@ -545,6 +545,55 @@ fn valid_axial_assembly_targets(
 
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+
+fn collect_index<K, V>(
+    decode: Option<&DecodeContext<'_>>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, CodecError>
+where
+    K: Eq + Hash,
+{
+    let Some(decode) = decode else {
+        return Ok(entries.into_iter().collect());
+    };
+    let mut index = HashMap::new();
+    for (key, value) in entries {
+        if !index.contains_key(&key) {
+            decode.charge_collection_items(1, operation)?;
+            index
+                .try_reserve(1)
+                .map_err(|_| decode.refuse_codec_limit(operation, 0, 1))?;
+        }
+        index.insert(key, value);
+    }
+    Ok(index)
+}
+
+fn collect_index_set<K>(
+    decode: Option<&DecodeContext<'_>>,
+    entries: impl IntoIterator<Item = K>,
+    operation: &'static str,
+) -> Result<HashSet<K>, CodecError>
+where
+    K: Eq + Hash,
+{
+    let Some(decode) = decode else {
+        return Ok(entries.into_iter().collect());
+    };
+    let mut index = HashSet::new();
+    for key in entries {
+        if !index.contains(&key) {
+            decode.charge_collection_items(1, operation)?;
+            index
+                .try_reserve(1)
+                .map_err(|_| decode.refuse_codec_limit(operation, 0, 1))?;
+        }
+        index.insert(key);
+    }
+    Ok(index)
+}
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
 /// per-family validators. Every map is derived purely from the namespace and
@@ -596,18 +645,20 @@ impl<'a> Ctx<'a> {
     /// Build every shared index over `native` up front. All builds are pure and
     /// emit no findings, so their eager construction does not affect the
     /// observable finding order.
-    fn new(ir: &'a CadIr, native: &'a native::F3dNative) -> Self {
-        let records_by_index = native
+    fn new(
+        ir: &'a CadIr,
+        native: &'a native::F3dNative,
+        decode: Option<&DecodeContext<'_>>,
+    ) -> Result<Self, CodecError> {
+        let records_by_index = collect_index(decode, native
             .design_record_headers
             .iter()
-            .map(|record| ((design_stream(&record.id), record.record_index), record))
-            .collect::<std::collections::HashMap<_, _>>();
-        let recipes_by_id = native
+            .map(|record| ((design_stream(&record.id), record.record_index), record)), "index F3D design headers")?;
+        let recipes_by_id = collect_index(decode, native
             .construction_recipes
             .iter()
-            .map(|recipe| (recipe.id.as_str(), recipe))
-            .collect::<std::collections::HashMap<_, _>>();
-        let parameters_by_index = native
+            .map(|recipe| (recipe.id.as_str(), recipe)), "index F3D construction recipes")?;
+        let parameters_by_index = collect_index(decode, native
             .design_parameters
             .iter()
             .map(|parameter| {
@@ -615,14 +666,12 @@ impl<'a> Ctx<'a> {
                     (design_stream(&parameter.id), parameter.record_index),
                     parameter,
                 )
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let owners_by_index = native
+            }), "index F3D design parameters")?;
+        let owners_by_index = collect_index(decode, native
             .design_parameter_owners
             .iter()
-            .map(|owner| ((design_stream(owner.id()), owner.record_index()), owner))
-            .collect::<std::collections::HashMap<_, _>>();
-        let companions_by_index = native
+            .map(|owner| ((design_stream(owner.id()), owner.record_index()), owner)), "index F3D parameter owners")?;
+        let companions_by_index = collect_index(decode, native
             .design_parameter_companions
             .iter()
             .map(|companion| {
@@ -630,14 +679,12 @@ impl<'a> Ctx<'a> {
                     (design_stream(companion.id()), companion.record_index()),
                     companion,
                 )
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let scopes_by_index = native
+            }), "index F3D parameter companions")?;
+        let scopes_by_index = collect_index(decode, native
             .design_parameter_scopes
             .iter()
-            .map(|scope| ((design_stream(&scope.id), scope.record_index), scope))
-            .collect::<std::collections::HashMap<_, _>>();
-        let entities_by_suffix = native
+            .map(|scope| ((design_stream(&scope.id), scope.record_index), scope)), "index F3D parameter scopes")?;
+        let entities_by_suffix = collect_index(decode, native
             .design_entity_headers
             .iter()
             .map(|entity| {
@@ -645,9 +692,8 @@ impl<'a> Ctx<'a> {
                     (design_stream(&entity.id), entity.entity_id.suffix()),
                     entity,
                 )
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let sketch_geometry_indices = native
+            }), "index F3D entity suffixes")?;
+        let sketch_geometry_indices = collect_index_set(decode, native
             .sketch_points
             .iter()
             .map(|point| (design_stream(&point.id), point.record_index))
@@ -656,9 +702,8 @@ impl<'a> Ctx<'a> {
                     .sketch_curve_identities
                     .iter()
                     .map(|curve| (design_stream(&curve.id), curve.record_index)),
-            )
-            .collect::<HashSet<_>>();
-        let placements_by_scope = native
+            ), "index F3D sketch geometry")?;
+        let placements_by_scope = collect_index(decode, native
             .design_sketch_placements
             .iter()
             .filter_map(|placement| {
@@ -666,19 +711,16 @@ impl<'a> Ctx<'a> {
                     (design_stream(&placement.id), placement.scope_record_index?),
                     placement,
                 ))
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let groups_by_index = native
+            }), "index F3D sketch placements")?;
+        let groups_by_index = collect_index(decode, native
             .design_extrude_selection_groups
             .iter()
-            .map(|group| ((design_stream(&group.id), group.record_index), group))
-            .collect::<std::collections::HashMap<_, _>>();
-        let operand_groups_by_index = native
+            .map(|group| ((design_stream(&group.id), group.record_index), group)), "index F3D extrude selection groups")?;
+        let operand_groups_by_index = collect_index(decode, native
             .design_construction_operand_groups
             .iter()
-            .map(|group| ((design_stream(&group.id), group.record_index), group))
-            .collect::<std::collections::HashMap<_, _>>();
-        let members_by_slot = native
+            .map(|group| ((design_stream(&group.id), group.record_index), group)), "index F3D construction operand groups")?;
+        let members_by_slot = collect_index(decode, native
             .design_extrude_selection_members
             .iter()
             .map(|member| {
@@ -690,9 +732,8 @@ impl<'a> Ctx<'a> {
                     ),
                     member,
                 )
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        let sketch_owner_ids = native
+            }), "index F3D extrude selection members")?;
+        let sketch_owner_ids = collect_index(decode, native
             .design_entity_headers
             .iter()
             .filter(|header| header.in_sketch_module())
@@ -704,9 +745,8 @@ impl<'a> Ctx<'a> {
                     ),
                     header.entity_id.as_str(),
                 ))
-            })
-            .collect::<std::collections::HashMap<_, _>>();
-        Ctx {
+            }), "index F3D sketch owner ids")?;
+        Ok(Ctx {
             ir,
             native,
             records_by_index,
@@ -722,7 +762,7 @@ impl<'a> Ctx<'a> {
             operand_groups_by_index,
             members_by_slot,
             sketch_owner_ids,
-        }
+        })
     }
 }
 
@@ -739,7 +779,15 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             entity: None,
         }];
     };
-    validate_loaded(ir, &native)
+    match validate_loaded(None, ir, &native) {
+        Ok(findings) => findings,
+        Err(_) => vec![Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "Fusion native namespace does not match the expected arena shape".into(),
+            entity: None,
+        }],
+    }
 }
 
 /// Validate native records using the source decode budget.
@@ -762,11 +810,15 @@ pub(crate) fn validate_native_charged(
             }]);
         }
     };
-    Ok(validate_loaded(ir, &native))
+    validate_loaded(Some(decode), ir, &native)
 }
 
-fn validate_loaded(ir: &CadIr, native: &native::F3dNative) -> Vec<Finding> {
-    let ctx = Ctx::new(ir, native);
+fn validate_loaded(
+    decode: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    native: &native::F3dNative,
+) -> Result<Vec<Finding>, CodecError> {
+    let ctx = Ctx::new(ir, native, decode)?;
     let mut findings = Vec::new();
     let mut expected_face_operands = native.design_face_operands.clone();
     let scope_histories = history::bind_scope_histories(
@@ -884,7 +936,7 @@ fn validate_loaded(ir: &CadIr, native: &native::F3dNative) -> Vec<Finding> {
     validate_body_links(&ctx, &mut findings);
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(&ctx, &mut findings);
-    findings
+    Ok(findings)
 }
 
 /// Validate ACT record identity, table/group joins, ordered registries, and the
