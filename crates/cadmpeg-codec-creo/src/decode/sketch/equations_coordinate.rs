@@ -731,6 +731,48 @@ fn admitted_coordinate_variables(
     Ok((variables, indices))
 }
 
+fn section_remaining_variables(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+) -> Result<BTreeSet<usize>, CodecError> {
+    let mut remaining = BTreeSet::new();
+    for index in 0..count {
+        ctx.charge_collection_items(1, "creo section remaining variables")?;
+        remaining.insert(index);
+    }
+    Ok(remaining)
+}
+
+fn next_section_component(
+    ctx: &DecodeContext<'_>,
+    remaining: &mut BTreeSet<usize>,
+    adjacency: &[BTreeSet<usize>],
+) -> Result<Option<BTreeSet<usize>>, CodecError> {
+    let Some(seed) = remaining.pop_first() else {
+        return Ok(None);
+    };
+    let mut component = BTreeSet::new();
+    ctx.charge_collection_items(1, "creo section component seed")?;
+    component.insert(seed);
+    let mut pending = std::collections::VecDeque::new();
+    ctx.try_collection(1, "creo section pending seed", || pending.try_reserve(1))?;
+    pending.push_back(seed);
+    while let Some(variable) = pending.pop_front() {
+        for &neighbor in &adjacency[variable] {
+            if !component.contains(&neighbor) {
+                ctx.charge_collection_items(1, "creo section component neighbors")?;
+                component.insert(neighbor);
+                remaining.remove(&neighbor);
+                ctx.try_collection(1, "creo section pending neighbors", || {
+                    pending.try_reserve(1)
+                })?;
+                pending.push_back(neighbor);
+            }
+        }
+    }
+    Ok(Some(component))
+}
+
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
@@ -790,19 +832,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         connect(&members, &mut adjacency)?;
     }
 
-    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
+    let mut remaining = section_remaining_variables(ctx, variables.len())?;
     let mut resolved = BTreeMap::new();
-    while let Some(seed) = remaining.pop_first() {
-        let mut component = BTreeSet::from([seed]);
-        let mut pending = std::collections::VecDeque::from([seed]);
-        while let Some(variable) = pending.pop_front() {
-            for &neighbor in &adjacency[variable] {
-                if component.insert(neighbor) {
-                    remaining.remove(&neighbor);
-                    pending.push_back(neighbor);
-                }
-            }
-        }
+    while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
         let component_distances = distances
             .iter()
             .copied()
@@ -1106,18 +1138,8 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         }
     }
     let mut solved = BTreeMap::<SectionCoordinateVariable, f64>::new();
-    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
-    while let Some(seed) = remaining.pop_first() {
-        let mut component = BTreeSet::from([seed]);
-        let mut pending = std::collections::VecDeque::from([seed]);
-        while let Some(variable) = pending.pop_front() {
-            for &neighbor in &adjacency[variable] {
-                if component.insert(neighbor) {
-                    remaining.remove(&neighbor);
-                    pending.push_back(neighbor);
-                }
-            }
-        }
+    let mut remaining = section_remaining_variables(ctx, variables.len())?;
+    while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
         let columns = component.iter().copied().collect::<Vec<_>>();
         let local_columns = columns
             .iter()
@@ -1349,6 +1371,120 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section unique variables")
+        );
+    }
+
+    #[test]
+    fn section_remaining_variables_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(7, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the remaining set follows variable and equation admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section remaining variables")
+        );
+    }
+
+    #[test]
+    fn section_component_seed_refuses_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(8, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the first component needs its own seed node");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component seed")
+        );
+    }
+
+    #[test]
+    fn section_pending_seed_refuses_before_deque_growth() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(9, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the search queue needs one seed slot");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section pending seed")
+        );
+    }
+
+    #[test]
+    fn section_component_neighbors_refuse_before_tree_insert() {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .is_ok());
+        let error = with_collection_limit(20, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the neighbor needs one component node");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section component neighbors")
+        );
+    }
+
+    #[test]
+    fn section_pending_neighbors_refuse_before_deque_growth() {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(21, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("the admitted neighbor needs one queue slot");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section pending neighbors")
+        );
+    }
+
+    #[test]
+    fn unsigned_dimension_remaining_variables_refuse_before_tree_insert() {
+        let error = with_collection_limit(10, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("remaining nodes follow variable and adjacency admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section remaining variables")
         );
     }
 
