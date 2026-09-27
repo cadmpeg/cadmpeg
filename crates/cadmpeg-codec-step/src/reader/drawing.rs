@@ -391,6 +391,7 @@ pub(super) fn decode(
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
+            reserve_drawing_items(&mut losses, 1, ctx, "step_drawing_losses")?;
             losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
                 "drawing #{id} position in the stored order exceeds the stated order width"
             )));
@@ -738,6 +739,7 @@ fn add_reference_fields(
                     target_context.ctx,
                 )?,
                 TargetResolution::Unresolved => {
+                    reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     )));
@@ -807,6 +809,7 @@ fn add_sheet_revision_usages(
                     target_context.ctx,
                 )?,
                 TargetResolution::Unresolved => {
+                    reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
                     )));
@@ -852,6 +855,7 @@ fn add_sheet_revision_usages(
                     target_context.ctx,
                 )?,
                 TargetResolution::Unresolved => {
+                    reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                     losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
                     )));
@@ -903,6 +907,7 @@ fn add_draughting_model_associations(
                     None
                 }
                 TargetResolution::Unresolved => {
+                    reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
                         format!(
                             "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
@@ -947,6 +952,7 @@ fn add_draughting_model_associations(
                         complete = false;
                     }
                     TargetResolution::Unresolved => {
+                        reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                         losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
                             format!(
                                 "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
@@ -983,6 +989,7 @@ fn add_draughting_model_associations(
                         None
                     }
                     TargetResolution::Unresolved => {
+                        reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
                         )));
