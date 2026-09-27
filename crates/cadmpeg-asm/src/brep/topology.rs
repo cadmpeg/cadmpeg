@@ -28,20 +28,23 @@ use super::geometry::{
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
-pub(super) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
+pub(super) fn decode_analytic_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+) -> Result<(Carriers, HashSet<i64>), cadmpeg_core::CodecError> {
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
     for r in records {
         if is_analytic_surface(r.head()) {
-            if let Some((geometry, inward)) = decode_surface(r) {
+            if let Some((geometry, inward)) = decode_surface(ctx, r).transpose()? {
                 if inward {
                     inward_normal_surfaces.insert(r.index as i64);
                 }
                 surface_geo.insert(r.index as i64, SurfaceGeometry::Solved(geometry));
             }
         } else if is_analytic_curve(r.head()) {
-            if let Some(g) = decode_curve(r) {
+            if let Some(g) = decode_curve(ctx, r).transpose()? {
                 curve_geo.insert(r.index as i64, g);
             }
         }
@@ -51,7 +54,7 @@ pub(super) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
         curve_geo,
         ..Carriers::default()
     };
-    (carriers, inward_normal_surfaces)
+    Ok((carriers, inward_normal_surfaces))
 }
 
 /// Pass 2 (faces): keep every face whose surface reference resolves, decoding
@@ -102,8 +105,8 @@ pub(super) fn keep_faces_and_carriers(
         kept_faces.insert(r.index as i64);
         if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head() == "spline")
-                .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
-                .flatten();
+                .then(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens))
+                .flatten().transpose()?;
             if native_kind
                 .as_deref()
                 .is_some_and(|kind| kind.contains("blend"))
@@ -207,7 +210,8 @@ pub(super) fn keep_faces_and_carriers(
                 out.stats.mesh_surface_faces += 1;
             } else {
                 let native_kind = if surf_rec.head() == "spline" {
-                    nurbs::toks::owned_construction_subtype(&surf_rec.tokens)
+                    nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens)
+                        .transpose()?
                         .unwrap_or_else(|| surf_rec.head().to_owned())
                 } else {
                     surf_rec.head().to_owned()
@@ -448,9 +452,10 @@ pub(super) fn walk_reachable_topology(
                                                 kept_curves.insert(cv);
                                             } else if let Some(definition) =
                                                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                                                    ctx,
                                                     &crec.tokens,
                                                     token_table,
-                                                ).and_then(|definition| definition.into_definition().ok())
+                                                ).transpose()?.and_then(|definition| definition.into_definition().ok())
                                                 .and_then(|mut definition| {
                                                     if record_reversed(crec) {
                                                         reverse_procedural_curve_definition(&mut definition).ok()?;
@@ -541,14 +546,16 @@ pub(super) fn collect_wire_topology(
                 format,
             )?;
             if !already_owned && reach.edges.contains(&edge_index) {
-                saved_free_edges.push(edge_index);
+                crate::decode_alloc::push_vec(
+                    ctx, &mut saved_free_edges, edge_index, "ASM saved free edges",
+                )?;
             }
         }
     }
     for shell in records.iter().filter(|record| record.head() == "shell") {
         let shell_index = shell.index as i64;
         let mut wire_guard = HashSet::new();
-        for root in shell_wire_roots(shell, by_index) {
+        for root in shell_wire_roots(ctx, shell, by_index)? {
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
                 let Some(wire) = by_index
@@ -577,11 +584,15 @@ pub(super) fn collect_wire_topology(
                         };
                         if let Some(edge_index) = coedge.ref_at(6) {
                             if !wire_edges.contains(&edge_index) {
-                                wire_edges.push(edge_index);
+                                crate::decode_alloc::push_vec(
+                                    ctx, &mut wire_edges, edge_index, "ASM wire edges",
+                                )?;
                             }
                             let edges = wire_edges_by_shell.entry(shell_index).or_default();
                             if !edges.contains(&edge_index) {
-                                edges.push(edge_index);
+                                crate::decode_alloc::push_vec(
+                                    ctx, edges, edge_index, "ASM shell wire edges",
+                                )?;
                             }
                             keep_wire_edge(
                                 ctx,
@@ -614,7 +625,9 @@ pub(super) fn collect_wire_topology(
                     reach.vertices.insert(vertex);
                     let vertices = free_vertices_by_shell.entry(shell_index).or_default();
                     if !vertices.contains(&vertex) {
-                        vertices.push(vertex);
+                        crate::decode_alloc::push_vec(
+                            ctx, vertices, vertex, "ASM shell free vertices",
+                        )?;
                     }
                     if let Some(point) = by_index
                         .get(&vertex)
@@ -741,10 +754,11 @@ fn keep_wire_edge(
                 out.stats.nurbs_curves += 1;
             } else if let Some(definition) =
                 nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
+                    ctx,
                     &curve_record.tokens,
                     token_table,
                 )
-                .and_then(|definition| definition.into_definition().ok())
+                .transpose()?.and_then(|definition| definition.into_definition().ok())
                 .and_then(|mut definition| {
                     if record_reversed(curve_record) {
                         reverse_procedural_curve_definition(&mut definition).ok()?;
@@ -805,15 +819,16 @@ pub(super) fn classify_edge_curve_senses(
 }
 
 pub(super) fn ring_coedges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loop_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<CoedgeId> {
+) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
     let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
-        return out;
+        return Ok(out);
     };
     let mut cur = Some(first);
     let mut guard = HashSet::new();
@@ -821,22 +836,23 @@ pub(super) fn ring_coedges(
         if !guard.insert(ci) || !kept.contains(&ci) {
             break;
         }
-        out.push(id(ci));
+        crate::decode_alloc::push_vec(ctx, &mut out, id(ci), "ASM ring coedges")?;
         let Some(ce) = by_index.get(&ci) else { break };
         cur = ce.ref_at(3);
         if cur == Some(first) {
             break;
         }
     }
-    out
+    Ok(out)
 }
 
 pub(super) fn loop_chain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     face_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<LoopId> {
+) -> Result<Vec<LoopId>, cadmpeg_core::CodecError> {
     let id = |i: i64| LoopId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
@@ -846,20 +862,21 @@ pub(super) fn loop_chain(
             break;
         }
         if kept.contains(&li) {
-            out.push(id(li));
+            crate::decode_alloc::push_vec(ctx, &mut out, id(li), "ASM face loops")?;
         }
         let Some(lp) = by_index.get(&li) else { break };
         cur = lp.ref_at(3);
     }
-    out
+    Ok(out)
 }
 
 fn face_chain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shell_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<FaceId> {
+) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
     let id = |i: i64| FaceId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
@@ -869,12 +886,12 @@ fn face_chain(
             break;
         }
         if kept.contains(&fi) {
-            out.push(id(fi));
+            crate::decode_alloc::push_vec(ctx, &mut out, id(fi), "ASM shell faces")?;
         }
         let Some(f) = by_index.get(&fi) else { break };
         cur = f.ref_at(3);
     }
-    out
+    Ok(out)
 }
 
 pub(super) fn subshell_ancestor_shells(
@@ -903,13 +920,14 @@ pub(super) fn subshell_ancestor_shells(
 }
 
 pub(super) fn shell_faces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<FaceId> {
-    let mut out = face_chain(shell, by_index, kept, format);
-    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
+) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
+    let mut out = face_chain(ctx, shell, by_index, kept, format)?;
+    let mut pending = shell.ref_at(4).into_iter().collect_counted_vec(ctx, "ASM pending subshells")?;
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
@@ -918,20 +936,26 @@ pub(super) fn shell_faces(
         else {
             break;
         };
-        out.extend(face_chain_from(record.ref_at(6), by_index, kept, format));
+        for face in face_chain_from(ctx, record.ref_at(6), by_index, kept, format)? {
+            crate::decode_alloc::push_vec(ctx, &mut out, face, "ASM shell faces")?;
+        }
         if let Some(next) = record.ref_at(4) {
-            pending.push(next);
+            crate::decode_alloc::push_vec(ctx, &mut pending, next, "ASM pending subshells")?;
         }
         if let Some(child) = record.ref_at(5) {
-            pending.push(child);
+            crate::decode_alloc::push_vec(ctx, &mut pending, child, "ASM pending subshells")?;
         }
     }
-    out
+    Ok(out)
 }
 
-pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
-    let mut out = shell.ref_at(6).into_iter().collect::<Vec<_>>();
-    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
+pub(super) fn shell_wire_roots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    shell: &Record,
+    by_index: &HashMap<i64, &Record>,
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
+    let mut out = shell.ref_at(6).into_iter().collect_counted_vec(ctx, "ASM shell wire roots")?;
+    let mut pending = shell.ref_at(4).into_iter().collect_counted_vec(ctx, "ASM pending subshells")?;
     let mut guard = HashSet::new();
     while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
         let Some(record) = by_index
@@ -941,43 +965,47 @@ pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>)
             break;
         };
         if let Some(wire) = record.ref_at(7) {
-            out.push(wire);
+            crate::decode_alloc::push_vec(ctx, &mut out, wire, "ASM shell wire roots")?;
         }
         if let Some(next) = record.ref_at(4) {
-            pending.push(next);
+            crate::decode_alloc::push_vec(ctx, &mut pending, next, "ASM pending subshells")?;
         }
         if let Some(child) = record.ref_at(5) {
-            pending.push(child);
+            crate::decode_alloc::push_vec(ctx, &mut pending, child, "ASM pending subshells")?;
         }
     }
-    out
+    Ok(out)
 }
 
 fn face_chain_from(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut current: Option<i64>,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Vec<FaceId> {
+) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
     let mut guard = HashSet::new();
     while let Some(index) = current.filter(|index| guard.insert(*index)) {
         if kept.contains(&index) {
-            out.push(FaceId::from(id(format, index)));
+            crate::decode_alloc::push_vec(
+                ctx, &mut out, FaceId::from(id(format, index)), "ASM shell faces",
+            )?;
         }
         let Some(face) = by_index.get(&index) else {
             break;
         };
         current = face.ref_at(3);
     }
-    out
+    Ok(out)
 }
 
 pub(super) fn shell_chain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     format: IdFormat,
-) -> Vec<ShellId> {
+) -> Result<Vec<ShellId>, cadmpeg_core::CodecError> {
     let id = |i: i64| ShellId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
@@ -986,18 +1014,19 @@ pub(super) fn shell_chain(
         if !guard.insert(si) {
             break;
         }
-        out.push(id(si));
+        crate::decode_alloc::push_vec(ctx, &mut out, id(si), "ASM region shells")?;
         let Some(s) = by_index.get(&si) else { break };
         cur = s.ref_at(3);
     }
-    out
+    Ok(out)
 }
 
 pub(super) fn region_chain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     format: IdFormat,
-) -> Vec<RegionId> {
+) -> Result<Vec<RegionId>, cadmpeg_core::CodecError> {
     let id = |i: i64| RegionId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
@@ -1006,11 +1035,11 @@ pub(super) fn region_chain(
         if !guard.insert(li) {
             break;
         }
-        out.push(id(li));
+        crate::decode_alloc::push_vec(ctx, &mut out, id(li), "ASM body regions")?;
         let Some(l) = by_index.get(&li) else { break };
         cur = l.ref_at(3);
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]

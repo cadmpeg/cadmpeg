@@ -152,8 +152,8 @@ pub(super) fn surface_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    let scope = toks::cache_scope(toks)?;
-    let positions = toks::owned_marker_positions(scope)?;
+    let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
+    let positions = propagate_resource!(toks::owned_marker_positions(ctx, scope)?);
     let compound = scope.iter().any(|token| {
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     });
@@ -175,8 +175,8 @@ pub(super) fn owned_surface_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    scope
-        .owned_marker_positions()
+    propagate_resource!(scope
+        .owned_marker_positions(ctx))
         .into_iter()
         .find_map(|pos| surface_block(ctx, tokens, pos).map(|result| result.map(|(surface, _)| surface)))
 }
@@ -188,8 +188,8 @@ pub(super) fn curve_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    let scope = toks::cache_scope(toks)?;
-    toks::owned_marker_positions(scope)?
+    let scope = propagate_resource!(toks::cache_scope(ctx, toks)?);
+    propagate_resource!(toks::owned_marker_positions(ctx, scope)?)
         .into_iter()
         .find_map(|pos| curve_block(ctx, scope, pos).map(|result| result.map(|(curve, _)| curve)))
 }
@@ -201,8 +201,8 @@ pub(super) fn owned_curve_cache(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    scope
-        .owned_marker_positions()
+    propagate_resource!(scope
+        .owned_marker_positions(ctx))
         .into_iter()
         .find_map(|pos| curve_block(ctx, tokens, pos).map(|result| result.map(|(curve, _)| curve)))
 }

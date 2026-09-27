@@ -10,6 +10,81 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::HashSet;
 
+fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
+    Record {
+        index,
+        name: name.into(),
+        tokens: refs.iter().copied().map(Token::Ref).collect(),
+        offset: 0,
+        len: 0,
+    }
+}
+
+fn with_collection_limit<T>(limit: u64, f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    f(&ctx)
+}
+
+fn assert_collection_refusal(error: cadmpeg_core::CodecError, operation: &str) {
+    use cadmpeg_core::decode::ResourceDimension;
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal: {error:?}")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, operation);
+}
+
+#[test]
+fn ring_coedges_refuses_collection_limit() {
+    let records = [ref_record(0, "loop", &[-1, -1, -1, -1, 1]), ref_record(1, "coedge", &[-1, -1, -1, 1])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::ring_coedges(ctx, &records[0], &by_index, &HashSet::from([1]), crate::asm_format!("f3d")).unwrap_err());
+    assert_collection_refusal(error, "ASM ring coedges");
+}
+
+#[test]
+fn loop_chain_refuses_collection_limit() {
+    let records = [ref_record(0, "face", &[-1, -1, -1, -1, 1]), ref_record(1, "loop", &[-1, -1, -1, -1])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::loop_chain(ctx, &records[0], &by_index, &HashSet::from([1]), crate::asm_format!("f3d")).unwrap_err());
+    assert_collection_refusal(error, "ASM face loops");
+}
+
+#[test]
+fn face_chain_refuses_collection_limit() {
+    let records = [ref_record(0, "shell", &[-1, -1, -1, -1, -1, 1]), ref_record(1, "face", &[-1, -1, -1, -1])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::shell_faces(ctx, &records[0], &by_index, &HashSet::from([1]), crate::asm_format!("f3d")).unwrap_err());
+    assert_collection_refusal(error, "ASM shell faces");
+}
+
+#[test]
+fn shell_wire_roots_refuses_collection_limit() {
+    let records = [ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]), ref_record(1, "wire", &[])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::shell_wire_roots(ctx, &records[0], &by_index).unwrap_err());
+    assert_collection_refusal(error, "ASM shell wire roots");
+}
+
+#[test]
+fn shell_chain_refuses_collection_limit() {
+    let records = [ref_record(0, "region", &[-1, -1, -1, -1, 1]), ref_record(1, "shell", &[-1, -1, -1, -1])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::shell_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err());
+    assert_collection_refusal(error, "ASM region shells");
+}
+
+#[test]
+fn region_chain_refuses_collection_limit() {
+    let records = [ref_record(0, "body", &[-1, -1, -1, 1]), ref_record(1, "region", &[-1, -1, -1, -1])];
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let error = with_collection_limit(0, |ctx| super::region_chain(ctx, &records[0], &by_index, crate::asm_format!("f3d")).unwrap_err());
+    assert_collection_refusal(error, "ASM body regions");
+}
+
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.extend_from_slice(&[0x0d, u8::try_from(name.len()).unwrap()]);
     bytes.extend_from_slice(name.as_bytes());
@@ -98,7 +173,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 .iter()
                 .map(|record| (record.index as i64, record))
                 .collect();
-            let table = nurbs::toks::SubtypeTable::from_records(&records);
+            let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
             let decoded =
                 nurbs::proc_surface::procedural_surface_resolving_refs(&asm_decode_ctx, &records[0].tokens, &table).transpose().expect("resource allocation did not fail")
                     .unwrap();
@@ -177,7 +252,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         record(4, "pcurve", &[]),
     ];
     let by_index = records.iter().map(|r| (r.index as i64, r)).collect();
-    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let table = nurbs::toks::SubtypeTable::from_records(&asm_decode_ctx, &records).unwrap();
     let mut carriers = Carriers::default();
     let mut reach = Reachable {
         faces: HashSet::from([0]),

@@ -1096,9 +1096,12 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
         .map(|record| (record.index as i64, record))
         .collect::<HashMap<_, _>>();
     let kept = [4, 5].into_iter().collect::<HashSet<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     assert_eq!(
-        shell_faces(&records[1], &by_index, &kept, FORMAT),
+        shell_faces(&ctx, &records[1], &by_index, &kept, FORMAT).unwrap(),
         vec![
             FaceId::mint("f3d:brep:entity#4").expect("identity grammar"),
             FaceId::mint("f3d:brep:entity#5").expect("identity grammar")
@@ -1127,7 +1130,10 @@ fn subshell_wires_project_onto_the_nearest_shell() {
         .iter()
         .map(|record| (record.index as i64, record))
         .collect::<HashMap<_, _>>();
-    assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(shell_wire_roots(&ctx, &records[1], &by_index).unwrap(), [4, 5, 6]);
 }
 
 #[test]
@@ -1207,8 +1213,12 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         vertices: HashSet::from([2, 3]),
         ..Reachable::default()
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
     emit_edges(
+        &ctx,
         &mut brep,
         &records,
         &by_index,
@@ -1270,7 +1280,11 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
             ..Reachable::default()
         };
         let mut brep = AsmBrep::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         emit_edges(
+            &ctx,
             &mut brep,
             &records,
             &by_index,

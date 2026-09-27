@@ -4002,6 +4002,7 @@ pub(super) fn emit_pcurves(
 
 /// Emit reachable point carriers, scaled to millimetres.
 pub(super) fn emit_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
@@ -4014,7 +4015,7 @@ pub(super) fn emit_points(
     for r in records {
         let i = r.index as i64;
         if r.head() == "point" && kept_points.contains(&i) {
-            let c = collect_carrier(r);
+            let c = collect_carrier(ctx, r)?;
             if let Some(p) = c.positions.first() {
                 let position = cadmpeg_ir::features::FinitePoint3::new(scale_point(*p))
                     .ok_or(Point::NON_FINITE_POSITION)
@@ -4147,6 +4148,7 @@ pub(super) fn emit_vertices(
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
 /// continuity records, folding reversed senses onto the shared carrier.
 pub(super) fn emit_edges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4204,7 +4206,7 @@ pub(super) fn emit_edges(
                             // stored direction vector, whose length is the
                             // parameter scale; the IR carrier's unit direction
                             // lives in millimeter space.
-                            let scale = collect_carrier(curve_record)
+                            let scale = collect_carrier(ctx, curve_record)?
                                 .vectors
                                 .first()
                                 .map_or(1.0, |vector| norm3(*vector));
@@ -4443,12 +4445,13 @@ pub(super) fn emit_coedges(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 
 /// Emit reachable loops with their coedge rings filtered to kept coedges.
 pub(super) fn emit_loops(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         loops: kept_loops,
         coedges: kept_coedges,
@@ -4458,7 +4461,7 @@ pub(super) fn emit_loops(
         let i = r.index as i64;
         if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
-            let coedges = ring_coedges(r, by_index, kept_coedges, format);
+            let coedges = ring_coedges(ctx, r, by_index, kept_coedges, format)?;
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
                 continue;
             };
@@ -4469,18 +4472,20 @@ pub(super) fn emit_loops(
             });
         }
     }
+    Ok(())
 }
 
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
 pub(super) fn emit_faces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     inward_normal_surfaces: &HashSet<i64>,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         faces: kept_faces,
         loops: kept_loops,
@@ -4495,7 +4500,7 @@ pub(super) fn emit_faces(
             let (Some(surface), Some(owner)) = (r.ref_at(7), r.ref_at(5)) else {
                 continue;
             };
-            let loops = loop_chain(r, by_index, kept_loops, format);
+            let loops = loop_chain(ctx, r, by_index, kept_loops, format)?;
             // The face record's sense is relative to its surface record's
             // orientation. A reversed spline record flips the cache normal,
             // and a negative-cosine cone points its normal toward the axis;
@@ -4555,6 +4560,7 @@ pub(super) fn emit_faces(
             }
         }
     }
+    Ok(())
 }
 
 /// Emit shells, regions, and bodies for every record so back-references
@@ -4586,7 +4592,7 @@ pub(super) fn emit_containers(
         match r.head() {
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
-                let faces = shell_faces(r, by_index, kept_faces, format);
+                let faces = shell_faces(ctx, r, by_index, kept_faces, format)?;
                 out.shells.push(
                     Shell::new(
                         <ShellId>::from(id(format, i)),
@@ -4612,7 +4618,7 @@ pub(super) fn emit_containers(
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
-                let shells = shell_chain(r, by_index, format);
+                let shells = shell_chain(ctx, r, by_index, format)?;
                 out.regions.push(Region {
                     id: <RegionId>::from(id(format, i)),
                     body: <BodyId>::from(id(format, owner)),
@@ -4620,7 +4626,7 @@ pub(super) fn emit_containers(
                 });
             }
             "body" => {
-                let regions = region_chain(r, by_index, format);
+                let regions = region_chain(ctx, r, by_index, format)?;
                 let body_id = <BodyId>::from(id(format, i));
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {

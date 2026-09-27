@@ -513,6 +513,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             ctx.charge_collection_items(1, "frame SAT primitive")?;
             scratch.grow(std::mem::size_of::<Prim>() as u64)?;
             ctx.charge_work(1, "lex SAT primitive")?;
+            prims.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("frame SAT primitive", 0, 1)
+            })?;
             prims.push(prim);
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
@@ -521,7 +524,6 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .len()
             .checked_mul(candidates)
             .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
-        ctx.charge_collection_items(possible_tokens as u64, "type SAT tokens")?;
         ctx.charge_work(possible_tokens as u64, "type SAT tokens")?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
@@ -562,6 +564,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             &mut admitted_entities,
             "admit SAT native records",
         )?;
+        records.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("frame SAT record", 0, 1)
+        })?;
         records.push(Record {
             index: records.len(),
             name,
@@ -718,14 +723,22 @@ const EXTENSION: &[(&str, i64)] = &[("UNEXTENDED", 0), ("EXTEND_G1", 1), ("EXTEN
 /// Spring curve-direction words.
 const CURV_DIR: &[(&str, i64)] = &[("left", 0), ("right", 2)];
 
+macro_rules! push_token {
+    ($cur:ident, $out:expr, $token:expr) => {{
+        let token = $token;
+        $cur.push_token($out, token);
+    }};
+}
+
 /// A backtracking cursor over one record's primitive fields.
-#[derive(Clone)]
-struct Cur<'a> {
+struct Cur<'a, 'c, 'p> {
     prims: &'a [Prim],
     pos: usize,
     /// Millimetres per stream length unit.
     scale: f64,
     failure: Option<TypeFailure>,
+    resource: Option<cadmpeg_core::CodecError>,
+    ctx: Option<&'c DecodeContext<'p>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -767,7 +780,24 @@ fn length_cm(value: f64, scale: f64) -> Option<f64> {
     (converted.is_finite() && (value == 0.0 || converted != 0.0)).then_some(converted)
 }
 
-impl<'a> Cur<'a> {
+impl<'a, 'c, 'p> Cur<'a, 'c, 'p> {
+    fn push_token(&mut self, out: &mut Vec<Token>, token: Token) {
+        if self.resource.is_some() {
+            return;
+        }
+        if let Some(ctx) = self.ctx {
+            if let Err(error) = ctx.charge_collection_items(1, "type SAT tokens") {
+                self.resource = Some(error);
+                return;
+            }
+            if out.try_reserve(1).is_err() {
+                self.resource = Some(ctx.refuse_codec_limit("type SAT tokens", 0, 1));
+                return;
+            }
+        }
+        out.push(token);
+    }
+
     fn length(&mut self, value: f64) -> Option<f64> {
         match length_cm(value, self.scale) {
             Some(converted) => Some(converted),
@@ -843,7 +873,7 @@ impl<'a> Cur<'a> {
     fn enum_word(&mut self, vocab: &[(&str, i64)], out: &mut Vec<Token>) -> Option<()> {
         let word = self.word()?;
         let (_, value) = vocab.iter().find(|(name, _)| *name == word)?;
-        out.push(Token::Enum(*value));
+        push_token!(self, out, Token::Enum(*value));
         Some(())
     }
 
@@ -852,13 +882,13 @@ impl<'a> Cur<'a> {
     fn opt_bound(&mut self, out: &mut Vec<Token>) -> Option<()> {
         match self.word()? {
             "I" => {
-                out.push(Token::False);
+                push_token!(self, out, Token::False);
                 Some(())
             }
             "F" => {
                 let value = self.num()?;
-                out.push(Token::True);
-                out.push(Token::Double(value));
+                push_token!(self, out, Token::True);
+                push_token!(self, out, Token::Double(value));
                 Some(())
             }
             _ => None,
@@ -883,13 +913,19 @@ impl<'a> Cur<'a> {
         let mark = self.pos;
         let count = self.long()?;
         let count = usize::try_from(count).ok()?;
-        if count > self.prims.len().saturating_sub(self.pos) {
+        if count > self.prims.len().checked_sub(self.pos)? {
             self.pos = mark;
             return None;
         }
+        if let Some(ctx) = self.ctx {
+            if let Err(error) = ctx.charge_collection_items(count as u64, "SAT float array values") {
+                self.resource = Some(error);
+                return None;
+            }
+        }
         let mut values = Vec::new();
         if values.try_reserve_exact(count).is_err() {
-            self.pos = mark;
+            self.resource = self.ctx.map(|ctx| ctx.refuse_codec_limit("SAT float array values", 0, count as u64));
             return None;
         }
         for _ in 0..count {
@@ -899,39 +935,49 @@ impl<'a> Cur<'a> {
             };
             values.push(value);
         }
-        if out.try_reserve(count + 1).is_err() {
-            self.pos = mark;
+        let Some(output_count) = count.checked_add(1) else {
+            self.resource = self.ctx.map(|ctx| ctx.refuse_codec_limit("SAT float array tokens", u64::MAX, u64::MAX));
+            return None;
+        };
+        if let Some(ctx) = self.ctx {
+            if let Err(error) = ctx.charge_collection_items(count as u64, "type SAT float array tokens") {
+                self.resource = Some(error);
+                return None;
+            }
+        }
+        if out.try_reserve(output_count).is_err() {
+            self.resource = self.ctx.map(|ctx| ctx.refuse_codec_limit("SAT float array tokens", 0, output_count as u64));
             return None;
         }
-        out.push(Token::Long(count as i64));
+        push_token!(self, out, Token::Long(count as i64));
         out.extend(values.into_iter().map(Token::Double));
         Some(())
     }
 }
 
 /// Run one fixed slot against the cursor.
-fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
+fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> {
     match slot {
         Slot::R => match cur.bump()? {
             Prim::Ref(index) => {
-                out.push(Token::Ref(*index));
+                push_token!(cur, out, Token::Ref(*index));
                 Some(())
             }
             _ => None,
         },
         Slot::L => {
             let value = cur.long()?;
-            out.push(Token::Long(value));
+            push_token!(cur, out, Token::Long(value));
             Some(())
         }
         Slot::D => {
             let value = cur.num()?;
-            out.push(Token::Double(value));
+            push_token!(cur, out, Token::Double(value));
             Some(())
         }
         Slot::DLen => {
             let value = cur.num()?;
-            out.push(Token::Double(cur.length(value)?));
+            push_token!(cur, out, Token::Double(cur.length(value)?));
             Some(())
         }
         Slot::DLenSentinel => {
@@ -941,67 +987,67 @@ fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> 
             } else {
                 cur.length(value)?
             };
-            out.push(Token::Double(converted));
+            push_token!(cur, out, Token::Double(converted));
             Some(())
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
-                out.push(Token::Str(value.clone()));
+                push_token!(cur, out, Token::Str(value.clone()));
                 Some(())
             }
             _ => None,
         },
         Slot::P => {
             let triple = cur.triple(true)?;
-            out.push(Token::Position(triple));
+            push_token!(cur, out, Token::Position(triple));
             Some(())
         }
         Slot::VLen => {
             let triple = cur.triple(true)?;
-            out.push(Token::Vector3(triple));
+            push_token!(cur, out, Token::Vector3(triple));
             Some(())
         }
         Slot::VUnit => {
             let triple = cur.triple(false)?;
-            out.push(Token::Vector3(triple));
+            push_token!(cur, out, Token::Vector3(triple));
             Some(())
         }
         Slot::Sense => match cur.word()? {
             "forward" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "reversed" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::Sides => match cur.word()? {
             "single" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "double" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::UvSense => match cur.word()? {
             "forward_v" => {
-                out.push(Token::False);
+                push_token!(cur, out, Token::False);
                 Some(())
             }
             "reverse_v" => {
-                out.push(Token::True);
+                push_token!(cur, out, Token::True);
                 Some(())
             }
             _ => None,
         },
         Slot::B => {
             let token = logical_word(cur.word()?)?;
-            out.push(token);
+            push_token!(cur, out, token);
             Some(())
         }
         Slot::OptB => cur.opt_bound(out),
@@ -1009,7 +1055,7 @@ fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> 
     }
 }
 
-fn run_shape(cur: &mut Cur<'_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<()> {
+fn run_shape(cur: &mut Cur<'_, '_, '_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<()> {
     for slot in slots {
         take_slot(cur, *slot, out)?;
     }
@@ -1018,21 +1064,25 @@ fn run_shape(cur: &mut Cur<'_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<
 
 /// Try one candidate shape against the complete field list.
 fn try_shape(
+    ctx: &DecodeContext<'_>,
     prims: &[Prim],
     scale: f64,
     slots: &[Slot],
-) -> Result<Option<Vec<Token>>, TypeFailure> {
+) -> Result<Option<Vec<Token>>, TypedRecordFailure> {
     let mut cur = Cur {
         prims,
         pos: 0,
         scale,
         failure: None,
+        resource: None,
+        ctx: Some(ctx),
     };
     let mut out = Vec::new();
     let matched = run_shape(&mut cur, slots, &mut out).is_some() && cur.done();
-    match cur.failure {
-        Some(failure) => Err(failure),
-        None => Ok(matched.then_some(out)),
+    match (cur.resource, cur.failure) {
+        (Some(error), _) => Err(TypedRecordFailure::Resource(error)),
+        (None, Some(failure)) => Err(TypedRecordFailure::Type(failure)),
+        (None, None) => Ok(matched.then_some(out)),
     }
 }
 
@@ -1051,7 +1101,7 @@ enum BsKind {
 
 /// Read one spline knot vector and derive its pole count without signed
 /// overflow or an unchecked loop count.
-fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>) -> Option<usize> {
+fn spline_poles(cur: &mut Cur<'_, '_, '_>, knots: i64, degree: i64, out: &mut Vec<Token>) -> Option<usize> {
     let Some(knot_count) = usize::try_from(knots).ok() else {
         return cur.invalid_spline_count();
     };
@@ -1069,8 +1119,8 @@ fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>
             Some(value) => value,
             None => return cur.invalid_spline_count(),
         };
-        out.push(Token::Double(knot));
-        out.push(Token::Long(mult));
+        push_token!(cur, out, Token::Double(knot));
+        push_token!(cur, out, Token::Long(mult));
     }
     let Some(poles) = degree
         .checked_sub(1)
@@ -1088,19 +1138,19 @@ fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
 /// unique-knot count, `(knot, multiplicity)` pairs, poles, and for `nurbs`
 /// one weight per pole.
-fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Option<()> {
+fn bs_curve_block(cur: &mut Cur<'_, '_, '_>, kind: BsKind, out: &mut Vec<Token>) -> Option<()> {
     let marker = cur.word()?;
     let rational = match marker {
         "nubs" => false,
         "nurbs" => true,
         _ => return None,
     };
-    out.push(Token::Ident(marker.to_string()));
+    push_token!(cur, out, Token::Ident(marker.to_string()));
     let degree = cur.long()?;
-    out.push(Token::Long(degree));
+    push_token!(cur, out, Token::Long(degree));
     cur.enum_word(CLOSURE, out)?;
     let knots = cur.long()?;
-    out.push(Token::Long(knots));
+    push_token!(cur, out, Token::Long(knots));
     let poles = spline_poles(cur, knots, degree, out)?;
     let coords = match kind {
         BsKind::Parameter => 2,
@@ -1114,7 +1164,7 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
         for coordinate in 0..per_pole {
             let value = cur.num()?;
             let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
-            out.push(Token::Double(if scaled {
+            push_token!(cur, out, Token::Double(if scaled {
                 cur.length(value)?
             } else {
                 value
@@ -1127,26 +1177,26 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
 /// A `nubs`/`nurbs` surface block ([`asm.md` §6.5]): marker, U/V degrees,
 /// closures, singularities, unique-knot counts, both knot vectors, and the
 /// row-major control grid.
-fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn bs_surface_block(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let marker = cur.word()?;
     let rational = match marker {
         "nubs" => false,
         "nurbs" => true,
         _ => return None,
     };
-    out.push(Token::Ident(marker.to_string()));
+    push_token!(cur, out, Token::Ident(marker.to_string()));
     let degree_u = cur.long()?;
     let degree_v = cur.long()?;
-    out.push(Token::Long(degree_u));
-    out.push(Token::Long(degree_v));
+    push_token!(cur, out, Token::Long(degree_u));
+    push_token!(cur, out, Token::Long(degree_v));
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(CLOSURE, out)?;
     cur.enum_word(SINGULARITY, out)?;
     cur.enum_word(SINGULARITY, out)?;
     let knots_u = cur.long()?;
     let knots_v = cur.long()?;
-    out.push(Token::Long(knots_u));
-    out.push(Token::Long(knots_v));
+    push_token!(cur, out, Token::Long(knots_u));
+    push_token!(cur, out, Token::Long(knots_v));
     let mut poles = [0usize; 2];
     for (direction, (knots, degree)) in [(knots_u, degree_u), (knots_v, degree_v)]
         .into_iter()
@@ -1164,7 +1214,7 @@ fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     for _ in 0..total_poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
-            out.push(Token::Double(if coordinate < 3 {
+            push_token!(cur, out, Token::Double(if coordinate < 3 {
                 cur.length(value)?
             } else {
                 value
@@ -1179,26 +1229,26 @@ fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// curve cache and fit tolerance, two null supports, two null pcurves, two
 /// optional interval endpoints, three discontinuity arrays, the extension
 /// integer, the unextended-range pair, and two extension enums.
-fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    if let Some(stamp) = cur.clone().long() {
+fn exact_int_cur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if let Some(stamp) = match cur.peek() { Some(Prim::Integer(value)) => Some(*value), _ => None } {
         // A serializer stamp is a release x100 word; smaller integers open
         // the legacy layout without a stamp.
         if stamp >= 100 {
             cur.long();
-            out.push(Token::Long(stamp));
+            push_token!(cur, out, Token::Long(stamp));
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     for _ in 0..2 {
         cur.word_is("null_surface")?;
-        out.push(Token::Ident("null_surface".to_string()));
+        push_token!(cur, out, Token::Ident("null_surface".to_string()));
     }
     for _ in 0..2 {
         cur.word_is("nullbs")?;
-        out.push(Token::Ident("nullbs".to_string()));
+        push_token!(cur, out, Token::Ident("nullbs".to_string()));
     }
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
@@ -1206,7 +1256,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         cur.float_array(out)?;
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
     // Two extension enums close the modern tail; the legacy tail omits them.
@@ -1220,14 +1270,14 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exp_par_cur` / `exppc` payload after the subtype name ([`asm.md` §6.4]):
 /// the inline BS2 block, its parameter-space fit tolerance, the support
 /// surface scope, and four trailing booleans.
-fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn exp_par_cur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     bs_curve_block(cur, BsKind::Parameter, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(tolerance));
+    push_token!(cur, out, Token::Double(tolerance));
     cur.word_is("spline")?;
-    out.push(Token::Ident("spline".to_string()));
+    push_token!(cur, out, Token::Ident("spline".to_string()));
     let sense = cur.word()?;
-    out.push(match sense {
+    push_token!(cur, out, match sense {
         "forward" => Token::False,
         "reversed" => Token::True,
         _ => return None,
@@ -1242,31 +1292,31 @@ fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exact_spl_sur` / `exactsur` payload after the subtype name
 /// ([`asm.md` §6.3]): optional stamp, cache-form enum, the solved surface,
 /// fit tolerance, the U and V intervals, and the extension integer.
-fn exact_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    if let Some(stamp) = cur.clone().long() {
+fn exact_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
+    if let Some(stamp) = match cur.peek() { Some(Prim::Integer(value)) => Some(*value), _ => None } {
         if stamp >= 100 {
             cur.long();
-            out.push(Token::Long(stamp));
+            push_token!(cur, out, Token::Long(stamp));
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
     bs_surface_block(cur, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     for _ in 0..4 {
         let value = cur.num()?;
-        out.push(Token::Double(value));
+        push_token!(cur, out, Token::Double(value));
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     Some(())
 }
 
 /// A sense word: `forward` is `FALSE`, `reversed` is `TRUE`.
-fn sense_word(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn sense_word(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     match cur.word()? {
-        "forward" => out.push(Token::False),
-        "reversed" => out.push(Token::True),
+        "forward" => push_token!(cur, out, Token::False),
+        "reversed" => push_token!(cur, out, Token::True),
         _ => return None,
     }
     Some(())
@@ -1275,7 +1325,7 @@ fn sense_word(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// One nullable support-surface slot: the `null_surface` sentinel, a `spline`
 /// reference or inline construction with its boolean and four optional
 /// bounds, or an embedded analytic surface ([`asm.md` §6.3]).
-fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn nullable_surface(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let word = match cur.peek()? {
         Prim::Word(word) => word.as_str(),
         _ => return None,
@@ -1283,12 +1333,12 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     match word {
         "null_surface" => {
             cur.bump();
-            out.push(Token::Ident("null_surface".to_string()));
+            push_token!(cur, out, Token::Ident("null_surface".to_string()));
             Some(())
         }
         "spline" => {
             cur.bump();
-            out.push(Token::Ident("spline".to_string()));
+            push_token!(cur, out, Token::Ident("spline".to_string()));
             sense_word(cur, out)?;
             type_subtype_tabled(cur, out)?;
             for _ in 0..4 {
@@ -1298,7 +1348,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "plane" => {
             cur.bump();
-            out.push(Token::Ident("plane".to_string()));
+            push_token!(cur, out, Token::Ident("plane".to_string()));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::UvSense] {
                 take_slot(cur, slot, out)?;
             }
@@ -1309,7 +1359,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "cone" => {
             cur.bump();
-            out.push(Token::Ident("cone".to_string()));
+            push_token!(cur, out, Token::Ident("cone".to_string()));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::D] {
                 take_slot(cur, slot, out)?;
             }
@@ -1325,7 +1375,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "sphere" => {
             cur.bump();
-            out.push(Token::Ident("sphere".to_string()));
+            push_token!(cur, out, Token::Ident("sphere".to_string()));
             for slot in [Slot::P, Slot::DLen, Slot::VUnit, Slot::VUnit, Slot::UvSense] {
                 take_slot(cur, slot, out)?;
             }
@@ -1336,7 +1386,7 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
         "torus" => {
             cur.bump();
-            out.push(Token::Ident("torus".to_string()));
+            push_token!(cur, out, Token::Ident("torus".to_string()));
             for slot in [
                 Slot::P,
                 Slot::VUnit,
@@ -1358,10 +1408,10 @@ fn nullable_surface(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 
 /// One nullable BS2 parameter-curve slot: the `nullbs` sentinel or an inline
 /// 2D block without a fit-tolerance field.
-fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn nullable_bs2(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if matches!(cur.peek(), Some(Prim::Word(word)) if word == "nullbs") {
         cur.bump();
-        out.push(Token::Ident("nullbs".to_string()));
+        push_token!(cur, out, Token::Ident("nullbs".to_string()));
         return Some(());
     }
     bs_curve_block(cur, BsKind::Parameter, out)
@@ -1372,14 +1422,14 @@ fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// tolerance, two supports, two parameter curves, two optional interval
 /// endpoints, three discontinuity arrays, and the extension integer. The
 /// cacheless form selects a different payload and is not typed here.
-fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn cache_first_curve_context(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     cur.word_is("full")?;
-    out.push(Token::Enum(0));
+    push_token!(cur, out, Token::Enum(0));
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(cur.length(tolerance)?));
+    push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     nullable_surface(cur, out)?;
     nullable_surface(cur, out)?;
     nullable_bs2(cur, out)?;
@@ -1390,7 +1440,7 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
         cur.float_array(out)?;
     }
     let extension = cur.long()?;
-    out.push(Token::Long(extension));
+    push_token!(cur, out, Token::Long(extension));
     Some(())
 }
 
@@ -1398,16 +1448,16 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
 /// approximation form, its payload, six discontinuity arrays, and one
 /// boolean. Form `full` stores the solved surface and fit tolerance; form
 /// `none` stores the U and V intervals and four closure/singularity enums.
-fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn revision_surface_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     match cur.word()? {
         "full" => {
-            out.push(Token::Enum(0));
+            push_token!(cur, out, Token::Enum(0));
             bs_surface_block(cur, out)?;
             let tolerance = cur.num()?;
-            out.push(Token::Double(cur.length(tolerance)?));
+            push_token!(cur, out, Token::Double(cur.length(tolerance)?));
         }
         "none" => {
-            out.push(Token::Enum(2));
+            push_token!(cur, out, Token::Enum(2));
             for _ in 0..4 {
                 cur.opt_bound(out)?;
             }
@@ -1422,7 +1472,7 @@ fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> 
         cur.float_array(out)?;
     }
     let flag = logical_word(cur.word()?)?;
-    out.push(flag);
+    push_token!(cur, out, flag);
     Some(())
 }
 
@@ -1430,11 +1480,11 @@ fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> 
 /// stamp, the embedded directrix intcurve with two optional parameter
 /// endpoints, the extrusion direction, the native position, and the shared
 /// revision-gated surface tail.
-fn cyl_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn cyl_spl_sur_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     cur.word_is("intcurve")?;
-    out.push(Token::Ident("intcurve".to_string()));
+    push_token!(cur, out, Token::Ident("intcurve".to_string()));
     sense_word(cur, out)?;
     type_subtype_tabled(cur, out)?;
     cur.opt_bound(out)?;
@@ -1447,9 +1497,9 @@ fn cyl_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// `exact_spl_sur` revision-gated payload: serializer stamp, the shared
 /// surface tail, the U and V unextended intervals as optional bounds, and
 /// the extension enum.
-fn exact_spl_sur_revision_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn exact_spl_sur_revision_tail(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let stamp = cur.long()?;
-    out.push(Token::Long(stamp));
+    push_token!(cur, out, Token::Long(stamp));
     revision_surface_tail(cur, out)?;
     for _ in 0..4 {
         cur.opt_bound(out)?;
@@ -1460,7 +1510,7 @@ fn exact_spl_sur_revision_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Optio
 /// Type one balanced subtype scope. The scope opens with `{` and a
 /// construction name; tabled constructions get their grammar, and any other
 /// construction falls back to lexical typing of the balanced scope.
-fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn type_subtype(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     let scope_start = cur.pos;
     let out_mark = out.len();
     if type_subtype_tabled(cur, out).is_some() {
@@ -1476,22 +1526,22 @@ fn type_subtype(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// or directrix the shared decoders resolve — requires this form, so a
 /// record with an untypable interior falls back as a whole instead of
 /// decoding around a degraded nested construction.
-fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
     let scope_start = cur.pos;
     let out_mark = out.len();
     cur.bump();
-    out.push(Token::SubtypeOpen);
+    push_token!(cur, out, Token::SubtypeOpen);
     let Some(name) = cur.word() else {
         cur.pos = scope_start;
         out.truncate(out_mark);
         return None;
     };
-    out.push(Token::Ident(name.to_string()));
+    push_token!(cur, out, Token::Ident(name.to_string()));
     let matched = match name {
-        "ref" => cur.long().map(|index| out.push(Token::Long(index))),
+        "ref" => cur.long().map(|index| push_token!(cur, out, Token::Long(index))),
         "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
         "exact_int_cur" | "exactcur" => exact_int_cur_tail(cur, out),
         "exact_spl_sur" | "exactsur" => {
@@ -1506,13 +1556,13 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         "par_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
             for _ in 0..2 {
                 let flag = logical_word(cur.word()?)?;
-                out.push(flag);
+                push_token!(cur, out, flag);
             }
             Some(())
         }),
         "blend_int_cur" => cache_first_curve_context(cur, out).and_then(|()| {
             let flag = logical_word(cur.word()?)?;
-            out.push(flag);
+            push_token!(cur, out, flag);
             Some(())
         }),
         "spring_int_cur" => {
@@ -1524,7 +1574,7 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     let closed = matched.and_then(|()| match cur.peek() {
         Some(Prim::Close) => {
             cur.bump();
-            out.push(Token::SubtypeClose);
+            push_token!(cur, out, Token::SubtypeClose);
             Some(())
         }
         _ => None,
@@ -1538,14 +1588,14 @@ fn type_subtype_tabled(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 }
 
 /// Lexically type one balanced subtype scope, `{` through its matching `}`.
-fn fallback_scope(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
+fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()> {
     if !matches!(cur.peek(), Some(Prim::Open)) {
         return None;
     }
     let mut depth = 0usize;
     loop {
         let prim = cur.bump()?;
-        out.push(lexical_token(prim));
+        push_token!(cur, out, lexical_token(prim));
         match prim {
             Prim::Open => depth += 1,
             Prim::Close => {
@@ -1682,7 +1732,7 @@ fn type_record(
     scale: f64,
 ) -> Result<Vec<Token>, TypedRecordFailure> {
     for slots in head_shapes(head) {
-        if let Some(tokens) = try_shape(prims, scale, slots)? {
+        if let Some(tokens) = try_shape(ctx, prims, scale, slots)? {
             return Ok(tokens);
         }
     }
@@ -1690,6 +1740,8 @@ fn type_record(
     let requested = u64::try_from(prims.len()).map_err(|_| {
         TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", u64::MAX, u64::MAX))
     })?;
+    ctx.charge_collection_items(requested, "type SAT tokens")
+        .map_err(TypedRecordFailure::Resource)?;
     tokens.try_reserve(prims.len()).map_err(|_| {
         TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", 0, requested))
     })?;
@@ -1702,6 +1754,70 @@ fn type_record(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn sat_float_array_values_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let prims = [Prim::Integer(1), Prim::Real(2.0)];
+        let mut cur = Cur {
+            prims: &prims,
+            pos: 0,
+            scale: 10.0,
+            failure: None,
+            resource: None,
+            ctx: Some(&ctx),
+        };
+        let mut output = Vec::new();
+        assert_eq!(cur.float_array(&mut output), None);
+        let error = cur.resource.expect("resource refusal");
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "SAT float array values");
+    }
+
+    #[test]
+    fn sat_fallback_typed_tokens_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let prims = [Prim::Integer(4)];
+        let error = super::type_record(&ctx, "unknown", &prims, 10.0).err().expect("resource refusal");
+        let super::TypedRecordFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected resource refusal")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "type SAT tokens");
+    }
+
+    fn assert_sat_frame_collection_limit(max_items: u64, operation: &str) {
+        let source = asm_stream("audit 1 #\n");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        let error = super::parse(&ctx, &source).err().expect("collection refusal");
+        let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, operation);
+    }
+
+    #[test]
+    fn sat_primitives_refuse_collection_limit() {
+        assert_sat_frame_collection_limit(0, "frame SAT primitive");
+    }
+
+    #[test]
+    fn sat_records_refuse_collection_limit() {
+        assert_sat_frame_collection_limit(2, "frame SAT record");
+    }
+
+    #[test]
     fn counted_float_array_refuses_an_unavailable_huge_count_without_allocating() {
         let prims = [Prim::Integer(i64::MAX)];
         let mut cur = Cur {
@@ -1709,6 +1825,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         let mut output = Vec::new();
         assert_eq!(cur.float_array(&mut output), None);
@@ -2282,6 +2400,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         assert_eq!(
             bs_curve_block(&mut cur, BsKind::Model, &mut Vec::new()),
@@ -2324,6 +2444,8 @@ mod tests {
             pos: 0,
             scale: 10.0,
             failure: None,
+            resource: None,
+            ctx: None,
         };
         assert_eq!(bs_surface_block(&mut cur, &mut Vec::new()), None);
         assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));

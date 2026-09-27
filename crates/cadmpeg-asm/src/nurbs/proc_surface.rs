@@ -717,7 +717,7 @@ fn g2_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["g2_blend_spl_sur", "g2blnsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -1763,14 +1763,14 @@ fn revision_loft_profile_data(
         } else {
             None
         };
-        let subdata = loft_subdata_form(cur, true)?;
+        let subdata = propagate_resource!(loft_subdata_form(ctx, cur, true)?);
         let direction = if cur.take_bool()? {
             let value = cur.take_vector3()?;
             Some(Vector3::new(value[0], value[1], value[2]))
         } else {
             None
         };
-        Some((asm_extension, subdata, direction))
+        Some(Ok((asm_extension, subdata, direction)))
     };
     match std::num::NonZeroI64::new(type_code) {
         Some(type_code) => {
@@ -1780,7 +1780,7 @@ fn revision_loft_profile_data(
             };
             let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let first_flag = cur.take_bool()?;
-            let (asm_extension, subdata, direction) = tail(cur)?;
+            let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
             Some(Ok(LoftProfileData::RevisionSupport {
                 endpoints,
                 type_code,
@@ -1796,7 +1796,7 @@ fn revision_loft_profile_data(
         None => {
             let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let secondary_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
-            let (asm_extension, subdata, direction) = tail(cur)?;
+            let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
             Some(Ok(LoftProfileData::RevisionPcurvePair {
                 endpoints,
                 pcurve,
@@ -1900,14 +1900,18 @@ fn revision_loft_section(
     Some(Ok(entries))
 }
 
-fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
-    loft_subdata_form(cur, false)
+fn loft_subdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
+    loft_subdata_form(ctx, cur, false)
 }
 
 fn loft_subdata_form(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     revision: bool,
-) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
@@ -1928,13 +1932,20 @@ fn loft_subdata_form(
         .checked_add(usize::from(revision && type_code != 211))?;
     let tokens_per_row = pairs_per_row.checked_mul(2)?;
     let rows_to_read = bounded_len(rows_to_read as u64, tokens_per_row, cur.rest().len())?;
-    let mut rows = Vec::new();
-    rows.try_reserve_exact(rows_to_read).ok()?;
+    let mut rows = propagate_resource!(crate::decode_alloc::counted_vec(
+        ctx,
+        rows_to_read,
+        "ASM loft subdata rows",
+    ));
     for _ in 0..rows_to_read {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns = Vec::new();
         if type_code != 211 {
-            columns.try_reserve_exact(columns_to_read).ok()?;
+            columns = propagate_resource!(crate::decode_alloc::counted_vec(
+                ctx,
+                columns_to_read,
+                "ASM loft subdata columns",
+            ));
             for _ in 0..columns_to_read {
                 columns.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -1954,12 +1965,12 @@ fn loft_subdata_form(
         let [row] = rows.as_slice() else {
             return None;
         };
-        Some(LoftSubdata::type_211(
+        Some(Ok(LoftSubdata::type_211(
             [row_count, column_count],
             row.parameters,
-        ))
+        )))
     } else {
-        LoftSubdata::table(type_code, rows)
+        LoftSubdata::table(type_code, rows).map(Ok)
     }
 }
 
@@ -1976,7 +1987,7 @@ fn loft_profile_data(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cu
     };
     let first_flag = cur.take_bool()?;
     let asm_extension = cur.take_long()?;
-    let subdata = loft_subdata(cur)?;
+    let subdata = propagate_resource!(loft_subdata(ctx, cur)?);
     let direction = if cur.take_bool()? {
         let value = cur.take_vector3()?;
         Some(Vector3::new(value[0], value[1], value[2]))
@@ -2121,7 +2132,7 @@ fn loft_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The modern name uses the revision-gated layout.
@@ -2145,12 +2156,34 @@ fn loft_spl_sur(
     while toks::marker_at(span, cur.pos()).is_none() {
         match cur.peek()? {
             Token::True | Token::False => {
-                bridge.push(LoftBridgeToken::Boolean(cur.take_bool()?));
+                propagate_resource!(crate::decode_alloc::push_vec(
+                    ctx, &mut bridge, LoftBridgeToken::Boolean(cur.take_bool()?),
+                    "ASM loft bridge token",
+                ));
             }
-            Token::Long(_) => bridge.push(LoftBridgeToken::Integer(cur.take_long()?)),
-            Token::Double(_) => bridge.push(LoftBridgeToken::Double(cur.take_f64()?)),
-            Token::Enum(_) => bridge.push(LoftBridgeToken::Enum(cur.take_enum()?)),
-            Token::Str(_) => bridge.push(LoftBridgeToken::Text(cur.take_str()?.to_string())),
+            Token::Long(_) => propagate_resource!(crate::decode_alloc::push_vec(
+                ctx, &mut bridge, LoftBridgeToken::Integer(cur.take_long()?),
+                "ASM loft bridge token",
+            )),
+            Token::Double(_) => propagate_resource!(crate::decode_alloc::push_vec(
+                ctx, &mut bridge, LoftBridgeToken::Double(cur.take_f64()?),
+                "ASM loft bridge token",
+            )),
+            Token::Enum(_) => propagate_resource!(crate::decode_alloc::push_vec(
+                ctx, &mut bridge, LoftBridgeToken::Enum(cur.take_enum()?),
+                "ASM loft bridge token",
+            )),
+            Token::Str(_) => {
+                let value = cur.take_str()?;
+                propagate_resource!(ctx.charge_retained(
+                    u64::try_from(value.len()).unwrap_or(u64::MAX),
+                    "ASM loft bridge text",
+                ));
+                propagate_resource!(crate::decode_alloc::push_vec(
+                    ctx, &mut bridge, LoftBridgeToken::Text(value.to_string()),
+                    "ASM loft bridge token",
+                ));
+            }
             _ => return None,
         }
     }
@@ -2353,7 +2386,7 @@ fn compound_loft_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    let (start, _) = toks::find_owned_subtype_marker(toks, &["cl_loft_spl_sur"])?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &["cl_loft_spl_sur"])?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -2449,7 +2482,7 @@ fn scaled_compound_loft_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["scaled_cloft_spl_sur", "sclclftsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let singularity = cur.take_enum()?;
@@ -2742,7 +2775,7 @@ fn skin_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["skin_spl_sur", "skinsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let surface_boolean = cur.take_enum()?;
@@ -2754,7 +2787,7 @@ fn skin_spl_sur(
     let layout = if cur.peek().is_some_and(Token::is_payload_ident) {
         let (curve, curve_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
         cur.set_pos(curve_end);
-        let subdata = loft_subdata(&mut cur)?;
+        let subdata = propagate_resource!(loft_subdata(ctx, &mut cur)?);
         let first_tail = cur.take_long()?;
         let (secondary_curve, secondary_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
         cur.set_pos(secondary_end);
@@ -2831,7 +2864,7 @@ fn skin_spl_sur(
 
 pub(super) fn law_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["law_spl_sur", "lawsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = if matches!(cur.peek(), Some(Token::Double(_))) {
@@ -2932,7 +2965,7 @@ pub(super) fn law_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &
 
 pub(super) fn sub_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sub_spl_sur", "subsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = [
@@ -2954,7 +2987,7 @@ fn net_spl_sur(
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["net_spl_sur", "netsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let sections = Box::new([
@@ -3008,7 +3041,7 @@ fn sweep_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sweep_spl_sur", "sweep_sur", "sweepsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3406,7 +3439,7 @@ fn taper_spl_sur(
         ("swepttapersur", 5),
     ];
     let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
-    let (start, name) = toks::find_owned_subtype_marker(toks, &candidates)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &candidates)?);
     let kind = names
         .iter()
         .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
@@ -3528,7 +3561,7 @@ fn comp_spl_sur(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    let (start, _) = toks::find_owned_subtype_marker(toks, &["comp_spl_sur"])?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &["comp_spl_sur"])?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
@@ -3655,7 +3688,7 @@ fn off_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["off_spl_sur", "offsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let modern = name == "off_spl_sur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -3746,7 +3779,7 @@ fn rot_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rot_spl_sur", "rotsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3839,7 +3872,7 @@ fn sum_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sum_spl_sur", "sumsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -3919,7 +3952,7 @@ fn sum_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 
 fn ruled_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rule_sur", "rulesur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (first, first_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
@@ -3941,7 +3974,7 @@ fn ruled_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) 
 
 fn exact_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["exact_spl_sur", "exactsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -4023,7 +4056,7 @@ fn t_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token], tabl
         Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
     }
 
-    let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &["t_spl_sur"])?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (layout, type_code);
@@ -4082,11 +4115,12 @@ fn t_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token], tabl
         return None;
     }
     cur.bump();
-    let mut subtransform = t_spline_subtransform(&mut cur)?;
+    let mut subtransform = propagate_resource!(t_spline_subtransform(ctx, &mut cur)?);
     if let EmbeddedTSplineSubtransform::Reference { index, resolved } = &mut subtransform {
-        *resolved = usize::try_from(*index)
+        *resolved = propagate_resource!(usize::try_from(*index)
             .ok()
-            .and_then(|index| resolve_t_spline_subtransform(index, table, &mut Vec::new()));
+            .and_then(|index| resolve_t_spline_subtransform(ctx, index, table, &mut Vec::new()))
+            .transpose());
     }
     if !matches!(cur.peek(), Some(Token::SubtypeClose)) {
         return None;
@@ -4239,7 +4273,7 @@ fn revision_deformable_mode3(
 fn defm_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -4421,11 +4455,14 @@ fn defm_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token]) -
     }
 }
 
-pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn helix_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let circular = name == "helix_spl_circ";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
@@ -4502,7 +4539,7 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             .ok()?,
         )
     };
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Helix(Box::new(
             cadmpeg_ir::geometry::HelixSurfaceConstruction::try_new(
                 angle_range,
@@ -4513,54 +4550,71 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             .ok()?,
         )),
         None,
-    ))
+    )))
 }
 
-fn t_spline_subtransform(cur: &mut Cur<'_>) -> Option<EmbeddedTSplineSubtransform> {
+fn t_spline_subtransform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+) -> Option<Result<EmbeddedTSplineSubtransform, cadmpeg_core::CodecError>> {
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
-            let program = cur.take_str()?.to_string();
+            let program_text = cur.take_str()?;
+            propagate_resource!(ctx.charge_retained(
+                u64::try_from(program_text.len()).unwrap_or(u64::MAX),
+                "ASM t spline program",
+            ));
+            let program = program_text.to_string();
             let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
                 Some(cur.take_bool()?)
             };
-            let values = cur.take_str()?.to_string();
-            Some(EmbeddedTSplineSubtransform::Inline {
+            let values_text = cur.take_str()?;
+            propagate_resource!(ctx.charge_retained(
+                u64::try_from(values_text.len()).unwrap_or(u64::MAX),
+                "ASM t spline values",
+            ));
+            let values = values_text.to_string();
+            Some(Ok(EmbeddedTSplineSubtransform::Inline {
                 program,
                 separator,
                 values,
-            })
+            }))
         }
-        "ref" => Some(EmbeddedTSplineSubtransform::Reference {
+        "ref" => Some(Ok(EmbeddedTSplineSubtransform::Reference {
             index: cur.take_long()?,
             resolved: None,
-        }),
+        })),
         _ => None,
     }
 }
 
 fn resolve_t_spline_subtransform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<cadmpeg_ir::geometry::InlineTSplineSubtransform> {
+) -> Option<Result<cadmpeg_ir::geometry::InlineTSplineSubtransform, cadmpeg_core::CodecError>> {
+    let _depth = propagate_resource!(ctx.enter_nested("resolve ASM t spline subtransform"));
     if seen.contains(&index) {
         return None;
     }
-    seen.push(index);
+    propagate_resource!(crate::decode_alloc::push_vec(
+        ctx, seen, index, "ASM t spline references",
+    ));
     let span = table.span(index)?.tokens();
     let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
-    let decoded = t_spline_subtransform(&mut Cur::at(span, start))?;
+    let decoded = propagate_resource!(t_spline_subtransform(ctx, &mut Cur::at(span, start))?);
     match decoded {
         EmbeddedTSplineSubtransform::Inline {
             program,
             separator,
             values,
         } => cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(program, separator, values)
-            .ok(),
+            .ok().map(Ok),
         EmbeddedTSplineSubtransform::Reference { index, .. } => {
-            resolve_t_spline_subtransform(usize::try_from(index).ok()?, table, seen)
+            resolve_t_spline_subtransform(ctx, usize::try_from(index).ok()?, table, seen)
         }
     }
 }
@@ -4580,8 +4634,9 @@ fn procedural_resolving_refs(
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
+    let _depth = propagate_resource!(ctx.enter_nested("resolve ASM procedural surface reference"));
     if let Some(decoded) = defm_spl_sur(ctx, toks)
-        .or_else(|| helix_spl_sur(toks).map(Ok))
+        .or_else(|| helix_spl_sur(ctx, toks))
         .or_else(|| t_spl_sur(ctx, toks, table))
         .or_else(|| exact_spl_sur(ctx, toks))
         .or_else(|| comp_spl_sur(ctx, toks))
@@ -4610,7 +4665,7 @@ fn procedural_resolving_refs(
     // Follow references for records whose own construction is absent. A record
     // with an undecoded construction keeps its native data; its references
     // belong to that construction's supports.
-    if toks::owned_subtype_defs(toks)?
+    if propagate_resource!(toks::owned_subtype_defs(ctx, toks)?)
         .iter()
         .any(|(_, name)| *name != "ref")
     {
@@ -4631,7 +4686,9 @@ fn procedural_resolving_refs(
         // the stream rather than skipping the reference and reading the one
         // behind it.
         let target = table.span(index)?.tokens();
-        seen.push(index);
+        propagate_resource!(crate::decode_alloc::push_vec(
+            ctx, seen, index, "ASM procedural surface references",
+        ));
         if let Some(decoded) = procedural_resolving_refs(ctx, target, table, seen) {
             return Some(decoded);
         }
@@ -4640,13 +4697,115 @@ fn procedural_resolving_refs(
 }
 
 #[cfg(test)]
+mod reference_allocation_tests {
+    use super::{procedural_surface_resolving_refs, resolve_t_spline_subtransform, t_spline_subtransform};
+    use crate::nurbs::toks::{Cur, SubtypeTable};
+    use crate::sab::{Record, Token};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn table() -> SubtypeTable {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let record = Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: vec![Token::SubtypeOpen, Token::Ident("t_spl_subtrans_object".into()), Token::SubtypeClose].into(),
+            offset: 0,
+            len: 0,
+        };
+        SubtypeTable::from_records(&ctx, &[record]).unwrap()
+    }
+
+    fn assert_refusal(error: CodecError, dimension: ResourceDimension, operation: &str) {
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+    }
+
+    #[test]
+    fn procedural_surface_reference_vector_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
+        let error = procedural_surface_resolving_refs(&ctx, &tokens, &table()).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::CollectionItems, "ASM procedural surface references");
+    }
+
+    #[test]
+    fn t_spline_reference_vector_refuses_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_t_spline_subtransform(&ctx, 0, &table(), &mut Vec::new()).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::CollectionItems, "ASM t spline references");
+    }
+
+    #[test]
+    fn t_spline_program_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Ident("t_spl_subtrans_object".into()), Token::Str("x".into()), Token::Str("y".into())];
+        let error = t_spline_subtransform(&ctx, &mut Cur::at(&tokens, 0)).unwrap().err().expect("resource refusal");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM t spline program");
+    }
+}
+
+#[cfg(test)]
 mod loft_count_tests {
     use super::loft_subdata_form;
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
 
+    fn one_row_one_column_tokens() -> [Token; 7] {
+        [
+            Token::Long(212), Token::Long(1), Token::Long(1),
+            Token::Double(0.0), Token::Double(1.0),
+            Token::Double(2.0), Token::Double(3.0),
+        ]
+    }
+
+    #[test]
+    fn loft_subdata_rows_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = one_row_one_column_tokens();
+        let error = loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap().unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM loft subdata rows");
+    }
+
+    #[test]
+    fn loft_subdata_columns_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = one_row_one_column_tokens();
+        let error = loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).unwrap().unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM loft subdata columns");
+    }
+
     #[test]
     fn huge_column_count_without_pairs_is_refused_before_reservation() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [
             Token::Long(212),
             Token::Long(1),
@@ -4654,7 +4813,7 @@ mod loft_count_tests {
             Token::Double(0.0),
             Token::Double(1.0),
         ];
-        assert!(loft_subdata_form(&mut Cur::at(&tokens, 0), false).is_none());
+        assert!(loft_subdata_form(&ctx, &mut Cur::at(&tokens, 0), false).is_none());
     }
 }
 

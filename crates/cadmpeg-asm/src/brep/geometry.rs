@@ -50,7 +50,10 @@ pub(in crate::brep) struct Carrier {
     doubles: Vec<f64>,
 }
 
-pub(super) fn collect_carrier(rec: &Record) -> Carrier {
+pub(super) fn collect_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Result<Carrier, cadmpeg_core::CodecError> {
     let mut c = Carrier {
         positions: Vec::new(),
         vectors: Vec::new(),
@@ -58,13 +61,19 @@ pub(super) fn collect_carrier(rec: &Record) -> Carrier {
     };
     for t in rec.tokens.iter() {
         match t {
-            Token::Position(p) => c.positions.push(*p),
-            Token::Vector3(v) => c.vectors.push(*v),
-            Token::Double(d) => c.doubles.push(*d),
+            Token::Position(p) => crate::decode_alloc::push_vec(
+                ctx, &mut c.positions, *p, "ASM carrier positions",
+            )?,
+            Token::Vector3(v) => crate::decode_alloc::push_vec(
+                ctx, &mut c.vectors, *v, "ASM carrier vectors",
+            )?,
+            Token::Double(d) => crate::decode_alloc::push_vec(
+                ctx, &mut c.doubles, *d, "ASM carrier doubles",
+            )?,
             _ => {}
         }
     }
-    c
+    Ok(c)
 }
 
 pub(super) fn scale_point(p: [f64; 3]) -> Point3 {
@@ -99,8 +108,18 @@ pub(super) fn is_analytic_curve(head: &str) -> bool {
 
 /// Decode an analytic surface carrier. Signed sphere and torus radii remain in
 /// the IR because they are part of the ASM carrier semantics.
-pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
-    let c = collect_carrier(rec);
+pub fn decode_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Option<Result<(SolvedSurfaceGeometry, bool), cadmpeg_core::CodecError>> {
+    let carrier = match collect_carrier(ctx, rec) {
+        Ok(carrier) => carrier,
+        Err(error) => return Some(Err(error)),
+    };
+    decode_surface_carrier(rec, &carrier).map(Ok)
+}
+
+fn decode_surface_carrier(rec: &Record, c: &Carrier) -> Option<(SolvedSurfaceGeometry, bool)> {
     let origin = *c.positions.first()?;
     match rec.head() {
         "plane" => Some((
@@ -383,8 +402,18 @@ pub(super) fn pcurve_ranges_on_domain(
 }
 
 /// Decode an analytic curve carrier.
-pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
-    let carrier = collect_carrier(rec);
+pub fn decode_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rec: &Record,
+) -> Option<Result<CurveGeometry, cadmpeg_core::CodecError>> {
+    let carrier = match collect_carrier(ctx, rec) {
+        Ok(carrier) => carrier,
+        Err(error) => return Some(Err(error)),
+    };
+    decode_curve_carrier(rec, &carrier).map(Ok)
+}
+
+fn decode_curve_carrier(rec: &Record, carrier: &Carrier) -> Option<CurveGeometry> {
     let base = *carrier.positions.first()?;
     match rec.head() {
         "straight" => Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1102,9 +1131,38 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
 
 #[cfg(test)]
 mod analytic_surface_tests {
-    use super::decode_surface;
+    use super::{collect_carrier, decode_surface};
     use crate::sab::{Record, Token};
     use std::sync::Arc;
+
+    fn assert_carrier_limit(token: Token, operation: &str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let record = surface_record("plane", vec![token]);
+        let error = collect_carrier(&ctx, &record).err().expect("resource refusal");
+        let CodecError::ResourceLimit(limit) = error else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, operation);
+    }
+
+    #[test]
+    fn carrier_positions_refuse_collection_limit() {
+        assert_carrier_limit(Token::Position([0.0; 3]), "ASM carrier positions");
+    }
+
+    #[test]
+    fn carrier_vectors_refuse_collection_limit() {
+        assert_carrier_limit(Token::Vector3([1.0, 0.0, 0.0]), "ASM carrier vectors");
+    }
+
+    #[test]
+    fn carrier_doubles_refuse_collection_limit() {
+        assert_carrier_limit(Token::Double(1.0), "ASM carrier doubles");
+    }
 
     fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
         Record {
@@ -1159,7 +1217,10 @@ mod analytic_surface_tests {
             sphere,
             torus,
         ] {
-            assert!(decode_surface(&record).is_none());
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(decode_surface(&ctx, &record).transpose().unwrap().is_none());
         }
     }
 }

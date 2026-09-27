@@ -13,6 +13,15 @@ use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2}
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::NonZeroReal;
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
     /// Tagged-integer payload offset for the curve degree.
@@ -265,7 +274,7 @@ pub fn explicit_pcurve_cache(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
-    let position = scope.owned_marker_positions().into_iter().next()?;
+    let position = propagate_resource!(scope.owned_marker_positions(ctx)).into_iter().next()?;
     pcurve_block(ctx, scope.tokens(), position)
 }
 
@@ -294,8 +303,8 @@ pub fn pcurve_fit_tolerance(
     scope: toks::SubtypeScope<'_>,
 ) -> Option<Result<f64, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    let (_, end) = match scope
-        .owned_marker_positions()
+    let (_, end) = match propagate_resource!(scope
+        .owned_marker_positions(ctx))
         .into_iter()
         .rev()
         .find_map(|pos| pcurve_block_with_end(ctx, tokens, pos))?

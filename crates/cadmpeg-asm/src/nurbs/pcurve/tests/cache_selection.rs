@@ -375,7 +375,7 @@ fn two_cache_bearing_owned_scopes_state_no_record_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        assert!(crate::nurbs::toks::cache_scope(&tokens).is_none());
+        assert!(crate::nurbs::toks::cache_scope(&resource_ctx, &tokens).transpose().unwrap().is_none());
         assert!(curve_cache(&resource_ctx, &tokens).is_none());
         assert!(procedural_curve_resolving_refs(&asm_decode_ctx,
             &tokens,
@@ -394,7 +394,7 @@ fn two_cache_bearing_owned_scopes_state_no_record_cache() {
 
         let surface_tokens =
             lex_test_span(&surfaces, int_width).expect("valid single-record byte fixture");
-        assert!(crate::nurbs::toks::cache_scope(&surface_tokens).is_none());
+        assert!(crate::nurbs::toks::cache_scope(&resource_ctx, &surface_tokens).transpose().unwrap().is_none());
         assert!(surface_cache(&resource_ctx, &surface_tokens).is_none());
     }
 }
@@ -418,7 +418,7 @@ fn a_construction_with_no_cache_bearing_owned_scope_states_no_record_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        assert!(crate::nurbs::toks::cache_scope(&tokens).is_none());
+        assert!(crate::nurbs::toks::cache_scope(&resource_ctx, &tokens).transpose().unwrap().is_none());
         assert!(curve_cache(&resource_ctx, &tokens).is_none());
         assert!(surface_cache(&resource_ctx, &tokens).is_none());
     }
@@ -437,7 +437,7 @@ fn a_record_with_no_construction_carries_its_cache_in_its_own_stream() {
         let bytes = curve_block(int_width);
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
-        assert_eq!(crate::nurbs::toks::cache_scope(&tokens), Some(&tokens[..]));
+        assert_eq!(crate::nurbs::toks::cache_scope(&resource_ctx, &tokens).transpose().unwrap(), Some(&tokens[..]));
         let curve = curve_cache(&resource_ctx, &tokens)
             .transpose().expect("resource allocation").unwrap_or_else(|| panic!("record-stream curve cache at width {int_width}"));
         assert_eq!(curve.degree(), 1);
@@ -565,7 +565,7 @@ fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
                 len: 0,
             },
         ];
-        let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
+        let table = crate::nurbs::toks::SubtypeTable::from_records(&resource_ctx, &records).unwrap();
 
         // Entry zero is the cache-bearing definition, and the record states
         // `{ref 99}` before `{ref 0}`.

@@ -102,6 +102,9 @@ fn extrusion_definition_decodes_without_a_solved_surface_cache() {
 
 #[test]
 fn helix_layout_walks_optional_range_flags_at_both_widths() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_f64(&mut bytes, 99.0);
@@ -123,9 +126,10 @@ fn helix_layout_walks_optional_range_flags_at_both_widths() {
         bytes.push(0x10);
 
         assert!(crate::nurbs::proc_curve::helix_definition(
+            &ctx,
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture")
         )
-        .is_some());
+        .transpose().unwrap().is_some());
         let layout = helix_patch_layout(&bytes, int_width)
             .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
         let range = layout
@@ -157,6 +161,9 @@ fn helix_layout_walks_optional_range_flags_at_both_widths() {
 
 #[test]
 fn decodes_current_cacheless_helix_record() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let hex = "0e08696e7463757276650d0563757276650cffffffff04ffffffff0cffffffff0b0f0d0d68656c69785f696e745f637572043c5a00000a067701e4b803dd04400a0605738860695607401338aee5545e6a7e3cbfab714dc0c45b3c13b8e608728f9dbf14930e205da081e83ffbd1d341709ad73f000000000000000014fbd1d341709ad73f930e205da081e8bf00000000000000001400000000000000000000000000000000cdccccccccccf43f0600000000000000001400000000000000000000000000000000000000000000f03f0d0c6e756c6c5f737572666163650d0c6e756c6c5f737572666163650d066e756c6c62730d066e756c6c6273100b0b11";
     let bytes = hex
         .as_bytes()
@@ -168,8 +175,8 @@ fn decodes_current_cacheless_helix_record() {
         .expect("valid complete helix record")
         .try_into()
         .expect("one helix record");
-    let definition = crate::nurbs::proc_curve::helix_definition(&record.tokens)
-        .expect("current cache-less helix definition");
+    let definition = crate::nurbs::proc_curve::helix_definition(&ctx, &record.tokens)
+        .transpose().unwrap().expect("current cache-less helix definition");
     let crate::nurbs::proc_curve::HelixDefinition {
         angle_range,
         pitch,
@@ -185,6 +192,9 @@ fn decodes_current_cacheless_helix_record() {
 
 #[test]
 fn decodes_current_cacheless_helix_surface_at_both_widths() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "helix_spl_line");
@@ -206,8 +216,10 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
         bytes.push(0x10);
 
         let decoded = crate::nurbs::proc_surface::helix_spl_sur(
+            &ctx,
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose().unwrap()
         .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Helix(construction) = definition else {
