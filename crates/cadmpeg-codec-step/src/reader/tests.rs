@@ -1465,3 +1465,149 @@ fn dialect_match_copy_refuses_retained_limit() {
     });
     assert!(refused, "dialect declaration copy must charge retained text");
 }
+
+#[test]
+fn owned_pcurve_identity_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"pcurve", &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::insert_retained_identity(
+        &mut BTreeSet::new(),
+        "step:data:pcurve#1",
+        &ctx,
+    )
+    .expect_err("owned ID needs one set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_owned_pcurve_ids"));
+}
+
+#[test]
+fn owned_pcurve_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"pcurve", &arena, &policy)
+        .expect("root fits retained policy");
+    let error = super::insert_retained_identity(
+        &mut BTreeSet::new(),
+        "step:data:pcurve#1",
+        &ctx,
+    )
+    .expect_err("owned identity text exceeds three bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "step_owned_pcurve_identity"));
+}
+
+#[test]
+fn unowned_pcurve_set_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PCURVE('',#2,#3);#2=ITEM();#3=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::retain_unowned_carriers(
+        &exchange,
+        &mut cadmpeg_ir::CadIr::empty(),
+        &mut HashSet::new(),
+        &mut Vec::new(),
+        &ctx,
+    )
+    .expect_err("unowned pcurve needs one set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_unowned_pcurves"));
+}
+
+fn point_ir(with_source: bool) -> cadmpeg_ir::CadIr {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let identity = cadmpeg_ir::ids::Identity::new("step:data:point#1")
+        .expect("valid point identity");
+    let point = cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::from(identity),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point"),
+        with_source.then(|| super::step_source_association(1, None)),
+    );
+    ir.model.points.push(point);
+    ir
+}
+
+#[test]
+fn unowned_direct_carriers_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::retain_unowned_carriers(
+        &exchange, &mut point_ir(false), &mut HashSet::new(), &mut Vec::new(), &ctx,
+    )
+    .expect_err("free point needs one carrier set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_unowned_direct_carriers"));
+}
+
+#[test]
+fn protected_roots_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=PCURVE('',#3,#4);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::retain_unowned_carriers(
+        &exchange, &mut point_ir(true), &mut HashSet::new(), &mut Vec::new(), &ctx,
+    )
+    .expect_err("protected root needs an additional set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_unowned_protected_roots"));
+}
+
+#[test]
+fn protected_root_copy_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=PCURVE('',#3,#4);#3=ITEM();#4=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    let error = super::retain_unowned_carriers(
+        &exchange, &mut point_ir(true), &mut HashSet::new(), &mut Vec::new(), &ctx,
+    )
+    .expect_err("protected root copy needs an additional set item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "step_unowned_protected_root_copy"));
+}
