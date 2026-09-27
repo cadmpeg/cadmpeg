@@ -913,6 +913,114 @@ fn counted_parameter_slots_refuse_collection_limit() {
     ));
 }
 
+fn counted_slot_error(
+    body: &[u8],
+    count: usize,
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy)
+        .expect("counted parameter input fits the root limit");
+    crate::surface::counted_parameter_scalar_slots(
+        &ctx,
+        body,
+        count,
+        &scalar::ScalarCache::default(),
+    )
+    .expect_err("the selected parser allocation exceeds its limit")
+}
+
+#[test]
+fn counted_parameter_initial_tree_entry_refuses_before_insert() {
+    let body = [0xe4];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 1, &scalar::ScalarCache::default()),
+        Some(vec![(Some(1.0), vec![0xe4])])
+    );
+    let error = counted_slot_error(&body, 1, 2, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter initial state"
+    ));
+}
+
+#[test]
+fn counted_parameter_token_bytes_refuse_before_copy() {
+    let error = counted_slot_error(&[0xe4], 1, u64::MAX, 0);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter token bytes"
+    ));
+}
+
+#[test]
+fn counted_parameter_suffix_slot_refuses_before_growth() {
+    let error = counted_slot_error(&[0xe4], 1, 3, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter suffix slot"
+    ));
+}
+
+#[test]
+fn counted_parameter_accumulated_slots_refuse_before_growth() {
+    let error = counted_slot_error(&[0xe4], 1, 4, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter accumulated slots"
+    ));
+}
+
+#[test]
+fn counted_parameter_next_tree_entry_refuses_before_insert() {
+    let error = counted_slot_error(&[0xe4], 1, 5, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter state entries"
+    ));
+}
+
+#[test]
+fn counted_parameter_zero_run_slots_refuse_before_growth() {
+    let body = [0xe5];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
+        Some(vec![(Some(0.0), vec![0xe5]), (Some(0.0), vec![])])
+    );
+    let error = counted_slot_error(&body, 2, 4, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter zero-run slots"
+    ));
+}
+
+#[test]
+fn counted_parameter_branch_slots_refuse_before_clone() {
+    let body = [0xe4, 0x18];
+    assert_eq!(
+        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
+        Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])])
+    );
+    let error = counted_slot_error(&body, 2, 7, u64::MAX);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo counted parameter branch slots"
+    ));
+}
+
 #[test]
 fn counted_parameters_use_the_exact_extent_to_select_cache_or_zero() {
     let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
