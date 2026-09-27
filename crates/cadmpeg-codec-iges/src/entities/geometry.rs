@@ -2404,18 +2404,16 @@ pub(crate) fn project_geometry(
     super::annotation::project(ir, directory, parameters, global, Some(ctx))?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
-    let analytic_surface_points = analytic_surface_locations
-        .iter()
-        .map(|sequence| crate::ids::point(&crate::ids::Stem::directory(*sequence)))
-        .collect::<BTreeSet<_>>();
-    let vertex_points = ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.clone())
-        .collect::<BTreeSet<_>>();
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.model.vertices {
+        insert_optional_btree_set(
+            Some(ctx), &mut vertex_points, &vertex.point,
+            "iges analytic-surface vertex point index",
+        )?;
+    }
     ir.model.points.retain(|point| {
-        !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
+        !sequences.point(&point.id).is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
     });
     Ok(Projection {
         placement_rejections,
