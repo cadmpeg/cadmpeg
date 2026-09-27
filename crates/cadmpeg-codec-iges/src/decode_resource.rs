@@ -32,6 +32,23 @@ pub(crate) fn format_retained(
     Ok(text)
 }
 
+pub(crate) fn copy_optional_identity<T: TryFrom<String>>(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let text = match ctx {
+        Some(ctx) => format_retained(ctx, format_args!("{value}"), operation)?,
+        None => {
+            let mut text = String::new();
+            text.try_reserve_exact(value.len()).map_err(|_| refuse_local_limit(operation, u64_from_index(value.len()), u64_from_index(value.len())))?;
+            text.push_str(value);
+            text
+        }
+    };
+    T::try_from(text).map_err(|_| CodecError::Malformed("IGES identity copy is invalid".into()))
+}
+
 pub(crate) fn push_formatted_note(
     ctx: &DecodeContext<'_>,
     notes: &mut Vec<String>,
@@ -239,7 +256,7 @@ pub(crate) fn collect_optional_vec<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_optional_vec, format_retained, lossy_retained};
+    use super::{collect_optional_vec, copy_optional_identity, format_retained, lossy_retained};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -295,6 +312,27 @@ mod tests {
                 .expect("valid test fixture"),
             "item7"
         );
+    }
+
+    #[test]
+    fn copied_identity_refuses_retained_bytes_before_allocation() {
+        let source = "test:model:curve#1";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(source.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refused = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(Some(&ctx), source, "iges identity copy test");
+        assert!(matches!(refused,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "iges identity copy test"
+                    && limit.used == 0
+                    && limit.additional == u64::try_from(source.len()).unwrap()
+        ));
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let copied = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(Some(&ctx), source, "iges identity copy test").unwrap();
+        assert_eq!(copied.as_str(), source);
     }
 
     #[test]

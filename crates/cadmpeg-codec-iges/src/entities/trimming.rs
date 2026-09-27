@@ -2064,6 +2064,10 @@ pub(super) fn project(
                 let mut pcurves = Some(reserve_vec(ctx, segment.pcurves.len(), "iges trimming segment pcurves")?);
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
+                    if composite_index.is_none() {
+                        composite_index = Some(CompositeIndex::from_ir(ir, Some(ctx))?);
+                    }
+                    let index = composite_index.as_ref().ok_or_else(|| CodecError::Malformed("IGES trimming composite index is absent".into()))?;
                     match pcurve_geometry(
                         ir,
                         *sequence,
@@ -2074,7 +2078,7 @@ pub(super) fn project(
                         },
                         Some(carrier_agreement_tolerance),
                         Some(ctx),
-                        Some(composite_index.get_or_insert_with(|| CompositeIndex::from_ir(ir))),
+                        Some(index),
                     ) {
                         Ok(Some(resolved)) => {
                             if let Some(pcurves) = pcurves.as_mut() {

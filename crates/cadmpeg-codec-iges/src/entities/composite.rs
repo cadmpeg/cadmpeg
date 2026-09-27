@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -226,39 +226,51 @@ pub(super) struct CompositeIndex {
 }
 
 impl CompositeIndex {
-    pub(super) fn from_ir(ir: &CadIr) -> Self {
+    pub(super) fn from_ir(ir: &CadIr, ctx: Option<&DecodeContext<'_>>) -> Result<Self, CodecError> {
         let mut curve_positions = BTreeMap::new();
         for (position, curve) in ir.model.curves.iter().enumerate() {
-            curve_positions.entry(curve.id.clone()).or_insert(position);
+            if !curve_positions.contains_key(&curve.id) {
+                let key = crate::decode_resource::copy_optional_identity(ctx, curve.id.as_str(), "iges composite curve index keys")?;
+                crate::decode_resource::insert_optional_btree_map(ctx, &mut curve_positions, key, position, "iges composite curve index nodes")?;
+            }
         }
         let mut edges = BTreeMap::new();
         for edge in &ir.model.edges {
             if let Some(curve) = edge.curve() {
-                edges
-                    .entry(curve.clone())
-                    .or_insert_with(Vec::new)
-                    .push(CompositeEdge {
-                        start: edge.start.clone(),
-                        end: edge.end.clone(),
-                        param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
-                    });
+                if !edges.contains_key(curve) {
+                    let key = crate::decode_resource::copy_optional_identity(ctx, curve.as_str(), "iges composite edge index keys")?;
+                    crate::decode_resource::insert_optional_btree_map(ctx, &mut edges, key, Vec::new(), "iges composite edge index nodes")?;
+                }
+                let indexed = edges.get_mut(curve).ok_or_else(|| CodecError::Malformed("IGES composite edge index is absent".into()))?;
+                crate::decode_resource::reserve_optional_vec_growth(ctx, indexed, 1, "iges composite indexed edges")?;
+                indexed.push(CompositeEdge {
+                    start: crate::decode_resource::copy_optional_identity(ctx, edge.start.as_str(), "iges composite indexed start ids")?,
+                    end: crate::decode_resource::copy_optional_identity(ctx, edge.end.as_str(), "iges composite indexed end ids")?,
+                    param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+                });
             }
         }
-        let mut points = BTreeMap::new();
+        let mut points = BTreeMap::<PointId, FinitePoint3>::new();
         for point in &ir.model.points {
-            points.entry(point.id.clone()).or_insert(point.position());
+            if !points.contains_key(&point.id) {
+                let key = crate::decode_resource::copy_optional_identity(ctx, point.id.as_str(), "iges composite point index keys")?;
+                crate::decode_resource::insert_optional_btree_map(ctx, &mut points, key, point.position(), "iges composite point index nodes")?;
+            }
         }
         let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
         for vertex in &ir.model.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
-                vertex_points.entry(vertex.id.clone()).or_insert(point);
+                if !vertex_points.contains_key(&vertex.id) {
+                    let key = crate::decode_resource::copy_optional_identity(ctx, vertex.id.as_str(), "iges composite vertex index keys")?;
+                    crate::decode_resource::insert_optional_btree_map(ctx, &mut vertex_points, key, point, "iges composite vertex index nodes")?;
+                }
             }
         }
-        Self {
+        Ok(Self {
             curve_positions,
             edges,
             vertex_points,
-        }
+        })
     }
 
     pub(super) fn curve_by_id<'a>(&self, ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a Curve> {
@@ -273,12 +285,21 @@ impl CompositeIndex {
         curve_index: usize,
         edge: CompositeEdge,
         endpoints: [(VertexId, FinitePoint3); 2],
-    ) {
-        self.curve_positions.insert(curve_id.clone(), curve_index);
-        self.edges.entry(curve_id).or_default().push(edge);
-        for (vertex, point) in endpoints {
-            self.vertex_points.insert(vertex, point);
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<(), CodecError> {
+        let position_key = crate::decode_resource::copy_optional_identity(ctx, curve_id.as_str(), "iges composite added curve index key")?;
+        crate::decode_resource::insert_optional_btree_map(ctx, &mut self.curve_positions, position_key, curve_index, "iges composite added curve index node")?;
+        if !self.edges.contains_key(&curve_id) {
+            let edge_key = crate::decode_resource::copy_optional_identity(ctx, curve_id.as_str(), "iges composite added edge index key")?;
+            crate::decode_resource::insert_optional_btree_map(ctx, &mut self.edges, edge_key, Vec::new(), "iges composite added edge index node")?;
         }
+        let indexed = self.edges.get_mut(&curve_id).ok_or_else(|| CodecError::Malformed("IGES composite added edge index is absent".into()))?;
+        crate::decode_resource::reserve_optional_vec_growth(ctx, indexed, 1, "iges composite added edge slots")?;
+        indexed.push(edge);
+        for (vertex, point) in endpoints {
+            crate::decode_resource::insert_optional_btree_map(ctx, &mut self.vertex_points, vertex, point, "iges composite added vertex index nodes")?;
+        }
+        Ok(())
     }
 }
 
@@ -1981,7 +2002,8 @@ fn project_native_composite(
             param_range: None,
         },
         [(start_vertex, start), (end_vertex, end)],
-    );
+        ctx,
+    )?;
     Ok(Some(edge_id))
 }
 
@@ -2102,7 +2124,7 @@ fn project_with_type_130_policy(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
-    let mut index = CompositeIndex::from_ir(ir);
+    let mut index = CompositeIndex::from_ir(ir, ctx)?;
     let join_tolerance = global.minimum_resolution_mm();
 
     for entry in directory
@@ -2419,7 +2441,8 @@ fn project_with_type_130_policy(
                 param_range: Some([0.0, cursor]),
             },
             [(start_vertex, start), (end_vertex, end)],
-        );
+            ctx,
+        )?;
         let mut boundaries = vec![0.0];
         let mut components = Vec::new();
         for segment in segments.into_iter() {
