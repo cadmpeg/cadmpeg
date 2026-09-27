@@ -129,23 +129,31 @@ impl CodecBackend for NxCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn validate_native(
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         ir: &cadmpeg_ir::CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Ok(Vec::new());
         };
-        let admitted = namespace
-            .admit::<native::display_jt::admission::DisplayJtGraph>()
-            .and_then(|_| namespace.admit::<native::structure::occurrences::FastLoadOccurrences>());
+        let admitted = native::display_jt::admission::DisplayJtGraph::from_namespace_with_context(
+            ctx, namespace,
+        )
+        .and_then(|_| namespace.admit::<native::structure::occurrences::FastLoadOccurrences>());
         Ok(match admitted {
             Ok(_) => Vec::new(),
-            Err(error) => vec![cadmpeg_ir::report::check::Finding {
-                check: cadmpeg_ir::report::check::Check::NativeLinks,
-                severity: cadmpeg_ir::report::Severity::Error,
-                message: error.to_string(),
-                entity: None,
-            }],
+            Err(error) => {
+                let message = error.to_string();
+                let codec_error = CodecError::from(error);
+                if matches!(codec_error, CodecError::ResourceLimit(_)) {
+                    return Err(codec_error);
+                }
+                vec![cadmpeg_ir::report::check::Finding {
+                    check: cadmpeg_ir::report::check::Check::NativeLinks,
+                    severity: cadmpeg_ir::report::Severity::Error,
+                    message,
+                    entity: None,
+                }]
+            }
         })
     }
 

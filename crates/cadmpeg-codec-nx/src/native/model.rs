@@ -1259,14 +1259,16 @@ impl NativeModel {
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
-                graph: DisplayJtGraphWire {
-                    documents: display_jt_documents,
-                    segments: display_jt_segments,
-                    shape_lod_elements: display_jt_shape_lod_elements,
-                    compressed_elements: display_jt_compressed_elements,
-                    compressed_element_sequences: display_jt_compressed_element_sequences,
-                }
-                .try_into()?,
+                graph: DisplayJtGraph::from_wire_with_context(
+                    ctx,
+                    DisplayJtGraphWire {
+                        documents: display_jt_documents,
+                        segments: display_jt_segments,
+                        shape_lod_elements: display_jt_shape_lod_elements,
+                        compressed_elements: display_jt_compressed_elements,
+                        compressed_element_sequences: display_jt_compressed_element_sequences,
+                    },
+                )?,
                 display_jt_indices,
                 display_jt_tri_strip_lod_headers,
                 display_jt_initial_face_degree_symbols,
