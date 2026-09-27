@@ -229,12 +229,20 @@ impl StandardTopology {
         let Some(edge_vertices) = self.edge_vertices(ctx)? else {
             return Ok(None);
         };
-        let all_points: HashSet<usize> = (0..self.vertex_points.len()).collect();
         let mut domains = ctx.alloc_filled(
             self.logical_vertex_count,
-            all_points,
+            HashSet::new(),
             "catia standard vertex point domains",
         )?;
+        for domain in &mut domains {
+            crate::resource::reserve_set(
+                ctx,
+                domain,
+                self.vertex_points.len(),
+                "catia standard vertex point domain entries",
+            )?;
+            domain.extend(0..self.vertex_points.len());
+        }
         for (edge, pair) in edge_vertices.into_iter().zip(edge_point_pairs) {
             if pair[0] >= self.vertex_points.len() || pair[1] >= self.vertex_points.len() {
                 return Ok(None);

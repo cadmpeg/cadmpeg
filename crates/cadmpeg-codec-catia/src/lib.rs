@@ -63,6 +63,7 @@ mod native;
 mod nurbs;
 mod object_graph;
 mod pmi;
+mod resource;
 mod sketch;
 mod solve;
 mod unique_index;

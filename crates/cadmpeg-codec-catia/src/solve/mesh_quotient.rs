@@ -692,7 +692,12 @@ impl MeshCoordinateRootDomains {
             ctx.alloc_filled(point_count, Vec::new(), "catia_quotient_roots_by_point")?;
         for (root, domain) in domains.iter().enumerate() {
             for &point in domain {
-                roots_by_point[point].push(root);
+                crate::resource::push(
+                    ctx,
+                    &mut roots_by_point[point],
+                    root,
+                    "catia_quotient_roots_by_point_entries",
+                )?;
             }
         }
         if roots_by_point.iter().any(Vec::is_empty) {
@@ -735,7 +740,12 @@ impl MeshCoordinateRootDomains {
                 ctx.alloc_filled(self.point_count, Vec::new(), "catia_quotient_refine_roots")?;
             for (root, domain) in domains.iter().enumerate() {
                 for &point in domain {
-                    roots_by_point[point].push(root);
+                    crate::resource::push(
+                        ctx,
+                        &mut roots_by_point[point],
+                        root,
+                        "catia_quotient_refine_root_entries",
+                    )?;
                 }
             }
             let repaired_matching = repair_distinct_domain_matching_with_budget(
@@ -10812,6 +10822,32 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
 }
 
 #[test]
+fn coordinate_coverage_matching_charges_inner_root_entries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let domains = [vec![0]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(
+        MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None)
+            .expect("service resource budget")
+            .is_none()
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let result = MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_quotient_roots_by_point_entries"));
+}
+
+#[test]
 fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -10846,6 +10882,39 @@ fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
     assert!(refused.contains("catia_quotient_root_edges"));
     assert!(refused.contains("catia_quotient_roots_by_point"));
     assert!(refused.contains("catia_quotient_refine_roots"));
+}
+
+#[test]
+fn local_coordinate_refinement_charges_inner_root_entries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let domains = MeshCoordinateRootDomains {
+        domains: vec![vec![0, 1], vec![1, 2], vec![0, 2]],
+        edges: Arc::new(vec![[0, 1], [1, 2]]),
+        root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
+        coverage_matching: Vec::new(),
+        point_count: 3,
+    };
+    let candidates = [vec![[1, 2]], vec![[1, 2], [0, 2]]];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert!(domains
+        .refine_candidates(&ctx, &candidates, None)
+        .expect("service resource budget")
+        .is_none());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let result = domains.refine_candidates(&ctx, &candidates, None);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_quotient_refine_root_entries"));
 }
 
 #[test]
