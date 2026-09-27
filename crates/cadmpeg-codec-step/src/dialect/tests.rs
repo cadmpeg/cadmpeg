@@ -136,6 +136,23 @@ fn schema_identifier_list_refuses_retained_limit() {
     ));
 }
 
+#[test]
+fn unverified_dialect_loss_text_refuses_retained_limit() {
+    let exchange = exchange(&["UNKNOWN_SCHEMA"], "2;1");
+    let matched = StepDialect::classify(&exchange, None)
+        .expect("classification fits local storage");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = limited_context(&arena, &policy);
+    assert!(matches!(
+        dialect_loss(&matched, Some(&ctx)),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_dialect_unverified_loss_text"
+    ));
+}
+
 /// One matrix row: a declaration and the row its discriminants match.
 struct Case {
     /// The `FILE_SCHEMA` identifiers, verbatim as written on the card.
@@ -296,7 +313,9 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for case in CASES {
         let matched = StepDialect::classify(&exchange(case.identifiers, "2;1"), None)
             .expect("classification fits local storage");
-        let charged = dialect_loss(&matched).is_some_and(|note| note.code == expected);
+        let charged = dialect_loss(&matched, None)
+            .expect("loss formatting fits local storage")
+            .is_some_and(|note| note.code == expected);
         let admitted = matched.admission() == &Admission::Admitted;
 
         assert_eq!(
@@ -340,7 +359,9 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
 
     assert_eq!(matched.dialect().as_str(), "step:ap242");
     assert_eq!(matched.admission(), &Admission::Admitted);
-    assert!(dialect_loss(&matched).is_none());
+    assert!(dialect_loss(&matched, None)
+        .expect("loss formatting fits local storage")
+        .is_none());
     assert!(!matched.declared().contains_key(DECLARED_LONG_FORM_ARCS));
 }
 
