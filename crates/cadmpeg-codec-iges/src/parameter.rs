@@ -2,10 +2,11 @@
 //! Parameter Data assembly and count-driven token spans.
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
+use crate::decode_resource::reserve_optional_vec_growth;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -2786,6 +2787,7 @@ fn hollerith(
     card_boundaries: &[usize],
     start: usize,
     global_table: GlobalTable,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
@@ -2833,7 +2835,7 @@ fn hollerith(
     }
     Ok(Some((
         Token {
-            value: TokenValue::String(payload.to_vec()),
+            value: TokenValue::String(copy_token_bytes(payload, ctx)?),
             span: start..end,
         },
         end,
@@ -3061,9 +3063,8 @@ fn tokenize_macro(
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let data = macro_parameter_data(bytes, parameter_delimiter, record_delimiter)
         .map_err(|(defect, offset)| TokenizeFailure::Defect(defect, offset))?;
-    let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
     let mut tokens = Vec::new();
-    charge(ctx)?;
+    charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
     tokens.push(Token {
         value: TokenValue::Integer(306),
         span: data.entity_type_span,
@@ -3074,16 +3075,16 @@ fn tokenize_macro(
         .map(|statement| data.header_payload_start..statement.end)
         .filter(|span| span.start < span.end)
     {
-        charge(ctx)?;
+        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            value: TokenValue::String(copy_token_bytes(&bytes[span.clone()], ctx)?),
             span,
         });
     }
     for span in data.statement_spans.iter().skip(1) {
-        charge(ctx)?;
+        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
         tokens.push(Token {
-            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            value: TokenValue::String(copy_token_bytes(&bytes[span.clone()], ctx)?),
             span: span.clone(),
         });
     }
@@ -3186,6 +3187,7 @@ fn numeric_with_limits(
     bytes: &[u8],
     span: Range<usize>,
     limits: NumericLimits,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Token, TokenizeFailure> {
     let start = span.start;
     let raw = &bytes[span.clone()];
@@ -3220,7 +3222,23 @@ fn numeric_with_limits(
                 start,
             ));
         }
-        let normalized = text.replace(['D', 'd'], "E");
+        let _reservation = ctx
+            .map(|ctx| ctx.reserve_scoped(u64_from_index(text.len()), "iges numeric token text"))
+            .transpose()
+            .map_err(TokenizeFailure::Refusal)?;
+        let mut normalized = String::new();
+        normalized.try_reserve_exact(text.len()).map_err(|_| {
+            TokenizeFailure::Refusal(refuse_local_limit(
+                "iges numeric token text",
+                u64_from_index(text.len()),
+                u64_from_index(text.len()),
+            ))
+        })?;
+        normalized.extend(text.bytes().map(|byte| char::from(if matches!(byte, b'D' | b'd') {
+            b'E'
+        } else {
+            byte
+        })));
         TokenValue::Real(
             normalized
                 .parse::<f64>()
@@ -3253,7 +3271,6 @@ fn tokenize_with_limits(
     limits: NumericLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -3264,7 +3281,7 @@ fn tokenize_with_limits(
             return Ok((tokens, cursor + 1));
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            charge(ctx)?;
+            charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
             tokens.push(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
@@ -3273,7 +3290,7 @@ fn tokenize_with_limits(
             continue;
         }
         let (token, end) = if let Some(value) =
-            hollerith(bytes, card_boundaries, cursor, global_table)?
+            hollerith(bytes, card_boundaries, cursor, global_table, ctx)?
         {
             value
         } else {
@@ -3309,9 +3326,9 @@ fn tokenize_with_limits(
                     first_value,
                 ));
             }
-            (numeric_with_limits(bytes, span, limits)?, end)
+            (numeric_with_limits(bytes, span, limits, ctx)?, end)
         };
-        charge(ctx)?;
+        charge_token(ctx, &mut tokens).map_err(TokenizeFailure::Refusal)?;
         tokens.push(token);
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
@@ -3791,10 +3808,31 @@ pub(crate) fn assemble_with_context(
     })
 }
 
-fn charge_token(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.charge_collection_items(1, "iges_parameter_tokens")
-    })
+fn charge_token(ctx: Option<&DecodeContext<'_>>, tokens: &mut Vec<Token>) -> Result<(), CodecError> {
+    reserve_optional_vec_growth(ctx, tokens, 1, "iges_parameter_tokens")
+}
+
+fn copy_token_bytes(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<u8>, TokenizeFailure> {
+    match ctx {
+        Some(ctx) => ctx
+            .copy_retained(bytes, "iges parameter string token")
+            .map_err(TokenizeFailure::Refusal),
+        None => {
+            let mut copy = Vec::new();
+            copy.try_reserve_exact(bytes.len()).map_err(|_| {
+                TokenizeFailure::Refusal(refuse_local_limit(
+                    "iges parameter string token",
+                    u64_from_index(bytes.len()),
+                    u64_from_index(bytes.len()),
+                ))
+            })?;
+            copy.extend_from_slice(bytes);
+            Ok(copy)
+        }
+    }
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {

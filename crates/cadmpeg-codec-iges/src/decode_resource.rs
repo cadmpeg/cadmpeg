@@ -38,6 +38,20 @@ pub(crate) fn reserve_vec_growth<T>(
         .map_err(|_| refuse_local_limit(operation, requested, requested))
 }
 
+pub(crate) fn reserve_optional_vec_growth<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    match ctx {
+        Some(ctx) => reserve_vec_growth(ctx, values, additional, operation),
+        None => values.try_reserve(additional).map_err(|_| {
+            refuse_local_limit(operation, u64_from_index(additional), u64_from_index(additional))
+        }),
+    }
+}
+
 pub(crate) fn collect_optional_vec<T>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = Option<T>>,
