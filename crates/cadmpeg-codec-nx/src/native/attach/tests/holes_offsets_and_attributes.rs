@@ -376,6 +376,14 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
+    let default_arena = cadmpeg_core::decode::DecodeArena::new();
+    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (default_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &default_arena,
+        &default_policy,
+    )
+    .unwrap();
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {
         id: "template-counterbore".into(),
@@ -596,7 +604,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         &cylinders[1],
         0,
     ));
-    assert!(counterbore_cylinders(None, &ir, &body_faces)
+    assert!(counterbore_cylinders(&default_ctx, &ir, &body_faces)
         .unwrap()
         .is_some());
     for admitted_items in [1, 5] {
@@ -605,7 +613,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         policy.limits.max_collection_items = admitted_items;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = counterbore_body_projection(Some(&ctx), &ir, &operations, &outputs)
+        let error = counterbore_body_projection(&ctx, &ir, &operations, &outputs)
             .err()
             .expect("counterbore candidate and assignment allocations exceed item limit");
         assert!(matches!(
@@ -614,7 +622,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
         ));
     }
-    let projection = counterbore_body_projection(None, &ir, &operations, &outputs)
+    let projection = counterbore_body_projection(&default_ctx, &ir, &operations, &outputs)
         .unwrap()
         .expect("coaxial counterbore witness");
     assert_eq!(projection.outputs, outputs);
@@ -632,13 +640,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
             },
         )])
     );
-    let inferred = counterbore_body_projection(None, &ir, &operations, &BTreeMap::new())
+    let inferred = counterbore_body_projection(&default_ctx, &ir, &operations, &BTreeMap::new())
         .unwrap()
         .expect("unique connected solid counterbore witness");
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(inferred.counterbores, projection.counterbores);
     assert_eq!(
-        counterbore_axis_placements_for_operations(None, &ir, &operations, &outputs).unwrap(),
+        counterbore_axis_placements_for_operations(&default_ctx, &ir, &operations, &outputs).unwrap(),
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Axis {
@@ -695,19 +703,19 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         })
         .unwrap();
     assert!(
-        counterbore_body_projection(None, &missing_shoulder, &operations, &outputs)
+        counterbore_body_projection(&default_ctx, &missing_shoulder, &operations, &outputs)
             .unwrap()
             .is_none()
     );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(
-        counterbore_body_projection(None, &sheet, &operations, &outputs)
+        counterbore_body_projection(&default_ctx, &sheet, &operations, &outputs)
             .unwrap()
             .is_none()
     );
     assert!(counterbore_body_projection(
-        None,
+        &default_ctx,
         &ir,
         &[operation.clone(), "second-operation".into()],
         &BTreeMap::from([
