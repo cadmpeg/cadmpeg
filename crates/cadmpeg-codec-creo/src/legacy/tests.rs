@@ -24,6 +24,7 @@ use super::{
 };
 
 mod string_admission;
+mod numeric_admission;
 
 fn principal_unit_system(persistence: &super::Persistence) -> Option<PrincipalUnitSystem> {
     crate::decode::with_test_decode_ctx(|ctx| persistence.principal_unit_system(ctx))
