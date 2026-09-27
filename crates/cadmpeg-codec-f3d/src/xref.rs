@@ -521,6 +521,7 @@ fn bind_occurrences(
         let mut occurrences = Vec::new();
         for (placements, _, stream) in &streams {
             let direct = select_component_insert_transforms(
+                ctx,
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
                     let construction = scope.component_insert_construction()?;
@@ -528,7 +529,7 @@ fn bind_occurrences(
                 }),
                 stream,
                 &reference.neutron_role,
-            );
+            )?;
             let structured_count =
                 superseded_placement_count(&direct, placements, &reference.neutron_role);
             if !direct.is_empty() && structured_count != 0 {
@@ -537,24 +538,28 @@ fn bind_occurrences(
                     count: structured_count,
                 });
             }
-            occurrences.extend(occurrence_transforms_with_precedence(
+            let selected = occurrence_transforms_with_precedence(
+                ctx,
                 direct,
                 placements,
                 &reference.neutron_role,
-            ));
+            )?;
+            ctx.charge_collection_items(selected.len() as u64, "collect F3D xref occurrence transforms")?;
+            occurrences.try_reserve(selected.len()).map_err(|_| {
+                ctx.refuse_codec_limit("collect F3D xref occurrence transforms", 0, selected.len() as u64)
+            })?;
+            occurrences.extend(selected);
         }
         if occurrences.is_empty() {
             if streams.iter().any(|(_, failures, stream)| {
-                let direct = select_component_insert_transforms(
-                    scopes.iter().filter_map(|scope| {
-                        let stream = crate::ids::native_stream(&scope.id)?;
-                        let construction = scope.component_insert_construction()?;
-                        Some((stream, construction))
-                    }),
-                    stream,
-                    &reference.neutron_role,
-                );
-                direct.is_empty()
+                !scopes.iter().filter_map(|scope| {
+                    let construction_stream = crate::ids::native_stream(&scope.id)?;
+                    let construction = scope.component_insert_construction()?;
+                    Some((construction_stream, construction))
+                }).any(|(construction_stream, construction)| {
+                    construction_stream == stream
+                        && construction.neutron_role == reference.neutron_role
+                })
                     && failures.iter().any(|failure| {
                         failure
                             .link_names
@@ -592,33 +597,49 @@ fn bind_occurrences(
 /// each role to its scope-owned relation record and verified its carrier
 /// transform, so the class tag is not an admission discriminator here.
 fn select_component_insert_transforms<'a, I>(
+    ctx: &DecodeContext<'_>,
     constructions: I,
     stream: &str,
     role: &str,
-) -> Vec<[[f64; 4]; 4]>
+) -> Result<Vec<[[f64; 4]; 4]>, CodecError>
 where
     I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
 {
-    constructions
+    collect_charged(ctx, constructions
         .into_iter()
         .filter(|(construction_stream, construction)| {
             *construction_stream == stream && construction.neutron_role == role
         })
-        .map(|(_, construction)| construction.transform().rows())
-        .collect()
+        .map(|(_, construction)| construction.transform().rows()),
+        "select F3D component insert transforms")
+}
+
+fn collect_charged<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        ctx.charge_collection_items(1, operation)?;
+        collected.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        collected.push(value);
+    }
+    Ok(collected)
 }
 
 /// Use scope-bound carriers when present. Placement records are the fallback
 /// for a stream with no exact carrier for this role.
 fn occurrence_transforms_with_precedence(
+    ctx: &DecodeContext<'_>,
     direct: Vec<[[f64; 4]; 4]>,
     placements: &[OccurrencePlacement],
     role: &str,
-) -> Vec<Option<[[f64; 4]; 4]>> {
+) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
     if direct.is_empty() {
-        occurrence_transforms(placements, role)
+        occurrence_transforms(ctx, placements, role)
     } else {
-        direct.into_iter().map(Some).collect()
+        collect_charged(ctx, direct.into_iter().map(Some), "select F3D direct xref transforms")
     }
 }
 
@@ -632,7 +653,10 @@ fn superseded_placement_count(
     if direct.is_empty() {
         0
     } else {
-        occurrence_transforms(placements, role).len()
+        placements
+            .iter()
+            .filter(|placement| placement.link_names.iter().any(|name| name == role))
+            .count()
     }
 }
 
@@ -693,14 +717,15 @@ struct IndexedRecord {
 /// The transforms of every placement whose target path carries `role`, in
 /// record order. One occurrence-placement record is one occurrence.
 fn occurrence_transforms(
+    ctx: &DecodeContext<'_>,
     placements: &[OccurrencePlacement],
     role: &str,
-) -> Vec<Option<[[f64; 4]; 4]>> {
-    placements
+) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
+    collect_charged(ctx, placements
         .iter()
         .filter(|placement| placement.link_names.iter().any(|name| name == role))
-        .map(|placement| placement.transform)
-        .collect()
+        .map(|placement| placement.transform),
+        "select F3D structured xref transforms")
 }
 
 fn indexed_records(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<IndexedRecord>, CodecError> {

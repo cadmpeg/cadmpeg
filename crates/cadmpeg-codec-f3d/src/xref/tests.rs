@@ -146,6 +146,75 @@ fn xref_placement_offset_index_refuses_collection_limit() {
 }
 
 #[test]
+fn xref_structured_transform_selection_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let placement = OccurrencePlacement {
+        link_names: vec!["role".into()],
+        transform: None,
+    };
+    let error = super::occurrence_transforms(&ctx, &[placement], "role").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D structured xref transforms"));
+}
+
+#[test]
+fn xref_direct_transform_conversion_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let direct = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let error = super::occurrence_transforms_with_precedence(&ctx, vec![direct], &[], "role")
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D direct xref transforms"));
+}
+
+#[test]
+fn xref_component_insert_selection_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let construction = crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+        relation_record_index: 1,
+        carrier_record_index: 2,
+        occurrence_identity: None,
+        neutron_role: "role".into(),
+        neutron_role_offset: 0,
+        placement: None,
+    };
+    let error = super::select_component_insert_transforms(
+        &ctx,
+        [("stream", &construction)],
+        "stream",
+        "role",
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "select F3D component insert transforms"));
+}
+
+#[test]
+fn xref_occurrence_transform_aggregation_refuses_collection_limit() {
+    let identity = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    let archive = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
+        "assembly-design", "root.f3d", "part.f3d", XREF_ROLE, identity,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &policy,
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
+    let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
+    let limit_arena = cadmpeg_core::decode::DecodeArena::new();
+    let limit_ctx = redirections_limit_context(&limit_arena, 4);
+    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D xref occurrence transforms"));
+}
+
+#[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(&cadmpeg_test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
@@ -584,7 +653,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
 
     assert_eq!(placements.len(), 6);
     assert_eq!(
-        super::occurrence_transforms(&placements, role),
+        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, role).unwrap(),
         vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
     );
 
@@ -740,7 +809,7 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
-        super::occurrence_transforms(&placements, role),
+        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, role).unwrap(),
         vec![None, Some(matrix)]
     );
 }
@@ -781,7 +850,7 @@ fn occurrence_records_expand_shared_roles_and_decode_rigid_matrices() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(
-        super::occurrence_transforms(&placements, "role"),
+        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "role").unwrap(),
         vec![Some(first), Some(second)]
     );
 }
@@ -794,7 +863,7 @@ fn identity_marked_placement_stores_no_matrix() {
 
     assert_eq!(placements.len(), 2);
     assert_eq!(
-        super::occurrence_transforms(&placements, "role"),
+        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "role").unwrap(),
         vec![None, None]
     );
 }
@@ -1076,7 +1145,7 @@ fn a_role_that_no_path_element_names_places_nothing() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(), None);
 
     assert_eq!(
-        super::occurrence_transforms(&placements, "other"),
+        super::occurrence_transforms(&cadmpeg_test_support::service_decode_context(), &placements, "other").unwrap(),
         Vec::new()
     );
 }
@@ -1100,7 +1169,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     };
 
     assert_eq!(
-        super::occurrence_transforms_with_precedence(vec![direct], &[structured.clone()], "role"),
+        super::occurrence_transforms_with_precedence(&cadmpeg_test_support::service_decode_context(), vec![direct], &[structured.clone()], "role").unwrap(),
         vec![Some(direct)]
     );
     assert_eq!(
@@ -1161,6 +1230,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
 
     assert_eq!(
         super::select_component_insert_transforms(
+            &cadmpeg_test_support::service_decode_context(),
             [
                 ("stream", &selected_construction),
                 ("stream", &ignored_construction),
@@ -1168,7 +1238,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             ],
             "stream",
             "role"
-        ),
+        ).unwrap(),
         vec![selected]
     );
 }
