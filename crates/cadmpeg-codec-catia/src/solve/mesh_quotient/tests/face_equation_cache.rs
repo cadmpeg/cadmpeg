@@ -33,6 +33,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),

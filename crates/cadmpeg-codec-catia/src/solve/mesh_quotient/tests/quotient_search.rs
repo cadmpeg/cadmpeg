@@ -819,7 +819,89 @@ fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
     }]];
     let equations = possible_face_equations(&ctx, &assignments).expect("service resource budget");
 
-    assert!(possible_face_choices_with_limit(&assignments, &equations, 0).is_none());
+    assert!(
+        possible_face_choices_with_limit(&ctx, &assignments, &equations, 0)
+            .expect("service resource budget")
+            .is_none()
+    );
+}
+
+#[test]
+fn face_choice_materialization_charges_nested_collections_before_absence() {
+    let assignments = vec![vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    }]];
+    let fallback = vec![vec![[0, 1]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>, work_limit| {
+        possible_face_choices_with_limit(ctx, &assignments, &fallback, work_limit)
+    };
+    assert!(crate::test_support::with_service_context(|ctx| run(ctx, 2))
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| run(ctx, 2)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_possible_face_choice_directions"
+    ));
+    let service = crate::test_support::with_service_context(|ctx| run(ctx, 4))
+        .expect("service resource budget")
+        .expect("face choices fit the work budget");
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, |ctx| run(ctx, 4)) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(value)) => {
+                assert_eq!(value, service);
+                break;
+            }
+            _ => panic!("unexpected face choices"),
+        }
+    }
+    for operation in [
+        "catia_possible_face_choice_directions",
+        "catia_possible_face_choice_direction_rows",
+        "catia_possible_face_choice_equations",
+        "catia_possible_face_choice_keys",
+        "catia_possible_face_choice_values",
+        "catia_possible_face_choice_faces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn face_choice_fallback_charges_copied_equations() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..13)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: edge,
+                end: edge + 1,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let faces = [vec![assignment]];
+    let fallback = [vec![[0, 1]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        possible_face_choices_with_limit(ctx, &faces, &fallback, 2)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(vec![vec![vec![[0, 1]]]])
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_possible_face_choice_fallback_equations"
+    ));
 }
 
 #[test]
@@ -1050,6 +1132,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1160,6 +1243,7 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1217,6 +1301,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1275,6 +1360,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1361,6 +1447,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1420,7 +1507,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_choices: possible_face_choices(&assignments, &equations),
+        possible_face_choices: possible_face_choices(&ctx, &assignments, &equations),
         possible_face_equations: equations,
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -1464,6 +1551,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1804,6 +1892,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1862,6 +1951,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1920,6 +2010,7 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -1973,6 +2064,7 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -2024,6 +2116,7 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
@@ -2077,6 +2170,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         possible_face_equations: possible_face_equations(&ctx, &assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
+            &ctx,
             &assignments,
             &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),

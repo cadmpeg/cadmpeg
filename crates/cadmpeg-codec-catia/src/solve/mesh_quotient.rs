@@ -5086,95 +5086,132 @@ fn possible_face_equations(
 }
 
 fn possible_face_choices_with_limit(
+    ctx: &DecodeContext<'_>,
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
     limit: usize,
-) -> Option<Vec<Vec<Vec<[usize; 2]>>>> {
+) -> Result<Option<Vec<Vec<Vec<[usize; 2]>>>>, CodecError> {
     let budget = WorkBudget::new(limit);
-    let choices = faces
-        .iter()
-        .zip(face_equations)
-        .map(|(assignments, fallback)| {
-            let mut choices = HashSet::new();
-            for assignment in assignments {
-                if !budget.charge() {
-                    return Vec::new();
-                }
-                let unknown = assignment
-                    .boundaries
-                    .iter()
-                    .flatten()
-                    .filter(|use_| use_.reversed.is_none())
-                    .count();
-                let Some(combinations) = 1usize.checked_shl(unknown as u32) else {
-                    return vec![fallback.clone()];
-                };
-                if combinations > 4_096 {
-                    return vec![fallback.clone()];
-                }
-                for mask in 0..combinations {
-                    if !budget.charge() {
-                        return Vec::new();
-                    }
-                    let mut variable = 0usize;
-                    let directions = assignment
-                        .boundaries
-                        .iter()
-                        .map(|boundary| {
-                            boundary
-                                .iter()
-                                .map(|use_| {
-                                    use_.reversed.unwrap_or_else(|| {
-                                        let shift = unknown - variable - 1;
-                                        variable += 1;
-                                        mask & (1usize << shift) != 0
-                                    })
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>();
-                    let Some(mut equations) = assignment
-                        .boundaries
-                        .iter()
-                        .zip(&directions)
-                        .map(|(boundary, directions)| {
-                            (0..boundary.len())
-                                .map(|index| {
-                                    let next = (index + 1) % boundary.len();
-                                    let left = port(boundary[index], directions[index], true)?;
-                                    let right = port(boundary[next], directions[next], false)?;
-                                    Some(if left <= right {
-                                        [left, right]
-                                    } else {
-                                        [right, left]
-                                    })
-                                })
-                                .collect::<Option<Vec<_>>>()
-                        })
-                        .collect::<Option<Vec<_>>>()
-                        .map(|boundaries| boundaries.into_iter().flatten().collect::<Vec<_>>())
-                    else {
-                        continue;
-                    };
-                    equations.sort_unstable();
-                    equations.dedup();
-                    choices.insert(equations);
-                }
+    let mut faces_choices = Vec::new();
+    for (assignments, fallback) in faces.iter().zip(face_equations) {
+        let mut choices = HashSet::new();
+        for assignment in assignments {
+            if !budget.charge() {
+                return Ok(None);
             }
-            let mut choices = choices.into_iter().collect::<Vec<_>>();
-            choices.sort_unstable();
-            choices
-        })
-        .collect();
-    (!budget.exhausted()).then_some(choices)
+            let unknown = assignment
+                .boundaries
+                .iter()
+                .flatten()
+                .filter(|use_| use_.reversed.is_none())
+                .count();
+            let combinations = u32::try_from(unknown)
+                .ok()
+                .and_then(|unknown| 1usize.checked_shl(unknown));
+            let Some(combinations) = combinations.filter(|combinations| *combinations <= 4_096)
+            else {
+                choices.clear();
+                let copied = crate::resource::copy_slice(
+                    ctx,
+                    fallback,
+                    "catia_possible_face_choice_fallback_equations",
+                )?;
+                crate::resource::insert_set(
+                    ctx,
+                    &mut choices,
+                    copied,
+                    "catia_possible_face_choice_keys",
+                )?;
+                break;
+            };
+            'masks: for mask in 0..combinations {
+                if !budget.charge() {
+                    return Ok(None);
+                }
+                let mut variable = 0usize;
+                let mut directions = Vec::new();
+                for boundary in &assignment.boundaries {
+                    let mut row = Vec::new();
+                    for use_ in boundary {
+                        let direction = use_.reversed.unwrap_or_else(|| {
+                            let shift = unknown - variable - 1;
+                            variable += 1;
+                            mask & (1usize << shift) != 0
+                        });
+                        crate::resource::push(
+                            ctx,
+                            &mut row,
+                            direction,
+                            "catia_possible_face_choice_directions",
+                        )?;
+                    }
+                    crate::resource::push(
+                        ctx,
+                        &mut directions,
+                        row,
+                        "catia_possible_face_choice_direction_rows",
+                    )?;
+                }
+                let mut equations = Vec::new();
+                for (boundary, row) in assignment.boundaries.iter().zip(&directions) {
+                    for index in 0..boundary.len() {
+                        let next = (index + 1) % boundary.len();
+                        let Some(left) = port(boundary[index], row[index], true) else {
+                            continue 'masks;
+                        };
+                        let Some(right) = port(boundary[next], row[next], false) else {
+                            continue 'masks;
+                        };
+                        crate::resource::push(
+                            ctx,
+                            &mut equations,
+                            if left <= right {
+                                [left, right]
+                            } else {
+                                [right, left]
+                            },
+                            "catia_possible_face_choice_equations",
+                        )?;
+                    }
+                }
+                equations.sort_unstable();
+                equations.dedup();
+                crate::resource::insert_set(
+                    ctx,
+                    &mut choices,
+                    equations,
+                    "catia_possible_face_choice_keys",
+                )?;
+            }
+        }
+        let mut face_choices = Vec::new();
+        for choice in choices {
+            crate::resource::push(
+                ctx,
+                &mut face_choices,
+                choice,
+                "catia_possible_face_choice_values",
+            )?;
+        }
+        face_choices.sort_unstable();
+        crate::resource::push(
+            ctx,
+            &mut faces_choices,
+            face_choices,
+            "catia_possible_face_choice_faces",
+        )?;
+    }
+    Ok((!budget.exhausted()).then_some(faces_choices))
 }
 
 #[cfg(test)]
 fn possible_face_choices(
+    ctx: &DecodeContext<'_>,
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
 ) -> Vec<Vec<Vec<[usize; 2]>>> {
-    possible_face_choices_with_limit(faces, face_equations, usize::MAX)
+    possible_face_choices_with_limit(ctx, faces, face_equations, usize::MAX)
+        .expect("service resource budget")
         .expect("unbounded test face-choice materialization")
 }
 
@@ -10516,10 +10553,12 @@ fn resolve_standard_mesh_endpoint_candidates(
     }
     let face_equations = possible_face_equations(ctx, &assignments)?;
     let Some(face_choices) = possible_face_choices_with_limit(
+        ctx,
         &assignments,
         &face_equations,
         MAX_MESH_CONSTRAINT_OPERATIONS,
-    ) else {
+    )?
+    else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     };
     let unselected = ctx.alloc_filled(
