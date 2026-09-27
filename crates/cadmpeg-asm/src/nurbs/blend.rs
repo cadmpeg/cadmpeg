@@ -676,9 +676,10 @@ fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry>
 }
 
 fn variable_blend_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     depth: usize,
-) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
+) -> Option<Result<cadmpeg_ir::geometry::VariableBlendValue, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::{
         EdgeOffsetDiscriminator, VariableBlendInterpolationPoint, VariableBlendTerminal,
         VariableBlendValue, VariableBlendValuePayload,
@@ -738,7 +739,10 @@ fn variable_blend_value(
             radius: cur.take_f64()? * LEN_TO_MM,
             variable_chamfer: cur.take_enum()?,
             chamfer_type: cur.take_enum()?,
-            nested: Box::new(variable_blend_value(cur, depth + 1)?),
+            nested: Box::new(match variable_blend_value(ctx, cur, depth + 1)? {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }),
         },
         "interp" => {
             let parameter = cur.take_f64()?;
@@ -758,7 +762,17 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            let mut points = Vec::with_capacity(count);
+            if let Err(error) = ctx.charge_collection_items(count as u64, "decode variable blend interpolation points") {
+                return Some(Err(error));
+            }
+            let mut points = Vec::new();
+            if points.try_reserve(count).is_err() {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "reserve variable blend interpolation points",
+                    count as u64,
+                    count as u64,
+                )));
+            }
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
@@ -792,11 +806,11 @@ fn variable_blend_value(
         }
         _ => return None,
     };
-    Some(VariableBlendValue {
+    Some(Ok(VariableBlendValue {
         modern_flag,
         calibrated,
         payload,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -835,12 +849,16 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_two_ends_and_recursive_const_values() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         let mut direct = Vec::new();
         two_ends(&mut direct);
         let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated two-ends value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0).expect("generated two-ends value").expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.payload.discriminator(), 7);
@@ -866,7 +884,7 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated recursive const value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0).expect("generated recursive const value").expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
@@ -880,6 +898,10 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_fixed_width_value() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         let mut bytes = Vec::new();
         text(&mut bytes, "fixed_width");
         integer(&mut bytes, 0x15, 0);
@@ -891,7 +913,7 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated fixed-width value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0).expect("generated fixed-width value").expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth {
             parameters, width, ..
@@ -905,6 +927,10 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_enum_tagged_interp_counts() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         let mut bytes = Vec::new();
         text(&mut bytes, "interp");
         integer(&mut bytes, 0x15, 0);
@@ -948,7 +974,7 @@ mod variable_blend_value_tests {
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
         let decoded =
-            variable_blend_value(&mut cur, 0).expect("generated enum-tagged interp value");
+            variable_blend_value(&asm_decode_ctx, &mut cur, 0).expect("generated enum-tagged interp value").expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
@@ -977,7 +1003,65 @@ mod variable_blend_value_tests {
     }
 
     #[test]
+    fn variable_blend_interpolation_points_refuse_collection_limit() {
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        integer(&mut bytes, 0x15, 2);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x13);
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid interpolation value");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &arena, &policy,
+        )
+        .expect("input is within the root byte limit");
+        let mut cur = Cur::at(&tokens, 0);
+        let result = variable_blend_value(&ctx, &mut cur, 0)
+            .expect("interpolation grammar reaches its point collection");
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
     fn decodes_interp_point_with_unset_derivatives() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         // Sentinel value marking an unset first/second derivative.
         const UNSET: f64 = UNSET_VARIABLE_BLEND_TANGENT;
         let mut bytes = Vec::new();
@@ -1020,8 +1104,9 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0)
-            .expect("generated interp value with unset derivatives");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated interp value with unset derivatives")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
             panic!("expected interpolated payload")
@@ -1032,9 +1117,10 @@ mod variable_blend_value_tests {
 }
 
 pub(super) fn var_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let names = [
         "var_blend_spl_sur",
@@ -1072,16 +1158,16 @@ pub(super) fn var_blend_spl_sur(
     let revision = PositiveI64::new(cur.take_long()?)?;
     let first = match rolling_ball_side(&mut cur, reference_context)? {
         Ok(side) => side,
-        Err(limit) => return Some(Err(limit)),
+        Err(limit) => return Some(Err(limit.into())),
     };
     let second = match rolling_ball_side(&mut cur, reference_context)? {
         Ok(side) => side,
-        Err(limit) => return Some(Err(limit)),
+        Err(limit) => return Some(Err(limit.into())),
     };
     let sides = Box::new([first, second]);
     let slice = match rolling_ball_curve(&mut cur, reference_context)? {
         Ok(curve) => curve,
-        Err(limit) => return Some(Err(limit)),
+        Err(limit) => return Some(Err(limit.into())),
     };
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     let two_radii = match cur.take_enum()? {
@@ -1089,11 +1175,17 @@ pub(super) fn var_blend_spl_sur(
         1 => true,
         _ => return None,
     };
-    let first_value = variable_blend_value(&mut cur, 0)?;
+    let first_value = match variable_blend_value(ctx, &mut cur, 0)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let radii = if two_radii {
         cadmpeg_ir::geometry::VariableBlendRadii::Two {
             first: first_value,
-            second: variable_blend_value(&mut cur, 0)?,
+            second: match variable_blend_value(ctx, &mut cur, 0)? {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            },
         }
     } else {
         cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
@@ -1112,7 +1204,10 @@ pub(super) fn var_blend_spl_sur(
             }),
             3 => {
                 let radius = if cur.take_bool()? {
-                    Some(Box::new(variable_blend_value(&mut cur, 0)?))
+                    Some(Box::new(match variable_blend_value(ctx, &mut cur, 0)? {
+                        Ok(value) => value,
+                        Err(error) => return Some(Err(error)),
+                    }))
                 } else {
                     None
                 };
@@ -1157,7 +1252,7 @@ pub(super) fn var_blend_spl_sur(
         cur.set_pos(saved);
         match rolling_ball_curve(&mut cur, reference_context)? {
             Ok(curve) => Some(curve),
-            Err(limit) => return Some(Err(limit)),
+            Err(limit) => return Some(Err(limit.into())),
         }
     };
     let convexity = if cur.take_bool()? {
@@ -1331,9 +1426,10 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
 /// type-selected payload with bound-carrying supports and endpoint-carrying
 /// curves.
 fn revision_vertex_blend_boundary(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
-) -> Option<EmbeddedVertexBlendBoundary> {
+) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
     let table = resolver?;
     let kind = cur.take_ident()?.to_string();
     let boundary_type = cur.take_bool()?;
@@ -1394,7 +1490,10 @@ fn revision_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
+            let (surface, support_bounds) = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+                Ok(surface) => surface,
+                Err(error) => return Some(Err(error)),
+            };
             let pcurve = nullable_embedded_pcurve(cur)?.value();
             let sense = cur.take_bool()?;
             let fit_tolerance =
@@ -1424,7 +1523,7 @@ fn revision_vertex_blend_boundary(
         }
         _ => return None,
     };
-    Some(EmbeddedVertexBlendBoundary {
+    Some(Ok(EmbeddedVertexBlendBoundary {
         boundary_type,
         // The magic item is a unit direction or the zero vector, not a
         // length-bearing location, so it takes no unit conversion.
@@ -1433,13 +1532,14 @@ fn revision_vertex_blend_boundary(
         v_smoothing,
         fullness,
         geometry,
-    })
+    }))
 }
 
 pub(super) fn vertex_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["VBL_SURF", "vertexblendsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -1467,7 +1567,10 @@ pub(super) fn vertex_blend_spl_sur(
     let mut boundaries = Vec::with_capacity(count);
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
-            revision_vertex_blend_boundary(&mut cur, resolver)?
+            match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
+                Ok(boundary) => boundary,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             vertex_blend_boundary(&mut cur)?
         });
@@ -1475,7 +1578,7 @@ pub(super) fn vertex_blend_spl_sur(
     let grid_size = cur.take_long()?;
     let fit_tolerance =
         cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(EmbeddedVertexBlend {
             revision,
             boundaries,
@@ -1483,7 +1586,7 @@ pub(super) fn vertex_blend_spl_sur(
             fit_tolerance,
         })),
         None,
-    ))
+    )))
 }
 
 pub(super) fn full_rb_blend_spl_sur(

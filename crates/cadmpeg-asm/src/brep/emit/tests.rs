@@ -394,6 +394,10 @@ fn tolerant_vertex_refuses_nonfinite_leading_tolerance_at_read() {
 
 #[test]
 fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     use crate::nurbs::proc_curve::nurbs_curve_parameter_domain;
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SpringLayout};
 
@@ -453,7 +457,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             .collect();
         let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
         let parsed =
-            crate::nurbs::proc_curve::procedural_curve_resolving_refs(&records[4].tokens, &table)
+            crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx, &records[4].tokens, &table).transpose().expect("resource allocation did not fail")
                 .unwrap();
         assert_eq!(
             nurbs_curve_parameter_domain(&parsed.curve),
@@ -466,6 +470,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             ..Reachable::default()
         };
         super::super::topology::walk_reachable_topology(
+            &asm_decode_ctx,
             &mut out,
             &by_index,
             &table,
@@ -473,7 +478,8 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &mut reach,
             super::super::DecodePurpose::Model,
             crate::asm_format!("f3d"),
-        );
+        )
+        .expect("generated topology is within resource limits");
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]
         else {
             panic!("solved curve")

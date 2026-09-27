@@ -57,6 +57,7 @@ pub(super) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
 /// or classifying its carrier and recording surface reachability.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn keep_faces_and_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -107,6 +108,7 @@ pub(super) fn keep_faces_and_carriers(
                 .is_some_and(|kind| kind.contains("blend"))
             {
                 if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
+                    ctx,
                     &surf_rec.tokens,
                     token_table,
                 ) {
@@ -120,7 +122,7 @@ pub(super) fn keep_faces_and_carriers(
             continue;
         }
         if let Some(procedural) =
-            nurbs::proc_surface::procedural_surface_resolving_refs(&surf_rec.tokens, token_table)
+            nurbs::proc_surface::procedural_surface_resolving_refs(ctx, &surf_rec.tokens, token_table)
         {
             procedural_surface_defs.insert(surf_ref, procedural?);
         }
@@ -221,6 +223,7 @@ pub(super) fn keep_faces_and_carriers(
 /// the supporting edge/vertex/point graph and decoding curve and pcurve carriers.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn walk_reachable_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     by_index: &HashMap<i64, &Record>,
     token_table: &nurbs::toks::SubtypeTable,
@@ -228,7 +231,7 @@ pub(super) fn walk_reachable_topology(
     reach: &mut Reachable,
     purpose: DecodePurpose,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -302,7 +305,7 @@ pub(super) fn walk_reachable_topology(
                                             "exp_par_cur",
                                         ) {
                                             nurbs::pcurve::explicit_pcurve_cache(span)
-                                                .map(|pcurve| (pcurve, true))
+                                                .map(|pcurve| Ok((pcurve, true)))
                                         } else if let Some(span) =
                                             nurbs::toks::payload_subtype_toks(prec, 5, "ref")
                                         {
@@ -315,7 +318,7 @@ pub(super) fn walk_reachable_topology(
                                                         *index,
                                                         token_table,
                                                     )
-                                                    .map(|pcurve| (pcurve, true)),
+                                                    .map(|pcurve| Ok((pcurve, true))),
                                                 _ => None,
                                             }
                                         } else {
@@ -330,20 +333,21 @@ pub(super) fn walk_reachable_topology(
                                             .filter(|record| record.head() == "intcurve")
                                             .and_then(|intcurve| {
                                                 nurbs::proc_curve::pcurve_for_selector_with_chart(
+                                                    ctx,
                                                     &intcurve.tokens,
                                                     *selector,
                                                     token_table,
                                                 )
-                                                .map(|(mut curve, native_chart)| {
+                                                .map(|result| result.map(|(mut curve, native_chart)| {
                                                     if (*selector < 0) ^ record_reversed(intcurve) {
                                                         curve.reverse_parameterization();
                                                     }
                                                     (curve, native_chart)
-                                                })
+                                                }))
                                             })
                                     }
                                     _ => None,
-                                };
+                                }.transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
                                 let decoded = decoded.and_then(|(mut decoded, native_chart)| {
@@ -413,9 +417,10 @@ pub(super) fn walk_reachable_topology(
                                             // 3D B-spline cache in most subtypes.
                                             } else if let Some(decoded) =
                                                 nurbs::proc_curve::procedural_curve_resolving_refs(
+                                                    ctx,
                                                     &crec.tokens,
                                                     token_table,
-                                                )
+                                                ).transpose()?
                                             {
                                                 let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
                                                 let mut curve = decoded.curve;
@@ -492,12 +497,14 @@ pub(super) fn walk_reachable_topology(
             loop_ref = lp.ref_at(3);
         }
     }
+    Ok(())
 }
 
 /// Pass 2 (wires): collect shell wire edges and free vertices, decoding wire
 /// curve carriers and emitting wire topologies.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn collect_wire_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -507,7 +514,7 @@ pub(super) fn collect_wire_topology(
     reach: &mut Reachable,
     purpose: DecodePurpose,
     format: IdFormat,
-) -> WireShellTopology {
+) -> Result<WireShellTopology, cadmpeg_core::CodecError> {
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
@@ -519,6 +526,7 @@ pub(super) fn collect_wire_topology(
             let edge_index = edge.index as i64;
             let already_owned = reach.edges.contains(&edge_index);
             keep_wire_edge(
+                ctx,
                 out,
                 edge_index,
                 by_index,
@@ -527,7 +535,7 @@ pub(super) fn collect_wire_topology(
                 reach,
                 purpose,
                 format,
-            );
+            )?;
             if !already_owned && reach.edges.contains(&edge_index) {
                 saved_free_edges.push(edge_index);
             }
@@ -572,6 +580,7 @@ pub(super) fn collect_wire_topology(
                                 edges.push(edge_index);
                             }
                             keep_wire_edge(
+                                ctx,
                                 out,
                                 edge_index,
                                 by_index,
@@ -580,7 +589,7 @@ pub(super) fn collect_wire_topology(
                                 reach,
                                 purpose,
                                 format,
-                            );
+                            )?;
                         }
                         coedge_ref = coedge.ref_at(3);
                         if coedge_ref == Some(first_coedge) {
@@ -632,15 +641,16 @@ pub(super) fn collect_wire_topology(
             }
         }
     }
-    WireShellTopology {
+    Ok(WireShellTopology {
         wire_edges_by_shell,
         free_vertices_by_shell,
         saved_free_edges,
-    }
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn keep_wire_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     edge_index: i64,
     by_index: &HashMap<i64, &Record>,
@@ -649,7 +659,7 @@ fn keep_wire_edge(
     reach: &mut Reachable,
     purpose: DecodePurpose,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -667,10 +677,10 @@ fn keep_wire_edge(
         .get(&edge_index)
         .filter(|edge| is_edge_record(edge))
     else {
-        return;
+        return Ok(());
     };
     if !kept_edges.insert(edge_index) {
-        return;
+        return Ok(());
     }
     for slot in [3usize, 5] {
         if let Some(vertex_index) = edge.ref_at(slot) {
@@ -686,7 +696,7 @@ fn keep_wire_edge(
         }
     }
     let Some(curve_index) = edge.ref_at(8) else {
-        return;
+        return Ok(());
     };
     match curve_geo.entry(curve_index) {
         std::collections::hash_map::Entry::Occupied(_) => {
@@ -695,19 +705,20 @@ fn keep_wire_edge(
         std::collections::hash_map::Entry::Vacant(entry) => {
             let Some(curve_record) = by_index.get(&curve_index) else {
                 count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
-                return;
+                return Ok(());
             };
             if purpose == DecodePurpose::History {
                 entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: None,
                 }));
                 kept_curves.insert(curve_index);
-                return;
+                return Ok(());
             }
             if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
+                ctx,
                 &curve_record.tokens,
                 token_table,
-            ) {
+            ).transpose()? {
                 let parsed_domain = nurbs::proc_curve::nurbs_curve_parameter_domain(&decoded.curve);
                 let mut curve = decoded.curve;
                 if record_reversed(curve_record) {
@@ -758,6 +769,7 @@ fn keep_wire_edge(
             }
         }
     }
+    Ok(())
 }
 
 /// Partition kept edges' curve references by sense so a carrier shared across

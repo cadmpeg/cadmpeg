@@ -149,6 +149,10 @@ fn exact_cache_first_curve(int_width: RefWidth) -> Vec<u8> {
 
 #[test]
 fn intcurve_selector_uses_the_serialized_direct_slot() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = curve_block(int_width);
         bytes.extend_from_slice(&pcurve_block(int_width));
@@ -158,19 +162,23 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
             .expect("valid single-record byte fixture");
 
         assert!(
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 2, &table).is_some()
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 2, &table).transpose().expect("resource allocation did not fail").is_some()
         );
         assert!(
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, -2, &table).is_some()
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, -2, &table).transpose().expect("resource allocation did not fail").is_some()
         );
         assert!(
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 1, &table).is_none()
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 1, &table).transpose().expect("resource allocation did not fail").is_none()
         );
     }
 }
 
 #[test]
 fn exact_curve_selector_uses_its_cache_first_support_slot() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let bytes = exact_cache_first_curve(int_width);
 
@@ -178,30 +186,34 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
             .expect("valid single-record byte fixture");
         let table = crate::nurbs::toks::test_table(&bytes, int_width)
             .expect("valid single-record byte fixture");
-        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
+        let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&asm_decode_ctx, &toks, &table).transpose().expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("exact curve at width {int_width}"));
         assert!(matches!(
             decoded.construction,
             crate::nurbs::proc_curve::ProceduralCurveConstruction::Exact
         ));
         let (pcurve, _) =
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 1, &table)
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 1, &table).transpose().expect("resource allocation did not fail")
                 .unwrap_or_else(|| panic!("exact curve pcurve at width {int_width}"));
         assert_eq!(
             pcurve.control_points()[1],
             cadmpeg_ir::math::Point2::new(10.0, -10.0)
         );
         assert!(
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, -1, &table).is_some()
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, -1, &table).transpose().expect("resource allocation did not fail").is_some()
         );
         assert!(
-            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 2, &table).is_none()
+            crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 2, &table).transpose().expect("resource allocation did not fail").is_none()
         );
     }
 }
 
 #[test]
 fn exact_curve_selector_follows_subtype_reference() {
+    let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &asm_decode_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let active = exact_cache_first_curve(int_width);
         for named in [false, true] {
@@ -216,11 +228,11 @@ fn exact_curve_selector_follows_subtype_reference() {
             let table = crate::nurbs::toks::test_table(&active, int_width)
                 .expect("valid single-record byte fixture");
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, -1, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, -1, &table).transpose().expect("resource allocation did not fail")
                     .is_some()
             );
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 2, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&asm_decode_ctx, &toks, 2, &table).transpose().expect("resource allocation did not fail")
                     .is_none()
             );
         }
