@@ -6782,19 +6782,27 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
 /// Bind validated `fc 05` circles to typed cylinder/plane face pairs and retain
 /// only groups that agree on radius and center at two distinct cap ordinates.
 pub(crate) fn fc05_cylinder_cap_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     circles: &[Fc05Circle],
     topology: &[CurveTopologyRow],
     surfaces: &[crate::surface::SurfaceRow],
-) -> Vec<Fc05CylinderCapPair> {
+) -> Result<Vec<Fc05CylinderCapPair>, cadmpeg_core::CodecError> {
     use std::collections::BTreeMap;
 
-    let faces = crate::topology::uniquely_identified_rows(topology)
-        .into_iter()
-        .map(|row| (row.id, row.faces))
-        .collect::<BTreeMap<_, [Option<NonZeroU32>; 2]>>();
+    let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
+    for row in crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)? {
+        ctx.charge_collection_items(1, "creo fc05 topology-face nodes")?;
+        faces.insert(row.id, row.faces);
+    }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
-        *circle_counts.entry(circle.curve_id).or_default() += 1;
+        match circle_counts.entry(circle.curve_id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo fc05 circle-count nodes")?;
+                entry.insert(1);
+            }
+        }
     }
     let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32, f64)>>::new();
     for circle in circles {
@@ -6804,34 +6812,40 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         let Some(adjacent) = faces.get(&circle.curve_id) else {
             continue;
         };
-        let cylinders = adjacent
+        let mut cylinders = adjacent
             .iter()
             .flatten()
             .map(|face| face.get())
             .filter(|face| {
                 crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-            })
-            .collect::<Vec<_>>();
-        let planes = adjacent
+            });
+        let mut planes = adjacent
             .iter()
             .flatten()
             .map(|face| face.get())
             .filter(|face| {
                 crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
-            })
-            .collect::<Vec<_>>();
-        if let ([cylinder], [plane], Some(ordinate)) = (
-            cylinders.as_slice(),
-            planes.as_slice(),
+            });
+        let (Some(cylinder), None, Some(plane), None, Some(ordinate)) = (
+            cylinders.next(),
+            cylinders.next(),
+            planes.next(),
+            planes.next(),
             circle.cap_ordinate_row_frame,
-        ) {
-            groups
-                .entry(*cylinder)
-                .or_default()
-                .push((circle, *plane, ordinate));
-        }
+        ) else {
+            continue;
+        };
+        let group = match groups.entry(cylinder) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo fc05 cylinder group nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(group, 1, "creo fc05 cylinder group members")?;
+        group.push((circle, plane, ordinate));
     }
 
     let mut result = Vec::new();
@@ -6869,22 +6883,24 @@ pub(crate) fn fc05_cylinder_cap_pairs(
                 .iter()
                 .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
             {
+                ctx.try_reserve_items(&mut ordinates, 1, "creo fc05 distinct cap ordinates")?;
                 ordinates.push(ordinate);
             }
         }
         if ordinates.len() < 2 {
             continue;
         }
+        let mut cap_edges = Vec::new();
+        ctx.try_reserve_items(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
+        cap_edges.extend(group.iter().map(|(circle, plane, ordinate)| Fc05CapEdge {
+            curve_id: circle.curve_id,
+            cap_plane_id: *plane,
+            cap_ordinate_row_frame: *ordinate,
+        }));
+        ctx.try_reserve_items(&mut result, 1, "creo fc05 cylinder cap pairs")?;
         result.push(Fc05CylinderCapPair {
             surface_id,
-            cap_edges: group
-                .iter()
-                .map(|(circle, plane, ordinate)| Fc05CapEdge {
-                    curve_id: circle.curve_id,
-                    cap_plane_id: *plane,
-                    cap_ordinate_row_frame: *ordinate,
-                })
-                .collect(),
+            cap_edges,
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
             reference_direction_row_frame,
@@ -6894,7 +6910,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         });
     }
     result.sort_by_key(|pair| pair.offset);
-    result
+    Ok(result)
 }
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.

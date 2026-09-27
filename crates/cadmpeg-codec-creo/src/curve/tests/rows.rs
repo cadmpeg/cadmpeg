@@ -33,8 +33,134 @@ use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
 use crate::curve::TopologySuffixCandidate;
 use crate::scalar;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
+
+fn fc05_caps_service(
+    circles: &[Fc05Circle],
+    topology: &[CurveTopologyRow],
+    surfaces: &[crate::surface::SurfaceRow],
+) -> Vec<Fc05CylinderCapPair> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    fc05_cylinder_cap_pairs(&ctx, circles, topology, surfaces).expect("service cap pairs")
+}
+
+fn fc05_caps_with_collection_limit(
+    max_collection_items: u64,
+) -> Result<Vec<Fc05CylinderCapPair>, CodecError> {
+    let first = Fc05Circle {
+        curve_id: 20,
+        center_row_frame: [3.0, 4.0],
+        radius_mm: 2.0,
+        sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+            1.0, 0.0,
+        ])
+        .expect("unit sample direction")
+        .0,
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
+        cap_ordinate_row_frame: Some(-5.0),
+        point_count: 8,
+        max_residual: 0.0,
+        offset: 100,
+    };
+    let second = Fc05Circle {
+        curve_id: 21,
+        cap_ordinate_row_frame: Some(7.0),
+        offset: 200,
+        ..first.clone()
+    };
+    let topology = |id, plane, offset| CurveTopologyRow {
+        id,
+        type_byte: 5,
+        feature_id: 4,
+        directions: [1, 0xf6],
+        faces: [NonZeroU32::new(10), NonZeroU32::new(plane)],
+        next_edges: [id, id],
+        offset,
+    };
+    let surface = |id, kind| crate::surface::SurfaceRow {
+        id,
+        kind,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: usize::try_from(id).expect("fixture id fits usize"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    fc05_cylinder_cap_pairs(
+        &ctx,
+        &[first, second],
+        &[topology(20, 11, 100), topology(21, 12, 200)],
+        &[
+            surface(10, crate::surface::SurfaceKind::Cylinder),
+            surface(11, crate::surface::SurfaceKind::Plane),
+            surface(12, crate::surface::SurfaceKind::Plane),
+        ],
+    )
+}
+
+fn assert_fc05_cap_collection_refusal(limit: u64, operation: &'static str) {
+    let error = fc05_caps_with_collection_limit(limit).expect_err("two caps exceed limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn fc05_caps_refuse_unique_topology_count_node() {
+    assert_fc05_cap_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc05_caps_refuse_unique_topology_projection() {
+    assert_fc05_cap_collection_refusal(2, "creo unique-row projection");
+}
+
+#[test]
+fn fc05_caps_refuse_topology_face_node() {
+    assert_fc05_cap_collection_refusal(4, "creo fc05 topology-face nodes");
+}
+
+#[test]
+fn fc05_caps_refuse_circle_count_node() {
+    assert_fc05_cap_collection_refusal(6, "creo fc05 circle-count nodes");
+}
+
+#[test]
+fn fc05_caps_refuse_cylinder_group_node() {
+    assert_fc05_cap_collection_refusal(8, "creo fc05 cylinder group nodes");
+}
+
+#[test]
+fn fc05_caps_refuse_cylinder_group_member() {
+    assert_fc05_cap_collection_refusal(9, "creo fc05 cylinder group members");
+}
+
+#[test]
+fn fc05_caps_refuse_distinct_ordinate() {
+    assert_fc05_cap_collection_refusal(11, "creo fc05 distinct cap ordinates");
+}
+
+#[test]
+fn fc05_caps_refuse_cap_edge_vector() {
+    assert_fc05_cap_collection_refusal(13, "creo fc05 cap edges");
+}
+
+#[test]
+fn fc05_caps_refuse_pair_vector() {
+    assert_fc05_cap_collection_refusal(15, "creo fc05 cylinder cap pairs");
+}
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
     CurveParameterRecord {
@@ -717,7 +843,7 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture id fits usize"),
     };
-    let pairs = fc05_cylinder_cap_pairs(
+    let pairs = fc05_caps_service(
         &[circle(20, -5.0, 100), circle(21, 7.0, 200)],
         &[topology(20, 11, 100), topology(21, 12, 200)],
         &[
@@ -804,18 +930,18 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
 
     let mut duplicate_topology = topology_rows.to_vec();
     duplicate_topology.push(topology(20, 11, 300));
-    assert!(fc05_cylinder_cap_pairs(&circles, &duplicate_topology, &surfaces).is_empty());
+    assert!(fc05_caps_service(&circles, &duplicate_topology, &surfaces).is_empty());
 
     let mut duplicate_surfaces = surfaces.to_vec();
     duplicate_surfaces.push(surface(10, crate::surface::SurfaceKind::Cylinder, 20));
-    assert!(fc05_cylinder_cap_pairs(&circles, &topology_rows, &duplicate_surfaces).is_empty());
+    assert!(fc05_caps_service(&circles, &topology_rows, &duplicate_surfaces).is_empty());
 
     let duplicate_circles = [
         circle(20, -5.0, 100),
         circle(20, 7.0, 150),
         circle(21, 7.0, 200),
     ];
-    assert!(fc05_cylinder_cap_pairs(&duplicate_circles, &topology_rows, &surfaces).is_empty());
+    assert!(fc05_caps_service(&duplicate_circles, &topology_rows, &surfaces).is_empty());
 }
 
 #[test]
@@ -866,7 +992,7 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
         max_residual: 0.0,
         offset: 100,
     }];
-    assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());
+    assert!(fc05_caps_service(&circles, &[], &[]).is_empty());
 }
 
 #[test]
@@ -926,19 +1052,19 @@ fn numerical_ranges_fc05_cap_agreement_separates_lengths_and_directions() {
             cap.radius_mm = radius;
         }
         assert_eq!(
-            fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).len(),
+            fc05_caps_service(&caps, &topology, &surfaces).len(),
             1
         );
         let mut wrong_radius = caps.clone();
         wrong_radius[1].radius_mm *= 1.0005;
-        assert!(fc05_cylinder_cap_pairs(&wrong_radius, &topology, &surfaces).is_empty());
+        assert!(fc05_caps_service(&wrong_radius, &topology, &surfaces).is_empty());
         let mut wrong_center = caps.clone();
         wrong_center[1].center_row_frame[0] = radius * 0.0005;
-        assert!(fc05_cylinder_cap_pairs(&wrong_center, &topology, &surfaces).is_empty());
+        assert!(fc05_caps_service(&wrong_center, &topology, &surfaces).is_empty());
         caps[1].angle_parameter = crate::curve::Fc05AngleParameterRelation::Consistent {
             sense: crate::curve::ParameterSense::Increasing,
             reference_direction_row_frame: [0., 1.],
         };
-        assert!(fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).is_empty());
+        assert!(fc05_caps_service(&caps, &topology, &surfaces).is_empty());
     }
 }
