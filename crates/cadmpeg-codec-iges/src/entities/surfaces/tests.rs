@@ -206,6 +206,25 @@ fn revolution_angular_basis_refuses_knot_and_control_lanes() {
     let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
     assert!(!service.ir().model.surfaces.is_empty());
 }
+
+#[test]
+fn revolution_nurbs_carrier_refuses_nested_pole_and_weight_rows() {
+    let bytes = ellipse_surface_of_revolution_file();
+    for operation in [
+        "iges revolution surface controls",
+        "iges revolution surface weights",
+        "iges revolution surface u knots",
+        "iges revolution pole rows",
+        "iges revolution pole row controls",
+        "iges revolution weight rows",
+        "iges revolution weight row controls",
+        "iges revolution neutral surface slots",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(!service.ir().model.surfaces.is_empty());
+}
 fn type128_surface_with_closure(
     global: &[u8],
     closed_u: i64,
