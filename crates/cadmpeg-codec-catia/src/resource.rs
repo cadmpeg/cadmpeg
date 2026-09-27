@@ -119,6 +119,31 @@ pub(crate) fn copy_slice<T: Clone>(
     Ok(copy)
 }
 
+pub(crate) fn collect_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        push(ctx, &mut collected, value, operation)?;
+    }
+    Ok(collected)
+}
+
+pub(crate) fn collect_options<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = Option<T>>,
+    operation: &'static str,
+) -> Result<Option<Vec<T>>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        let Some(value) = value else { return Ok(None) };
+        push(ctx, &mut collected, value, operation)?;
+    }
+    Ok(Some(collected))
+}
+
 pub(crate) fn copy_retained_slice<T: Clone>(
     ctx: &DecodeContext<'_>,
     values: &[T],

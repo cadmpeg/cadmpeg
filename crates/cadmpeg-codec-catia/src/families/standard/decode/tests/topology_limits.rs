@@ -131,3 +131,43 @@ fn standard_topology_candidate_maps_refuse_before_growth() {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
 }
+
+#[test]
+fn standard_topology_serialized_faces_refuse_before_collection_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service budget admits the topology input");
+    let mut limit = 0;
+    let mut found = false;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("topology input fits the byte limit");
+        match crate::families::standard::decode::try_decode_standard(
+            &ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                if error.operation == "catia_standard_serialized_edge_faces" {
+                    found = true;
+                    limit = DecodePolicy::service().limits.max_collection_items;
+                } else {
+                    limit = error.used + error.additional;
+                }
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("tetrahedron input must decode"),
+            Err(error) => panic!("unexpected topology refusal: {error}"),
+        }
+    }
+    assert!(found, "serialized edge faces must be charged before allocation");
+}
