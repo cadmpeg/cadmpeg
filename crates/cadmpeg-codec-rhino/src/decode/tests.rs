@@ -477,7 +477,8 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
             .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -594,7 +595,8 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -658,7 +660,8 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     staged
         .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit Brep with an isolated vertex");
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -1299,7 +1302,9 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.model.faces[1].sense, Sense::Forward);
         }
         assert_eq!(
-            cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").error_count(),
+            cadmpeg_ir::validate_neutral(&ir, Vec::new())
+                .expect("resource allocation did not fail")
+                .error_count(),
             0
         );
     }
@@ -1319,8 +1324,13 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
+    .expect("resource allocation did not fail")
     .is_ok());
-    assert!(cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 
     assert!(!cadmpeg_ir::admit_with_annotations(
         &rejected,
@@ -1328,8 +1338,13 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
+    .expect("resource allocation did not fail")
     .is_ok());
-    assert!(!cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok());
+    assert!(
+        !cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1385,7 +1400,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                 .len(),
             1
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert_eq!(validation.error_count(), 0);
     });
 }

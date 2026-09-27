@@ -205,7 +205,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         )]),
     };
     assert!(matches!(
-        resolved_surface_carrier_in_graph(&graph, 10, &mut crate::nurbs::LaneRefusals::new()).expect("evaluator allocation succeeds"),
+        resolved_surface_carrier_in_graph(&graph, 10, &mut crate::nurbs::LaneRefusals::new())
+            .expect("evaluator allocation succeeds"),
         Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
         )))
@@ -215,7 +216,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
             .expect("identity grammar"),
         &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("evaluator allocation succeeds")
+    )
+    .expect("evaluator allocation succeeds")
     .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
     assert_eq!(curve.parameter_range, Some(angular_range));
@@ -311,7 +313,9 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         angular_scale: crate::test_support::test_b5::finite(scale),
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("evaluator allocation succeeds").expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder)
+        .expect("evaluator allocation succeeds")
+        .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -643,7 +647,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("evaluator allocation succeeds").expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder)
+        .expect("evaluator allocation succeeds")
+        .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -679,8 +685,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..pcurve.clone()
     };
-    let tiny_geometry =
-        lifted_curve_geometry(&tiny_pcurve, &cylinder).expect("evaluator allocation succeeds").expect("tiny cylinder latitude");
+    let tiny_geometry = lifted_curve_geometry(&tiny_pcurve, &cylinder)
+        .expect("evaluator allocation succeeds")
+        .expect("tiny cylinder latitude");
     let tiny_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -733,8 +740,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..pcurve
     };
-    let turnback_geometry =
-        lifted_curve_geometry(&turnback, &cylinder).expect("evaluator allocation succeeds").expect("turnback latitude locus");
+    let turnback_geometry = lifted_curve_geometry(&turnback, &cylinder)
+        .expect("evaluator allocation succeeds")
+        .expect("turnback latitude locus");
     let turnback_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -773,7 +781,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..reversed_pcurve
     };
-    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone).expect("evaluator allocation succeeds").expect("signed cone latitude");
+    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone)
+        .expect("evaluator allocation succeeds")
+        .expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
             -4.0 * half_angle.sin() * angle.cos(),
@@ -1092,7 +1102,8 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
     let senses = graph.loops[&3].edge_senses();
     assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
-    let plan = build_plan(&graph, &payload, &mut crate::nurbs::LaneRefusals::new()).expect("evaluator allocation succeeds")
+    let plan = build_plan(&graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        .expect("evaluator allocation succeeds")
         .expect("complete owned graph");
 
     assert_eq!(
@@ -1342,7 +1353,8 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     assert_eq!(ir.model.coedges.len(), 6);
     assert_eq!(ir.model.vertices.len(), 6);
     assert_eq!(ir.model.pcurves.len(), 2);
-    let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .filter(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
@@ -1352,7 +1364,8 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         "one component cannot unsort this many arenas: {unsorted_arenas}"
     );
 
-    assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+    assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+        .expect("resource allocation did not fail"));
     assert_eq!(
         ir.model
             .faces
@@ -1455,7 +1468,8 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         &surface,
         cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
         0.25,
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());

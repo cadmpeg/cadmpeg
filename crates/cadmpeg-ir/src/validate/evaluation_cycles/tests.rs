@@ -16,7 +16,9 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
-    assert!(!admit::admit(&ir, admit::DRAFT_CORE_CHECKS, Vec::new()).is_ok());
+    assert!(!admit::admit(&ir, admit::DRAFT_CORE_CHECKS, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     assert!(matches!(
         admit_evaluation_cycles(&ir),
         Err(CodecError::Malformed(message)) if message == expected

@@ -919,11 +919,15 @@ pub(in crate::families) fn try_decode_zero_entity(
             refusal,
         );
         match counts {
-            Ok(Some(counts)) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
-                ir = candidate_ir;
-                annotations = candidate_annotations;
-                Some(counts)
-            }
+            Ok(Some(counts)) => match neutral_model_is_admissible(&mut candidate_ir, &unknowns) {
+                Ok(true) => {
+                    ir = candidate_ir;
+                    annotations = candidate_annotations;
+                    Some(counts)
+                }
+                Ok(false) => None,
+                Err(limit) => return Some(Err(limit.into())),
+            },
             Err(error) => return Some(Err(error)),
             _ => None,
         }
@@ -1407,7 +1411,8 @@ mod tests {
                     .expect("identity grammar")
             )
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+            .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -1528,7 +1533,8 @@ mod tests {
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, chord])
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+            .expect("resource allocation did not fail"));
     }
 
     #[test]
@@ -1682,7 +1688,8 @@ mod tests {
                 .definition(),
             &definition
         );
-        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
+        assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[])
+            .expect("resource allocation did not fail"));
     }
 
     #[test]

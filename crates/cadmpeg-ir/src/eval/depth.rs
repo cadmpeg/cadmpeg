@@ -8,7 +8,8 @@ use cadmpeg_core::decode::WorkBudget;
 use super::EvaluationFailure;
 use crate::math::Point3;
 
-const MAX_MODEL_EVALUATION_DEPTH: usize = 256;
+// Nested curve and surface arms carry sizable evaluation state on the stack.
+pub(super) const MAX_MODEL_EVALUATION_DEPTH: usize = 64;
 
 thread_local! {
     static MODEL_EVALUATION_DEPTH: Cell<usize> = const { Cell::new(0) };

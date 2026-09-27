@@ -299,7 +299,14 @@ pub(in crate::families) fn try_decode_e5(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
-            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+            if transferred {
+                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                    Ok(admissible) => admissible,
+                    Err(limit) => return Some(Err(limit.into())),
+                }
+            } else {
+                false
+            }
         } else {
             false
         };

@@ -19,6 +19,7 @@ use std::collections::BinaryHeap;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
+use crate::geometry::nurbs::scratch;
 use crate::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -39,9 +40,9 @@ use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
-use crate::geometry::nurbs::scratch;
 
 mod depth;
+mod model_surface_point;
 mod polyline;
 mod rational;
 use depth::ModelEvaluationDepthGuard;
@@ -260,7 +261,9 @@ impl HomogeneousBezierSplit {
     }
 }
 
-fn rational_surface_patches(surface: &NurbsSurface) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
+fn rational_surface_patches(
+    surface: &NurbsSurface,
+) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
     let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
     rational_surface_patches_with_budget(surface, &budget)
 }
@@ -269,14 +272,29 @@ fn rational_surface_patches_with_budget(
     surface: &NurbsSurface,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+        return Ok(None);
+    };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
+        return Ok(None);
+    };
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let Some(control_count) = u_count.checked_mul(v_count) else { return Ok(None); };
-    let Some(patch_control_count) = (u_degree + 1).checked_mul(v_degree + 1) else { return Ok(None); };
-    let Some(work) = control_count.checked_add(surface.u_knots().len()).and_then(|count| count.checked_add(surface.v_knots().len())) else { return Ok(None); };
-    if !budget.charge_by(work) { return Ok(None); }
+    let Some(control_count) = u_count.checked_mul(v_count) else {
+        return Ok(None);
+    };
+    let Some(patch_control_count) = (u_degree + 1).checked_mul(v_degree + 1) else {
+        return Ok(None);
+    };
+    let Some(work) = control_count
+        .checked_add(surface.u_knots().len())
+        .and_then(|count| count.checked_add(surface.v_knots().len()))
+    else {
+        return Ok(None);
+    };
+    if !budget.charge_by(work) {
+        return Ok(None);
+    }
     if u_degree >= u_count || v_degree >= v_count {
         return Ok(None);
     }
@@ -291,29 +309,44 @@ fn rational_surface_patches_with_budget(
     };
     for u in 0..u_count {
         for v in 0..v_count {
-            let Some(point) = surface.pole(u, v) else { return Ok(None); };
+            let Some(point) = surface.pole(u, v) else {
+                return Ok(None);
+            };
             points.push(point);
             if let Some(weights) = &mut weights {
-                let Some(weight) = surface.weight(u, v) else { return Ok(None); };
+                let Some(weight) = surface.weight(u, v) else {
+                    return Ok(None);
+                };
                 weights.push(weight.get());
             }
         }
     }
-    if weights.as_ref().is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0)) {
+    if weights
+        .as_ref()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+    {
         return Ok(None);
     }
-    let Some(homogeneous_controls) = positive_controls(&points, weights.as_deref())? else { return Ok(None); };
+    let Some(homogeneous_controls) = positive_controls(&points, weights.as_deref())? else {
+        return Ok(None);
+    };
     // The Bezier spans of every row and column share the knots, so their
     // domains are the intervals between consecutive distinct active knots.
-    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count) else { return Ok(None); };
-    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count) else { return Ok(None); };
+    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count) else {
+        return Ok(None);
+    };
+    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count) else {
+        return Ok(None);
+    };
     let mut u_spans_by_v = Vec::new();
     scratch::reserve_exact(&mut u_spans_by_v, v_count, "IR surface u spans")?;
     for v in 0..v_count {
         let mut controls = Vec::new();
         scratch::reserve_exact(&mut controls, u_count, "IR surface u row")?;
         controls.extend((0..u_count).map(|u| homogeneous_controls[u * v_count + v]));
-        let Some(spans) = homogeneous_spans(u_degree, surface.u_knots(), controls)? else { return Ok(None); };
+        let Some(spans) = homogeneous_spans(u_degree, surface.u_knots(), controls)? else {
+            return Ok(None);
+        };
         u_spans_by_v.push(spans);
     }
     if u_spans_by_v
@@ -323,7 +356,9 @@ fn rational_surface_patches_with_budget(
         return Ok(None);
     }
     let mut patches = Vec::new();
-    let Some(patch_count) = u_domains.len().checked_mul(v_domains.len()) else { return Ok(None); };
+    let Some(patch_count) = u_domains.len().checked_mul(v_domains.len()) else {
+        return Ok(None);
+    };
     scratch::reserve_exact(&mut patches, patch_count, "IR surface patches")?;
     for (u_span, &u_domain) in u_domains.iter().enumerate() {
         let mut v_spans_by_u = Vec::new();
@@ -332,7 +367,9 @@ fn rational_surface_patches_with_budget(
             let mut controls = Vec::new();
             scratch::reserve_exact(&mut controls, v_count, "IR surface v row")?;
             controls.extend((0..v_count).map(|v| u_spans_by_v[v][u_span].controls[u_control]));
-            let Some(spans) = homogeneous_spans(v_degree, surface.v_knots(), controls)? else { return Ok(None); };
+            let Some(spans) = homogeneous_spans(v_degree, surface.v_knots(), controls)? else {
+                return Ok(None);
+            };
             v_spans_by_u.push(spans);
         }
         if v_spans_by_u
@@ -342,10 +379,18 @@ fn rational_surface_patches_with_budget(
             return Ok(None);
         }
         for (v_span, &v_domain) in v_domains.iter().enumerate() {
-            if !budget.charge_by(patch_control_count) { return Ok(None); }
+            if !budget.charge_by(patch_control_count) {
+                return Ok(None);
+            }
             let mut controls = Vec::new();
-            scratch::reserve_exact(&mut controls, patch_control_count, "IR surface patch controls")?;
-            controls.extend((0..=u_degree).flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied()));
+            scratch::reserve_exact(
+                &mut controls,
+                patch_control_count,
+                "IR surface patch controls",
+            )?;
+            controls.extend(
+                (0..=u_degree).flat_map(|u| v_spans_by_u[u][v_span].controls.iter().copied()),
+            );
             patches.push(RationalBezierSurfacePatch {
                 u_domain,
                 v_domain,
@@ -366,11 +411,18 @@ fn rational_surface_residual_patches(
     if !point.is_finite() {
         return Ok(None);
     }
-    let Some(mut patches) = rational_surface_patches_with_budget(surface, budget)? else { return Ok(None); };
+    let Some(mut patches) = rational_surface_patches_with_budget(surface, budget)? else {
+        return Ok(None);
+    };
     let Some(residual_work) = patches
         .iter()
-        .try_fold(0usize, |work, patch| work.checked_add(patch.controls.len())) else { return Ok(None); };
-    if !budget.charge_by(residual_work) { return Ok(None); }
+        .try_fold(0usize, |work, patch| work.checked_add(patch.controls.len()))
+    else {
+        return Ok(None);
+    };
+    if !budget.charge_by(residual_work) {
+        return Ok(None);
+    }
     for patch in &mut patches {
         for control in &mut patch.controls {
             for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -393,7 +445,9 @@ fn split_homogeneous_bezier(
     })
 }
 
-fn split_homogeneous_bezier_midpoint(controls: &[[f64; 4]]) -> Result<Option<HomogeneousBezierSplit>, ResourceLimit> {
+fn split_homogeneous_bezier_midpoint(
+    controls: &[[f64; 4]],
+) -> Result<Option<HomogeneousBezierSplit>, ResourceLimit> {
     split_homogeneous_bezier_with(controls, |left, right| {
         std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
     })
@@ -403,7 +457,9 @@ fn split_homogeneous_bezier_with(
     controls: &[[f64; 4]],
     blend: impl Fn([f64; 4], [f64; 4]) -> [f64; 4],
 ) -> Result<Option<HomogeneousBezierSplit>, ResourceLimit> {
-    let Some((&first, rest)) = controls.split_first() else { return Ok(None); };
+    let Some((&first, rest)) = controls.split_first() else {
+        return Ok(None);
+    };
     let mut first = first;
     let mut rest = scratch::filled(rest.len(), [0.0; 4], "IR Bezier split controls")?;
     rest.copy_from_slice(&controls[1..]);
@@ -438,15 +494,24 @@ fn restrict_homogeneous_bezier(
     end: f64,
 ) -> Result<Option<Vec<[f64; 4]>>, ResourceLimit> {
     if start > end {
-        let Some(mut restricted) = restrict_homogeneous_bezier(controls, end, start)? else { return Ok(None); };
+        let Some(mut restricted) = restrict_homogeneous_bezier(controls, end, start)? else {
+            return Ok(None);
+        };
         restricted.reverse();
         return Ok(Some(restricted));
     }
     if start == end {
-        let Some(point) = split_homogeneous_bezier(controls, start)?.map(|split| split.point) else { return Ok(None); };
+        let Some(point) = split_homogeneous_bezier(controls, start)?.map(|split| split.point)
+        else {
+            return Ok(None);
+        };
         return scratch::filled(controls.len(), point, "ir_bezier_collapsed_controls").map(Some);
     }
-    let Some(left) = split_homogeneous_bezier(controls, end)?.map(HomogeneousBezierSplit::into_polygons) else { return Ok(None); };
+    let Some(left) =
+        split_homogeneous_bezier(controls, end)?.map(HomogeneousBezierSplit::into_polygons)
+    else {
+        return Ok(None);
+    };
     let left = left.0;
     if start == 0.0 {
         return Ok(Some(left));
@@ -477,28 +542,59 @@ fn rational_patch_parameter_segment(
     };
     let [start_u, start_v] = start.coordinates();
     let [end_u, end_v] = end.coordinates();
-    let Some(u_range) = normalize(start_u, patch.u_domain).zip(normalize(end_u, patch.u_domain)) else { return Ok(None); };
-    let Some(v_range) = normalize(start_v, patch.v_domain).zip(normalize(end_v, patch.v_domain)) else { return Ok(None); };
+    let Some(u_range) = normalize(start_u, patch.u_domain).zip(normalize(end_u, patch.u_domain))
+    else {
+        return Ok(None);
+    };
+    let Some(v_range) = normalize(start_v, patch.v_domain).zip(normalize(end_v, patch.v_domain))
+    else {
+        return Ok(None);
+    };
     let mut u_lines = Vec::new();
-    scratch::reserve_exact(&mut u_lines, patch.v_degree + 1, "IR rational surface u lines")?;
+    scratch::reserve_exact(
+        &mut u_lines,
+        patch.v_degree + 1,
+        "IR rational surface u lines",
+    )?;
     for v in 0..=patch.v_degree {
         let mut controls = Vec::new();
-        scratch::reserve_exact(&mut controls, patch.u_degree + 1, "IR rational surface u row")?;
+        scratch::reserve_exact(
+            &mut controls,
+            patch.u_degree + 1,
+            "IR rational surface u row",
+        )?;
         controls.extend((0..=patch.u_degree).map(|u| patch.controls[u * (patch.v_degree + 1) + v]));
-        let Some(line) = restrict_homogeneous_bezier(&controls, u_range.0, u_range.1)? else { return Ok(None); };
+        let Some(line) = restrict_homogeneous_bezier(&controls, u_range.0, u_range.1)? else {
+            return Ok(None);
+        };
         u_lines.push(line);
     }
     let mut restricted = Vec::new();
-    scratch::reserve_exact(&mut restricted, patch.u_degree + 1, "IR rational surface restricted rows")?;
-    for u in 0..=patch.u_degree {
+    scratch::reserve_exact(
+        &mut restricted,
+        patch.u_degree + 1,
+        "IR rational surface restricted rows",
+    )?;
+    let Some(first_line) = u_lines.first() else {
+        return Ok(None);
+    };
+    for (u, _) in first_line.iter().enumerate().take(patch.u_degree + 1) {
         let mut controls = Vec::new();
-        scratch::reserve_exact(&mut controls, patch.v_degree + 1, "IR rational surface v row")?;
-        controls.extend((0..=patch.v_degree).map(|v| u_lines[v][u]));
-        let Some(line) = restrict_homogeneous_bezier(&controls, v_range.0, v_range.1)? else { return Ok(None); };
+        scratch::reserve_exact(
+            &mut controls,
+            patch.v_degree + 1,
+            "IR rational surface v row",
+        )?;
+        controls.extend(u_lines.iter().map(|row| row[u]));
+        let Some(line) = restrict_homogeneous_bezier(&controls, v_range.0, v_range.1)? else {
+            return Ok(None);
+        };
         restricted.push(line);
     }
     let degree = patch.u_degree + patch.v_degree;
-    let Some(count) = degree.checked_add(1) else { return Ok(None); };
+    let Some(count) = degree.checked_add(1) else {
+        return Ok(None);
+    };
     let mut diagonal = scratch::filled(count, [0.0; 4], "IR rational surface diagonal")?;
     for (u, row) in restricted.iter().enumerate() {
         for (v, control) in row.iter().enumerate() {
@@ -590,12 +686,24 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     if chord.iter().any(|point| !point.is_finite()) {
         return Ok(None);
     }
-    let Some(patches) = rational_surface_patches(surface)? else { return Ok(None); };
+    let Some(patches) = rational_surface_patches(surface)? else {
+        return Ok(None);
+    };
     let [first_u, first_v] = first.coordinates();
     let [last_u, last_v] = last.coordinates();
     let mut splits = Vec::new();
-    let Some(split_capacity) = patches.len().checked_mul(4).and_then(|count| count.checked_add(2)) else { return Ok(None); };
-    scratch::reserve_exact(&mut splits, split_capacity, "IR rational surface segment splits")?;
+    let Some(split_capacity) = patches
+        .len()
+        .checked_mul(4)
+        .and_then(|count| count.checked_add(2))
+    else {
+        return Ok(None);
+    };
+    scratch::reserve_exact(
+        &mut splits,
+        split_capacity,
+        "IR rational surface segment splits",
+    )?;
     splits.extend([0.0, 1.0]);
     for patch in &patches {
         let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
@@ -609,7 +717,12 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
             if start.get().min(end.get()) < boundary.get()
                 && boundary.get() < start.get().max(end.get())
             {
-                let Some(parameter) = difference_quotient(boundary, start, end, start).ok().map(FiniteReal::get) else { return Ok(None); };
+                let Some(parameter) = difference_quotient(boundary, start, end, start)
+                    .ok()
+                    .map(FiniteReal::get)
+                else {
+                    return Ok(None);
+                };
                 if 0.0 < parameter && parameter < 1.0 {
                     splits.push(parameter);
                 }
@@ -627,23 +740,35 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
                 crate::math::interpolate(first.v, last.v, parameter)?,
             ))
         };
-        let Some(midpoint) = parameter_point(middle) else { return Ok(None); };
+        let Some(midpoint) = parameter_point(middle) else {
+            return Ok(None);
+        };
         let Some(patch) = patches.iter().find(|patch| {
             patch.u_domain.lower() <= midpoint.u
                 && midpoint.u <= patch.u_domain.upper()
                 && patch.v_domain.lower() <= midpoint.v
                 && midpoint.v <= patch.v_domain.upper()
-        }) else { return Ok(None); };
-        let Some(start) = parameter_point(range[0]) else { return Ok(None); };
-        let Some(end) = parameter_point(range[1]) else { return Ok(None); };
-        let Some(controls) = rational_patch_parameter_segment(patch, start, end)? else { return Ok(None); };
+        }) else {
+            return Ok(None);
+        };
+        let Some(start) = parameter_point(range[0]) else {
+            return Ok(None);
+        };
+        let Some(end) = parameter_point(range[1]) else {
+            return Ok(None);
+        };
+        let Some(controls) = rational_patch_parameter_segment(patch, start, end)? else {
+            return Ok(None);
+        };
         let Some(piece_bound) = rational_curve_chord_bound(
             &controls,
             [
                 point_on_chord(chord, range[0]),
                 point_on_chord(chord, range[1]),
             ],
-        ) else { return Ok(None); };
+        ) else {
+            return Ok(None);
+        };
         bound = bound.max(piece_bound);
     }
     Ok(Some(bound))
@@ -696,41 +821,65 @@ fn split_rational_surface_patch(
     } else {
         (patch.v_degree, patch.u_degree + 1)
     };
-    let Some(work) = patch.controls.len().checked_mul(degree + 1) else { return Ok(None); };
-    if !budget.charge_by(work) { return Ok(None); }
+    let Some(work) = patch.controls.len().checked_mul(degree + 1) else {
+        return Ok(None);
+    };
+    if !budget.charge_by(work) {
+        return Ok(None);
+    }
     let mut first_lines = Vec::new();
     scratch::reserve_exact(&mut first_lines, line_count, "IR surface patch first lines")?;
     let mut second_lines = Vec::new();
-    scratch::reserve_exact(&mut second_lines, line_count, "IR surface patch second lines")?;
+    scratch::reserve_exact(
+        &mut second_lines,
+        line_count,
+        "IR surface patch second lines",
+    )?;
     for line in 0..line_count {
         let mut controls = Vec::new();
         scratch::reserve_exact(&mut controls, degree + 1, "IR surface patch split line")?;
         if split_u {
-            controls.extend((0..=degree).map(|index| patch.controls[index * (patch.v_degree + 1) + line]));
+            controls.extend(
+                (0..=degree).map(|index| patch.controls[index * (patch.v_degree + 1) + line]),
+            );
         } else {
-            controls.extend_from_slice(&patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)]);
+            controls.extend_from_slice(
+                &patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)],
+            );
         }
-        let Some(split) = split_homogeneous_bezier_midpoint(&controls)? else { return Ok(None); };
+        let Some(split) = split_homogeneous_bezier_midpoint(&controls)? else {
+            return Ok(None);
+        };
         let (first, second) = split.into_polygons();
         first_lines.push(first);
         second_lines.push(second);
     }
     let assemble = |lines: Vec<Vec<[f64; 4]>>| -> Result<Vec<[f64; 4]>, ResourceLimit> {
         let mut controls = Vec::new();
-        scratch::reserve_exact(&mut controls, patch.controls.len(), "IR surface patch assembled controls")?;
+        scratch::reserve_exact(
+            &mut controls,
+            patch.controls.len(),
+            "IR surface patch assembled controls",
+        )?;
         if split_u {
             let lines = &lines;
-            controls.extend((0..=patch.u_degree).flat_map(|u| (0..=patch.v_degree).map(move |v| lines[v][u])));
+            controls.extend(
+                (0..=patch.u_degree).flat_map(|u| (0..=patch.v_degree).map(move |v| lines[v][u])),
+            );
         } else {
             controls.extend(lines.into_iter().flatten());
         }
         Ok(controls)
     };
     let (first_u, second_u, first_v, second_v) = if split_u {
-        let Some((first_u, second_u)) = patch.u_domain.split_at_midpoint() else { return Ok(None); };
+        let Some((first_u, second_u)) = patch.u_domain.split_at_midpoint() else {
+            return Ok(None);
+        };
         (first_u, second_u, patch.v_domain, patch.v_domain)
     } else {
-        let Some((first_v, second_v)) = patch.v_domain.split_at_midpoint() else { return Ok(None); };
+        let Some((first_v, second_v)) = patch.v_domain.split_at_midpoint() else {
+            return Ok(None);
+        };
         (patch.u_domain, patch.u_domain, first_v, second_v)
     };
     Ok(Some([
@@ -766,13 +915,29 @@ fn refine_nurbs_surface_parameters(
         v_domain.project(ExtendedReal::from_finite(start_v)),
     );
     for _ in 0..32 {
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget))? else { return Ok(None); };
+        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
+            surface,
+            parameters.u,
+            parameters.v,
+            budget,
+        ))?
+        else {
+            return Ok(None);
+        };
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
             position.z - point.z,
         );
-        let Some(partials) = finite_or_refusal(nurbs_surface_partials_with_budget(surface, parameters.u, parameters.v, budget))? else { return Ok(None); };
+        let Some(partials) = finite_or_refusal(nurbs_surface_partials_with_budget(
+            surface,
+            parameters.u,
+            parameters.v,
+            budget,
+        ))?
+        else {
+            return Ok(None);
+        };
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
@@ -785,7 +950,15 @@ fn refine_nurbs_surface_parameters(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
-            let Some(candidate_position) = finite_or_refusal(nurbs_surface_point_with_budget(surface, candidate.u, candidate.v, budget))? else { return Ok(None); };
+            let Some(candidate_position) = finite_or_refusal(nurbs_surface_point_with_budget(
+                surface,
+                candidate.u,
+                candidate.v,
+                budget,
+            ))?
+            else {
+                return Ok(None);
+            };
             if distance(candidate_position.get()) <= current_distance {
                 accepted = Some(candidate);
                 break;
@@ -824,7 +997,9 @@ fn complete_nurbs_surface_starts(
 ) -> Result<Option<Vec<FinitePoint2>>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let Some(patches) = rational_surface_residual_patches(surface, point, budget)? else { return Ok(None); };
+    let Some(patches) = rational_surface_residual_patches(surface, point, budget)? else {
+        return Ok(None);
+    };
     let Some(coordinate_scale) =
         patches
             .iter()
@@ -838,7 +1013,10 @@ fn complete_nurbs_surface_starts(
                     let coordinate = (coordinate / weight).abs();
                     coordinate.is_finite().then(|| scale.max(coordinate))
                 })
-            }) else { return Ok(None); };
+            })
+    else {
+        return Ok(None);
+    };
     let requested_tolerance = match fit_tolerance {
         Some(tolerance) if tolerance.is_finite() && tolerance >= 0.0 => tolerance,
         Some(_) => return Ok(None),
@@ -846,11 +1024,14 @@ fn complete_nurbs_surface_starts(
     };
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let distance_at = |parameters: FinitePoint2| -> Result<Option<f64>, ResourceLimit> {
-        let position = match nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget) {
-            Ok(position) => position,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
-        };
+        let position =
+            match nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget) {
+                Ok(position) => position,
+                Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+                Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => {
+                    return Ok(None)
+                }
+            };
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
@@ -861,58 +1042,77 @@ fn complete_nurbs_surface_starts(
         let [v_start, v_end] = patch.v_domain.finite_endpoints();
         FinitePoint2::from_coordinates(u_start.midpoint(u_end), v_start.midpoint(v_end))
     };
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
-    let Some(surface_u_domain) = surface.u_knots().span(u_degree, surface.u_count()) else { return Ok(None); };
-    let Some(surface_v_domain) = surface.v_knots().span(v_degree, surface.v_count()) else { return Ok(None); };
-    let refined_upper = |start, u_domain, v_domain| -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
-        let parameters =
-            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
-                ?
-                .unwrap_or(start);
-        Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+        return Ok(None);
     };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
+        return Ok(None);
+    };
+    let Some(surface_u_domain) = surface.u_knots().span(u_degree, surface.u_count()) else {
+        return Ok(None);
+    };
+    let Some(surface_v_domain) = surface.v_knots().span(v_degree, surface.v_count()) else {
+        return Ok(None);
+    };
+    let refined_upper =
+        |start, u_domain, v_domain| -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
+            let parameters =
+                refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)?
+                    .unwrap_or(start);
+            Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
+        };
     let mut best_distance = f64::INFINITY;
     let mut best_upper_parameters = Vec::new();
     {
-        let mut consider_upper = |(parameters, distance): (FinitePoint2, f64)| -> Result<(), ResourceLimit> {
-            if !best_distance.is_finite() {
-                best_distance = distance;
-                scratch::reserve_exact(&mut best_upper_parameters, 1, "IR surface upper parameters")?;
-                best_upper_parameters.push(parameters);
-                return Ok(());
-            }
-            let tolerance = 128.0
-                * f64::EPSILON
-                * distance
-                    .abs()
-                    .max(best_distance.abs())
-                    .max(distance_tolerance);
-            if distance < best_distance && best_distance - distance > tolerance {
-                best_distance = distance;
-                best_upper_parameters.clear();
-            }
-            if (distance - best_distance).abs() <= tolerance {
-                scratch::reserve_exact(&mut best_upper_parameters, 1, "IR surface upper parameters")?;
-                best_upper_parameters.push(parameters);
-            }
-            Ok(())
-        };
+        let mut consider_upper =
+            |(parameters, distance): (FinitePoint2, f64)| -> Result<(), ResourceLimit> {
+                if !best_distance.is_finite() {
+                    best_distance = distance;
+                    scratch::reserve_exact(
+                        &mut best_upper_parameters,
+                        1,
+                        "IR surface upper parameters",
+                    )?;
+                    best_upper_parameters.push(parameters);
+                    return Ok(());
+                }
+                let tolerance = 128.0
+                    * f64::EPSILON
+                    * distance
+                        .abs()
+                        .max(best_distance.abs())
+                        .max(distance_tolerance);
+                if distance < best_distance && best_distance - distance > tolerance {
+                    best_distance = distance;
+                    best_upper_parameters.clear();
+                }
+                if (distance - best_distance).abs() <= tolerance {
+                    scratch::reserve_exact(
+                        &mut best_upper_parameters,
+                        1,
+                        "IR surface upper parameters",
+                    )?;
+                    best_upper_parameters.push(parameters);
+                }
+                Ok(())
+            };
         if let Some(seed) = seed {
             if let Some(candidate) = refined_upper(seed, surface_u_domain, surface_v_domain)? {
                 consider_upper(candidate)?;
             }
         }
         for patch in &patches {
-            let Some(candidate) = refined_upper(
-                center(patch),
-                patch.u_domain.into(),
-                patch.v_domain.into(),
-            )? else { return Ok(None); };
+            let Some(candidate) =
+                refined_upper(center(patch), patch.u_domain.into(), patch.v_domain.into())?
+            else {
+                return Ok(None);
+            };
             consider_upper(candidate)?;
         }
     }
-    if !best_distance.is_finite() { return Ok(None); }
+    if !best_distance.is_finite() {
+        return Ok(None);
+    }
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
     if fit_tolerance.is_some() && best_distance <= distance_tolerance {
@@ -921,8 +1121,14 @@ fn complete_nurbs_surface_starts(
     let mut queue = BinaryHeap::new();
     let mut sequence = 0usize;
     for patch in patches {
-        let Some((lower_bound, diameter)) = rational_patch_distance_bounds_with_budget(&patch, budget) else { return Ok(None); };
-        queue.try_reserve(1).map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
+        let Some((lower_bound, diameter)) =
+            rational_patch_distance_bounds_with_budget(&patch, budget)
+        else {
+            return Ok(None);
+        };
+        queue
+            .try_reserve(1)
+            .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
             diameter,
@@ -954,7 +1160,11 @@ fn complete_nurbs_surface_starts(
             break;
         }
         let parameters = center(&patch);
-        let Some((upper_parameters, center_distance)) = refined_upper(parameters, patch.u_domain.into(), patch.v_domain.into())? else { return Ok(None); };
+        let Some((upper_parameters, center_distance)) =
+            refined_upper(parameters, patch.u_domain.into(), patch.v_domain.into())?
+        else {
+            return Ok(None);
+        };
         if fit_tolerance.is_some() && center_distance <= distance_tolerance {
             return scratch::filled(1, upper_parameters, "IR surface parameter start").map(Some);
         }
@@ -984,7 +1194,9 @@ fn complete_nurbs_surface_starts(
             terminal.push((upper_parameters, lower_bound));
             continue;
         }
-        if !budget.charge_by(patch.controls.len()) { return Ok(None); }
+        if !budget.charge_by(patch.controls.len()) {
+            return Ok(None);
+        }
         let control = |u: usize, v: usize| {
             let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
             [
@@ -1013,10 +1225,20 @@ fn complete_nurbs_surface_starts(
                     .fold(0.0_f64, f64::hypot)
             })
             .fold(0.0_f64, f64::max);
-        let Some(children) = split_rational_surface_patch(&patch, u_variation >= v_variation, budget)? else { return Ok(None); };
+        let Some(children) =
+            split_rational_surface_patch(&patch, u_variation >= v_variation, budget)?
+        else {
+            return Ok(None);
+        };
         for patch in children {
-            let Some((lower_bound, diameter)) = rational_patch_distance_bounds_with_budget(&patch, budget) else { return Ok(None); };
-            queue.try_reserve(1).map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
+            let Some((lower_bound, diameter)) =
+                rational_patch_distance_bounds_with_budget(&patch, budget)
+            else {
+                return Ok(None);
+            };
+            queue
+                .try_reserve(1)
+                .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
                 diameter,
@@ -1027,7 +1249,9 @@ fn complete_nurbs_surface_starts(
         }
     }
     let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(distance_tolerance);
-    let Some(start_count) = terminal.len().checked_add(best_upper_parameters.len()) else { return Ok(None); };
+    let Some(start_count) = terminal.len().checked_add(best_upper_parameters.len()) else {
+        return Ok(None);
+    };
     let mut starts = Vec::new();
     scratch::reserve_exact(&mut starts, start_count, "IR surface parameter starts")?;
     starts.extend(terminal.into_iter().filter_map(|(parameters, lower)| {
@@ -1045,12 +1269,20 @@ fn solve_nurbs_surface_parameter(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
     let seed = seed.and_then(FinitePoint2::new);
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+        return Ok(None);
+    };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
+        return Ok(None);
+    };
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let Some(u_domain) = surface.u_knots().span(u_degree, u_count) else { return Ok(None); };
-    let Some(v_domain) = surface.v_knots().span(v_degree, v_count) else { return Ok(None); };
+    let Some(u_domain) = surface.u_knots().span(u_degree, u_count) else {
+        return Ok(None);
+    };
+    let Some(v_domain) = surface.v_knots().span(v_degree, v_count) else {
+        return Ok(None);
+    };
     if u_domain.endpoints()[0] >= u_domain.endpoints()[1]
         || v_domain.endpoints()[0] >= v_domain.endpoints()[1]
     {
@@ -1062,15 +1294,30 @@ fn solve_nurbs_surface_parameter(
             u_domain.project(ExtendedReal::from_finite(seed_u)),
             v_domain.project(ExtendedReal::from_finite(seed_v)),
         );
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget))? else { return Ok(None); };
+        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
+            surface,
+            parameters.u,
+            parameters.v,
+            budget,
+        ))?
+        else {
+            return Ok(None);
+        };
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
         if distance.is_finite() && distance <= tolerance {
             return Ok(Some((parameters, distance)));
         }
-        if let Some(refined) = refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)? {
-            let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(surface, refined.u, refined.v, budget))? else { return Ok(None); };
+        if let Some(refined) =
+            refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)?
+        {
+            let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
+                surface, refined.u, refined.v, budget,
+            ))?
+            else {
+                return Ok(None);
+            };
             let distance = (position.x - point.x)
                 .hypot(position.y - point.y)
                 .hypot(position.z - point.z);
@@ -1079,7 +1326,10 @@ fn solve_nurbs_surface_parameter(
             }
         }
     }
-    let Some(starts) = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)? else { return Ok(None); };
+    let Some(starts) = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
+    else {
+        return Ok(None);
+    };
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
@@ -1089,7 +1339,12 @@ fn solve_nurbs_surface_parameter(
         else {
             continue;
         };
-        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget))?
+        let Some(position) = finite_or_refusal(nurbs_surface_point_with_budget(
+            surface,
+            parameters.u,
+            parameters.v,
+            budget,
+        ))?
         else {
             continue;
         };
@@ -1127,8 +1382,10 @@ pub fn nurbs_surface_closest_parameter_with_budget(
     seed: Option<Point2>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
-    Ok(solve_nurbs_surface_parameter(surface, point, seed, None, budget)?
-        .map(|(parameters, _)| parameters))
+    Ok(
+        solve_nurbs_surface_parameter(surface, point, seed, None, budget)?
+            .map(|(parameters, _)| parameters),
+    )
 }
 
 /// Find a bounded local parameter candidate on a finite NURBS surface.
@@ -1150,12 +1407,20 @@ pub fn nurbs_surface_parameter_near_point(
     if !point.is_finite() {
         return Ok(None);
     }
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+        return Ok(None);
+    };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
+        return Ok(None);
+    };
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let Some(u_domain) = surface.u_knots().span(u_degree, u_count) else { return Ok(None); };
-    let Some(v_domain) = surface.v_knots().span(v_degree, v_count) else { return Ok(None); };
+    let Some(u_domain) = surface.u_knots().span(u_degree, u_count) else {
+        return Ok(None);
+    };
+    let Some(v_domain) = surface.v_knots().span(v_degree, v_count) else {
+        return Ok(None);
+    };
     let [u_start, u_end] = u_domain.endpoints();
     let [v_start, v_end] = v_domain.endpoints();
     if u_start >= u_end || v_start >= v_end {
@@ -1172,27 +1437,43 @@ pub fn nurbs_surface_parameter_near_point(
         None => {
             let mut best = None;
             for u_index in 0..=COARSE_GRID {
-                let Some(u) = crate::math::interpolate(u_start, u_end, u_index as f64 / COARSE_GRID as f64) else { return Ok(None); };
+                let Some(u) =
+                    crate::math::interpolate(u_start, u_end, u_index as f64 / COARSE_GRID as f64)
+                else {
+                    return Ok(None);
+                };
                 for v_index in 0..=COARSE_GRID {
                     let Some(v) = crate::math::interpolate(
                         v_start,
                         v_end,
                         v_index as f64 / COARSE_GRID as f64,
-                    ) else { return Ok(None); };
-                    let Some(candidate) = finite_or_refusal(nurbs_surface_point(surface, u.get(), v.get()))? else { return Ok(None); };
+                    ) else {
+                        return Ok(None);
+                    };
+                    let Some(candidate) =
+                        finite_or_refusal(nurbs_surface_point(surface, u.get(), v.get()))?
+                    else {
+                        return Ok(None);
+                    };
                     let distance = candidate.distance(point);
                     if best.is_none_or(|(_, best_distance)| distance < best_distance) {
                         best = Some((FinitePoint2::from_coordinates(u, v), distance));
                     }
                 }
             }
-            let Some((best, _)) = best else { return Ok(None); };
+            let Some((best, _)) = best else {
+                return Ok(None);
+            };
             best
         }
     };
     let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
-        let Some(partials) = finite_or_refusal(nurbs_surface_partials(surface, parameters.u, parameters.v))? else { return Ok(None); };
+        let Some(partials) =
+            finite_or_refusal(nurbs_surface_partials(surface, parameters.u, parameters.v))?
+        else {
+            return Ok(None);
+        };
         let current_distance = distance(partials.point.get());
         if current_distance == 0.0 {
             return Ok(Some(parameters));
@@ -1213,7 +1494,11 @@ pub fn nurbs_surface_parameter_near_point(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
-            let Some(candidate_point) = finite_or_refusal(nurbs_surface_point(surface, candidate.u, candidate.v))? else { return Ok(None); };
+            let Some(candidate_point) =
+                finite_or_refusal(nurbs_surface_point(surface, candidate.u, candidate.v))?
+            else {
+                return Ok(None);
+            };
             if distance(candidate_point.get()) < current_distance {
                 parameters = candidate;
                 accepted = true;
@@ -1252,13 +1537,11 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     tolerance: f64,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
-    let Some(tolerance) = NonNegativeReal::new(tolerance) else { return Ok(None); };
+    let Some(tolerance) = NonNegativeReal::new(tolerance) else {
+        return Ok(None);
+    };
     nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-        surface,
-        point,
-        seed,
-        tolerance,
-        budget,
+        surface, point, seed, tolerance, budget,
     )
 }
 
@@ -1272,7 +1555,11 @@ pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     let tolerance = tolerance.get();
-    let Some((parameters, distance)) = solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)? else { return Ok(None); };
+    let Some((parameters, distance)) =
+        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)?
+    else {
+        return Ok(None);
+    };
     Ok((distance.is_finite() && distance <= tolerance).then_some(parameters))
 }
 
@@ -1328,105 +1615,116 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 /// Scratch contains `degree + 1` values, at most the admitted control count.
 fn bspline_basis(
-    knots: &[f64], degree: usize, span: usize, t: f64,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
 ) -> Result<Option<Vec<f64>>, ResourceLimit> {
     let finite_t = FiniteReal::new(t);
-    let Some(count) = degree.checked_add(1) else { return Ok(None); };
+    let Some(count) = degree.checked_add(1) else {
+        return Ok(None);
+    };
     let mut values = scratch::filled(count, 0.0, "IR B-spline basis")?;
     Ok((|| {
-    values[0] = 1.0;
-    for j in 1..=degree {
-        let mut saved = 0.0;
-        for r in 0..j {
-            let value = values[r];
-            // Each knot distance is admitted where it is formed.
-            let right = FiniteReal::new(knots[span + r + 1] - t);
-            let left = FiniteReal::new(t - knots[span + 1 - j + r]);
-            // Two finite distances with a finite sum form the scaled ratio. A
-            // distance or a sum outside the finite range takes the exact knot
-            // differences instead.
-            let ratio_terms = right.zip(left).and_then(|(right, left)| {
-                Some((right, left, FiniteReal::new(right.get() + left.get())?))
-            });
-            let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
-                scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
-                    .map(FiniteReal::get)
-            } else {
-                let t = finite_t?;
-                let [right_knot, left_knot] =
-                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
-                [
-                    value
-                        * difference_quotient(right_knot, t, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                    value
-                        * difference_quotient(t, left_knot, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                ]
-            };
-            values[r] = saved + right_term;
-            saved = left_term;
+        values[0] = 1.0;
+        for j in 1..=degree {
+            let mut saved = 0.0;
+            for r in 0..j {
+                let value = values[r];
+                // Each knot distance is admitted where it is formed.
+                let right = FiniteReal::new(knots[span + r + 1] - t);
+                let left = FiniteReal::new(t - knots[span + 1 - j + r]);
+                // Two finite distances with a finite sum form the scaled ratio. A
+                // distance or a sum outside the finite range takes the exact knot
+                // differences instead.
+                let ratio_terms = right.zip(left).and_then(|(right, left)| {
+                    Some((right, left, FiniteReal::new(right.get() + left.get())?))
+                });
+                let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms
+                {
+                    scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
+                        .map(FiniteReal::get)
+                } else {
+                    let t = finite_t?;
+                    let [right_knot, left_knot] =
+                        FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
+                    [
+                        value
+                            * difference_quotient(right_knot, t, right_knot, left_knot)
+                                .ok()?
+                                .get(),
+                        value
+                            * difference_quotient(t, left_knot, right_knot, left_knot)
+                                .ok()?
+                                .get(),
+                    ]
+                };
+                values[r] = saved + right_term;
+                saved = left_term;
+            }
+            values[j] = saved;
         }
-        values[j] = saved;
-    }
-    Some(values)
+        Some(values)
     })())
 }
 
 /// The derivative basis uses degree + 1 scratch values, at most the admitted control count.
 fn bspline_basis_derivative(
-    knots: &[f64], degree: usize, span: usize, t: f64,
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
 ) -> Result<Option<Vec<f64>>, ResourceLimit> {
     if degree == 0 {
         return scratch::filled(1, 0.0, "IR B-spline derivative basis").map(Some);
     }
-    let Some(lower) = bspline_basis(knots, degree - 1, span, t)? else { return Ok(None); };
+    let Some(lower) = bspline_basis(knots, degree - 1, span, t)? else {
+        return Ok(None);
+    };
     let lower_start = span - (degree - 1);
     let mut derivative = scratch::filled(degree + 1, 0.0, "IR B-spline derivative basis")?;
     for (local, output) in derivative.iter_mut().enumerate() {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            *output = left - right;
+        let index = span - degree + local;
+        let lower_at = |global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| lower.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let left_denominator = knots[index + degree] - knots[index];
+        let right_denominator = knots[index + degree + 1] - knots[index + 1];
+        let left = if left_denominator == 0.0 {
+            0.0
+        } else if left_denominator.is_finite() {
+            degree as f64 * lower_at(index) / left_denominator
+        } else {
+            FiniteReal::array([
+                degree as f64 * lower_at(index),
+                knots[index + degree],
+                knots[index],
+            ])
+            .and_then(|[value, end, start]| {
+                difference_quotient(value, FiniteReal::ZERO, end, start).ok()
+            })
+            .map_or(f64::NAN, FiniteReal::get)
+        };
+        let right = if right_denominator == 0.0 {
+            0.0
+        } else if right_denominator.is_finite() {
+            degree as f64 * lower_at(index + 1) / right_denominator
+        } else {
+            FiniteReal::array([
+                degree as f64 * lower_at(index + 1),
+                knots[index + degree + 1],
+                knots[index + 1],
+            ])
+            .and_then(|[value, end, start]| {
+                difference_quotient(value, FiniteReal::ZERO, end, start).ok()
+            })
+            .map_or(f64::NAN, FiniteReal::get)
+        };
+        *output = left - right;
     }
     Ok(Some(derivative))
 }
@@ -1444,51 +1742,53 @@ fn bspline_basis_second_derivative(
     if degree == 1 {
         return Ok(Some(Cow::Borrowed(&[0.0, 0.0])));
     }
-    let Some(lower) = bspline_basis_derivative(knots, degree - 1, span, t)? else { return Ok(None); };
+    let Some(lower) = bspline_basis_derivative(knots, degree - 1, span, t)? else {
+        return Ok(None);
+    };
     let lower_start = span - (degree - 1);
     let mut basis = scratch::filled(degree + 1, 0.0, "IR B-spline second derivative basis")?;
     for (local, output) in basis.iter_mut().enumerate() {
-            let index = span - degree + local;
-            let lower_at = |global: usize| {
-                global
-                    .checked_sub(lower_start)
-                    .and_then(|at| lower.get(at))
-                    .copied()
-                    .unwrap_or(0.0)
-            };
-            let left_denominator = knots[index + degree] - knots[index];
-            let right_denominator = knots[index + degree + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
-            } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
-            };
-            *output = left - right;
+        let index = span - degree + local;
+        let lower_at = |global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| lower.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let left_denominator = knots[index + degree] - knots[index];
+        let right_denominator = knots[index + degree + 1] - knots[index + 1];
+        let left = if left_denominator == 0.0 {
+            0.0
+        } else if left_denominator.is_finite() {
+            degree as f64 * lower_at(index) / left_denominator
+        } else {
+            FiniteReal::array([
+                degree as f64 * lower_at(index),
+                knots[index + degree],
+                knots[index],
+            ])
+            .and_then(|[value, end, start]| {
+                difference_quotient(value, FiniteReal::ZERO, end, start).ok()
+            })
+            .map_or(f64::NAN, FiniteReal::get)
+        };
+        let right = if right_denominator == 0.0 {
+            0.0
+        } else if right_denominator.is_finite() {
+            degree as f64 * lower_at(index + 1) / right_denominator
+        } else {
+            FiniteReal::array([
+                degree as f64 * lower_at(index + 1),
+                knots[index + degree + 1],
+                knots[index + 1],
+            ])
+            .and_then(|[value, end, start]| {
+                difference_quotient(value, FiniteReal::ZERO, end, start).ok()
+            })
+            .map_or(f64::NAN, FiniteReal::get)
+        };
+        *output = left - right;
     }
     Ok(Some(Cow::Owned(basis)))
 }
@@ -1496,27 +1796,50 @@ fn bspline_basis_second_derivative(
 /// Basis derivatives with respect to a local coordinate whose unit is the
 /// active knot span. This keeps the coefficients finite when derivatives in
 /// the original parameter would exceed binary64 range.
+struct ScaledBasisDerivatives {
+    first: Vec<f64>,
+    second: Vec<f64>,
+}
+
 fn bspline_basis_scaled_derivatives(
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
     scale: PositiveReal,
-) -> Result<Option<(Vec<f64>, Vec<f64>)>, ResourceLimit> {
+) -> Result<Option<ScaledBasisDerivatives>, ResourceLimit> {
     if degree == 0 {
-        return Ok(Some((scratch::filled(1, 0.0, "IR scaled B-spline first derivative basis")?, scratch::filled(1, 0.0, "IR scaled B-spline second derivative basis")?)));
+        return Ok(Some(ScaledBasisDerivatives {
+            first: scratch::filled(1, 0.0, "IR scaled B-spline first derivative basis")?,
+            second: scratch::filled(1, 0.0, "IR scaled B-spline second derivative basis")?,
+        }));
     }
-    let Some(lower) = bspline_basis(knots, degree - 1, span, t)? else { return Ok(None); };
-    let Some(first) = bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower)? else { return Ok(None); };
+    let Some(lower) = bspline_basis(knots, degree - 1, span, t)? else {
+        return Ok(None);
+    };
+    let Some(first) = bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower)?
+    else {
+        return Ok(None);
+    };
     let second = if degree == 1 {
         scratch::filled(2, 0.0, "IR scaled B-spline second derivative basis")?
     } else {
-        let Some(lower_lower) = bspline_basis(knots, degree - 2, span, t)? else { return Ok(None); };
-        let Some(lower_first) = bspline_basis_scaled_derivative_level(knots, degree - 1, span, scale, &lower_lower)? else { return Ok(None); };
-        let Some(second) = bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower_first)? else { return Ok(None); };
+        let Some(lower_lower) = bspline_basis(knots, degree - 2, span, t)? else {
+            return Ok(None);
+        };
+        let Some(lower_first) =
+            bspline_basis_scaled_derivative_level(knots, degree - 1, span, scale, &lower_lower)?
+        else {
+            return Ok(None);
+        };
+        let Some(second) =
+            bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower_first)?
+        else {
+            return Ok(None);
+        };
         second
     };
-    Ok(Some((first, second)))
+    Ok(Some(ScaledBasisDerivatives { first, second }))
 }
 
 /// The output has degree + 1 values, at most the admitted control count.
@@ -1528,41 +1851,39 @@ fn bspline_basis_scaled_derivative_level(
     lower: &[f64],
 ) -> Result<Option<Vec<f64>>, ResourceLimit> {
     let lower_start = span - (degree - 1);
-    let Some(count) = degree.checked_add(1) else { return Ok(None); };
-    let mut derivative = scratch::filled(
-        count,
-        0.0,
-        "IR scaled B-spline derivative basis",
-    )?;
+    let Some(count) = degree.checked_add(1) else {
+        return Ok(None);
+    };
+    let mut derivative = scratch::filled(count, 0.0, "IR scaled B-spline derivative basis")?;
     Ok((|| {
-    for (local, derivative_value) in derivative.iter_mut().enumerate() {
-        let index = span - degree + local;
-        let lower_at = |values: &[f64], global: usize| {
-            global
-                .checked_sub(lower_start)
-                .and_then(|at| values.get(at))
-                .copied()
-                .unwrap_or(0.0)
-        };
-        let ratio = |hi: usize, lo: usize| {
-            if knots[hi] == knots[lo] {
-                Some(0.0)
-            } else {
-                let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
-                difference_quotient(scale.into(), FiniteReal::ZERO, hi_knot, lo_knot)
-                    .ok()
-                    .map(FiniteReal::get)
+        for (local, derivative_value) in derivative.iter_mut().enumerate() {
+            let index = span - degree + local;
+            let lower_at = |values: &[f64], global: usize| {
+                global
+                    .checked_sub(lower_start)
+                    .and_then(|at| values.get(at))
+                    .copied()
+                    .unwrap_or(0.0)
+            };
+            let ratio = |hi: usize, lo: usize| {
+                if knots[hi] == knots[lo] {
+                    Some(0.0)
+                } else {
+                    let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
+                    difference_quotient(scale.into(), FiniteReal::ZERO, hi_knot, lo_knot)
+                        .ok()
+                        .map(FiniteReal::get)
+                }
+            };
+            let left = ratio(index + degree, index)?;
+            let right = ratio(index + degree + 1, index + 1)?;
+            *derivative_value = degree as f64
+                * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+            if !derivative_value.is_finite() {
+                return None;
             }
-        };
-        let left = ratio(index + degree, index)?;
-        let right = ratio(index + degree + 1, index + 1)?;
-        *derivative_value =
-            degree as f64 * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
-        if !derivative_value.is_finite() {
-            return None;
         }
-    }
-    Some(derivative)
+        Some(derivative)
     })())
 }
 
@@ -1686,14 +2007,13 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let Some(tolerance) = NonNegativeLength::new(tolerance) else { return Ok(None); };
-    let Some(seed) = FiniteReal::new(seed) else { return Ok(None); };
-    nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
-        curve,
-        point,
-        tolerance,
-        seed,
-    )
+    let Some(tolerance) = NonNegativeLength::new(tolerance) else {
+        return Ok(None);
+    };
+    let Some(seed) = FiniteReal::new(seed) else {
+        return Ok(None);
+    };
+    nurbs_curve_parameter_near_point_with_nonnegative_tolerance(curve, point, tolerance, seed)
 }
 
 /// [`nurbs_curve_parameter_near_point`] with an admitted tolerance and seed.
@@ -1704,18 +2024,28 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     seed: FiniteReal,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
     let tolerance = tolerance.get();
-    let Some(degree) = usize::try_from(curve.degree()).ok() else { return Ok(None); };
+    let Some(degree) = usize::try_from(curve.degree()).ok() else {
+        return Ok(None);
+    };
     let count = curve.pole_count();
-    let Some(domain) = nurbs_curve_parameter_domain(curve).map(ParameterInterval::from) else { return Ok(None); };
+    let Some(domain) = nurbs_curve_parameter_domain(curve).map(ParameterInterval::from) else {
+        return Ok(None);
+    };
     if degree == 0 || !point.is_finite() {
         return Ok(None);
     }
-    let Some(weights) = validated_nurbs_curve_weights(curve)? else { return Ok(None); };
-    let Some(speed_bound) = nurbs_curve_speed_bound_about(curve, point).map(FiniteReal::get) else { return Ok(None); };
+    let Some(weights) = validated_nurbs_curve_weights(curve)? else {
+        return Ok(None);
+    };
+    let Some(speed_bound) = nurbs_curve_speed_bound_about(curve, point).map(FiniteReal::get) else {
+        return Ok(None);
+    };
     let mut poles = Vec::new();
     scratch::reserve_exact(&mut poles, count, "IR curve inversion controls")?;
     for index in 0..count {
-        let Some(pole) = curve.pole_rows().point_at(index) else { return Ok(None); };
+        let Some(pole) = curve.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
         poles.push(pole);
     }
     let distance = |parameter: FiniteReal| {
@@ -1735,9 +2065,15 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     };
     let seed = domain.project(ExtendedReal::from_finite(seed));
     let mut boundaries = Vec::new();
-    scratch::reserve_exact(&mut boundaries, count - degree + 1, "IR curve inversion boundaries")?;
+    scratch::reserve_exact(
+        &mut boundaries,
+        count - degree + 1,
+        "IR curve inversion boundaries",
+    )?;
     for index in degree..=count {
-        let Some(boundary) = curve.knots().finite_knot(index) else { return Ok(None); };
+        let Some(boundary) = curve.knots().finite_knot(index) else {
+            return Ok(None);
+        };
         boundaries.push(boundary);
     }
     match nearest_boundary_witness(&boundaries, seed, tolerance, distance)? {
@@ -1767,7 +2103,9 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             return Ok(None);
         }
         let middle = start.midpoint(end);
-        let Some(middle_distance) = distance(middle)? else { return Ok(None); };
+        let Some(middle_distance) = distance(middle)? else {
+            return Ok(None);
+        };
         if middle_distance <= tolerance {
             return Ok(Some(middle));
         }
@@ -1810,7 +2148,10 @@ fn nurbs_curve_parameter_near_point_newton(
             |index| poles.get(index).copied(),
             |index| weights.and_then(|weights| weights.get(index).copied()),
             parameter,
-        ))? else { return Ok(None); };
+        ))?
+        else {
+            return Ok(None);
+        };
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -1822,17 +2163,23 @@ fn nurbs_curve_parameter_near_point_newton(
         let Some(tangent) = finite_or_refusal(nurbs_curve_derivative(
             curve.degree(),
             curve.knots(),
-            &poles,
+            poles,
             weights,
             parameter,
             CurveDerivative::First,
-        ))? else { return Ok(None); };
+        ))?
+        else {
+            return Ok(None);
+        };
         let tangent = tangent.get();
         let denominator = tangent.dot(tangent);
         if !denominator.is_finite() || denominator <= 0.0 {
             return Ok(None);
         }
-        let Some(next) = FiniteReal::new(parameter.get() - residual.dot(tangent) / denominator) else { return Ok(None); };
+        let Some(next) = FiniteReal::new(parameter.get() - residual.dot(tangent) / denominator)
+        else {
+            return Ok(None);
+        };
         let next = window.project(ExtendedReal::from_finite(next));
         if next == parameter {
             return Ok(None);
@@ -1864,7 +2211,9 @@ impl ValidatedNurbsWeights {
 }
 
 /// A rational weight copy has at most one value per admitted control pole.
-fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Result<Option<ValidatedNurbsWeights>, ResourceLimit> {
+fn validated_nurbs_curve_weights(
+    curve: &NurbsCurve,
+) -> Result<Option<ValidatedNurbsWeights>, ResourceLimit> {
     if nurbs_curve_parameter_domain(curve).is_none() {
         return Ok(None);
     }
@@ -1872,9 +2221,15 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Result<Option<ValidatedN
         return Ok(Some(ValidatedNurbsWeights::Unit));
     }
     let mut weights = Vec::new();
-    scratch::reserve_exact(&mut weights, curve.pole_count(), "IR curve inversion weights")?;
+    scratch::reserve_exact(
+        &mut weights,
+        curve.pole_count(),
+        "IR curve inversion weights",
+    )?;
     for index in 0..curve.pole_count() {
-        let Some(weight) = curve.pole_rows().weight_at(index) else { return Ok(None); };
+        let Some(weight) = curve.pole_rows().weight_at(index) else {
+            return Ok(None);
+        };
         if weight <= 0.0 {
             return Ok(None);
         }
@@ -1883,15 +2238,17 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Result<Option<ValidatedN
     Ok(Some(ValidatedNurbsWeights::Rational(weights)))
 }
 
-fn nurbs_curve_speed_bound_about(
-    curve: &NurbsCurve,
-    origin: Point3,
-) -> Option<FiniteReal> {
+fn nurbs_curve_speed_bound_about(curve: &NurbsCurve, origin: Point3) -> Option<FiniteReal> {
     speed_bound_by(
         curve.degree(),
         curve.knots(),
         curve.pole_count(),
-        |index| curve.pole_rows().point_at(index).map(|point| point.get().into()),
+        |index| {
+            curve
+                .pole_rows()
+                .point_at(index)
+                .map(|point| point.get().into())
+        },
         |index| curve.pole_rows().weight_at(index).unwrap_or(1.0),
         origin.into(),
     )
@@ -1939,10 +2296,15 @@ impl Ord for SearchInterval {
 }
 
 /// Retain only the nearest knot intervals that the bounded search can visit.
-fn bounded_nearest_intervals(boundaries: &[FiniteReal], seed: FiniteReal) -> Result<Vec<[FiniteReal; 2]>, ResourceLimit> {
+fn bounded_nearest_intervals(
+    boundaries: &[FiniteReal],
+    seed: FiniteReal,
+) -> Result<Vec<[FiniteReal; 2]>, ResourceLimit> {
     let mut nearest = BinaryHeap::new();
     let capacity = boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS + 1);
-    nearest.try_reserve(capacity).map_err(|_| scratch::allocation_failed(capacity, "IR curve inversion interval heap"))?;
+    nearest
+        .try_reserve(capacity)
+        .map_err(|_| scratch::allocation_failed(capacity, "IR curve inversion interval heap"))?;
     for pair in boundaries.windows(2) {
         if pair[0] >= pair[1] {
             continue;
@@ -1962,9 +2324,7 @@ fn bounded_nearest_intervals(boundaries: &[FiniteReal], seed: FiniteReal) -> Res
     intervals.sort_unstable_by(|first, second| second.cmp(first));
     let mut result = Vec::new();
     scratch::reserve_exact(&mut result, intervals.len(), "IR curve inversion intervals")?;
-    result.extend(intervals
-        .into_iter()
-        .map(|interval| interval.bounds));
+    result.extend(intervals.into_iter().map(|interval| interval.bounds));
     Ok(result)
 }
 
@@ -1975,7 +2335,11 @@ fn bounded_tail_intervals(boundaries: &[f64]) -> Result<(Vec<[f64; 2]>, bool), R
         .rev()
         .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]));
     let mut intervals = Vec::new();
-    scratch::reserve_exact(&mut intervals, boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS), "IR pcurve search intervals")?;
+    scratch::reserve_exact(
+        &mut intervals,
+        boundaries.len().min(NURBS_SEARCH_MAX_INTERVALS),
+        "IR pcurve search intervals",
+    )?;
     intervals.extend(valid.by_ref().take(NURBS_SEARCH_MAX_INTERVALS));
     let truncated = valid.next().is_some();
     intervals.reverse();
@@ -2385,8 +2749,8 @@ fn nurbs_pcurve_differential_with(
         let Some(scaled) = bspline_basis_scaled_derivatives(knots, degree, span, t, scale)? else {
             return Ok(point_only(unreached));
         };
-        first_basis = scaled.0;
-        second_basis = Some(Cow::Owned(scaled.1));
+        first_basis = scaled.first;
+        second_basis = Some(Cow::Owned(scaled.second));
         scale
     };
     let first_sum = sum(&first_basis);
@@ -2451,9 +2815,16 @@ pub fn nurbs_pcurve_contains_point(
     point: Point2,
     tolerance: f64,
 ) -> Result<Option<bool>, ResourceLimit> {
-    let Some(degree_usize) = usize::try_from(degree).ok() else { return Ok(None); };
+    let Some(degree_usize) = usize::try_from(degree).ok() else {
+        return Ok(None);
+    };
     let count = control_points.len();
-    let Some(required_knots) = count.checked_add(degree_usize).and_then(|value| value.checked_add(1)) else { return Ok(None); };
+    let Some(required_knots) = count
+        .checked_add(degree_usize)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
     if degree_usize == 0
         || count <= degree_usize
         || knots.len() < required_knots
@@ -2484,7 +2855,10 @@ pub fn nurbs_pcurve_contains_point(
         |index| control_points.get(index).map(|point| [point.u, point.v]),
         |index| weights.map_or(1.0, |weights| weights[index]),
         [point.u, point.v],
-    ).map(|bound| bound.get()) else { return Ok(None); };
+    )
+    .map(FiniteReal::get) else {
+        return Ok(None);
+    };
 
     let domain = [knots[degree_usize], knots[count]];
     if domain[0] > domain[1] {
@@ -2827,31 +3201,49 @@ pub fn nurbs_surface_isocurve(
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
 ) -> Result<Option<NurbsCurve>, ResourceLimit> {
-    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
-    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
+    let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
+        return Ok(None);
+    };
+    let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else {
+        return Ok(None);
+    };
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (u_degree, u_count, surface.u_knots(), surface.u_periodic()),
         SurfaceParameterAxis::V => (v_degree, v_count, surface.v_knots(), surface.v_periodic()),
     };
-    let Some(fixed_parameter) = FiniteReal::new(fixed_parameter).and_then(|parameter| periodic_parameter(
-        fixed_knots,
-        fixed_degree,
-        fixed_count,
-        fixed_periodic,
-        parameter,
-    )) else { return Ok(None); };
+    let Some(fixed_parameter) = FiniteReal::new(fixed_parameter).and_then(|parameter| {
+        periodic_parameter(
+            fixed_knots,
+            fixed_degree,
+            fixed_count,
+            fixed_periodic,
+            parameter,
+        )
+    }) else {
+        return Ok(None);
+    };
     let fixed_parameter = fixed_parameter.get();
-    let Some(fixed_span) = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter) else { return Ok(None); };
-    let Some(fixed_basis) = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter)? else { return Ok(None); };
+    let Some(fixed_span) = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)
+    else {
+        return Ok(None);
+    };
+    let Some(fixed_basis) = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter)?
+    else {
+        return Ok(None);
+    };
     let varying_count = match fixed_axis {
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
     };
     let rational = surface.weights().is_some();
     let mut control_points = Vec::new();
-    scratch::reserve_exact(&mut control_points, varying_count, "IR surface isoline controls")?;
+    scratch::reserve_exact(
+        &mut control_points,
+        varying_count,
+        "IR surface isoline controls",
+    )?;
     let mut sums = Vec::new();
     scratch::reserve_exact(&mut sums, varying_count, "IR surface isoline sums")?;
     for varying in 0..varying_count {
@@ -2868,9 +3260,15 @@ pub fn nurbs_surface_isocurve(
                     surface.pole(pole_u, pole_v)?,
                 ))
             },
-        )) else { return Ok(None); };
-        let Some(projected) = sum.project(sum, &[]) else { return Ok(None); };
-        let Ok([x, y, z]) = finite_lanes(projected) else { return Ok(None); };
+        )) else {
+            return Ok(None);
+        };
+        let Some(projected) = sum.project(sum, &[]) else {
+            return Ok(None);
+        };
+        let Ok([x, y, z]) = finite_lanes(projected) else {
+            return Ok(None);
+        };
         control_points.push(FinitePoint3::from_coordinates(x, y, z));
         sums.push(sum);
     }
@@ -2888,9 +3286,11 @@ pub fn nurbs_surface_isocurve(
     };
     let mut admitted_knots = Vec::new();
     scratch::reserve_exact(&mut admitted_knots, knots.len(), "IR surface isoline knots")?;
-    admitted_knots.extend_from_slice(&knots);
+    admitted_knots.extend_from_slice(knots);
     let weights = if rational {
-        let Some(weights) = Homogeneous::weights(&sums) else { return Ok(None); };
+        let Some(weights) = Homogeneous::weights(&sums) else {
+            return Ok(None);
+        };
         Some(weights)
     } else {
         None
@@ -3591,9 +3991,9 @@ fn nurbs_curve_derivative(
         }
         let scaled =
             bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?.ok_or(non_finite)?;
-        first_basis = scaled.0;
+        first_basis = scaled.first;
         if second {
-            second_basis = Cow::Owned(scaled.1);
+            second_basis = Cow::Owned(scaled.second);
         }
         scale
     };
@@ -4557,7 +4957,9 @@ fn model_curve_point_by_id_inner(
                     Ok(uv) => uv.get(),
                     Err(EvaluationFailure::NonFinite(uv)) => uv,
                     Err(EvaluationFailure::NoValue) => return Err(EvaluationFailure::NoValue),
-                    Err(EvaluationFailure::ResourceLimit(limit)) => return Err(EvaluationFailure::ResourceLimit(limit)),
+                    Err(EvaluationFailure::ResourceLimit(limit)) => {
+                        return Err(EvaluationFailure::ResourceLimit(limit))
+                    }
                 };
                 budget.map_or_else(
                     || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
@@ -4642,14 +5044,10 @@ pub fn model_curve_parameter_near_point_in_index_with_tolerance(
     seed: f64,
     tolerance: f64,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let Some(tolerance) = NonNegativeLength::new(tolerance) else { return Ok(None); };
-    model_curve_parameter_near_point_with_tolerance(
-        index,
-        curve_id,
-        point,
-        seed,
-        tolerance,
-    )
+    let Some(tolerance) = NonNegativeLength::new(tolerance) else {
+        return Ok(None);
+    };
+    model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance)
 }
 
 /// Invert a model curve with an admitted tolerance.
@@ -4660,18 +5058,29 @@ fn model_curve_parameter_near_point_with_tolerance(
     seed: f64,
     tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let Some(_depth) = ModelEvaluationDepthGuard::enter(None) else { return Ok(None); };
-    let Some(curve) = index.curves(curve_id.as_str()) else { return Ok(None); };
+    let Some(_depth) = ModelEvaluationDepthGuard::enter(None) else {
+        return Ok(None);
+    };
+    let Some(curve) = index.curves(curve_id.as_str()) else {
+        return Ok(None);
+    };
     if let Some(procedural) = index
         .procedural_curves_for_curve(curve_id.as_str())
         .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
-                let Some((basis_point, tolerance_scale)) = inverse_affine_point(*transform, point) else { return Ok(None); };
+                let Some((basis_point, tolerance_scale)) = inverse_affine_point(*transform, point)
+                else {
+                    return Ok(None);
+                };
                 // The scale is a finite norm, so the admission refuses only an
                 // overflowed product.
-                let Some(basis_tolerance) = NonNegativeLength::new(tolerance.get() * tolerance_scale) else { return Ok(None); };
+                let Some(basis_tolerance) =
+                    NonNegativeLength::new(tolerance.get() * tolerance_scale)
+                else {
+                    return Ok(None);
+                };
                 return model_curve_parameter_near_point_with_tolerance(
                     index,
                     source,
@@ -4685,7 +5094,9 @@ fn model_curve_parameter_near_point_with_tolerance(
                 let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
                 {
-                    let Some(interval) = IncreasingParameterInterval::new([start, end]) else { return Ok(None); };
+                    let Some(interval) = IncreasingParameterInterval::new([start, end]) else {
+                        return Ok(None);
+                    };
                     let span = interval.scaled_span().finite();
                     if !seed.is_finite() || seed < 0.0 || span.is_ok_and(|span| seed > span.get()) {
                         return Ok(None);
@@ -4697,17 +5108,28 @@ fn model_curve_parameter_near_point_with_tolerance(
                         point,
                         source_seed,
                         tolerance,
-                    )? else { return Ok(None); };
+                    )?
+                    else {
+                        return Ok(None);
+                    };
                     let source_parameter = source_parameter.get();
                     let Some(parameter) = FiniteReal::new(if *sense {
                         source_parameter - start
                     } else {
                         end - source_parameter
-                    }) else { return Ok(None); };
-                    let evaluated = finite_or_refusal(model_curve_point_by_id(index, curve_id, parameter.get()))?;
+                    }) else {
+                        return Ok(None);
+                    };
+                    let evaluated = finite_or_refusal(model_curve_point_by_id(
+                        index,
+                        curve_id,
+                        parameter.get(),
+                    ))?;
                     return Ok((parameter.get() >= 0.0
                         && span.map_or(true, |span| parameter <= span)
-                        && evaluated.is_some_and(|evaluated| evaluated.distance(point) <= tolerance.get()))
+                        && evaluated.is_some_and(|evaluated| {
+                            evaluated.distance(point) <= tolerance.get()
+                        }))
                     .then_some(parameter));
                 }
             }
@@ -4725,16 +5147,26 @@ fn model_curve_parameter_near_point_with_tolerance(
         }
     }
     if let Some(cache) = curve.geometry.solved_cache() {
-        let Some(seed) = FiniteReal::new(seed) else { return Ok(None); };
+        let Some(seed) = FiniteReal::new(seed) else {
+            return Ok(None);
+        };
         return direct_curve_parameter_near_point(cache, point, seed, tolerance);
     }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
-        let Some(seed) = FiniteReal::new(seed) else { return Ok(None); };
-        let Some(geometry) = curve.geometry.solved() else { return Ok(None); };
+        let Some(seed) = FiniteReal::new(seed) else {
+            return Ok(None);
+        };
+        let Some(geometry) = curve.geometry.solved() else {
+            return Ok(None);
+        };
         return direct_curve_parameter_near_point(geometry, point, seed, tolerance);
     }
-    let Some(construction) = curve.geometry.procedural_construction() else { return Ok(None); };
-    let Some(procedural) = index.procedural_curves(construction.as_str()) else { return Ok(None); };
+    let Some(construction) = curve.geometry.procedural_construction() else {
+        return Ok(None);
+    };
+    let Some(procedural) = index.procedural_curves(construction.as_str()) else {
+        return Ok(None);
+    };
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization: Some(parameterization),
@@ -4766,7 +5198,9 @@ fn model_curve_parameter_near_point_with_tolerance(
         let direction = line_pcurve.direction().as_raw();
         let parameter = match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-                let Some(base) = finite_or_refusal(model_surface_point_by_id(index, support_id, origin.u, origin.v))?
+                let Some(base) = finite_or_refusal(model_surface_point_by_id(
+                    index, support_id, origin.u, origin.v,
+                ))?
                 else {
                     continue;
                 };
@@ -4775,7 +5209,8 @@ fn model_curve_parameter_near_point_with_tolerance(
                     support_id,
                     origin.u + direction.u,
                     origin.v + direction.v,
-                ))? else {
+                ))?
+                else {
                     continue;
                 };
                 let tangent = Vector3::new(next.x - base.x, next.y - base.y, next.z - base.z);
@@ -4905,14 +5340,17 @@ fn model_curve_parameter_near_point_with_tolerance(
                 else {
                     continue;
                 };
-                let Some(isocurve_seed) = FiniteReal::new(varying_origin + varying_scale * seed) else { continue; };
+                let Some(isocurve_seed) = FiniteReal::new(varying_origin + varying_scale * seed)
+                else {
+                    continue;
+                };
                 nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
                     &isocurve,
                     point,
                     admitted_tolerance,
                     isocurve_seed,
                 )?
-                    .map(|parameter| (parameter.get() - varying_origin) / varying_scale)
+                .map(|parameter| (parameter.get() - varying_origin) / varying_scale)
             }
             _ => continue,
         };
@@ -4931,16 +5369,22 @@ fn model_curve_parameter_near_point_with_tolerance(
         } else if value < range[0] || value > range[1] {
             continue;
         }
-        let Some(evaluated) = finite_or_refusal(model_curve_point_by_id(index, curve_id, parameter.get()))? else {
+        let Some(evaluated) =
+            finite_or_refusal(model_curve_point_by_id(index, curve_id, parameter.get()))?
+        else {
             continue;
         };
         let distance = evaluated.distance(point);
-        if distance.is_finite() && distance <= tolerance {
-            if best_candidate.is_none_or(|best| {
-                (parameter.get() - seed).abs().total_cmp(&(best.get() - seed).abs()) == Ordering::Less
-            }) {
-                best_candidate = Some(parameter);
-            }
+        if distance.is_finite()
+            && distance <= tolerance
+            && best_candidate.is_none_or(|best| {
+                (parameter.get() - seed)
+                    .abs()
+                    .total_cmp(&(best.get() - seed).abs())
+                    == Ordering::Less
+            })
+        {
+            best_candidate = Some(parameter);
         }
     }
     Ok(best_candidate)
@@ -4963,15 +5407,26 @@ fn helix_parameter_near_point(
     let tolerance = tolerance.get();
 
     // A reversed angle range holds no seed.
-    let Some(angles) = ParameterInterval::ordered(start, end) else { return Ok(None); };
-    let Some(seed) = FiniteReal::new(seed) else { return Ok(None); };
+    let Some(angles) = ParameterInterval::ordered(start, end) else {
+        return Ok(None);
+    };
+    let Some(seed) = FiniteReal::new(seed) else {
+        return Ok(None);
+    };
     if seed < start || seed > end || !target.is_finite() {
         return Ok(None);
     }
 
     let mut parameter = seed;
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-        let Some(differential) = finite_or_refusal(model_curve_differential_by_id(index, curve_id, parameter.get()))? else { return Ok(None); };
+        let Some(differential) = finite_or_refusal(model_curve_differential_by_id(
+            index,
+            curve_id,
+            parameter.get(),
+        ))?
+        else {
+            return Ok(None);
+        };
         let residual = Vector3::new(
             differential.point.x - target.x,
             differential.point.y - target.y,
@@ -5000,7 +5455,14 @@ fn helix_parameter_near_point(
         parameter = next;
     }
 
-    let Some(differential) = finite_or_refusal(model_curve_differential_by_id(index, curve_id, parameter.get()))? else { return Ok(None); };
+    let Some(differential) = finite_or_refusal(model_curve_differential_by_id(
+        index,
+        curve_id,
+        parameter.get(),
+    ))?
+    else {
+        return Ok(None);
+    };
     let distance = Vector3::new(
         differential.point.x - target.x,
         differential.point.y - target.y,
@@ -5017,15 +5479,16 @@ pub(crate) fn curve_parameter_near_point(
     seed: f64,
     tolerance: f64,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
-    let Some(geometry) = geometry.solved() else { return Ok(None); };
-    let Some(seed) = FiniteReal::new(seed) else { return Ok(None); };
-    let Some(tolerance) = NonNegativeLength::new(tolerance) else { return Ok(None); };
-    direct_curve_parameter_near_point(
-        geometry,
-        point,
-        seed,
-        tolerance,
-    )
+    let Some(geometry) = geometry.solved() else {
+        return Ok(None);
+    };
+    let Some(seed) = FiniteReal::new(seed) else {
+        return Ok(None);
+    };
+    let Some(tolerance) = NonNegativeLength::new(tolerance) else {
+        return Ok(None);
+    };
+    direct_curve_parameter_near_point(geometry, point, seed, tolerance)
 }
 
 fn direct_curve_parameter_near_point(
@@ -5035,109 +5498,118 @@ fn direct_curve_parameter_near_point(
     admitted_tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, ResourceLimit> {
     let result = (|| -> Option<Result<FiniteReal, ResourceLimit>> {
-    let tolerance = admitted_tolerance.get();
-    let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
-        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-        let transverse = axis.cross(reference);
-        (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
-    };
-    let parameter = match geometry {
-        SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
+        let tolerance = admitted_tolerance.get();
+        let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-            FiniteReal::new(delta.dot(direction) / direction.dot(direction))?
-        }
-        SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
-            let radius = circle_curve.radius().get();
-            let (x, y, _) = components(center, *axis, *ref_direction);
-            let canonical = (y / radius).atan2(x / radius);
-            FiniteReal::new(
-                canonical
-                    + ((seed.get() - canonical) / std::f64::consts::TAU).round()
-                        * std::f64::consts::TAU,
-            )?
-        }
-        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            let (x, y, _) = components(center, *axis, *major_direction);
-            let canonical = (y / minor_radius).atan2(x / major_radius);
-            FiniteReal::new(
-                canonical
-                    + ((seed.get() - canonical) / std::f64::consts::TAU).round()
-                        * std::f64::consts::TAU,
-            )?
-        }
-        SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.frame().axis().as_raw();
-            let major_direction = parabola_curve.frame().reference().as_raw();
-            let focal_distance = parabola_curve.focal_distance().magnitude();
-            let (_, transverse, _) = components(vertex, *axis, *major_direction);
-            crate::math::multiply_divide(
-                FiniteReal::new(transverse)?,
-                FiniteReal::HALF,
-                focal_distance,
-            )?
-        }
-        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.frame().axis().as_raw();
-            let major_direction = hyperbola_curve.frame().reference().as_raw();
-            let minor_radius = hyperbola_curve.minor_radius().get();
-            let (_, transverse, _) = components(center, *axis, *major_direction);
-            FiniteReal::new((transverse / minor_radius).asinh())?
-        }
-        SolvedCurveGeometry::Nurbs(curve) => {
-            match nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
-                curve,
-                point,
-                admitted_tolerance,
-                seed,
-            ) {
-                Ok(Some(parameter)) => parameter,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+            let transverse = axis.cross(reference);
+            (delta.dot(reference), delta.dot(transverse), delta.dot(axis))
+        };
+        let parameter = match geometry {
+            SolvedCurveGeometry::Line(line_curve) => {
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
+                let delta =
+                    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+                FiniteReal::new(delta.dot(direction) / direction.dot(direction))?
             }
-        }
-        SolvedCurveGeometry::Polyline(polyline) => {
-            let (points, parameters) = polyline_samples(polyline);
-            polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
-        }
-        SolvedCurveGeometry::Transformed(placed) => {
-            let (basis_point, tolerance_scale) = inverse_affine_point(*placed.transform(), point)?;
-            // The scale is a finite norm, so the admission refuses only an
-            // overflowed product.
-            let basis_tolerance = NonNegativeLength::new(tolerance * tolerance_scale)?;
-            match direct_curve_parameter_near_point(placed.basis(), basis_point, seed, basis_tolerance) {
-                Ok(Some(parameter)) => parameter,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+            SolvedCurveGeometry::Circle(circle_curve) => {
+                let center = circle_curve.center().get();
+                let axis = circle_curve.frame().axis().as_raw();
+                let ref_direction = circle_curve.frame().reference().as_raw();
+                let radius = circle_curve.radius().get();
+                let (x, y, _) = components(center, *axis, *ref_direction);
+                let canonical = (y / radius).atan2(x / radius);
+                FiniteReal::new(
+                    canonical
+                        + ((seed.get() - canonical) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU,
+                )?
             }
-        }
-        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let stored = degenerate_curve.point().get();
-            let error = (stored.x - point.x)
-                .hypot(stored.y - point.y)
-                .hypot(stored.z - point.z);
-            (error.is_finite() && error <= tolerance).then_some(seed)?
-        }
-        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => return None,
-    };
-    let evaluated = match finite_or_refusal(curve_point_solved(geometry, parameter.get())) {
-        Ok(Some(point)) => point,
-        Ok(None) => return None,
-        Err(limit) => return Some(Err(limit)),
-    };
-    let error = evaluated.distance(point);
-    (error.is_finite() && error <= tolerance).then_some(Ok(parameter))
+            SolvedCurveGeometry::Ellipse(ellipse_curve) => {
+                let center = ellipse_curve.center().get();
+                let axis = ellipse_curve.frame().axis().as_raw();
+                let major_direction = ellipse_curve.frame().reference().as_raw();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
+                let (x, y, _) = components(center, *axis, *major_direction);
+                let canonical = (y / minor_radius).atan2(x / major_radius);
+                FiniteReal::new(
+                    canonical
+                        + ((seed.get() - canonical) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU,
+                )?
+            }
+            SolvedCurveGeometry::Parabola(parabola_curve) => {
+                let vertex = parabola_curve.vertex().get();
+                let axis = parabola_curve.frame().axis().as_raw();
+                let major_direction = parabola_curve.frame().reference().as_raw();
+                let focal_distance = parabola_curve.focal_distance().magnitude();
+                let (_, transverse, _) = components(vertex, *axis, *major_direction);
+                crate::math::multiply_divide(
+                    FiniteReal::new(transverse)?,
+                    FiniteReal::HALF,
+                    focal_distance,
+                )?
+            }
+            SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
+                let center = hyperbola_curve.center().get();
+                let axis = hyperbola_curve.frame().axis().as_raw();
+                let major_direction = hyperbola_curve.frame().reference().as_raw();
+                let minor_radius = hyperbola_curve.minor_radius().get();
+                let (_, transverse, _) = components(center, *axis, *major_direction);
+                FiniteReal::new((transverse / minor_radius).asinh())?
+            }
+            SolvedCurveGeometry::Nurbs(curve) => {
+                match nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+                    curve,
+                    point,
+                    admitted_tolerance,
+                    seed,
+                ) {
+                    Ok(Some(parameter)) => parameter,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                }
+            }
+            SolvedCurveGeometry::Polyline(polyline) => {
+                let (points, parameters) = polyline_samples(polyline);
+                polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
+            }
+            SolvedCurveGeometry::Transformed(placed) => {
+                let (basis_point, tolerance_scale) =
+                    inverse_affine_point(*placed.transform(), point)?;
+                // The scale is a finite norm, so the admission refuses only an
+                // overflowed product.
+                let basis_tolerance = NonNegativeLength::new(tolerance * tolerance_scale)?;
+                match direct_curve_parameter_near_point(
+                    placed.basis(),
+                    basis_point,
+                    seed,
+                    basis_tolerance,
+                ) {
+                    Ok(Some(parameter)) => parameter,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                }
+            }
+            SolvedCurveGeometry::Degenerate(degenerate_curve) => {
+                let stored = degenerate_curve.point().get();
+                let error = (stored.x - point.x)
+                    .hypot(stored.y - point.y)
+                    .hypot(stored.z - point.z);
+                (error.is_finite() && error <= tolerance).then_some(seed)?
+            }
+            SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {
+                return None
+            }
+        };
+        let evaluated = match finite_or_refusal(curve_point_solved(geometry, parameter.get())) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let error = evaluated.distance(point);
+        (error.is_finite() && error <= tolerance).then_some(Ok(parameter))
     })();
     result.transpose()
 }
@@ -5209,12 +5681,16 @@ fn polyline_parameter_near_point(
             .hypot(mapped.y - point.y)
             .hypot(mapped.z - point.z);
         if let Some(candidate) = FiniteReal::new(candidate) {
-            if error.is_finite() && error <= tolerance {
-                if best_candidate.is_none_or(|best| {
-                    (candidate.get() - seed.get()).abs().total_cmp(&(best.get() - seed.get()).abs()) == Ordering::Less
-                }) {
-                    best_candidate = Some(candidate);
-                }
+            if error.is_finite()
+                && error <= tolerance
+                && best_candidate.is_none_or(|best| {
+                    (candidate.get() - seed.get())
+                        .abs()
+                        .total_cmp(&(best.get() - seed.get()).abs())
+                        == Ordering::Less
+                })
+            {
+                best_candidate = Some(candidate);
             }
         }
     }
@@ -5399,7 +5875,9 @@ fn placed_point(
                 .map_or_else(|point| point, FinitePoint3::get),
         )),
         Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
-        Err(EvaluationFailure::ResourceLimit(limit)) => Err(EvaluationFailure::ResourceLimit(limit)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => {
+            Err(EvaluationFailure::ResourceLimit(limit))
+        }
     }
 }
 
@@ -7198,7 +7676,9 @@ fn variable_blend_contact_track(
         Ok(uv) => uv.get(),
         Err(EvaluationFailure::NonFinite(uv)) => uv,
         Err(EvaluationFailure::NoValue) => return Err(no_value),
-        Err(EvaluationFailure::ResourceLimit(limit)) => return Err(EvaluationFailure::ResourceLimit(limit)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => {
+            return Err(EvaluationFailure::ResourceLimit(limit))
+        }
     };
     let support = model_surface_first_order_by_id(index, surface, uv.u, uv.v, None)
         .map_err(|failure| failure.map(|_| ()))?;
@@ -7774,7 +8254,10 @@ fn cacheless_circular_variable_blend_first_order(
             .map_err(unreached)?;
     let center_tangent = (|| {
         let radius_derivative = section.radius_derivative?;
-        let center_tangent = |track: &ContactTrack, sign: f64, normal: Vector3| -> Result<Vector3, EvaluationFailure<()>> {
+        let center_tangent = |track: &ContactTrack,
+                              sign: f64,
+                              normal: Vector3|
+         -> Result<Vector3, EvaluationFailure<()>> {
             Ok(vector_sum(&[
                 (1.0, track.tangent()?),
                 (sign * radius_derivative, normal),
@@ -8087,7 +8570,7 @@ pub fn model_surface_point_by_id(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    model_surface_point_by_id_inner(index, surface, u, v, None)
+    model_surface_point::model_surface_point_by_id_inner(index, surface, u, v, None)
 }
 
 /// Evaluate a surface carrier selected by arena id within a caller-owned work
@@ -8101,555 +8584,9 @@ pub fn model_surface_point_by_id_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
-    let point = model_surface_point_by_id_inner(index, surface, u, v, Some(budget));
+    let point =
+        model_surface_point::model_surface_point_by_id_inner(index, surface, u, v, Some(budget));
     ModelEvaluationDepthGuard::finish_budgeted(budget, point)
-}
-
-fn model_surface_point_by_id_inner(
-    index: &crate::index::ModelIndex<'_>,
-    surface: &crate::ids::SurfaceId,
-    u: f64,
-    v: f64,
-    budget: Option<&WorkBudget<'_>>,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    /// An arm's point, admitted where the arm computes it raw, and the
-    /// support's oriented unit normal for an offset that reads it.
-    struct SurfaceEvaluation {
-        /// The point, or the non-finite point the arm reached.
-        point: Result<FinitePoint3, Point3>,
-        /// The oriented unit normal, or why it has none: an arm that forms
-        /// no normal, and an evaluation whose reader reads none, have no
-        /// value.
-        oriented_normal: Result<Vector3, EvaluationFailure<()>>,
-        /// Refusal of scratch used by the selected carrier or support.
-        resource: Option<ResourceLimit>,
-    }
-
-    fn resource(limit: ResourceLimit) -> SurfaceEvaluation {
-        SurfaceEvaluation {
-            point: Err(UNREACHED_POINT),
-            oriented_normal: Err(EvaluationFailure::ResourceLimit(limit)),
-            resource: Some(limit),
-        }
-    }
-
-    /// Admit a point an arm computes raw, keeping the non-finite point.
-    fn evaluated(point: Point3) -> Result<FinitePoint3, Point3> {
-        FinitePoint3::new(point).ok_or(point)
-    }
-
-    /// The point of an evaluation, finite or not.
-    fn reached(point: Result<FinitePoint3, Point3>) -> Point3 {
-        point.map_or_else(|point| point, FinitePoint3::get)
-    }
-
-    /// The evaluation of an arm that forms its point alone.
-    fn point_evaluation(
-        point: Result<FinitePoint3, EvaluationFailure<Point3>>,
-    ) -> Option<SurfaceEvaluation> {
-        let point = match point {
-            Ok(point) => Ok(point),
-            Err(EvaluationFailure::NonFinite(point)) => Err(point),
-            Err(EvaluationFailure::NoValue) => return None,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-        };
-        Some(SurfaceEvaluation {
-            point,
-            oriented_normal: Err(EvaluationFailure::NoValue),
-            resource: None,
-        })
-    }
-
-    /// The evaluation of a construction that falls back to its current
-    /// cache: the cache's point where it has one, otherwise the construction's
-    /// point outside the finite range, otherwise the cache's point outside the
-    /// finite range.
-    fn cache_fallback(
-        construction: EvaluationFailure<Point3>,
-        cached: Option<SurfaceEvaluation>,
-    ) -> Option<SurfaceEvaluation> {
-        if let Some(limit) = cached.as_ref().and_then(|evaluation| evaluation.resource) {
-            return Some(resource(limit));
-        }
-        match (cached, construction) {
-            (_, EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
-            (Some(cached), _) if cached.point.is_ok() => Some(cached),
-            (_, EvaluationFailure::NonFinite(point)) => Some(SurfaceEvaluation {
-                point: Err(point),
-                oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                resource: None,
-            }),
-            (cached, EvaluationFailure::NoValue) => cached,
-        }
-    }
-
-    /// The oriented unit normal of first partials: their cross product,
-    /// reversed where `reversed` is set. A normal whose direction is zero
-    /// has no value.
-    fn oriented_normal(
-        first: Result<[FiniteVector3; 2], EvaluationFailure<()>>,
-        reversed: bool,
-    ) -> Result<Vector3, EvaluationFailure<()>> {
-        let [du, dv] = first?;
-        let cross = du.get().cross(dv.get());
-        let magnitude = cross.norm();
-        let normal = if magnitude.is_finite() && magnitude > 0.0 {
-            Vector3::new(
-                cross.x / magnitude,
-                cross.y / magnitude,
-                cross.z / magnitude,
-            )
-        } else {
-            unit_cross_direction(du, dv)?
-        };
-        Ok(if reversed {
-            scale_vector(normal, -1.0)
-        } else {
-            normal
-        })
-    }
-
-    /// A stored cache's point and unit normal. The point is evaluated alone;
-    /// the normal is that of the cache's first partials.
-    fn cache_evaluation(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfaceEvaluation> {
-        let point = match surface_point(geometry, u, v) {
-            Ok(point) => Ok(point),
-            Err(EvaluationFailure::NonFinite(point)) => Err(point),
-            Err(EvaluationFailure::NoValue) => return None,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-        };
-        let oriented_normal = surface_first_order(geometry, u, v, None)
-                .map_err(|failure| failure.map(|_| ()))
-                .and_then(|order| {
-                    let [du, dv] = order.first?;
-                    du.get()
-                        .cross(dv.get())
-                        .unit()
-                        .ok_or(EvaluationFailure::NoValue)
-                });
-        if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
-            return Some(resource(limit));
-        }
-        Some(SurfaceEvaluation { point, oriented_normal, resource: None })
-    }
-
-    /// A directly stored carrier's point and, for a reader that reads it,
-    /// its oriented unit normal. The point is evaluated alone where no normal
-    /// is read; otherwise it is the point of the first partials, which leave
-    /// the point finite where they leave the finite range.
-    fn direct_evaluation(
-        geometry: &SurfaceGeometry,
-        u: f64,
-        v: f64,
-        budget: Option<&WorkBudget<'_>>,
-        normal: bool,
-    ) -> Option<SurfaceEvaluation> {
-        if !normal {
-            return point_evaluation(match budget {
-                Some(budget) => surface_point_with_budget(geometry, u, v, budget),
-                None => surface_point(geometry, u, v),
-            });
-        }
-        let order = match surface_first_order(geometry, u, v, budget) {
-            Ok(order) => order,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-            Err(EvaluationFailure::NoValue) => return None,
-            Err(EvaluationFailure::NonFinite(point)) => {
-                return Some(SurfaceEvaluation {
-                    point: Err(point),
-                    oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                    resource: None,
-                })
-            }
-        };
-        let reversed = matches!(
-            geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
-        );
-        let oriented_normal = oriented_normal(order.first, reversed);
-        if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
-            return Some(resource(limit));
-        }
-        Some(SurfaceEvaluation {
-            point: Ok(order.point),
-            oriented_normal,
-            resource: None,
-        })
-    }
-
-    /// The offset of a support whose normal has no value: a support point
-    /// outside the finite range, and a normal outside it, reach no offset
-    /// coordinate; a finite support point without a normal has no offset.
-    fn offset_without_normal(
-        support: &SurfaceEvaluation,
-        failure: EvaluationFailure<()>,
-    ) -> Option<SurfaceEvaluation> {
-        if let EvaluationFailure::ResourceLimit(limit) = failure {
-            return Some(resource(limit));
-        }
-        if let Some(limit) = support.resource { return Some(resource(limit)); }
-        (support.point.is_err() || failure == EvaluationFailure::NonFinite(())).then_some(
-            SurfaceEvaluation {
-                point: Err(Point3::new(f64::NAN, f64::NAN, f64::NAN)),
-                oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                resource: None,
-            },
-        )
-    }
-
-    fn linear_nurbs_support_extension(
-        index: &crate::index::ModelIndex<'_>,
-        support: &crate::ids::SurfaceId,
-        u: f64,
-        v: f64,
-        budget: Option<&WorkBudget<'_>>,
-    ) -> Option<SurfaceEvaluation> {
-        let support = index.surfaces(support.as_str())?;
-        let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = support.geometry.solved() else {
-            return None;
-        };
-        let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
-        let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
-        let u_count = nurbs.u_count();
-        let v_count = nurbs.v_count();
-        let u_domain = [
-            *nurbs.u_knots().get(u_degree)?,
-            *nurbs.u_knots().get(u_count)?,
-        ];
-        let v_domain = [
-            *nurbs.v_knots().get(v_degree)?,
-            *nurbs.v_knots().get(v_count)?,
-        ];
-        let boundary = |value: f64, [lower, upper]: [f64; 2]| {
-            if !value.is_finite() || !lower.is_finite() || !upper.is_finite() || lower > upper {
-                return None;
-            }
-            Some(if value < lower {
-                (lower, true)
-            } else if value > upper {
-                (upper, true)
-            } else {
-                (value, false)
-            })
-        };
-        let (boundary_u, u_extended) = boundary(u, u_domain)?;
-        let (boundary_v, v_extended) = boundary(v, v_domain)?;
-        if !u_extended && !v_extended {
-            return None;
-        }
-        let order = match surface_first_order(&support.geometry, boundary_u, boundary_v, budget) {
-            Ok(order) => order,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
-        };
-        let partials = match order.partials() {
-            Ok(partials) => partials,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
-        };
-        let oriented_normal = match oriented_normal(Ok([partials.du, partials.dv]), nurbs.normal_reversed()) {
-            Ok(normal) => normal,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
-        };
-        let partials = partials.into_raw();
-        let du = u - boundary_u;
-        let dv = v - boundary_v;
-        Some(SurfaceEvaluation {
-            point: evaluated(Point3::new(
-                partials.point.x + du * partials.du.x + dv * partials.dv.x,
-                partials.point.y + du * partials.du.y + dv * partials.dv.y,
-                partials.point.z + du * partials.du.z + dv * partials.dv.z,
-            )),
-            oriented_normal: Ok(oriented_normal),
-            resource: None,
-        })
-    }
-
-    /// The evaluation of `surface_id` at `(u, v)`, with the oriented normal
-    /// where `normal` is set: an offset reads its support's normal, and a
-    /// placement or subset passes its reader's need on to its support.
-    fn evaluate(
-        index: &crate::index::ModelIndex<'_>,
-        surface_id: &crate::ids::SurfaceId,
-        u: f64,
-        v: f64,
-        visiting: &mut Vec<crate::ids::SurfaceId>,
-        budget: Option<&WorkBudget<'_>>,
-        normal: bool,
-    ) -> Option<SurfaceEvaluation> {
-        let _depth = ModelEvaluationDepthGuard::enter(budget)?;
-        if let Some(budget) = budget {
-            budget.charge().then_some(())?;
-        }
-        if visiting.contains(surface_id) {
-            return None;
-        }
-        visiting.push(surface_id.clone());
-        let surface = index.surfaces(surface_id.as_str())?;
-        let procedural = index.procedural_surface_for_surface(surface_id.as_str());
-        let carrier_interval =
-            procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
-        let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
-            Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-                point_evaluation(model_axis_revolution_point(
-                    index,
-                    definition_payload.directrix(),
-                    definition_payload.axis_origin().get(),
-                    definition_payload.axis_direction(),
-                    u,
-                    v,
-                    budget,
-                ))
-            }
-            Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                point_evaluation(model_native_extrusion_point(
-                    index,
-                    definition_payload,
-                    carrier_interval,
-                    u,
-                    v,
-                    budget,
-                ))
-            }
-            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
-                model_linear_sweep_point(index, definition_payload, u, v, budget),
-            ),
-            Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-                point_evaluation(model_native_revolution_point(
-                    index,
-                    definition_payload,
-                    carrier_interval,
-                    u,
-                    v,
-                    budget,
-                ))
-            }
-            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
-                model_ruled_surface_jet(index, first, second, u, v).map(|jet| jet.point),
-            ),
-            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
-                model_sum_surface_jet(index, definition_payload, u, v).map(|jet| jet.point),
-            ),
-            Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
-                if let Some(construction) = definition_payload.native() {
-                    let profile = definition_payload.profile();
-                    let spine = definition_payload.spine();
-
-                    match cacheless_law_sweep_point(index, profile, spine, construction, u, v) {
-                        Ok(point) => Some(SurfaceEvaluation {
-                            point: evaluated(point),
-                            oriented_normal: Err(EvaluationFailure::NoValue),
-                            resource: None,
-                        }),
-                        Err(failure) => cache_fallback(
-                            failure,
-                            sweep_has_current_cache(construction)
-                                .then(|| cache_evaluation(&surface.geometry, u, v))
-                                .flatten(),
-                        ),
-                    }
-                } else {
-                    direct_evaluation(&surface.geometry, u, v, budget, normal)
-                }
-            }
-            Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
-                let construction = definition_payload.construction();
-
-                match cacheless_variable_blend_point(index, definition_payload, u, v) {
-                    Ok(point) => Some(SurfaceEvaluation {
-                        point: evaluated(point),
-                        oriented_normal: Err(EvaluationFailure::NoValue),
-                        resource: None,
-                    }),
-                    Err(failure) => cache_fallback(
-                        failure,
-                        variable_blend_has_current_cache(construction)
-                            .then(|| cache_evaluation(&surface.geometry, u, v))
-                            .flatten(),
-                    ),
-                }
-            }
-            Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-                if let Some(native) = definition_payload.native() {
-                    match cacheless_constant_rolling_ball_point(index, definition_payload, u, v) {
-                        Ok(point) => Some(SurfaceEvaluation {
-                            point: evaluated(point),
-                            oriented_normal: if normal {
-                                cacheless_constant_rolling_ball_first_order(
-                                    index,
-                                    definition_payload,
-                                    u,
-                                    v,
-                                )
-                                .map_err(|failure| failure.map(|_| ()))
-                                .and_then(|order| {
-                                    let [du, dv] = order.first?;
-                                    du.get()
-                                        .cross(dv.get())
-                                        .unit()
-                                        .ok_or(EvaluationFailure::NoValue)
-                                })
-                            } else {
-                                Err(EvaluationFailure::NoValue)
-                            },
-                            resource: None,
-                        }),
-                        Err(failure) => cache_fallback(
-                            failure.map(|()| UNREACHED_POINT),
-                            revision_surface_tail_has_current_cache(&native.cache)
-                                .then(|| cache_evaluation(&surface.geometry, u, v))
-                                .flatten(),
-                        ),
-                    }
-                } else {
-                    direct_evaluation(&surface.geometry, u, v, budget, normal)
-                }
-            }
-            Some(definition @ ProceduralSurfaceDefinition::RollingBallJet(_)) => {
-                point_evaluation(rolling_ball_jet_point(definition, u, v))
-            }
-            Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-                evaluate(index, support, u, v, visiting, budget, normal)
-            }
-            Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-                let mut evaluation = evaluate(index, source, u, v, visiting, budget, normal)?;
-                if evaluation.resource.is_some() { return Some(evaluation); }
-                if normal {
-                    let placed_normal = model_surface_jet_by_id(index, source, u, v, budget)
-                        .map_err(|failure| failure.map(|_| ()))
-                        .and_then(|jet| {
-                            let [du, dv] = placed_vectors(*transform, jet.first?)?;
-                            du.get()
-                                .cross(dv.get())
-                                .unit()
-                                .ok_or(EvaluationFailure::NoValue)
-                        });
-                    evaluation.oriented_normal = placed_normal.or_else(|placed_failure| {
-                        evaluation
-                            .oriented_normal
-                            .and_then(|normal| {
-                                transform
-                                    .apply_normal(normal)
-                                    .ok_or(EvaluationFailure::NonFinite(()))
-                            })
-                            .and_then(|normal| {
-                                Ok(scale_vector(
-                                    *normal.as_raw(),
-                                    transform.orientation().ok_or(EvaluationFailure::NoValue)?,
-                                ))
-                            })
-                            .map_err(|evaluation_failure| match placed_failure {
-                                EvaluationFailure::NonFinite(()) => placed_failure,
-                                EvaluationFailure::NoValue => evaluation_failure,
-                                EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
-                            })
-                    });
-                }
-                evaluation.point = match evaluation.point {
-                    Ok(point) => transform.apply_point_reaching(point.get()),
-                    // The placement of a point outside the finite range stays
-                    // outside it, whatever point the placement reaches.
-                    Err(point) => Err(placed_reach(*transform, point)),
-                };
-                Some(evaluation)
-            }
-            Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
-                let support = definition_payload.support();
-                let parameter_ranges = definition_payload
-                    .parameter_ranges()
-                    .map(crate::geometry::DirectedParameterRange::finite_endpoints);
-                let u_sense = definition_payload.u_sense();
-                let v_sense = definition_payload.v_sense();
-                {
-                    let (support_u, support_v, u_derivative, v_derivative) =
-                        subset_support_parameters_with_derivatives(
-                            u,
-                            v,
-                            parameter_ranges,
-                            *u_sense,
-                            *v_sense,
-                        )?;
-                    let mut evaluation = evaluate(
-                        index, support, support_u, support_v, visiting, budget, normal,
-                    )?;
-                    if u_derivative * v_derivative < 0.0 {
-                        evaluation.oriented_normal = evaluation
-                            .oriented_normal
-                            .map(|normal| scale_vector(normal, -1.0));
-                    }
-                    Some(evaluation)
-                }
-            }
-            Some(ProceduralSurfaceDefinition::ParallelOffset(definition_payload)) => {
-                let support = definition_payload.support();
-                let distance = definition_payload.distance();
-                {
-                    let support = evaluate(index, support, u, v, visiting, budget, true)?;
-                    if support.resource.is_some() { return Some(support); }
-                    match support.oriented_normal {
-                        Ok(normal) => Some(SurfaceEvaluation {
-                            point: evaluated(offset(
-                                reached(support.point),
-                                &[(distance.get(), normal)],
-                            )),
-                            oriented_normal: Ok(normal),
-                            resource: None,
-                        }),
-                        Err(failure) => offset_without_normal(&support, failure),
-                    }
-                }
-            }
-            Some(ProceduralSurfaceDefinition::Offset(definition_payload)) => {
-                let support = definition_payload.support();
-                let distance = definition_payload.distance();
-                let linear_extension = definition_payload.linear_support_extension();
-                {
-                    let support = linear_extension
-                        .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
-                        .flatten()
-                        .or_else(|| evaluate(index, support, u, v, visiting, budget, true))?;
-                    if support.resource.is_some() { return Some(support); }
-                    match support.oriented_normal {
-                        Ok(normal) => Some(SurfaceEvaluation {
-                            point: evaluated(offset(
-                                reached(support.point),
-                                &[(distance.get(), normal)],
-                            )),
-                            oriented_normal: Ok(normal),
-                            resource: None,
-                        }),
-                        Err(failure) => offset_without_normal(&support, failure),
-                    }
-                }
-            }
-            _ if procedural.is_some() => {
-                // A non-finite point enters the evaluation as a finite one
-                // does.
-                point_evaluation(model_surface_point_with_budget(
-                    index.ir(),
-                    &surface.geometry,
-                    u,
-                    v,
-                    budget,
-                ))
-            }
-            _ => direct_evaluation(&surface.geometry, u, v, budget, normal),
-        };
-        visiting.pop();
-        result.map(|evaluation| {
-            let limit = evaluation.resource.or_else(|| match evaluation.oriented_normal {
-                Err(EvaluationFailure::ResourceLimit(limit)) => Some(limit),
-                _ => None,
-            });
-            limit.map_or(evaluation, resource)
-        })
-    }
-
-    let evaluation = evaluate(index, surface, u, v, &mut Vec::new(), budget, false)
-        .ok_or(EvaluationFailure::NoValue)?;
-    if let Some(limit) = evaluation.resource { return Err(EvaluationFailure::ResourceLimit(limit)); }
-    evaluation.point.map_err(EvaluationFailure::NonFinite)
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
@@ -8743,7 +8680,9 @@ fn model_surface_first_order_by_id(
                 (Err(cacheless), Err(cached)) => Err(match cacheless {
                     EvaluationFailure::NonFinite(_) => cacheless,
                     EvaluationFailure::NoValue => cached,
-                    EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
+                    EvaluationFailure::ResourceLimit(limit) => {
+                        EvaluationFailure::ResourceLimit(limit)
+                    }
                 }),
             }
         }
@@ -9115,7 +9054,9 @@ pub fn pcurve_uv(
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
     let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
     let evaluated = pcurve_uv_differential(geometry, t).ok_or(EvaluationFailure::NoValue)?;
-    if let Some(limit) = evaluated.resource { return Err(EvaluationFailure::ResourceLimit(limit)); }
+    if let Some(limit) = evaluated.resource {
+        return Err(EvaluationFailure::ResourceLimit(limit));
+    }
     evaluated.point.map_err(EvaluationFailure::NonFinite)
 }
 
@@ -9132,7 +9073,9 @@ pub fn pcurve_tangent(
 ) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
     let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
     let evaluated = pcurve_uv_differential(geometry, t).ok_or(EvaluationFailure::NoValue)?;
-    if let Some(limit) = evaluated.resource { return Err(EvaluationFailure::ResourceLimit(limit)); }
+    if let Some(limit) = evaluated.resource {
+        return Err(EvaluationFailure::ResourceLimit(limit));
+    }
     evaluated.tangent
 }
 
@@ -9163,7 +9106,9 @@ fn polar_angle_differential(
         }
         Err(EvaluationFailure::NonFinite(_)) => Err(EvaluationFailure::NonFinite(f64::NAN)),
         Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
-        Err(EvaluationFailure::ResourceLimit(limit)) => Err(EvaluationFailure::ResourceLimit(limit)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => {
+            Err(EvaluationFailure::ResourceLimit(limit))
+        }
     };
     let second = tangent.ok().zip(acceleration).zip(first.ok()).and_then(
         |((tangent, acceleration), first)| {
@@ -9275,7 +9220,9 @@ impl From<PcurveDifferential> for PcurveEvaluation {
 
 /// The value an evaluation reached: the finite value, the non-finite value,
 /// or NaN in each coordinate where no step reached one.
-fn reached_value(value: Result<FinitePoint2, EvaluationFailure<Point2>>) -> Result<Point2, ResourceLimit> {
+fn reached_value(
+    value: Result<FinitePoint2, EvaluationFailure<Point2>>,
+) -> Result<Point2, ResourceLimit> {
     match value {
         Ok(value) => Ok(value.get()),
         Err(EvaluationFailure::NonFinite(value)) => Ok(value),
@@ -9508,7 +9455,9 @@ fn pcurve_uv_differential(
                     Ok(value) => value.get(),
                     Err(EvaluationFailure::NonFinite(value)) => value,
                     Err(EvaluationFailure::NoValue) => f64::NAN,
-                    Err(EvaluationFailure::ResourceLimit(limit)) => return Some(PcurveEvaluation::resource(limit)),
+                    Err(EvaluationFailure::ResourceLimit(limit)) => {
+                        return Some(PcurveEvaluation::resource(limit))
+                    }
                 };
                 return Some(PcurveEvaluation::left_finite_range(
                     Point2::new(angle.get(), axial),
@@ -9553,8 +9502,12 @@ fn pcurve_uv_differential(
                 nurbs.pole_rows().weights().as_deref(),
                 parameter,
             );
-            if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(PcurveEvaluation::resource(*limit)); }
-            if let Err(EvaluationFailure::ResourceLimit(limit)) = &axial { return Some(PcurveEvaluation::resource(*limit)); }
+            if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial {
+                return Some(PcurveEvaluation::resource(*limit));
+            }
+            if let Err(EvaluationFailure::ResourceLimit(limit)) = &axial {
+                return Some(PcurveEvaluation::resource(*limit));
+            }
             let (radial, axial) = match (radial, axial) {
                 (Ok(radial), Ok(axial)) => (radial, axial),
                 (Err(EvaluationFailure::NoValue), _) | (_, Err(EvaluationFailure::NoValue)) => {
@@ -9568,7 +9521,9 @@ fn pcurve_uv_differential(
                         Ok(axial) => axial.point.get().u,
                         Err(EvaluationFailure::NonFinite(axial)) => axial.u,
                         Err(EvaluationFailure::NoValue) => f64::NAN,
-                        Err(EvaluationFailure::ResourceLimit(limit)) => return Some(PcurveEvaluation::resource(limit)),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => {
+                            return Some(PcurveEvaluation::resource(limit))
+                        }
                     };
                     // A radial point at the origin has no angle.
                     let angle = match radial {
@@ -9593,7 +9548,9 @@ fn pcurve_uv_differential(
                 Err(failure) => Err(match failure {
                     EvaluationFailure::NoValue => EvaluationFailure::NoValue,
                     EvaluationFailure::NonFinite(value) => EvaluationFailure::NonFinite(value.u),
-                    EvaluationFailure::ResourceLimit(limit) => EvaluationFailure::ResourceLimit(limit),
+                    EvaluationFailure::ResourceLimit(limit) => {
+                        EvaluationFailure::ResourceLimit(limit)
+                    }
                 }),
             };
             return Some(PcurveEvaluation {
@@ -9689,13 +9646,17 @@ fn pcurve_uv_differential(
                     PcurveEvaluation::left_finite_range(point, Point2::new(f64::NAN, f64::NAN)),
                 ),
                 Err(EvaluationFailure::NoValue) => None,
-                Err(EvaluationFailure::ResourceLimit(limit)) => Some(PcurveEvaluation::resource(limit)),
+                Err(EvaluationFailure::ResourceLimit(limit)) => {
+                    Some(PcurveEvaluation::resource(limit))
+                }
             };
         }
         PcurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
             let basis = pcurve_uv_differential(placed.basis(), parameter)?;
-            if basis.resource.is_some() { return Some(basis); }
+            if basis.resource.is_some() {
+                return Some(basis);
+            }
             let point =
                 transform.apply_point(basis.point.map_or_else(|point| point, FinitePoint2::get));
             let tangent = match basis.tangent {
@@ -9704,7 +9665,9 @@ fn pcurve_uv_differential(
                     transform.apply_vector(tangent),
                 )),
                 Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
-                Err(EvaluationFailure::ResourceLimit(limit)) => Err(EvaluationFailure::ResourceLimit(limit)),
+                Err(EvaluationFailure::ResourceLimit(limit)) => {
+                    Err(EvaluationFailure::ResourceLimit(limit))
+                }
             };
             let acceleration = basis
                 .acceleration
@@ -9719,10 +9682,7 @@ fn pcurve_uv_differential(
                     Ok(value) => value,
                     Err(limit) => return Some(PcurveEvaluation::resource(limit)),
                 };
-                return Some(PcurveEvaluation::left_finite_range(
-                    point,
-                    tangent,
-                ));
+                return Some(PcurveEvaluation::left_finite_range(point, tangent));
             }
             return Some(PcurveEvaluation::evaluated(
                 point,
@@ -9738,7 +9698,9 @@ fn pcurve_uv_differential(
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let basis = pcurve_uv_differential(basis, parameter)?;
-            if basis.resource.is_some() { return Some(basis); }
+            if basis.resource.is_some() {
+                return Some(basis);
+            }
             let tangent = match basis.tangent {
                 Ok(tangent) => tangent,
                 // The offset direction is the unit normal of the basis
@@ -9757,7 +9719,9 @@ fn pcurve_uv_differential(
                     ));
                 }
                 Err(EvaluationFailure::NoValue) => return None,
-                Err(EvaluationFailure::ResourceLimit(limit)) => return Some(PcurveEvaluation::resource(limit)),
+                Err(EvaluationFailure::ResourceLimit(limit)) => {
+                    return Some(PcurveEvaluation::resource(limit))
+                }
             };
             let speed = tangent.u.hypot(tangent.v);
             if speed == 0.0 {

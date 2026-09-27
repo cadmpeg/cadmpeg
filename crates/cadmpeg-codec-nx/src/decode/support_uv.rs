@@ -37,7 +37,8 @@ use cadmpeg_core::decode::{work_units, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
+    analytic_surface_parameters, finite_or_refusal,
+    nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
@@ -130,10 +131,10 @@ pub(super) fn assign_ext11_support_uv_with_index(
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<SupportUv> {
+) -> Result<Option<SupportUv>, cadmpeg_core::decode::ResourceLimit> {
     let surface_ids = supports.map(|support| surfaces_by_xmt.get(&u32::from(support?)).cloned());
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
-        return None;
+        return Ok(None);
     };
     assign_ext11_support_uv_to_surfaces_with_index(
         index,
@@ -156,21 +157,29 @@ pub(super) fn validate_serialized_support_uv_with_index(
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> SupportUv {
-    std::array::from_fn(|side| {
-        let surface = surfaces_by_xmt.get(&u32::from(supports[side]?))?;
-        let values = lanes[side].as_ref()?;
+) -> Result<SupportUv, cadmpeg_core::decode::ResourceLimit> {
+    let mut admitted = [None, None];
+    for side in 0..2 {
+        let Some(surface) =
+            supports[side].and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
+        else {
+            continue;
+        };
+        let Some(values) = lanes[side].as_ref() else {
+            continue;
+        };
         let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
-        support_uv_lane_matches_surface_with_budget(
+        admitted[side] = support_uv_lane_matches_surface_with_budget(
             index,
             surface,
             points,
             tolerance,
             Some(values),
             geometry_budget,
-        )
-        .then(|| values.clone())
-    })
+        )?
+        .then(|| values.clone());
+    }
+    Ok(admitted)
 }
 
 fn support_uv_lane_matches_surface_with_budget(
@@ -180,28 +189,28 @@ fn support_uv_lane_matches_surface_with_budget(
     fit_tolerance: f64,
     values: Option<&SupportUvLane>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(values) = values else {
-        return false;
+        return Ok(false);
     };
     if values.len() > MAX_SUPPORT_UV_SAMPLES {
-        return false;
+        return Ok(false);
     }
     let Some(geometry) = index
         .surfaces(surface.as_str())
         .map(|surface| &surface.geometry)
     else {
-        return false;
+        return Ok(false);
     };
     for (uv, point) in values.iter().zip(points) {
         if geometry_budget.exhausted() {
-            return false;
+            return Ok(false);
         }
         if uv.iter().any(|value| missing_support_parameter(*value)) {
-            return false;
+            return Ok(false);
         }
         let Some(uv) = surface_parameters(geometry, **uv) else {
-            return false;
+            return Ok(false);
         };
         let Some(candidate) = decoded_surface_point_with_geometry_and_budget(
             index,
@@ -211,14 +220,15 @@ fn support_uv_lane_matches_surface_with_budget(
             uv.v,
             0,
             geometry_budget,
-        ) else {
-            return false;
+        )?
+        else {
+            return Ok(false);
         };
         if Point3::distance(candidate, *point) > fit_tolerance {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -239,6 +249,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
         lanes,
         &geometry_budget,
     )
+    .expect("evaluator allocation succeeds")
 }
 
 fn assign_ext11_support_uv_to_surfaces_with_index(
@@ -248,7 +259,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<SupportUv> {
+) -> Result<Option<SupportUv>, cadmpeg_core::decode::ResourceLimit> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         support_uv_lane_matches_surface_with_budget(
             index,
@@ -261,12 +272,12 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
     };
     let matches = [
         [
-            lane_matches_surface(surfaces[0], 0),
-            lane_matches_surface(surfaces[0], 1),
+            lane_matches_surface(surfaces[0], 0)?,
+            lane_matches_surface(surfaces[0], 1)?,
         ],
         [
-            lane_matches_surface(surfaces[1], 0),
-            lane_matches_surface(surfaces[1], 1),
+            lane_matches_surface(surfaces[1], 0)?,
+            lane_matches_surface(surfaces[1], 1)?,
         ],
     ];
     let mut assigned = [None, None];
@@ -281,21 +292,25 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
             continue;
         };
         if assigned[support].is_some() {
-            return None;
+            return Ok(None);
         }
         assigned[support].clone_from(&lanes[lane]);
         assigned_lanes[support] = Some(lane);
     }
     if surfaces[0] != surfaces[1] && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
-        let assigned_support = assigned.iter().position(Option::is_some)?;
-        let assigned_lane = assigned_lanes[assigned_support]?;
+        let Some(assigned_support) = assigned.iter().position(Option::is_some) else {
+            return Ok(None);
+        };
+        let Some(assigned_lane) = assigned_lanes[assigned_support] else {
+            return Ok(None);
+        };
         let other_support = 1 - assigned_support;
         let other_lane = 1 - assigned_lane;
-        if lane_matches_surface(surfaces[other_support], other_lane) {
+        if lane_matches_surface(surfaces[other_support], other_lane)? {
             assigned[other_support].clone_from(&lanes[other_lane]);
         }
     }
-    assigned.iter().any(Option::is_some).then_some(assigned)
+    Ok(assigned.iter().any(Option::is_some).then_some(assigned))
 }
 
 /// Serialized support-UV lanes retained with one charted intersection.
@@ -488,12 +503,14 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
     point: Point3,
     fit_tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let coarse = surface_parameter_domain_with_index(index, surface_id).and_then(|domain| {
-        coarse_model_surface_parameters(index, surface_id, point, domain, geometry_budget)
-    });
-    if let Some(parameters) = coarse.filter(|parameters| {
-        decoded_surface_point_with_geometry_and_budget(
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let coarse = if let Some(domain) = surface_parameter_domain_with_index(index, surface_id) {
+        coarse_model_surface_parameters(index, surface_id, point, domain, geometry_budget)?
+    } else {
+        None
+    };
+    if let Some(parameters) = coarse {
+        if decoded_surface_point_with_geometry_and_budget(
             index,
             surface_id,
             surface,
@@ -501,10 +518,11 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
             parameters.v,
             0,
             geometry_budget,
-        )
+        )?
         .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
-    }) {
-        return Some(parameters);
+        {
+            return Ok(Some(parameters));
+        }
     }
     nurbs_surface_parameter_within_tolerance_with_budget(
         nurbs,
@@ -513,7 +531,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
         fit_tolerance,
         geometry_budget,
     )
-    .map(FinitePoint2::get)
+    .map(|parameter| parameter.map(FinitePoint2::get))
 }
 
 fn serialized_support_uv_seed_for_side(
@@ -540,7 +558,7 @@ fn serialized_support_uv_seed_for_side(
 pub(super) fn complete_ext11_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
 }
@@ -549,7 +567,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
+) -> Result<(), cadmpeg_core::CodecError> {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
@@ -585,7 +603,8 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             *fit_tolerance,
             &serialized.ext11,
             geometry_budget,
-        ) else {
+        )?
+        else {
             continue;
         };
         let side_lanes: [Option<Vec<Point2>>; 2] = std::array::from_fn(|side| {
@@ -731,14 +750,15 @@ pub(super) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    let _ = invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+    invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
         ir,
         pending,
         &BTreeSet::new(),
         &support_budget,
         &geometry_budget,
         false,
-    );
+    )
+    .expect("evaluator allocation succeeds");
 }
 
 /// Invalidate support lanes that disagree with their surface and retain
@@ -755,7 +775,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     isolate_lanes: bool,
-) -> SupportUvValidationResult {
+) -> Result<SupportUvValidationResult, cadmpeg_core::decode::ResourceLimit> {
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut invalid = Vec::new();
@@ -814,7 +834,8 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         fully_validated = false;
                         break;
                     }
-                    let Some(uv) = pcurve_uv(&pcurve.geometry, *parameter).ok() else {
+                    let Some(uv) = finite_or_refusal(pcurve_uv(&pcurve.geometry, *parameter))?
+                    else {
                         fully_validated = false;
                         continue;
                     };
@@ -826,7 +847,8 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         uv.v,
                         0,
                         geometry_budget,
-                    ) else {
+                    )?
+                    else {
                         fully_validated = false;
                         break;
                     };
@@ -881,10 +903,10 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
 
         context.set_unmapped_pcurve(side, None);
     }
-    SupportUvValidationResult {
+    Ok(SupportUvValidationResult {
         endpoint_witnesses,
         lane_geometry_exhausted,
-    }
+    })
 }
 
 fn pending_support_lanes_requiring_completion(
@@ -1056,12 +1078,12 @@ fn complete_support_uv_wave(
                     ));
                 let geometry_budget = &lane_geometry_budget;
                 let mut contact_seeds = BlendContactSeedCache::default();
-                let uv = (|| {
+                let uv = (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
                     let mut uv = Vec::with_capacity(points.len().min(support_budget.remaining()));
                     let mut all_parameters_certified = true;
                     for (point_index, point) in points.iter().enumerate() {
                         if !support_budget.charge() {
-                            return None;
+                            return Ok(None);
                         }
                         let serialized_seeds = serialized_support_uv_seed_candidates(
                             &surface.geometry,
@@ -1093,6 +1115,7 @@ fn complete_support_uv_wave(
                                 }
                                 attempted_without_seed = true;
                             }
+                            let sample_parameter = parameters[point_index];
                             let candidate = match &surface.geometry {
                                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                                     if let Some(seed) = seed {
@@ -1102,7 +1125,7 @@ fn complete_support_uv_wave(
                                             Some(seed),
                                             effective_fit_tolerance,
                                             geometry_budget,
-                                        )
+                                        )?
                                         .map(|parameters| (parameters.get(), true))
                                     } else {
                                         unseeded_nurbs_surface_parameters_with_index_and_budget(
@@ -1113,7 +1136,7 @@ fn complete_support_uv_wave(
                                             *point,
                                             effective_fit_tolerance,
                                             geometry_budget,
-                                        )
+                                        )?
                                         .map(|parameters| (parameters, true))
                                     }
                                 }
@@ -1128,141 +1151,114 @@ fn complete_support_uv_wave(
                                     } else {
                                         blend_surface_parameters_from_grid_for_fit_and_budget
                                     };
-                                    source_chart_available
-                                    .then(|| {
-                                        source_pcurve
-                                            .zip(other_surface_id)
-                                            .and_then(|(source_pcurve, source_surface)| {
-                                                blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-                                                    &model_index,
-                                                    source_surface,
-                                                    surface_id,
-                                                    &source_pcurve.geometry,
-                                                    parameters[point_index],
-                                                    BoundaryInverseTarget {
-                                                        point: *point,
-                                                        seed,
-                                                        tolerance: effective_fit_tolerance,
-                                                    },
-                                                    &mut contact_seeds,
-                                                    geometry_budget,
-                                                )
-                                            })
-                                    })
-                                    .flatten()
-                                .map(|parameters| (parameters, true))
-                                .or_else(|| other_contact
-                                .and_then(
-                                    |(
-                                        other_surface,
-                                        other_pcurve,
-                                        other_geometry,
-                                        contact_pcurve,
-                                        boundary,
-                                    )| {
-                                        blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-                                            &model_index,
+                                    let mut parameters = None;
+                                    if source_chart_available {
+                                        if let Some((source_pcurve, source_surface)) =
+                                            source_pcurve.zip(other_surface_id)
+                                        {
+                                            parameters = blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+                                                &model_index, source_surface, surface_id,
+                                                &source_pcurve.geometry, sample_parameter,
+                                                BoundaryInverseTarget {
+                                                    point: *point,
+                                                    seed,
+                                                    tolerance: effective_fit_tolerance,
+                                                },
+                                                &mut contact_seeds, geometry_budget,
+                                            )?;
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        if let Some((
                                             other_surface,
+                                            other_pcurve,
                                             other_geometry,
                                             contact_pcurve,
                                             boundary,
-                                            other_pcurve,
-                                            parameters[point_index],
-                                            BoundaryInverseTarget {
-                                                point: *point,
-                                                seed,
-                                                tolerance: effective_fit_tolerance,
-                                            },
+                                        )) = other_contact
+                                        {
+                                            parameters = blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+                                                &model_index, other_surface, other_geometry,
+                                                contact_pcurve, boundary, other_pcurve,
+                                                sample_parameter,
+                                                BoundaryInverseTarget {
+                                                    point: *point,
+                                                    seed,
+                                                    tolerance: effective_fit_tolerance,
+                                                },
+                                                geometry_budget,
+                                            )?;
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        parameters = blend_surface_parameters_from_point_with_index_and_budget(
+                                            &model_index, surface_id, *point, seed,
+                                            effective_fit_tolerance, &mut contact_seeds,
                                             geometry_budget,
-                                        )
-                                    },
-                                )
-                                .map(|parameters| (parameters, true))
-                                )
-                                .or_else(|| {
-                                    blend_surface_parameters_from_point_with_index_and_budget(
-                                        &model_index,
-                                        surface_id,
-                                        *point,
-                                        seed,
-                                        effective_fit_tolerance,
-                                        &mut contact_seeds,
-                                        geometry_budget,
-                                    )
-                                    .map(|parameters| (parameters, true))
-                                })
-                                .or_else(|| {
-                                    other_surface_id.and_then(|other_surface| {
-                                        blend_boundary_parameter_from_support_spine_with_index_and_budget(
-                                            &model_index,
-                                            surface_id,
-                                            other_surface,
-                                            *point,
-                                            seed,
-                                            effective_fit_tolerance,
-                                            geometry_budget,
-                                        )
-                                        .map(|parameters| (parameters, true))
-                                    })
-                                })
-                                .or_else(|| {
-                                    seed.and_then(|seed| {
-                                        refine_offset_surface_parameters_with_index_and_budget(
-                                            &model_index,
-                                            surface_id,
-                                            *point,
-                                            seed,
-                                            effective_fit_tolerance,
-                                            geometry_budget,
-                                        )
-                                    })
-                                    .or_else(|| {
-                                        seed.is_none().then(|| {
-                                            offset_surface_parameters_with_tolerance_with_index_and_budget(
+                                        )?;
+                                    }
+                                    if parameters.is_none() {
+                                        if let Some(other_surface) = other_surface_id {
+                                            parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                                                &model_index, surface_id, other_surface, *point,
+                                                seed, effective_fit_tolerance, geometry_budget,
+                                            )?;
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        parameters = if let Some(seed) = seed {
+                                            refine_offset_surface_parameters_with_index_and_budget(
                                                 &model_index,
                                                 surface_id,
                                                 *point,
-                                                None,
-                                                Some(effective_fit_tolerance),
+                                                seed,
+                                                effective_fit_tolerance,
                                                 geometry_budget,
-                                            )
-                                        })?
-                                    })
-                                    .map(|parameters| (parameters, true))
-                                })
-                                .or_else(|| {
-                                    solve_blend_parameters(
-                                        &model_index,
-                                        surface_id,
-                                        *point,
-                                        seed,
-                                        effective_fit_tolerance,
-                                        BlendParameterGrid::Disabled,
-                                        geometry_budget,
-                                    )
-                                    .map(|parameters| (parameters, true))
-                                })
-                                .or_else(|| {
-                                    let blend_grid = blend_parameter_grids
-                                        .entry(surface_id.clone())
-                                        .or_insert_with(|| {
-                                            blend_surface_parameter_grid_with_index_and_budget(
+                                            )?
+                                        } else {
+                                            offset_surface_parameters_with_tolerance_with_index_and_budget(
+                                                &model_index, surface_id, *point, None,
+                                                Some(effective_fit_tolerance), geometry_budget,
+                                            )?
+                                        };
+                                    }
+                                    if parameters.is_none() {
+                                        parameters = solve_blend_parameters(
+                                            &model_index,
+                                            surface_id,
+                                            *point,
+                                            seed,
+                                            effective_fit_tolerance,
+                                            BlendParameterGrid::Disabled,
+                                            geometry_budget,
+                                        )?;
+                                    }
+                                    if parameters.is_none() {
+                                        if !blend_parameter_grids.contains_key(surface_id) {
+                                            let grid =
+                                                blend_surface_parameter_grid_with_index_and_budget(
+                                                    &model_index,
+                                                    surface_id,
+                                                    0,
+                                                    geometry_budget,
+                                                )?;
+                                            blend_parameter_grids.insert(surface_id.clone(), grid);
+                                        }
+                                        if let Some(grid) = blend_parameter_grids
+                                            .get(surface_id)
+                                            .and_then(Option::as_deref)
+                                        {
+                                            parameters = solve_grid_parameters(
                                                 &model_index,
                                                 surface_id,
-                                                0,
+                                                *point,
+                                                effective_fit_tolerance,
+                                                grid,
                                                 geometry_budget,
-                                            )
-                                        });
-                                    solve_grid_parameters(
-                                        &model_index,
-                                        surface_id,
-                                        *point,
-                                        effective_fit_tolerance,
-                                        blend_grid.as_deref()?,
-                                        geometry_budget,
-                                    )
-                                    .map(|parameters| (parameters, true))
-                                })
+                                            )?;
+                                        }
+                                    }
+                                    parameters.map(|parameters| (parameters, true))
                                 }
                                 geometry @ SurfaceGeometry::Solved(_) => {
                                     analytic_surface_parameters(geometry, *point)
@@ -1274,13 +1270,15 @@ fn complete_support_uv_wave(
                                 break;
                             }
                         }
-                        let (parameters, certified) = solved?;
+                        let Some((parameters, certified)) = solved else {
+                            return Ok(None);
+                        };
                         all_parameters_certified &= certified;
                         uv.push(parameters);
                     }
-                    Some((uv, all_parameters_certified))
+                    Ok(Some((uv, all_parameters_certified)))
                 })();
-                let Some((mut uv, all_parameters_certified)) = uv else {
+                let Some((mut uv, all_parameters_certified)) = uv? else {
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(&lane_geometry_budget)
                         .is_err();
@@ -1320,7 +1318,8 @@ fn complete_support_uv_wave(
                             sample_uv.v,
                             0,
                             geometry_budget,
-                        ) else {
+                        )?
+                        else {
                             reproduces = false;
                             break;
                         };
@@ -1344,7 +1343,7 @@ fn complete_support_uv_wave(
                 {
                     if all_parameters_certified {
                         endpoint_values = [
-                            uv.first().and_then(|sample_uv| {
+                            if let Some(sample_uv) = uv.first() {
                                 decoded_surface_point_with_geometry_and_budget(
                                     &model_index,
                                     surface_id,
@@ -1353,9 +1352,11 @@ fn complete_support_uv_wave(
                                     sample_uv.v,
                                     0,
                                     geometry_budget,
-                                )
-                            }),
-                            uv.last().and_then(|sample_uv| {
+                                )?
+                            } else {
+                                None
+                            },
+                            if let Some(sample_uv) = uv.last() {
                                 decoded_surface_point_with_geometry_and_budget(
                                     &model_index,
                                     surface_id,
@@ -1364,8 +1365,10 @@ fn complete_support_uv_wave(
                                     sample_uv.v,
                                     0,
                                     geometry_budget,
-                                )
-                            }),
+                                )?
+                            } else {
+                                None
+                            },
                         ];
                     }
                     let parameter_range = samples.parameter_range();
@@ -1493,8 +1496,8 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<[Vec<Point2>; 2]> {
-    let (blend_side, support_side) = (0..2).find_map(|blend_side| {
+) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((blend_side, support_side)) = (0..2).find_map(|blend_side| {
         let (supports, _, _, _) = blend_surface_definition_with_index(index, surfaces[blend_side])?;
         let support_matches = supports
             .iter()
@@ -1507,7 +1510,9 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
             })
             .count();
         (support_matches == 1).then_some((blend_side, 1 - blend_side))
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let mut lanes = [
         Vec::with_capacity(points.len()),
         Vec::with_capacity(points.len()),
@@ -1515,27 +1520,34 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
     for point in points {
         let blend_seed = lanes[blend_side].last().copied().or(seeds[blend_side]);
         let support_seed = lanes[support_side].last().copied().or(seeds[support_side]);
-        let blend_parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
-            index,
-            surfaces[blend_side],
-            surfaces[support_side],
-            *point,
-            blend_seed,
-            fit_tolerance,
-            geometry_budget,
-        )?;
-        let support_parameters = surface_parameters_for_fit_with_index_and_budget(
+        let Some(blend_parameters) =
+            blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                index,
+                surfaces[blend_side],
+                surfaces[support_side],
+                *point,
+                blend_seed,
+                fit_tolerance,
+                geometry_budget,
+            )?
+        else {
+            return Ok(None);
+        };
+        let Some(support_parameters) = surface_parameters_for_fit_with_index_and_budget(
             index,
             surfaces[support_side],
             *point,
             support_seed,
             fit_tolerance,
             geometry_budget,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
     }
-    Some(lanes)
+    Ok(Some(lanes))
 }
 
 fn complete_coupled_support_uv(
@@ -1652,16 +1664,16 @@ fn complete_coupled_support_uv(
             support_uv_lane_geometry_work_limit(points.len(), parent_geometry_budget.remaining()),
         );
         let geometry_budget = &lane_geometry_budget;
-        let lanes = complete_blend_boundary_support_uv_with_index_and_budget(
+        let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
             &model_index,
             surfaces,
             points,
             *fit_tolerance,
             seeds,
             geometry_budget,
-        )
-        .or_else(|| {
-            continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+        )?;
+        if lanes.is_none() {
+            lanes = continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
                 &model_index,
                 surfaces,
                 points,
@@ -1669,8 +1681,8 @@ fn complete_coupled_support_uv(
                 seeds,
                 geometry_budget,
                 &mut blend_parameter_grids,
-            )
-        });
+            )?;
+        }
         let Some(lanes) = lanes else {
             failed_attempts.insert(procedural_id.clone(), lane_state);
             let parent_exhausted = parent_geometry_budget
@@ -1682,34 +1694,37 @@ fn complete_coupled_support_uv(
         for side in 0..2 {
             if missing[side] {
                 let endpoint_values =
-                    model_index
-                        .surfaces(surfaces[side].as_str())
-                        .map(|surface| {
-                            [
-                                lanes[side].first().and_then(|parameters| {
-                                    decoded_surface_point_with_geometry_and_budget(
-                                        &model_index,
-                                        surfaces[side],
-                                        &surface.geometry,
-                                        parameters.u,
-                                        parameters.v,
-                                        0,
-                                        geometry_budget,
-                                    )
-                                }),
-                                lanes[side].last().and_then(|parameters| {
-                                    decoded_surface_point_with_geometry_and_budget(
-                                        &model_index,
-                                        surfaces[side],
-                                        &surface.geometry,
-                                        parameters.u,
-                                        parameters.v,
-                                        0,
-                                        geometry_budget,
-                                    )
-                                }),
-                            ]
-                        });
+                    if let Some(surface) = model_index.surfaces(surfaces[side].as_str()) {
+                        let first = if let Some(parameters) = lanes[side].first() {
+                            decoded_surface_point_with_geometry_and_budget(
+                                &model_index,
+                                surfaces[side],
+                                &surface.geometry,
+                                parameters.u,
+                                parameters.v,
+                                0,
+                                geometry_budget,
+                            )?
+                        } else {
+                            None
+                        };
+                        let last = if let Some(parameters) = lanes[side].last() {
+                            decoded_surface_point_with_geometry_and_budget(
+                                &model_index,
+                                surfaces[side],
+                                &surface.geometry,
+                                parameters.u,
+                                parameters.v,
+                                0,
+                                geometry_budget,
+                            )?
+                        } else {
+                            None
+                        };
+                        Some([first, last])
+                    } else {
+                        None
+                    };
                 let parameter_range = samples.parameter_range();
                 let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
@@ -2144,44 +2159,60 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let mut candidate_endpoints = candidates
             .iter()
             .filter(|(key, _)| endpoint_admissible_keys.contains(key))
-            .filter_map(|(key, values)| {
-                let [candidate] = values.as_slice() else {
-                    return None;
-                };
-                let witness = endpoint_witness_for_candidate(
-                    validated_endpoint_witnesses,
-                    key,
-                    &candidate.0,
-                    candidate.1,
-                );
-                if witness.is_some() {
-                    witnessed_keys.insert(key.clone());
-                }
-                let endpoints = witness.or_else(|| {
-                    pcurve_surface_endpoints_with_index_and_budget(
-                        &model_index,
-                        &key.1,
+            .map(
+                |(key, values)| -> Result<Option<_>, cadmpeg_core::decode::ResourceLimit> {
+                    let [candidate] = values.as_slice() else {
+                        return Ok(None);
+                    };
+                    let witness = endpoint_witness_for_candidate(
+                        validated_endpoint_witnesses,
+                        key,
                         &candidate.0,
-                        None,
-                        geometry_budget,
-                    )
-                });
-                Some((key.clone(), endpoints))
-            })
-            .collect::<BTreeMap<_, _>>();
+                        candidate.1,
+                    );
+                    if witness.is_some() {
+                        witnessed_keys.insert(key.clone());
+                    }
+                    let endpoints = if witness.is_some() {
+                        witness
+                    } else {
+                        pcurve_surface_endpoints_with_index_and_budget(
+                            &model_index,
+                            &key.1,
+                            &candidate.0,
+                            None,
+                            geometry_budget,
+                        )?
+                    };
+                    Ok(Some((key.clone(), endpoints)))
+                },
+            )
+            .try_fold(BTreeMap::new(), |mut values, endpoints| {
+                if let Some((key, endpoints)) = endpoints? {
+                    values.insert(key, endpoints);
+                }
+                Ok::<_, cadmpeg_core::decode::ResourceLimit>(values)
+            })?;
         let replacements = coedge_candidates
             .into_iter()
-            .filter_map(
-                |(coedge_id, edge_id, curve, surface, edge_tolerance, source_index)| {
+            .map(
+                |(coedge_id, edge_id, curve, surface, edge_tolerance, source_index)| -> Result<Option<_>, cadmpeg_core::CodecError> {
                     let key = (curve.clone(), surface.clone());
-                    let [candidate] = candidates.get(&key)?.as_slice() else {
-                        return None;
+                    let Some(candidate_values) = candidates.get(&key) else {
+                        return Ok(None);
                     };
-                    let (edge_endpoints, edge_allowance) =
-                        edge_endpoint_contracts.get(&edge_id).copied()?;
+                    let [candidate] = candidate_values.as_slice() else {
+                        return Ok(None);
+                    };
+                    let Some((edge_endpoints, edge_allowance)) =
+                        edge_endpoint_contracts.get(&edge_id).copied() else {
+                        return Ok(None);
+                    };
                     let fit_tolerance = candidate.2.or(edge_tolerance);
                     let matches = {
-                        let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                        let Some(coincident_surface) = candidate_endpoints.get(&key).and_then(Option::as_ref) else {
+                            return Ok(None);
+                        };
                         pcurve_matches_edge_endpoint_contract(
                             *coincident_surface,
                             edge_endpoints,
@@ -2191,7 +2222,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     };
                     if !matches {
                         if !witnessed_keys.remove(&key) {
-                            return None;
+                            return Ok(None);
                         }
                         // A witness from another geometry phase is a shortcut,
                         // not a new admission rule. Preserve the established
@@ -2203,36 +2234,46 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                             &candidate.0,
                             None,
                             geometry_budget,
-                        );
+                        )?;
                         candidate_endpoints.insert(key.clone(), fallback);
-                        let coincident_surface = candidate_endpoints.get(&key)?.as_ref()?;
+                        let Some(coincident_surface) = candidate_endpoints.get(&key).and_then(Option::as_ref) else {
+                            return Ok(None);
+                        };
                         if !pcurve_matches_edge_endpoint_contract(
                             *coincident_surface,
                             edge_endpoints,
                             edge_allowance,
                             fit_tolerance,
                         ) {
-                            return None;
+                            return Ok(None);
                         }
                     }
-                    Some((
+                    let metadata = (|| {
+                        Some(cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                            None,
+                            Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
+                            fit_tolerance
+                                .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                                .transpose()
+                                .ok()?,
+                        ))
+                    })();
+                    let Some(metadata) = metadata else {
+                        return Ok(None);
+                    };
+                    Ok(Some((
                         coedge_id,
                         source_index,
-                        (
-                            candidate.0.clone(),
-                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                                None,
-                                Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
-                                fit_tolerance
-                                    .map(cadmpeg_ir::geometry::FitTolerance::try_new)
-                                    .transpose()
-                                    .ok()?,
-                            ),
-                        ),
-                    ))
+                        (candidate.0.clone(), metadata),
+                    )))
                 },
             )
-            .collect::<Vec<_>>();
+            .try_fold(Vec::new(), |mut values, replacement| {
+                if let Some(replacement) = replacement? {
+                    values.push(replacement);
+                }
+                Ok::<_, cadmpeg_core::CodecError>(values)
+            })?;
         replacements
     };
     for (coedge_id, source_index, (geometry, metadata)) in replacements {
@@ -2375,7 +2416,8 @@ mod tests {
             0.0,
             Some(&values),
             &geometry_budget,
-        ));
+        )
+        .expect("evaluator allocation succeeds"));
         assert_eq!(geometry_budget.remaining(), 1);
     }
 
@@ -2442,6 +2484,7 @@ mod tests {
             FIT_TOLERANCE,
             &fit_budget,
         )
+        .expect("evaluator allocation succeeds")
         .expect("coarse grid contains the exact chart point");
         assert_eq!(parameters, Point2::new(0.5, 0.5));
 
@@ -2455,6 +2498,7 @@ mod tests {
             FIT_TOLERANCE,
             &miss_budget,
         )
+        .expect("evaluator allocation succeeds")
         .is_none());
     }
 }
