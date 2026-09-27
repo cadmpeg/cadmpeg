@@ -224,6 +224,68 @@ fn body_placement_indices_refuse_collection_limit() {
 }
 
 #[test]
+fn product_definition_ir_items_refuse_collection_limit() {
+    product_collection_refuses("step_product_definition_ir_items");
+}
+
+#[test]
+fn product_source_groups_refuse_collection_limit() {
+    product_collection_refuses("step_product_source_groups");
+}
+
+#[test]
+fn product_source_group_members_refuse_collection_limit() {
+    product_collection_refuses("step_product_source_group_members");
+}
+
+fn shape_binding_collection_refuses(operation: &str) {
+    let source = String::from_utf8_lossy(include_bytes!(
+        "../../../tests/fixtures/ap214_sheet.p21"
+    ))
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=APPLICATION_CONTEXT('mechanical design');\n#81=PRODUCT_CONTEXT('',#80,'mechanical');\n#82=PRODUCT('P','Shape part','',(#81));\n#83=PRODUCT_DEFINITION_FORMATION('','',#82);\n#84=PRODUCT_DEFINITION_CONTEXT('part definition',#80,'design');\n#85=PRODUCT_DEFINITION('part','',#83,#84);\n#86=PRODUCT_DEFINITION_SHAPE('','',#85);\n#87=SHAPE_DEFINITION_REPRESENTATION(#86,#32);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    product_collection_refuses_source(source.as_bytes(), operation);
+}
+
+#[test]
+fn shape_binding_groups_refuse_collection_limit() {
+    shape_binding_collection_refuses("step_shape_binding_groups");
+}
+
+#[test]
+fn shape_binding_bodies_refuse_collection_limit() {
+    shape_binding_collection_refuses("step_shape_binding_bodies");
+}
+
+fn mapped_body_placement_collection_refuses(operation: &str) {
+    let source = String::from_utf8_lossy(include_bytes!(
+        "../../../tests/fixtures/ap214_sheet.p21"
+    ))
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#70=CARTESIAN_POINT('',(20.,0.,0.));\n#71=CARTESIAN_POINT('',(40.,0.,0.));\n#72=AXIS2_PLACEMENT_3D('',#70,#9,#10);\n#73=AXIS2_PLACEMENT_3D('',#71,#9,#10);\n#74=REPRESENTATION_MAP(#27,#32);\n#75=MAPPED_ITEM('first',#74,#72);\n#76=MAPPED_ITEM('second',#74,#73);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    product_collection_refuses_source(source.as_bytes(), operation);
+}
+
+#[test]
+fn body_placement_groups_refuse_collection_limit() {
+    mapped_body_placement_collection_refuses("step_body_placement_groups");
+}
+
+#[test]
+fn body_placement_group_members_refuse_collection_limit() {
+    mapped_body_placement_collection_refuses("step_body_placement_group_members");
+}
+
+#[test]
+fn unique_body_placements_refuse_collection_limit() {
+    mapped_body_placement_collection_refuses("step_unique_body_placements");
+}
+
+#[test]
 fn product_definition_descriptions_refuse_collection_limit() {
     product_collection_refuses("step_product_definition_descriptions");
 }

@@ -47,6 +47,21 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
+fn reserve_product_items<T>(
+    values: &mut Vec<T>,
+    count: usize,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
+    }
+    values.try_reserve(count).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })
+}
+
 fn claim_product_typed(
     typed: &mut HashSet<u64>,
     id: u64,
@@ -296,6 +311,12 @@ pub(super) fn decode(
                     "{owner} has a shape representation with no committed topology body"
                 )));
             }
+            reserve_product_items(
+                &mut ir.model.product_definitions,
+                1,
+                ctx,
+                "step_product_definition_ir_items",
+            )?;
             ir.model.product_definitions.push(ProductDefinition {
                 id: product_definition_id.clone(),
                 kind: ProductDefinitionKind::Part,
@@ -309,10 +330,14 @@ pub(super) fn decode(
                     definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
                 ),
             });
-            product_definition_ids_by_source
-                .entry(step_id)
-                .or_default()
-                .push(product_definition_id);
+            if !product_definition_ids_by_source.contains_key(&step_id) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_product_source_groups")?;
+                }
+            }
+            let grouped = product_definition_ids_by_source.entry(step_id).or_default();
+            reserve_product_items(grouped, 1, ctx, "step_product_source_group_members")?;
+            grouped.push(product_definition_id);
         }
         claim_product_typed(&mut typed, step_id, ctx)?;
     }
@@ -756,16 +781,21 @@ fn apply_body_placements(
             Err(error) => return Err(placement_error(error)),
         };
         for body in body_ids {
-            placements_by_body
-                .entry(body)
-                .or_default()
-                .push((id, transform));
+            if !placements_by_body.contains_key(&body) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_body_placement_groups")?;
+                }
+            }
+            let grouped = placements_by_body.entry(body).or_default();
+            reserve_product_items(grouped, 1, ctx, "step_body_placement_group_members")?;
+            grouped.push((id, transform));
         }
     }
     for (body, placements) in placements_by_body {
         let mut unique = Vec::<(u64, Transform)>::new();
         for placement in placements {
             if unique.iter().all(|(_, existing)| *existing != placement.1) {
+                reserve_product_items(&mut unique, 1, ctx, "step_unique_body_placements")?;
                 unique.push(placement);
             }
         }
@@ -936,7 +966,14 @@ fn shape_bindings(
             ctx,
         )? {
             let (body_ids, _body_bytes) = bodies.into_parts();
-            result.entry(definition).or_default().extend(body_ids);
+            if !result.contains_key(&definition) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_shape_binding_groups")?;
+                }
+            }
+            let grouped = result.entry(definition).or_default();
+            reserve_product_items(grouped, body_ids.len(), ctx, "step_shape_binding_bodies")?;
+            grouped.extend(body_ids);
         }
     }
     Ok(result)
