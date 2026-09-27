@@ -294,7 +294,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
 }
 
 pub(crate) fn project_compact_sketch_profiles(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,

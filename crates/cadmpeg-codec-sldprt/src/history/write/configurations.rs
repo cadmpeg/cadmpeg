@@ -2,6 +2,7 @@
 //! Configuration records for native write.
 
 use crate::records::{Configuration, FeatureHistory};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -157,8 +158,19 @@ fn sync_configuration_design_state(
     )?;
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &projection_bytes,
+        &arena,
+        &DecodePolicy::service(),
+    )?;
     let projection_losses = project_configuration_sketch_states(
-        None,
+        &ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -236,8 +248,19 @@ fn sync_configuration_design_state(
     )?;
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &projection_bytes,
+        &arena,
+        &DecodePolicy::service(),
+    )?;
     let projection_losses = project_configuration_sketch_states(
-        None,
+        &ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
