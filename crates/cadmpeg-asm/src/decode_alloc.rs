@@ -27,11 +27,20 @@ pub(crate) fn push_vec<T>(
     value: T,
     operation: &'static str,
 ) -> Result<(), CodecError> {
+    reserve_vec_slot(ctx, values, operation)?;
+    values.push(value);
+    Ok(())
+}
+
+pub(crate) fn reserve_vec_slot<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    values.push(value);
     Ok(())
 }
 

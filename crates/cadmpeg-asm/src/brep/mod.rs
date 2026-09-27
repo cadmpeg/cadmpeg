@@ -636,7 +636,7 @@ pub fn decode_with_header(
     )?;
     emit_pcurves(ctx, &mut out, records, &mut carriers, &reach, format)?;
     emit_points(ctx, &mut out, records, &reach, format)?;
-    emit_vertices(&mut out, records, &by_index, &reach, format)?;
+    emit_vertices(ctx, &mut out, records, &by_index, &reach, format)?;
     emit_edges(
         ctx,
         &mut out,

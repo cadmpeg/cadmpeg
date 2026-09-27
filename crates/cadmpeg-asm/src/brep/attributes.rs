@@ -29,6 +29,7 @@ pub fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
+            crate::decode_alloc::reserve_vec_slot(ctx, out, "ASM source attributes")?;
             out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);

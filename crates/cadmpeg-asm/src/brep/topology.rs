@@ -200,6 +200,11 @@ pub(super) fn keep_faces_and_carriers(
                     .iter()
                     .any(|sentinel| sentinel.record_index == surf_rec.index as u32)
                 {
+                    crate::decode_alloc::reserve_vec_slot(
+                        ctx,
+                        &mut out.mesh_surface_sentinels,
+                        "ASM mesh surface sentinels",
+                    )?;
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
@@ -637,6 +642,11 @@ pub(super) fn collect_wire_topology(
                     }
                 }
                 if let Some(side) = side {
+                    crate::decode_alloc::reserve_vec_slot(
+                        ctx,
+                        &mut out.wire_topologies,
+                        "ASM wire topologies",
+                    )?;
                     out.wire_topologies.push(WireTopology {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),

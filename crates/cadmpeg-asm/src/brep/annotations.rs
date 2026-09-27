@@ -144,6 +144,7 @@ pub(super) fn emit_annotation_records(
                     }
                 }
             }
+            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
                 stream: stream.to_owned(),
@@ -154,6 +155,7 @@ pub(super) fn emit_annotation_records(
         }
         let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
         if attribute_ids.contains(attribute_id.as_str()) {
+            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
                 stream: stream.to_owned(),
@@ -164,6 +166,7 @@ pub(super) fn emit_annotation_records(
         }
         let unknown_id = unknown_record_id(record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
+            crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
                 stream: stream.to_owned(),
@@ -189,6 +192,7 @@ pub(super) fn emit_annotation_records(
             ),
         ] {
             if procedural_ids.contains(synthetic_id.as_str()) {
+                crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
                     stream: stream.to_owned(),
@@ -215,6 +219,7 @@ pub(super) fn emit_annotation_records(
                 "synthetic entity {entity_id} source record {index} is missing"
             ))
         })?;
+        crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
         out.annotation_records.push(AnnotationRecord {
             id: entity_id.to_owned(),
             stream: stream.to_owned(),
