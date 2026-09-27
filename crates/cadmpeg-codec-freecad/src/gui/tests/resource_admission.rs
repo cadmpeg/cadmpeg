@@ -94,6 +94,26 @@ fn neutral_view_presentations_refuse_at_caller_limit() {
 }
 
 #[test]
+fn gui_color_list_refuses_at_caller_limit() {
+    let bytes = [1_u32.to_le_bytes(), 0x1122_3344_u32.to_le_bytes()].concat();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::parse_color_list(
+        &ctx,
+        cadmpeg_core::decode::View::over_retained(&bytes),
+        "colors.bin",
+        false,
+    )
+    .expect_err("color list must charge before retaining its entries");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI color-list entries"), "{error:?}");
+}
+
+#[test]
 fn gui_property_identity_refuses_at_retained_limit() {
     let text = r#"<ViewProvider name="Model"><Properties Count="1"><Property name="Visible" type="App::PropertyBool"><Bool value="true"/></Property></Properties></ViewProvider>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI provider XML");

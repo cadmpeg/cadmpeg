@@ -478,6 +478,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 name,
@@ -527,6 +528,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 name,
@@ -571,6 +573,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 name,
@@ -641,7 +644,7 @@ fn transfer_schema_one(
         losses,
     };
     let material_lists =
-        validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
+        validate_gui_list_payloads(ctx, &graph.properties, entries, requires_alpha_conversion)?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ir,
@@ -3452,6 +3455,7 @@ struct GuiMaterial {
 }
 
 fn validate_gui_list_payloads(
+    ctx: &DecodeContext<'_>,
     properties: &[GuiPropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
     requires_alpha_conversion: bool,
@@ -3492,7 +3496,7 @@ fn validate_gui_list_payloads(
         })?;
         match property.type_name.as_str() {
             "App::PropertyColorList" => {
-                parse_color_list(view, entry_name, requires_alpha_conversion)?;
+                parse_color_list(ctx, view, entry_name, requires_alpha_conversion)?;
             }
             "App::PropertyFloatList" => {
                 parse_float_list(view, entry_name)?;
@@ -3534,27 +3538,27 @@ fn validate_gui_list_payloads(
 }
 
 fn parse_color_list(
+    ctx: &DecodeContext<'_>,
     mut view: View<'_>,
     entry_name: &str,
     requires_alpha_conversion: bool,
 ) -> Result<Vec<u32>, CodecError> {
     let count = view.req_u32_le()?;
-    let colors = view
-        .read_counted(count.into(), 4, View::u32_le)
-        .ok_or_else(|| {
+    let count = view.counted(count.into(), 4).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "color-list entry {entry_name} count exceeds its payload"
             ))
-        })?;
+        })?.get();
+    let mut colors = collection_vec(ctx, count, "FCStd GUI color-list entries")?;
+    for _ in 0..count {
+        colors.push(convert_packed_alpha(view.req_u32_le()?, requires_alpha_conversion));
+    }
     if !view.is_empty() {
         return Err(CodecError::malformed(format_args!(
             "color-list entry {entry_name} has trailing bytes"
         )));
     }
-    Ok(colors
-        .into_iter()
-        .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
-        .collect())
+    Ok(colors)
 }
 
 fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecError> {
@@ -4138,6 +4142,7 @@ impl TopologyColorKind {
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_topology_colors(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     provider_name: &str,
@@ -4158,7 +4163,7 @@ fn transfer_topology_colors(
             "color list references missing entry {entry_name}"
         ))
     })?;
-    let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
+    let colors = parse_color_list(ctx, view, entry_name, requires_alpha_conversion)?;
     let count = colors.len();
     let Some(group) =
         displayed_shape_group(object_id, properties, payloads, element_maps, kind.name())?
