@@ -931,6 +931,34 @@ fn native_model_name_succeeds_under_service_policy() {
 }
 
 #[test]
+fn legacy_persistence_scopes_refuse_before_counted_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"0123456789";
+    let framing = super::LegacyAsciiFraming {
+        schema: "6".to_string(),
+        product_release: None,
+        banner_offset: 0,
+        object_offset: 5,
+        persistence: crate::legacy::Persistence::default(),
+    };
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("legacy scope input is admitted");
+        super::legacy_scope_ranges(&ctx, data, &framing, &[])
+    };
+    assert_eq!(run(1).expect("initial scope admitted"), vec![5..10]);
+    let error = run(0).expect_err("initial scope needs one collection item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy persistence scopes"));
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
