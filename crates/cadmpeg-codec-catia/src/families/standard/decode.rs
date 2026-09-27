@@ -5515,18 +5515,17 @@ fn attach_standard_topology(
                 },
             );
             match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
+                ctx,
                 face_assignments,
                 work_budget,
                 |selected_edge_faces, branch_budget| {
-                    let selected_supports = supports
-                        .iter()
-                        .zip(selected_edge_faces)
-                        .map(|(support, faces)| {
-                            let mut selected = support.clone();
-                            selected.faces = *faces;
-                            selected
-                        })
-                        .collect::<Vec<_>>();
+                    let mut selected_supports = Vec::new();
+                    crate::resource::reserve_vec(ctx, &mut selected_supports, supports.len(), "catia_selected_curve_supports")?;
+                    selected_supports.extend(supports.iter().zip(selected_edge_faces).map(|(support, faces)| {
+                        let mut selected = support.clone();
+                        selected.faces = *faces;
+                        selected
+                    }));
                     let selected_edge_classes = standard_curve_edge_classes(&selected_supports);
                     solve_mesh_candidate(
                         selected_edge_faces,
