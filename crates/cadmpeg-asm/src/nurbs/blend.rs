@@ -692,6 +692,7 @@ fn variable_blend_value(
         EdgeOffsetDiscriminator, VariableBlendInterpolationPoint, VariableBlendTerminal,
         VariableBlendValue, VariableBlendValuePayload,
     };
+    let _depth_guard = propagate_resource!(ctx.enter_nested("decode ASM variable blend value"));
     if depth > 32 {
         return None;
     }
@@ -879,6 +880,30 @@ mod variable_blend_value_tests {
         };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM variable blend terminal text");
+    }
+
+    #[test]
+    fn variable_blend_value_refuses_recursion_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("fixed_width".into()),
+            Token::Enum(0), Token::True,
+            Token::Double(0.0), Token::Double(1.0), Token::Double(2.0),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("variable blend depth must refuse");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(refusal.operation, "decode ASM variable blend value");
     }
 
     fn text(bytes: &mut Vec<u8>, value: &str) {
