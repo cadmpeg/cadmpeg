@@ -116,14 +116,22 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 }
 
 /// Scan a stream for swept/spun surface carriers, keyed by attribute.
-pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+pub(super) fn scan_sweep_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<HashMap<u16, SweepCarrier>, cadmpeg_core::CodecError> {
+    ctx.charge_work(bytes.len() as u64, "scan SLDPRT sweep carriers")?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().saturating_sub(20) {
         if let Some(carrier) = parse_sweep(bytes, off) {
+            if !out.contains_key(&carrier.attr) {
+                ctx.charge_collection_items(1, "index SLDPRT sweep carriers")?;
+                out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT sweep carriers", u64::MAX - 1, u64::MAX))?;
+            }
             out.entry(carrier.attr).or_insert(carrier);
         }
     }
-    out
+    Ok(out)
 }
 
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.
@@ -377,7 +385,8 @@ mod tests {
 
     use cadmpeg_ir::eval::nurbs_curve_point_at;
 
-    use super::{profile_nurbs, scan_sweep_carriers, spun_nurbs, swept_nurbs, SweepKind};
+    use super::{profile_nurbs, spun_nurbs, swept_nurbs, SweepCarrier, SweepKind};
+    use std::collections::HashMap;
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::CurveGeometry;
@@ -385,6 +394,16 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::units::SumSquaresUnitVector3;
+
+    fn scan_with_service_context(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test carrier bytes fit service policy");
+        super::scan_sweep_carriers(&ctx, bytes).expect("test carriers fit service policy")
+    }
 
     fn header(tt: u8, attr: u16, profile: u16) -> Vec<u8> {
         let mut bytes = vec![0x00, tt];
@@ -404,7 +423,7 @@ mod tests {
         for v in [0.0f64, 0.0, 1.0, 0.25] {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
-        let carriers = scan_sweep_carriers(&bytes);
+        let carriers = scan_with_service_context(&bytes);
         let carrier = carriers.get(&9).expect("swept carrier");
         assert_eq!(carrier.profile_attr, 5);
         let SweepKind::Swept { direction } = &carrier.kind else {
@@ -425,7 +444,7 @@ mod tests {
         for _ in 0..8 {
             bytes.extend_from_slice(&MISSING.to_be_bytes());
         }
-        let carriers = scan_sweep_carriers(&bytes);
+        let carriers = scan_with_service_context(&bytes);
         let carrier = carriers.get(&12).expect("spun carrier");
         assert_eq!(carrier.profile_attr, 6);
         let SweepKind::Spun { base, axis } = &carrier.kind else {
@@ -442,7 +461,7 @@ mod tests {
         for v in [0.0f64, 0.0, 2.0, 0.25] {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
-        assert!(scan_sweep_carriers(&bytes).is_empty());
+        assert!(scan_with_service_context(&bytes).is_empty());
     }
 
     #[test]
@@ -454,7 +473,7 @@ mod tests {
         for value in [direction.x, direction.y, direction.z, 0.25] {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
-        assert!(scan_sweep_carriers(&bytes).contains_key(&9));
+        assert!(scan_with_service_context(&bytes).contains_key(&9));
     }
 
     #[test]
@@ -463,7 +482,7 @@ mod tests {
         for v in [f64::NAN, 0.0, 1.0] {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
-        assert!(scan_sweep_carriers(&bytes).is_empty());
+        assert!(scan_with_service_context(&bytes).is_empty());
     }
 
     #[test]
@@ -472,7 +491,7 @@ mod tests {
         for v in [2.0e6f64, -3.0e6, 4.0e6, 0.0, 0.0, 1.0] {
             bytes.extend_from_slice(&v.to_be_bytes());
         }
-        let carriers = scan_sweep_carriers(&bytes);
+        let carriers = scan_with_service_context(&bytes);
         let carrier = carriers.get(&12).expect("spun carrier");
         let SweepKind::Spun { base, .. } = &carrier.kind else {
             panic!("expected spun kind");

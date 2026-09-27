@@ -195,7 +195,10 @@ mod tests {
 
     fn carriers() -> CarrierIndex {
         let mut carriers = CarrierIndex::default();
-        carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test carrier fits service policy");
+        carriers.insert(&ctx, super::super::Carrier::Curve(CurveCarrier {
             attr: 10,
             offset: 100,
             end: 120,
@@ -207,7 +210,7 @@ mod tests {
                 .expect("valid line fixture"),
             )),
             parameter_range: None,
-        }));
+        })).expect("test carrier fits service policy");
         carriers
     }
 
@@ -221,13 +224,16 @@ mod tests {
         )
         .expect("valid NURBS fixture");
         let mut carriers = CarrierIndex::default();
-        carriers.insert(super::super::Carrier::Curve(CurveCarrier {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test carrier fits service policy");
+        carriers.insert(&ctx, super::super::Carrier::Curve(CurveCarrier {
             attr: 10,
             offset: 100,
             end: 120,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range: None,
-        }));
+        })).expect("test carrier fits service policy");
         carriers
     }
 

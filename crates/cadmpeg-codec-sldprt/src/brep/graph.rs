@@ -1156,8 +1156,8 @@ pub(crate) fn decode_bodies(
                     .collect::<HashSet<_>>()
             });
         typed_facts.merge_missing(stream_typed_facts);
-        carriers.merge_missing(scan_carriers(ctx, body)?);
-        let curve_attrs = carriers.curve_attrs();
+        carriers.merge_missing(ctx, scan_carriers(ctx, body)?)?;
+        let curve_attrs = carriers.curve_attrs(ctx)?;
         let scanned_tables = if is_deltas {
             topology::scan_deltas_with_curve_attrs_excluding(
                 ctx,
@@ -1217,7 +1217,7 @@ fn decode_body(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     admit_brep_scan_candidates(ctx, body)?;
     let carriers = scan_carriers(ctx, body)?;
-    let curve_attrs = carriers.curve_attrs();
+    let curve_attrs = carriers.curve_attrs(ctx)?;
     let typed_facts = typed::scan(body, ctx)?;
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
     let typed_face_offsets = typed_face_attrs
