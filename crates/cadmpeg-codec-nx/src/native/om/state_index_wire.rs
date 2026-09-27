@@ -229,6 +229,7 @@ pub(super) enum OmRollForwardStateRowWire {
 }
 
 impl OmRollForwardStateRowWire {
+    #[cfg(test)]
     pub(super) fn from_row(ordinal: u8, source_offset: u64, value: OperationStateGroupRow) -> Self {
         let ordinal = u32::from(ordinal);
         match value {
