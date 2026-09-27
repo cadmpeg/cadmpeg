@@ -235,11 +235,11 @@ fn inspect_parsed_exchange(
             attributes: BTreeMap::default(),
         });
     }
-    let identifiers = exchange.schema_identifiers();
+    let identifiers = exchange.joined_schema_identifiers(Some(ctx))?;
     let schema = if identifiers.is_empty() {
         "unspecified".into()
     } else {
-        identifiers.join(",")
+        identifiers
     };
     let dialect = matched.dialect();
     let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
