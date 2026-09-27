@@ -457,7 +457,8 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields = crate::decode_resource::reserve_optional_vec(ctx, 1, "iges global layout fields")?;
+    let mut fields =
+        crate::decode_resource::reserve_optional_vec(ctx, 1, "iges global layout fields")?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -476,7 +477,12 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        crate::decode_resource::reserve_optional_vec_growth(ctx, &mut fields, 1, "iges global layout fields")?;
+        crate::decode_resource::reserve_optional_vec_growth(
+            ctx,
+            &mut fields,
+            1,
+            "iges global layout fields",
+        )?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -502,13 +508,23 @@ pub(crate) fn layout_global_cards(
         }
         if card.len() + minimum > 72 {
             card.resize(72, b' ');
-            crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
+            crate::decode_resource::reserve_optional_vec_growth(
+                ctx,
+                &mut cards,
+                1,
+                "iges global layout cards",
+            )?;
             cards.push(std::mem::take(&mut card));
             card = layout_global_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
-                crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
+                crate::decode_resource::reserve_optional_vec_growth(
+                    ctx,
+                    &mut cards,
+                    1,
+                    "iges global layout cards",
+                )?;
                 cards.push(std::mem::take(&mut card));
                 card = layout_global_card(ctx)?;
             }
@@ -516,7 +532,12 @@ pub(crate) fn layout_global_cards(
         }
     }
     if !card.is_empty() {
-        crate::decode_resource::reserve_optional_vec_growth(ctx, &mut cards, 1, "iges global layout cards")?;
+        crate::decode_resource::reserve_optional_vec_growth(
+            ctx,
+            &mut cards,
+            1,
+            "iges global layout cards",
+        )?;
         cards.push(card);
     }
     Ok(cards)
@@ -768,7 +789,7 @@ pub(crate) fn parse(
     scan: &CardScan,
     ctx: &DecodeContext<'_>,
 ) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve(parse_raw(scan, ctx)?))
+    resolve(parse_raw(scan, ctx)?, ctx)
 }
 
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
@@ -865,7 +886,8 @@ const fn enumerated_unit_name(flag: i64) -> Option<&'static str> {
     }
 }
 
-struct Resolution {
+struct Resolution<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     values: Vec<Value>,
     losses: Vec<LossNote>,
 }
@@ -878,25 +900,45 @@ fn numeric_text(bytes: &[u8]) -> Option<&str> {
         .flatten()
 }
 
-fn parse_real_text(text: &str) -> Option<FiniteReal> {
-    text.replace(['D', 'd'], "E")
-        .parse::<f64>()
+fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteReal>, CodecError> {
+    if !text.bytes().any(|byte| matches!(byte, b'D' | b'd')) {
+        return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
+    }
+    let count = u64_from_index(text.len());
+    let _reservation = ctx.reserve_scoped(count, "iges global numeric text")?;
+    let mut normalized = Vec::new();
+    normalized.try_reserve_exact(text.len()).map_err(|_| {
+        cadmpeg_core::decode::refuse_local_limit("iges global numeric text", count, count)
+    })?;
+    normalized.extend_from_slice(text.as_bytes());
+    for byte in &mut normalized {
+        if matches!(byte, b'D' | b'd') {
+            *byte = b'E';
+        }
+    }
+    Ok(std::str::from_utf8(&normalized)
         .ok()
-        .and_then(FiniteReal::new)
+        .and_then(|value| value.parse::<f64>().ok())
+        .and_then(FiniteReal::new))
 }
 
-fn recovered_real_text(text: &str) -> Option<FiniteReal> {
-    let prefix = text.strip_suffix('.')?;
+fn recovered_real_text(
+    text: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FiniteReal>, CodecError> {
+    let Some(prefix) = text.strip_suffix('.') else {
+        return Ok(None);
+    };
     if !prefix
         .bytes()
         .any(|byte| matches!(byte, b'E' | b'e' | b'D' | b'd'))
     {
-        return None;
+        return Ok(None);
     }
-    parse_real_text(prefix)
+    parse_real_text(prefix, ctx)
 }
 
-impl Resolution {
+impl Resolution<'_, '_> {
     fn apply_string_policy(&mut self, global_table: GlobalTable) {
         for value in &mut self.values {
             let Value::String(bytes) = value else {
@@ -968,19 +1010,23 @@ impl Resolution {
         }
     }
 
-    fn supplied_real(&self, index: usize) -> SuppliedReal {
+    fn supplied_real(&self, index: usize) -> Result<SuppliedReal, CodecError> {
         match self.value(index) {
-            Value::Omitted => SuppliedReal::Absent,
-            Value::Atom(bytes) => match numeric_text(bytes).and_then(|text| {
-                parse_real_text(text)
-                    .map(SuppliedReal::Value)
-                    .or_else(|| recovered_real_text(text).map(SuppliedReal::Recovered))
-            }) {
-                Some(value) => value,
-                None => SuppliedReal::Malformed,
-            },
+            Value::Omitted => Ok(SuppliedReal::Absent),
+            Value::Atom(bytes) => {
+                let Some(text) = numeric_text(bytes) else {
+                    return Ok(SuppliedReal::Malformed);
+                };
+                if let Some(value) = parse_real_text(text, self.ctx)? {
+                    return Ok(SuppliedReal::Value(value));
+                }
+                if let Some(value) = recovered_real_text(text, self.ctx)? {
+                    return Ok(SuppliedReal::Recovered(value));
+                }
+                Ok(SuppliedReal::Malformed)
+            }
             Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => {
-                SuppliedReal::Malformed
+                Ok(SuppliedReal::Malformed)
             }
         }
     }
@@ -1085,8 +1131,8 @@ impl Resolution {
     /// absent and malformed arms state is the whole effect and there is no
     /// value for a caller to take. The arms are the ones the reading kept;
     /// only the values they answered are gone.
-    fn charge_maximum_coordinate(&mut self, global_table: GlobalTable) {
-        match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
+    fn charge_maximum_coordinate(&mut self, global_table: GlobalTable) -> Result<(), CodecError> {
+        match self.supplied_real(FIELD_MAXIMUM_COORDINATE)? {
             SuppliedReal::Absent if global_table == GlobalTable::V5_0 => {}
             SuppliedReal::Absent if global_table == GlobalTable::V4_0 => {
                 self.charge(
@@ -1110,6 +1156,7 @@ impl Resolution {
                 );
             }
         }
+        Ok(())
     }
 
     fn significance(&mut self, index: usize) -> Supplied<u32> {
@@ -1133,8 +1180,11 @@ impl Resolution {
         }
     }
 
-    fn minimum_resolution(&mut self, global_table: GlobalTable) -> NonNegativeReal {
-        match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
+    fn minimum_resolution(
+        &mut self,
+        global_table: GlobalTable,
+    ) -> Result<NonNegativeReal, CodecError> {
+        let result = match self.supplied_real(FIELD_MINIMUM_RESOLUTION)? {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
@@ -1181,10 +1231,14 @@ impl Resolution {
                 );
                 NonNegativeReal::ZERO
             }
-        }
+        };
+        Ok(result)
     }
 
-    fn line_weight_scale(&mut self, global_table: GlobalTable) -> Option<LineWeightScale> {
+    fn line_weight_scale(
+        &mut self,
+        global_table: GlobalTable,
+    ) -> Result<Option<LineWeightScale>, CodecError> {
         let supplied_gradations = self.supplied_integer(FIELD_LINE_WEIGHT_GRADATIONS);
         let gradations_was_supplied = !matches!(&supplied_gradations, Supplied::Absent);
         let (gradations, gradations_defect) = match supplied_gradations {
@@ -1199,7 +1253,7 @@ impl Resolution {
             }
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
-        let (mode, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
+        let (mode, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH)? {
             SuppliedReal::Absent
                 if global_table == GlobalTable::V5_0 && !gradations_was_supplied =>
             {
@@ -1244,17 +1298,17 @@ impl Resolution {
                 LINE_WEIGHT_CONSEQUENCE,
             );
         }
-        Some(LineWeightScale {
-            gradations: gradations?,
-            mode: mode?,
-        })
+        let (Some(gradations), Some(mode)) = (gradations, mode) else {
+            return Ok(None);
+        };
+        Ok(Some(LineWeightScale { gradations, mode }))
     }
 
     fn length_unit(
         &mut self,
         global_table: GlobalTable,
-    ) -> (Option<i64>, Option<String>, Option<PositiveReal>) {
-        let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
+    ) -> Result<(Option<String>, Option<PositiveReal>), CodecError> {
+        let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE)? {
             SuppliedReal::Absent => (global_table.default_model_scale(), None),
             SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
                 Ok(scale) => (Some(scale), None),
@@ -1341,11 +1395,14 @@ impl Resolution {
                     ))),
             }
         }
-        (units_flag, units_name, length_factor_mm)
+        Ok((units_name, length_factor_mm))
     }
 }
 
-fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+fn resolve(
+    raw: RawGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
     let RawGlobal {
         parameter_delimiter,
         record_delimiter,
@@ -1353,6 +1410,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         field_count,
     } = raw;
     let mut resolution = Resolution {
+        ctx,
         values,
         losses: Vec::new(),
     };
@@ -1427,11 +1485,11 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             None
         }
     };
-    let (_units_flag, units_name, length_factor_mm) = resolution.length_unit(global_table);
-    let line_weight_scale = resolution.line_weight_scale(global_table);
+    let (units_name, length_factor_mm) = resolution.length_unit(global_table)?;
+    let line_weight_scale = resolution.line_weight_scale(global_table)?;
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
-    let minimum_resolution = resolution.minimum_resolution(global_table);
-    resolution.charge_maximum_coordinate(global_table);
+    let minimum_resolution = resolution.minimum_resolution(global_table)?;
+    resolution.charge_maximum_coordinate(global_table)?;
     resolution.charge_metadata_string(FIELD_AUTHOR, global_table);
     resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table);
     resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
@@ -1463,7 +1521,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         line_weight_scale,
         declaration,
     };
-    (resolved, resolution.losses)
+    Ok((resolved, resolution.losses))
 }
 
 impl ResolvedGlobal {
