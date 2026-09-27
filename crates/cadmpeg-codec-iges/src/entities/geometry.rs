@@ -434,35 +434,43 @@ impl DeclaredInterval {
 pub(super) fn type126_declared_control_points(
     record: &ParameterRecord,
     precision: RealPrecision,
-) -> Option<Vec<[DeclaredInterval; 3]>> {
-    let control_count = record.count(1)?.checked_add(1)?;
-    let degree = usize::try_from(record.integer(2)?).ok()?;
-    let knot_count = control_count.checked_add(degree)?.checked_add(1)?;
-    let weight_start = 7usize.checked_add(knot_count)?;
-    let pole_start = weight_start.checked_add(control_count)?;
-    let pole_value_count = control_count.checked_mul(3)?;
-    let range_start = pole_start.checked_add(pole_value_count)?;
-    if record.parameter_end() < range_start.checked_add(2)? {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
+    let Some((control_count, pole_start)) = (|| {
+        let control_count = record.count(1)?.checked_add(1)?;
+        let degree = usize::try_from(record.integer(2)?).ok()?;
+        let knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+        let weight_start = 7usize.checked_add(knot_count)?;
+        let pole_start = weight_start.checked_add(control_count)?;
+        let pole_value_count = control_count.checked_mul(3)?;
+        let range_start = pole_start.checked_add(pole_value_count)?;
+        (record.parameter_end() >= range_start.checked_add(2)?)
+            .then_some((control_count, pole_start))
+    })() else {
+        return Ok(None);
+    };
+    let mut controls = reserve_vec(ctx, control_count, "iges Type126 declared control intervals")?;
+    for point in 0..control_count {
+        let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
+        for (coordinate, value) in coordinates.iter_mut().enumerate() {
+            let Some(index) = point
+                .checked_mul(3)
+                .and_then(|offset| pole_start.checked_add(offset))
+                .and_then(|offset| offset.checked_add(coordinate))
+            else {
+                return Ok(None);
+            };
+            let Some(number) = record.number(index) else {
+                return Ok(None);
+            };
+            *value = DeclaredInterval::around(
+                number,
+                record.number_uncertainty(index, number, precision),
+            );
+        }
+        controls.push(coordinates);
     }
-    (0..control_count)
-        .map(|point| {
-            (0..3)
-                .map(|coordinate| {
-                    let index = pole_start
-                        .checked_add(point.checked_mul(3)?)?
-                        .checked_add(coordinate)?;
-                    let value = record.number(index)?;
-                    Some(DeclaredInterval::around(
-                        value,
-                        record.number_uncertainty(index, value, precision),
-                    ))
-                })
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()
-        })
-        .collect()
+    Ok(Some(controls))
 }
 
 /// Return whether finite declared intervals prove one affine progression.

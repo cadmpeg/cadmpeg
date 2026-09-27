@@ -32,7 +32,9 @@ use crate::test_support::test_drawing_and_trimming::{
     multi_pcurve_boundary_file, multi_pcurve_boundary_file_with_first_pcurve,
     parameter_domain_trimmed_surface_file, subrange_nurbs_surface_boundary_file,
     subrange_nurbs_surface_boundary_file_with_pcurve,
-    subrange_nurbs_surface_boundary_file_with_source_precision, trimmed_plane_with_boundaries,
+    subrange_nurbs_surface_boundary_file_with_source_precision,
+    subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal,
+    trimmed_plane_with_boundaries,
     trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_and_outer_pcurve,
     trimmed_plane_with_inner_loop_file,
 };
@@ -383,6 +385,20 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
         .find(|coedge| coedge.id.as_str() == "iges:model:coedge#D9:0:0")
         .expect("trimmed boundary coedge");
     assert_eq!(coedge.pcurves.len(), 1);
+}
+
+#[test]
+fn source_control_interval_fallback_refuses_unadmitted_storage() {
+    let bytes = subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal();
+    let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    assert!(result.ir().model.faces.iter().any(|face| face.id.as_str() == "iges:model:face#D9"));
+    for operation in [
+        "iges source active curve nodes",
+        "iges Type126 declared control intervals",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+    assert_trimming_retained_refusal(&bytes, "iges source active curve ID");
 }
 
 #[test]
