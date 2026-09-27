@@ -956,18 +956,24 @@ fn unsigned_integer(bytes: &[u8]) -> Option<u32> {
     text.parse().ok()
 }
 
-fn array_dimensions(bytes: &[u8]) -> Option<Vec<u32>> {
+fn array_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<u32>>, CodecError> {
     let mut dimensions = Vec::new();
     let mut cursor = 0;
     while bytes.get(cursor) == Some(&b'[') {
-        let (dimension, after_dimension) = decimal(bytes, cursor + 1)?;
+        let Some((dimension, after_dimension)) = decimal(bytes, cursor + 1) else {
+            return Ok(None);
+        };
         if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
-            return None;
+            return Ok(None);
         }
+        ctx.try_reserve_items(&mut dimensions, 1, "creo legacy array dimensions")?;
         dimensions.push(dimension);
         cursor = after_dimension + 1;
     }
-    (!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions)
+    Ok((!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions))
 }
 
 fn numeric_run<T>(bytes: &[u8], scalar: fn(&[u8]) -> Option<T>) -> Option<NumericRun<T>> {
@@ -989,25 +995,32 @@ fn numeric_run<T>(bytes: &[u8], scalar: fn(&[u8]) -> Option<T>) -> Option<Numeri
 }
 
 fn continuation_numeric_runs<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     scalar: fn(&[u8]) -> Option<T>,
-) -> Option<Vec<NumericRun<T>>> {
+) -> Result<Option<Vec<NumericRun<T>>>, CodecError> {
     let mut runs = Vec::new();
     for row in bytes.split(|byte| *byte == b'\n') {
         let row = row.strip_suffix(b"\r").unwrap_or(row);
-        let row = row.strip_prefix(b"$")?;
+        let Some(row) = row.strip_prefix(b"$") else {
+            return Ok(None);
+        };
         let mut tokens = row.split(|byte| *byte == b',').peekable();
         while let Some(token) = tokens.next() {
             if token.is_empty() {
                 if tokens.peek().is_some() {
-                    return None;
+                    return Ok(None);
                 }
                 continue;
             }
-            runs.push(numeric_run(token, scalar)?);
+            let Some(run) = numeric_run(token, scalar) else {
+                return Ok(None);
+            };
+            ctx.try_reserve_items(&mut runs, 1, "creo legacy continuation numeric runs")?;
+            runs.push(run);
         }
     }
-    Some(runs)
+    Ok(Some(runs))
 }
 
 pub(crate) fn object_node_id(offset: usize) -> String {
@@ -1130,7 +1143,7 @@ fn object_records(
                 ObjectPayload::Inline
             } else if bytes == b"NULL" {
                 ObjectPayload::Null
-            } else if let Some(dimensions) = array_dimensions(bytes) {
+            } else if let Some(dimensions) = array_dimensions(ctx, bytes)? {
                 let elements = direct_array_elements
                     .get(&value.offset)
                     .into_iter()
@@ -1262,7 +1275,7 @@ fn string_records(
             if declarations
                 .get(&value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
-                && array_dimensions(&data[value.payload.clone()]).is_some()
+                && array_dimensions(ctx, &data[value.payload.clone()])?.is_some()
             {
                 active_arrays.insert(value.depth, (value.offset, value.attribute_id));
             }
@@ -1279,7 +1292,7 @@ fn string_records(
                 continue;
             };
             let bytes = &data[value.payload.clone()];
-            let payload = if let Some(dimensions) = array_dimensions(bytes) {
+            let payload = if let Some(dimensions) = array_dimensions(ctx, bytes)? {
                 let children = array_children
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
@@ -1354,7 +1367,7 @@ where
                 index += 1;
                 continue;
             };
-            let (payload, next_index) = if let Some(dimensions) = array_dimensions(payload_bytes) {
+            let (payload, next_index) = if let Some(dimensions) = array_dimensions(ctx, payload_bytes)? {
                 let mut next_index = index + 1;
                 let runs = if let Some(continuation) = &value.continuation {
                     let Some(bytes) = data.get(continuation.rows.clone()) else {
@@ -1362,7 +1375,7 @@ where
                         index += 1;
                         continue;
                     };
-                    let Some(runs) = continuation_numeric_runs(bytes, scalar) else {
+                    let Some(runs) = continuation_numeric_runs(ctx, bytes, scalar)? else {
                         unresolved += 1;
                         index += 1;
                         continue;

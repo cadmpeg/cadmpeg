@@ -120,6 +120,34 @@ fn legacy_parent_offset_refuses_before_btree_node() {
 }
 
 #[test]
+fn legacy_array_dimension_refuses_before_vec_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::array_dimensions(&ctx, b"[2][3]")
+        .expect_err("one dimension exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy array dimensions"));
+}
+
+#[test]
+fn legacy_continuation_run_refuses_before_vec_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::continuation_numeric_runs(&ctx, b"$1,2", super::signed_integer)
+        .expect_err("one run exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy continuation numeric runs"));
+}
+
+#[test]
 fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
     let persistence = scan(data, std::iter::once(0..data.len()))
