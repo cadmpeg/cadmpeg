@@ -356,6 +356,10 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
     let spans = super::aligned_homogeneous_spans(None, &first, &second).unwrap().unwrap();
     assert_eq!(spans.len(), 2);
     for operation in [
+        "Bezier knot copy",
+        "Bezier internal knots",
+        "Bezier spans",
+        "Bezier span controls",
         "iges span normalized boundaries",
         "iges span combined boundaries",
         "iges span partition controls",
@@ -385,6 +389,47 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             }
         }
         assert!(found, "aligned-span refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![-1.0, 0.0, 1.0, 2.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let expected = super::homogeneous_bezier_spans(None, &curve).unwrap().unwrap();
+    for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..128 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::homogeneous_bezier_spans(Some(&ctx), &curve) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("span extraction succeeded before {operation}"),
+                Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
+            }
+        }
+        assert!(found, "span insertion boundary was not reached: {operation}");
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let actual = super::homogeneous_bezier_spans(Some(&ctx), &curve).unwrap().unwrap();
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.domain, expected.domain);
+        assert_eq!(actual.controls, expected.controls);
     }
 }
 

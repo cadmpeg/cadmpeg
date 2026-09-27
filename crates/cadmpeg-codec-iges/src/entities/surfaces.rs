@@ -16,7 +16,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
+    boundaries_within_resolution, homogeneous_spans, homogeneous_spans_with_charge,
+    positive_controls, HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
     nurbs::{
@@ -480,7 +481,12 @@ fn homogeneous_bezier_spans(
     let Some(controls) = positive_controls(&points, weights.as_deref())? else {
         return Ok(None);
     };
-    Ok(homogeneous_spans(degree, curve.knots(), controls)?)
+    match ctx {
+        Some(ctx) => homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+            ctx.charge_collection_items(u64_from_index(count), operation)
+        }),
+        None => Ok(homogeneous_spans(degree, curve.knots(), controls)?),
+    }
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
