@@ -1,6 +1,7 @@
 use super::{
-    annotation_settings, grid_defaults, render_settings, render_userdata, ANONYMOUS, CLASS_END,
-    CLASS_USERDATA,
+    annotation_settings, grid_defaults, install, render_settings, render_userdata,
+    ANNOTATION_SETTINGS, ANONYMOUS, CLASS_END, CLASS_USERDATA, GRID_DEFAULTS, RENDER_SETTINGS,
+    SETTINGS_TABLE,
 };
 use crate::chunks::ArchiveVersion;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
@@ -9,6 +10,351 @@ use crate::test_support::test_dump::{
     utf16_bytes,
 };
 use crate::wire::Uuid;
+
+fn metadata_scan() -> crate::container::Scan<'static> {
+    let archive = ArchiveVersion::V5;
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, SETTINGS_TABLE, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    crate::container::scan_owned(bytes).expect("complete metadata fixture")
+}
+
+fn metadata_refusal(
+    scan: &crate::container::Scan<'_>,
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("root bytes admitted");
+    install(&ctx, scan, &mut cadmpeg_ir::document::CadIr::empty())
+        .expect_err("metadata projection exceeds configured limit")
+}
+
+fn assert_metadata_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
+    assert!(
+        matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == operation
+        ),
+        "expected {operation}, got {error:?}"
+    );
+}
+
+fn revision() -> crate::settings::RevisionHistory {
+    crate::settings::RevisionHistory {
+        source: crate::settings::SourceRange { range: 0..0 },
+        created_by: "creator".to_string(),
+        created: crate::settings::UtcTime { fields: [0; 8] },
+        last_edited_by: "editor".to_string(),
+        last_edited: crate::settings::UtcTime { fields: [0; 8] },
+        revision_count: 1,
+    }
+}
+
+fn notes() -> crate::settings::Notes {
+    crate::settings::Notes {
+        source: crate::settings::SourceRange { range: 0..0 },
+        html: false,
+        text: "note".to_string(),
+        visible: true,
+        rectangle: [0; 4],
+        locked: false,
+    }
+}
+
+fn application() -> crate::settings::Application {
+    crate::settings::Application {
+        source: crate::settings::SourceRange { range: 0..0 },
+        name: "app".to_string(),
+        url: "url".to_string(),
+        details: "details".to_string(),
+    }
+}
+
+fn scan_with_revision() -> crate::container::Scan<'static> {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.revision_history = Some(revision());
+    scan
+}
+
+fn scan_with_notes() -> crate::container::Scan<'static> {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.notes = Some(notes());
+    scan
+}
+
+fn scan_with_application() -> crate::container::Scan<'static> {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.application = Some(application());
+    scan
+}
+
+macro_rules! retained_metadata_test {
+    ($name:ident, $fixture:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let scan = $fixture();
+            let limit = u64::try_from($limit).expect("bounded metadata fixture");
+            assert_metadata_refusal(&metadata_refusal(&scan, 100, limit), $operation);
+        }
+    };
+}
+
+retained_metadata_test!(
+    revision_id_refuses_retained_limit,
+    scan_with_revision,
+    "rhino:document:revision#current".len() - 1,
+    "Rhino revision ID"
+);
+retained_metadata_test!(
+    revision_creator_refuses_retained_limit,
+    scan_with_revision,
+    "rhino:document:revision#current".len() + "creator".len() - 1,
+    "Rhino revision creator"
+);
+retained_metadata_test!(
+    revision_editor_refuses_retained_limit,
+    scan_with_revision,
+    "rhino:document:revision#current".len() + "creator".len() + "editor".len() - 1,
+    "Rhino revision editor"
+);
+retained_metadata_test!(
+    notes_id_refuses_retained_limit,
+    scan_with_notes,
+    "rhino:document:notes#current".len() - 1,
+    "Rhino notes ID"
+);
+retained_metadata_test!(
+    notes_text_refuses_retained_limit,
+    scan_with_notes,
+    "rhino:document:notes#current".len() + "note".len() - 1,
+    "Rhino notes text"
+);
+retained_metadata_test!(
+    application_id_refuses_retained_limit,
+    scan_with_application,
+    "rhino:document:application#writer".len() - 1,
+    "Rhino application ID"
+);
+retained_metadata_test!(
+    application_name_refuses_retained_limit,
+    scan_with_application,
+    "rhino:document:application#writer".len() + "app".len() - 1,
+    "Rhino application name"
+);
+retained_metadata_test!(
+    application_url_refuses_retained_limit,
+    scan_with_application,
+    "rhino:document:application#writer".len() + "app".len() + "url".len() - 1,
+    "Rhino application URL"
+);
+retained_metadata_test!(
+    application_details_refuse_retained_limit,
+    scan_with_application,
+    "rhino:document:application#writer".len() + "app".len() + "url".len() + "details".len() - 1,
+    "Rhino application details"
+);
+
+fn retained_setting_scan() -> crate::container::Scan<'static> {
+    let mut scan = metadata_scan();
+    let record = crate::container::Record::long(ANNOTATION_SETTINGS, 0..0, 0..0);
+    scan.tables.push(
+        crate::container::Table::new(
+            SETTINGS_TABLE,
+            0..1,
+            0..0,
+            vec![record],
+            1,
+            std::collections::BTreeMap::new(),
+        )
+        .expect("table framing"),
+    );
+    scan
+}
+
+fn projected_setting_scan(typecode: u32, body: &[u8]) -> crate::container::Scan<'static> {
+    let archive = ArchiveVersion::V5;
+    let record = crc_chunk(archive, typecode, body);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, SETTINGS_TABLE, &[record]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("complete setting fixture");
+    crate::test_support::test_dump::set_test_units(&mut scan, 1.0);
+    scan.metadata.settings.unsupported.clear();
+    scan
+}
+
+#[test]
+fn annotation_settings_refuse_collection_limit() {
+    let scan = projected_setting_scan(ANNOTATION_SETTINGS, &annotation_body(0));
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino annotation settings",
+    );
+}
+
+#[test]
+fn grid_defaults_refuse_collection_limit() {
+    let scan = projected_setting_scan(GRID_DEFAULTS, &grid_body());
+    assert_metadata_refusal(&metadata_refusal(&scan, 0, u64::MAX), "Rhino grid defaults");
+}
+
+#[test]
+fn render_settings_refuse_collection_limit() {
+    let body = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &modern_body(0));
+    let scan = projected_setting_scan(RENDER_SETTINGS, &body);
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino render settings",
+    );
+}
+
+#[test]
+fn document_revisions_refuse_collection_limit() {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.revision_history = Some(revision());
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino document revisions",
+    );
+}
+
+#[test]
+fn document_notes_refuse_collection_limit() {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.notes = Some(notes());
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino document notes",
+    );
+}
+
+#[test]
+fn document_applications_refuse_collection_limit() {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.application = Some(application());
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino document applications",
+    );
+}
+
+#[test]
+fn document_previews_refuse_collection_limit() {
+    let mut scan = metadata_scan();
+    scan.metadata
+        .properties
+        .previews
+        .push(crate::settings::PreviewDescriptor {
+            source: crate::settings::SourceRange { range: 0..0 },
+            compressed: false,
+        });
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino document previews",
+    );
+}
+
+#[test]
+fn unsupported_setting_records_refuse_collection_limit() {
+    let mut scan = metadata_scan();
+    scan.metadata
+        .settings
+        .unsupported
+        .push(crate::settings::SettingDescriptor {
+            typecode: 0x2000_803f,
+            source: crate::settings::SourceRange { range: 0..0 },
+        });
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino unsupported setting records",
+    );
+}
+
+#[test]
+fn document_setting_losses_refuse_collection_limit() {
+    let scan = retained_setting_scan();
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 0, u64::MAX),
+        "Rhino document setting losses",
+    );
+}
+
+#[test]
+fn opaque_setting_records_refuse_collection_limit() {
+    let scan = retained_setting_scan();
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 1, u64::MAX),
+        "Rhino opaque setting records",
+    );
+}
+
+#[test]
+fn retained_setting_records_refuse_collection_limit() {
+    let scan = retained_setting_scan();
+    assert_metadata_refusal(
+        &metadata_refusal(&scan, 2, u64::MAX),
+        "Rhino retained setting records",
+    );
+}
+
+#[test]
+fn document_metadata_projection_succeeds_under_service_profile() {
+    let mut scan = metadata_scan();
+    scan.metadata.properties.revision_history = Some(revision());
+    scan.metadata.properties.notes = Some(notes());
+    scan.metadata.properties.application = Some(application());
+    scan.metadata
+        .properties
+        .previews
+        .push(crate::settings::PreviewDescriptor {
+            source: crate::settings::SourceRange { range: 0..0 },
+            compressed: false,
+        });
+    scan.metadata
+        .settings
+        .unsupported
+        .push(crate::settings::SettingDescriptor {
+            typecode: 0x2000_803f,
+            source: crate::settings::SourceRange { range: 0..0 },
+        });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        scan.data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root bytes admitted");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    install(&ctx, &scan, &mut ir).expect("service profile admits metadata projection");
+    let rhino = ir
+        .native
+        .namespace("rhino")
+        .expect("native metadata namespace");
+    for arena in [
+        "revisions",
+        "document_notes",
+        "applications",
+        "previews",
+        "setting_records",
+    ] {
+        assert_eq!(rhino.arenas()[arena].len(), 1, "{arena}");
+    }
+}
 
 fn push_color(bytes: &mut Vec<u8>, value: [u8; 4]) {
     bytes.extend(value);
@@ -374,7 +720,11 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     body.extend(short_chunk(archive, CLASS_END, 0));
     body.extend([0xfa, 0xce]);
     let (data, record) = metadata_record(0x2000_8136, body);
-    let descriptor = render_userdata(&data, &record, archive).expect("render userdata");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("root bytes admitted");
+    let descriptor = render_userdata(&ctx, &data, &record, archive).expect("render userdata");
 
     assert_eq!(descriptor.source, record.range);
     assert_eq!(descriptor.items.len(), 2);
@@ -426,4 +776,50 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(save_context.map(|value| value.last_saved_as_goo), None);
     assert_eq!(save_context.map(|value| value.archive_version), None);
     assert_eq!(save_context.map(|value| value.writer_version), None);
+}
+
+#[test]
+fn render_userdata_items_refuse_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let mut item = vec![0x10];
+    item.extend([0_u8; 16]);
+    item.extend([1_u8; 16]);
+    item.extend(0_i32.to_le_bytes());
+    item.extend([0_u8; 16 * 8]);
+    item.extend(anonymous_chunk(archive, 0, &[0x61]));
+    let mut body = long_chunk(archive, CLASS_USERDATA, &item);
+    body.extend(short_chunk(archive, CLASS_END, 0));
+    let (data, record) = metadata_record(0x2000_8136, body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = render_userdata(&ctx, &data, &record, archive)
+        .expect_err("render userdata item exceeds collection limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino render userdata items"
+    ));
+}
+
+#[test]
+fn render_userdata_unknown_chunks_refuse_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let mut body = long_chunk(archive, 0x4000_1234, &[0xaa, 0xbb]);
+    body.extend(short_chunk(archive, CLASS_END, 0));
+    let (data, record) = metadata_record(0x2000_8136, body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = render_userdata(&ctx, &data, &record, archive)
+        .expect_err("unknown render userdata chunk exceeds collection limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino render userdata unknown chunks"
+    ));
 }
