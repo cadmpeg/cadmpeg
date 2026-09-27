@@ -213,14 +213,12 @@ pub(super) fn decode(
             .filter(|description| !description.is_empty());
         let product_definitions = definitions_by_product_in_source_order
             .get(&step_id)
-            .cloned()
+            .map(Vec::as_slice)
             .unwrap_or_default();
         let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
-        let definition_iter = if product_definitions.is_empty() {
-            vec![None]
-        } else {
-            product_definitions.into_iter().map(Some).collect()
-        };
+        let definition_iter = std::iter::once(None)
+            .filter(|_| product_definitions.is_empty())
+            .chain(product_definitions.iter().copied().map(Some));
         for definition in definition_iter {
             let product_definition_id = definition.map_or_else(
                 || product_ir_id(step_id),
