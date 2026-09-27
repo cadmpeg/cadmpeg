@@ -48,6 +48,11 @@ impl KnotVector {
         &self.0
     }
 
+    /// Move the admitted knot storage into its owner without copying it.
+    pub fn into_values(self) -> Vec<f64> {
+        self.0
+    }
+
     /// Copy an admitted knot vector with a fallible allocation.
     ///
     /// # Errors
@@ -1370,6 +1375,11 @@ impl NurbsCurve {
     /// Full knot vector.
     pub fn knots(&self) -> &KnotVector {
         &self.knots
+    }
+
+    /// Move the curve lanes to a caller that will rebuild a checked curve.
+    pub fn into_parts(self) -> (u32, KnotVector, NurbsPoles3<FinitePoint3>, bool) {
+        (self.degree, self.knots, self.poles, self.periodic)
     }
 
     /// Atomically edit knot values and preserve their invariants.
