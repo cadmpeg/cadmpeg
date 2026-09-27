@@ -261,7 +261,7 @@ pub(crate) fn decode(
         });
     }
     bind_snapshot_revision_ids(ctx, &mut states)?;
-    bind_historical_entity_versions(&mut states);
+    bind_historical_entity_versions(ctx, &mut states)?;
     let record_table_binding_budget_exceeded =
         bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?;
     if states.is_empty() {
@@ -340,39 +340,54 @@ fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
     )
 }
 
-fn archived_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
-    let mut archived = states
+fn archived_active_record_count(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &[AsmDeltaState],
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let mut archived = Vec::new();
+    for revision_id in states
         .iter()
         .flat_map(|state| &state.records)
         .filter_map(|record| record.revision_id)
-        .collect::<Vec<_>>();
-    archived.sort_unstable();
-    let &active_count = archived.first()?;
-    if active_count <= 0
-        || archived
-            .iter()
-            .copied()
-            .ne(active_count..active_count + archived.len() as i64)
     {
-        return None;
+        ctx.charge_collection_items(1, "collect F3D archived revisions")?;
+        archived.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect F3D archived revisions", 0, 1)
+        })?;
+        archived.push(revision_id);
     }
-    usize::try_from(active_count).ok()
+    archived.sort_unstable();
+    let Some(&active_count) = archived.first() else {
+        return Ok(None);
+    };
+    let count = i64::try_from(archived.len())
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D archived revisions", 0, u64::MAX))?;
+    let Some(end) = active_count.checked_add(count) else {
+        return Ok(None);
+    };
+    if active_count <= 0 || archived.iter().copied().ne(active_count..end) {
+        return Ok(None);
+    }
+    Ok(usize::try_from(active_count).ok())
 }
 
 /// Return the active `RecordTable` length for a history that has no archived
 /// snapshot. Insert-only chains use the active records themselves as every
 /// revision, so their bulletin-board references must cover every non-header
 /// slot exactly once.
-fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
+fn insert_only_active_record_count(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &[AsmDeltaState],
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     let mut has_boundary_record = false;
     for record in states.iter().flat_map(|state| &state.records) {
         if record.revision_id.is_some() || !is_history_boundary_record(record) {
-            return None;
+            return Ok(None);
         }
         has_boundary_record = true;
     }
     if !has_boundary_record {
-        return None;
+        return Ok(None);
     }
     let mut inserted = BTreeSet::new();
     for change in states
@@ -380,68 +395,114 @@ fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
     {
-        let new_ref = change.new_ref().filter(|_| change.old_ref().is_none())?;
-        if new_ref <= 0 || !inserted.insert(new_ref) {
-            return None;
+        let Some(new_ref) = change.new_ref().filter(|_| change.old_ref().is_none()) else {
+            return Ok(None);
+        };
+        if new_ref <= 0 || inserted.contains(&new_ref) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "index F3D insert-only revisions")?;
+        inserted.insert(new_ref);
     }
-    let &last = inserted.last()?;
+    let Some(&last) = inserted.last() else {
+        return Ok(None);
+    };
     if inserted.iter().copied().ne(1..=last) {
-        return None;
+        return Ok(None);
     }
-    usize::try_from(last.checked_add(1)?).ok()
+    Ok(last.checked_add(1).and_then(|count| usize::try_from(count).ok()))
 }
 
-fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
-    let mut archived_ids = states
+fn bind_historical_entity_versions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &mut [AsmDeltaState],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut archived_ids = Vec::new();
+    for revision_id in states
         .iter()
         .flat_map(|state| &state.records)
         .filter_map(|record| record.revision_id)
-        .collect::<Vec<_>>();
-    archived_ids.sort_unstable();
-    let active_count = archived_active_record_count(states)
-        .or_else(|| insert_only_active_record_count(states))
-        .and_then(|count| i64::try_from(count).ok());
-    let Some(active_count) = active_count else {
-        return;
-    };
-    let by_node = states
-        .iter()
-        .enumerate()
-        .map(|(ordinal, state)| (state.node_index, ordinal))
-        .collect::<HashMap<_, _>>();
-    if by_node.len() != states.len() {
-        return;
+    {
+        ctx.charge_collection_items(1, "index F3D archived revision IDs")?;
+        archived_ids.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D archived revision IDs", 0, 1)
+        })?;
+        archived_ids.push(revision_id);
     }
-    let heads = states
+    archived_ids.sort_unstable();
+    let active_count = match archived_active_record_count(ctx, states)? {
+        Some(count) => Some(count),
+        None => insert_only_active_record_count(ctx, states)?,
+    }
+    .and_then(|count| i64::try_from(count).ok());
+    let Some(active_count) = active_count else {
+        return Ok(());
+    };
+    let mut by_node = HashMap::new();
+    for (ordinal, state) in states.iter().enumerate() {
+        if !by_node.contains_key(&state.node_index) {
+            ctx.charge_collection_items(1, "index F3D history node ordinals")?;
+            by_node.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D history node ordinals", 0, 1)
+            })?;
+        }
+        by_node.insert(state.node_index, ordinal);
+    }
+    if by_node.len() != states.len() {
+        return Ok(());
+    }
+    let mut heads = states
         .iter()
         .enumerate()
         .filter(|(_, state)| state.previous_ref.is_none())
-        .map(|(ordinal, _)| ordinal)
-        .collect::<Vec<_>>();
-    let [mut ordinal] = heads.as_slice() else {
-        return;
+        .map(|(ordinal, _)| ordinal);
+    let Some(mut ordinal) = heads.next() else {
+        return Ok(());
     };
-    let mut versions = (0..active_count)
-        .map(|id| (id, id))
-        .collect::<BTreeMap<_, _>>();
+    if heads.next().is_some() {
+        return Ok(());
+    }
+    let active_count_u64 = u64::try_from(active_count)
+        .map_err(|_| ctx.refuse_codec_limit("seed F3D history versions", 0, u64::MAX))?;
+    ctx.charge_collection_items(active_count_u64, "seed F3D history versions")?;
+    ctx.charge_work(active_count_u64, "seed F3D history versions")?;
+    let mut versions = BTreeMap::new();
+    for id in 0..active_count {
+        versions.insert(id, id);
+    }
     let mut projected = HashMap::new();
     let mut visited = HashSet::new();
     loop {
         let state = &states[ordinal];
-        if !visited.insert(state.node_index) {
-            return;
+        ctx.charge_work(1, "bind F3D historical entity versions")?;
+        if visited.contains(&state.node_index) {
+            return Ok(());
         }
-        projected.insert(
-            state.node_index,
-            versions
-                .iter()
-                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
+        ctx.charge_collection_items(1, "visit F3D history version state")?;
+        visited.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("visit F3D history version state", 0, 1)
+        })?;
+        visited.insert(state.node_index);
+        let version_count = versions.len();
+        let version_count_u64 = u64::try_from(version_count).map_err(|_| {
+            ctx.refuse_codec_limit("materialize F3D state versions", 0, u64::MAX)
+        })?;
+        ctx.charge_collection_items(version_count_u64, "materialize F3D state versions")?;
+        let mut state_versions = Vec::new();
+        state_versions.try_reserve(version_count).map_err(|_| {
+            ctx.refuse_codec_limit("materialize F3D state versions", 0, version_count_u64)
+        })?;
+        for (&entity_ref, &record_ref) in &versions {
+            state_versions.push(AsmEntityVersion {
                     entity_ref,
                     record_ref,
-                })
-                .collect::<Vec<_>>(),
-        );
+            });
+        }
+        ctx.charge_collection_items(1, "index F3D state version projections")?;
+        projected.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D state version projections", 0, 1)
+        })?;
+        projected.insert(state.node_index, state_versions);
         for change in state
             .bulletin_boards
             .iter()
@@ -450,19 +511,20 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
             match change.kind {
                 AsmEntityChangeKind::Update { old, new } => {
                     if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return;
+                        return Ok(());
                     }
                     versions.insert(new, old);
                 }
                 AsmEntityChangeKind::Insert { new } => {
                     if versions.remove(&new).is_none() {
-                        return;
+                        return Ok(());
                     }
                 }
                 AsmEntityChangeKind::Delete { old } => {
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return;
+                        return Ok(());
                     }
+                    ctx.charge_collection_items(1, "restore F3D historical version")?;
                     versions.insert(old, old);
                 }
             }
@@ -471,16 +533,17 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
             break;
         };
         let Some(&next_ordinal) = by_node.get(&next) else {
-            return;
+            return Ok(());
         };
         ordinal = next_ordinal;
     }
-    if visited.len() != states.len() || versions != BTreeMap::from([(0, 0)]) {
-        return;
+    if visited.len() != states.len() || versions.len() != 1 || versions.get(&0) != Some(&0) {
+        return Ok(());
     }
     for state in states {
         state.entity_versions = projected.remove(&state.node_index).unwrap_or_default();
     }
+    Ok(())
 }
 
 /// Historical topology caches retain normalized records, topology entities,
@@ -555,8 +618,8 @@ fn bind_complete_record_tables(
     ) {
         return Ok(true);
     }
-    let insert_only = insert_only_active_record_count(states);
-    let archived_count = archived_active_record_count(states);
+    let insert_only = insert_only_active_record_count(ctx, states)?;
+    let archived_count = archived_active_record_count(ctx, states)?;
     let Some(active_count) = archived_count.or(insert_only) else {
         return Ok(false);
     };
