@@ -16,7 +16,7 @@ use crate::native::{
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
+use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_format, retained_string, retained_strings};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
@@ -182,10 +182,11 @@ fn product_record_index<'a>(
     index.try_reserve(records.len()).map_err(|_| collection_allocation_failed(ctx, records.len() as u64, "fcstd product record index"))?;
     for record in records {
         if index.insert(record.object.as_str(), record).is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "product object {} has duplicate product records",
-                record.object
-            )));
+            return Err(CodecError::Malformed(retained_format(
+                ctx,
+                format_args!("product object {} has duplicate product records", record.object),
+                "fcstd product duplicate record",
+            )?));
         }
     }
     Ok(index)
@@ -296,9 +297,11 @@ pub(crate) fn transfer_neutral(
                     parent_by_object.insert(member, record.object.as_str());
                 }
                 Some(previous) if *previous != record.object.as_str() => {
-                    return Err(CodecError::malformed(format_args!(
-                        "product member {member} has multiple parent containers"
-                    )));
+                    return Err(CodecError::Malformed(retained_format(
+                        ctx,
+                        format_args!("product member {member} has multiple parent containers"),
+                        "fcstd product parent conflict",
+                    )?));
                 }
                 Some(_) => {}
             }
@@ -310,7 +313,7 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
     {
-        let count = occurrence_count(record)?.get();
+        let count = occurrence_count(ctx, record)?.get();
         let parent = parent_by_object
             .get(record.object.as_str())
             .map(|object| container_occurrence_id(object))
@@ -558,10 +561,11 @@ fn linked_prototype_transform(
         return Ok(Transform::identity());
     };
     if stack.iter().any(|object| object == &record.object) {
-        return Err(CodecError::malformed(format_args!(
-            "nested link cycle reaches {}",
-            record.object
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("nested link cycle reaches {}", record.object),
+            "fcstd nested product cycle",
+        )?));
     }
     reserve_vec_items(ctx, stack, 1, "fcstd nested product stack")?;
     stack.push(retained_string(ctx, &record.object, "fcstd nested product identity")?);
@@ -585,22 +589,27 @@ fn linked_prototype_transform(
 /// A link that states no array, or states a zero `ElementCount`, is scalar and
 /// contributes its single occurrence; the count is the cardinality the node's
 /// own type carries, never a floored zero.
-fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecError> {
+fn occurrence_count(
+    ctx: &DecodeContext<'_>,
+    record: &ProductNodeRecord,
+) -> Result<NonZeroUsize, CodecError> {
     let elements = match record.element_cardinality() {
         None | Some(LinkArrayCardinality::Scalar) => return Ok(NonZeroUsize::MIN),
         Some(LinkArrayCardinality::Elements(elements)) => elements,
     };
-    let count = NonZeroUsize::try_from(elements).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "{} element count exceeds addressable size",
-            record.id
-        ))
+    let count = NonZeroUsize::try_from(elements).or_else(|_| {
+        Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("{} element count exceeds addressable size", record.id),
+            "fcstd product element count",
+        )?))
     })?;
     if count.get() > 1_000_000 || u32::try_from(count.get()).is_err() {
-        return Err(CodecError::malformed(format_args!(
-            "{} link-array count limit exceeded",
-            record.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("{} link-array count limit exceeded", record.id),
+            "fcstd product array count limit",
+        )?));
     }
     Ok(count)
 }
