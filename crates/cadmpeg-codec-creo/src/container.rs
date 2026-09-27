@@ -2641,6 +2641,68 @@ fn reference_scan(
     })
 }
 
+/// Copy outline planes and append positional planes without a matching outline.
+fn placement_outline_planes(
+    ctx: &DecodeContext<'_>,
+    outline_planes: &[surface::OutlinePlane],
+    positional_frame_planes: &[surface::OutlinePlane],
+) -> Result<Vec<surface::OutlinePlane>, CodecError> {
+    let mut result = Vec::new();
+    ctx.try_reserve_items(
+        &mut result,
+        outline_planes.len(),
+        "creo placement outline plane copies",
+    )?;
+    result.extend(outline_planes.iter().cloned());
+    for plane in positional_frame_planes {
+        if !outline_planes
+            .iter()
+            .any(|outline| outline.surface_id == plane.surface_id)
+        {
+            ctx.try_reserve_items(&mut result, 1, "creo positional placement plane copies")?;
+            result.push(plane.clone());
+        }
+    }
+    Ok(result)
+}
+
+fn append_topology_rows(
+    ctx: &DecodeContext<'_>,
+    rows: &mut Vec<curve::CurveTopologyRow>,
+    additional: impl ExactSizeIterator<Item = curve::CurveTopologyRow>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.try_reserve_items(rows, additional.len(), operation)?;
+    rows.extend(additional);
+    rows.sort_by_key(|row| row.offset);
+    rows.dedup_by_key(|row| row.offset);
+    Ok(())
+}
+
+fn append_legacy_curve_witnesses(
+    ctx: &DecodeContext<'_>,
+    topology_rows: &mut Vec<curve::CurveTopologyRow>,
+    pcurves: &mut Vec<curve::PcurveEndpoints>,
+    legacy_topology_rows: &[curve::CurveTopologyRow],
+    legacy_pcurves: &[curve::PcurveEndpoints],
+) -> Result<(), CodecError> {
+    append_topology_rows(
+        ctx,
+        topology_rows,
+        legacy_topology_rows.iter().cloned(),
+        "creo legacy topology row aggregation",
+    )?;
+    ctx.try_reserve_items(
+        pcurves,
+        legacy_pcurves.len(),
+        "creo legacy pcurve aggregation",
+    )?;
+    pcurves.extend(legacy_pcurves.iter().cloned());
+    pcurves.sort_by_key(|pcurve| pcurve.offset);
+    pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    Ok(())
+}
+
 /// Parse a whole `.prt` byte image.
 pub(crate) fn scan_bytes<'a>(
     ctx: &DecodeContext<'_>,
@@ -2728,9 +2790,19 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     let loop_arrays = loop_array_scan(&loop_array_sections);
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
+    ctx.try_reserve_items(
+        &mut nonvisible_surface_rows,
+        legacy_geometry.nonvisible_rows.len(),
+        "creo legacy nonvisible surface row aggregation",
+    )?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows.sort_by_key(|row| row.offset);
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
+    ctx.try_reserve_items(
+        &mut surface_rows,
+        legacy_geometry.rows.len(),
+        "creo legacy surface row aggregation",
+    )?;
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.sort_by_key(|row| row.offset);
     let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
@@ -2749,17 +2821,8 @@ pub(crate) fn scan_bytes<'a>(
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
         surface::positional_frame_planes(&surface_parameters, &surface_rows);
-    let mut placement_outline_planes = outline_planes.clone();
-    placement_outline_planes.extend(
-        positional_frame_planes
-            .iter()
-            .filter(|plane| {
-                !outline_planes
-                    .iter()
-                    .any(|outline| outline.surface_id == plane.surface_id)
-            })
-            .cloned(),
-    );
+    let placement_outline_planes =
+        placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)?;
     let cross_section_outline_planes = surface::placed_outline_planes(
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
@@ -2805,19 +2868,23 @@ pub(crate) fn scan_bytes<'a>(
         &curve_topology_rows,
         &topology_face_ids,
     );
-    curve_topology_rows.extend(prototype_topology_rows);
-    curve_topology_rows.sort_by_key(|row| row.offset);
-    curve_topology_rows.dedup_by_key(|row| row.offset);
+    append_topology_rows(
+        ctx,
+        &mut curve_topology_rows,
+        prototype_topology_rows.into_iter(),
+        "creo prototype topology row aggregation",
+    )?;
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let two_chart_pcurves = two_chart_pcurves(ctx, &model_geometry_sections, &topology_face_ids)?;
     if matches!(layout, Layout::LegacyAscii(_)) {
-        curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
-        pcurves.extend(legacy_geometry.pcurves.iter().cloned());
-        curve_topology_rows.sort_by_key(|row| row.offset);
-        curve_topology_rows.dedup_by_key(|row| row.offset);
-        pcurves.sort_by_key(|pcurve| pcurve.offset);
-        pcurves.dedup_by_key(|pcurve| pcurve.offset);
+        append_legacy_curve_witnesses(
+            ctx,
+            &mut curve_topology_rows,
+            &mut pcurves,
+            &legacy_geometry.topology_rows,
+            &legacy_geometry.pcurves,
+        )?;
     }
     let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);

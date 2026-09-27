@@ -18,6 +18,8 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+mod aggregation;
+
 #[test]
 fn topology_face_ids_refuse_before_distinct_node_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
