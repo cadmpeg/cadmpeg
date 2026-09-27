@@ -256,7 +256,7 @@ pub(super) fn emit_model_features(
                             kind: current_operation
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .into(),
-                            parameters: cadmpeg_core::text::named_entries(
+                            parameters: cadmpeg_core::text::named_entries_checked(ctx,
                                 format_args!("creo:model:feature#{}", operation.feature_id),
                                 parameters.clone(),
                             )?,
@@ -347,7 +347,7 @@ pub(super) fn emit_model_features(
             }
             existing
                 .source_properties
-                .extend(cadmpeg_core::text::named_entries(
+                .extend(cadmpeg_core::text::named_entries_checked(ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
                 )?);
@@ -392,7 +392,7 @@ pub(super) fn emit_model_features(
             name,
             suppressed: Some(false),
             dependencies: (dependencies).into_iter().collect(),
-            source_properties: cadmpeg_core::text::named_entries(
+            source_properties: cadmpeg_core::text::named_entries_checked(ctx,
                 format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
             )?,
@@ -453,7 +453,7 @@ pub(super) fn emit_model_features(
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.into(),
-                    parameters: cadmpeg_core::text::named_entries(
+                    parameters: cadmpeg_core::text::named_entries_checked(ctx,
                         format_args!("creo:model:feature#{feature_id}"),
                         parameters.clone(),
                     )?,
@@ -509,7 +509,7 @@ pub(super) fn emit_model_features(
             ))
             .into_iter()
             .collect(),
-            source_properties: cadmpeg_core::text::named_entries(
+            source_properties: cadmpeg_core::text::named_entries_checked(ctx,
                 format_args!("creo:model:feature#{feature_id}"),
                 source_properties,
             )?,

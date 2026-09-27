@@ -980,7 +980,7 @@ pub(super) fn source_meta(
     Ok((
         SourceMeta::classified(
             DialectLayers::of(classification.matched().clone()),
-            cadmpeg_core::text::named_entries("the creo container", attributes)?,
+            cadmpeg_core::text::named_entries_checked(ctx, "the creo container", attributes)?,
         ),
         coverage,
     ))
