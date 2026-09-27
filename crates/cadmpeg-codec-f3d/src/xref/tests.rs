@@ -117,6 +117,34 @@ fn xref_record_frame_scan_preserves_boundaries() {
     assert_eq!((frames[1].offset, frames[1].end), (16, 35));
 }
 
+fn one_typed_placement_metastream() -> crate::metastream::MetaStream {
+    let bytes = design_metastream_with_records(
+        &[(super::OCCURRENCE_PLACEMENT_TYPE_GUID, "", 2, "Component", &[10])],
+        &[(10, 0)],
+    );
+    crate::metastream::parse(&bytes, "typed-placement-test").unwrap()
+}
+
+#[test]
+fn xref_placement_entity_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 0);
+    let error = super::typed_occurrence_placement_offsets(&ctx, &one_typed_placement_metastream())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref placement entities"));
+}
+
+#[test]
+fn xref_placement_offset_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = redirections_limit_context(&arena, 1);
+    let error = super::typed_occurrence_placement_offsets(&ctx, &one_typed_placement_metastream())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D xref placement offsets"));
+}
+
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(&cadmpeg_test_support::service_decode_context(),
