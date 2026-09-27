@@ -3,7 +3,8 @@
 
 use crate::card::{CardScan, ScannedLine, Section};
 use crate::decode_resource::{
-    format_retained, insert_optional_btree_map, reserve_vec, reserve_vec_growth,
+    collect_result_vec, format_retained, insert_optional_btree_map, insert_optional_btree_set,
+    reserve_vec, reserve_vec_growth,
 };
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
@@ -2144,6 +2145,52 @@ fn charge_native_entities(ctx: &DecodeContext<'_>, count: u64) -> Result<(), Cod
     ctx.charge_entities(count, "iges_native_entities")
 }
 
+fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
+    let mut copies = reserve_vec(ctx, tokens.len(), "iges native token slots")?;
+    for token in tokens {
+        let value = match &token.value {
+            TokenValue::String(bytes) => {
+                TokenValue::String(ctx.copy_retained(bytes, "iges native token bytes")?)
+            }
+            value => value.clone(),
+        };
+        copies.push(Token {
+            value,
+            span: token.span.clone(),
+        });
+    }
+    Ok(copies)
+}
+
+fn native_entity_ids(
+    ctx: &DecodeContext<'_>,
+    sequences: impl IntoIterator<Item = u32>,
+    operation: &'static str,
+) -> Result<Vec<String>, CodecError> {
+    let mut ids = Vec::new();
+    for sequence in sequences {
+        reserve_vec_growth(ctx, &mut ids, 1, operation)?;
+        ids.push(format_retained(
+            ctx,
+            format_args!("iges:entity:directory#{sequence}"),
+            "iges native linked entity id",
+        )?);
+    }
+    Ok(ids)
+}
+
+fn copy_native_parameter_record(
+    ctx: &DecodeContext<'_>,
+    record: &ParameterRecord,
+) -> Result<NativeParameterRecord, CodecError> {
+    Ok(NativeParameterRecord {
+        lines: record.line_range.clone(),
+        bytes: ctx.copy_retained(&record.bytes, "iges native parameter bytes")?,
+        parameters: copy_native_tokens(ctx, record.tokens())?,
+        comment: ctx.copy_retained(&record.comment, "iges native parameter comment")?,
+    })
+}
+
 struct NativeInputIndexes<'a> {
     quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
     quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
@@ -2310,38 +2357,68 @@ pub(crate) fn store(
             )?,
         });
     }
-    let macro_instances = directory
+    let mut macro_instances = Vec::new();
+    for entry in directory
         .iter()
         .filter(|entry| crate::profile::macro_instance_type(entry.entity_type))
-        .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
-            let structure_sequence =
-                crate::graph::resolved_structure_sequence(references, entry.sequence);
-            let macro_definition = structure_sequence
-                .filter(|sequence| {
-                    entries
-                        .get(sequence)
-                        .is_some_and(|target| target.entity_type == 306)
-                })
-                .map(|sequence| format!("iges:entity:directory#{sequence}"));
-            let macro_library = structure_sequence
-                .filter(|sequence| {
-                    entries
-                        .get(sequence)
-                        .is_some_and(|target| target.entity_type == 416)
-                })
-                .map(|sequence| format!("iges:entity:directory#{sequence}"));
-            Some(NativeMacroInstance {
-                id: format!("iges:native:macro-instance#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                entity_type: entry.entity_type,
-                form: entry.form,
-                macro_definition,
-                macro_library,
-                parameters: record.tokens().iter().skip(1).cloned().collect(),
+    {
+        let Some(record) = by_directory.get(&entry.sequence).copied() else {
+            continue;
+        };
+        reserve_vec_growth(
+            ctx,
+            &mut macro_instances,
+            1,
+            "iges native macro instance slots",
+        )?;
+        let structure_sequence =
+            crate::graph::resolved_structure_sequence(references, entry.sequence);
+        let macro_definition = structure_sequence
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_some_and(|target| target.entity_type == 306)
             })
-        })
-        .collect::<Vec<_>>();
+            .map(|sequence| {
+                format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{sequence}"),
+                    "iges native macro definition reference",
+                )
+            })
+            .transpose()?;
+        let macro_library = structure_sequence
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_some_and(|target| target.entity_type == 416)
+            })
+            .map(|sequence| {
+                format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{sequence}"),
+                    "iges native macro library reference",
+                )
+            })
+            .transpose()?;
+        macro_instances.push(NativeMacroInstance {
+            id: format_retained(
+                ctx,
+                format_args!("iges:native:macro-instance#D{}", entry.sequence),
+                "iges native macro instance id",
+            )?,
+            source_entity: format_retained(
+                ctx,
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native macro instance source",
+            )?,
+            entity_type: entry.entity_type,
+            form: entry.form,
+            macro_definition,
+            macro_library,
+            parameters: copy_native_tokens(ctx, record.tokens().get(1..).unwrap_or(&[]))?,
+        });
+    }
     // The native reading boundary is the retained trailing-group boundary
     // clamped to the entity's primary layout.
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
@@ -2381,34 +2458,45 @@ pub(crate) fn store(
                 .and_then(|value| u32::try_from(value).ok())
                 .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
             {
-                required_back_pointer_members.insert(sequence);
+                insert_optional_btree_set(
+                    Some(ctx),
+                    &mut required_back_pointer_members,
+                    sequence,
+                    "iges native required back-pointer member",
+                )?;
             }
         }
     }
-    let ambiguous_parameter_boundaries = by_directory
-        .keys()
-        .filter_map(|sequence| {
-            let analysis = trailing_pointer_analysis.get(sequence)?;
-            let TrailingPointerAnalysis::Ambiguous { candidates, valid } = analysis else {
-                return None;
-            };
-            let ambiguity = if *valid > 1 {
-                ParameterBoundaryAmbiguity::EquallyValid(*valid)
-            } else if required_back_pointer_members.contains(sequence) && *candidates > 1 {
-                ParameterBoundaryAmbiguity::Structural(*candidates)
-            } else {
-                return None;
-            };
-            Some(AmbiguousParameterBoundary {
-                sequence: *sequence,
-                ambiguity,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut ambiguous_parameter_boundaries = Vec::new();
+    for sequence in by_directory.keys() {
+        let Some(analysis) = trailing_pointer_analysis.get(sequence) else {
+            continue;
+        };
+        let TrailingPointerAnalysis::Ambiguous { candidates, valid } = analysis else {
+            continue;
+        };
+        let ambiguity = if *valid > 1 {
+            ParameterBoundaryAmbiguity::EquallyValid(*valid)
+        } else if required_back_pointer_members.contains(sequence) && *candidates > 1 {
+            ParameterBoundaryAmbiguity::Structural(*candidates)
+        } else {
+            continue;
+        };
+        reserve_vec_growth(
+            ctx,
+            &mut ambiguous_parameter_boundaries,
+            1,
+            "iges native ambiguous boundary slots",
+        )?;
+        ambiguous_parameter_boundaries.push(AmbiguousParameterBoundary {
+            sequence: *sequence,
+            ambiguity,
+        });
+    }
     charge_native_entities(ctx, directory.len() as u64)?;
-    let mut entities = directory
-        .iter()
-        .map(|entry| -> Result<NativeEntity, CodecError> {
+    let mut entities =
+        collect_result_vec(ctx, directory.len(), "iges native entity slots", |index| {
+            let entry = &directory[index];
             let parameters = by_directory.get(&entry.sequence).copied();
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
@@ -2482,18 +2570,28 @@ pub(crate) fn store(
                     |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
                 )?;
             }
-            let association_links = trailing
-                .into_iter()
-                .flat_map(ResolvedGroups::associations)
-                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect();
-            let property_links = trailing
-                .into_iter()
-                .flat_map(ResolvedGroups::properties)
-                .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                .collect();
+            let association_links = native_entity_ids(
+                ctx,
+                trailing
+                    .into_iter()
+                    .flat_map(ResolvedGroups::associations)
+                    .copied(),
+                "iges native association link slots",
+            )?;
+            let property_links = native_entity_ids(
+                ctx,
+                trailing
+                    .into_iter()
+                    .flat_map(ResolvedGroups::properties)
+                    .copied(),
+                "iges native property link slots",
+            )?;
             Ok(NativeEntity {
-                id: format!("iges:entity:directory#{}", entry.sequence),
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native entity id",
+                )?,
                 directory_sequence: entry.sequence,
                 entity_type: entry.entity_type,
                 form: entry.form,
@@ -2511,25 +2609,33 @@ pub(crate) fn store(
                 reserved: entry.reserved,
                 label: entry.label,
                 subscript: entry.subscript,
-                parameter_record: parameters.map(|record| NativeParameterRecord {
-                    lines: record.line_range.clone(),
-                    bytes: record.bytes.clone(),
-                    parameters: record.tokens().to_vec(),
-                    comment: record.comment.clone(),
-                }),
+                parameter_record: parameters
+                    .map(|record| copy_native_parameter_record(ctx, record))
+                    .transpose()?,
                 association_links,
                 property_links,
-                links: references
-                    .get(&entry.sequence)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(ReferenceEdge::target_sequence)
-                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
-                references: references.get(&entry.sequence).cloned().unwrap_or_default(),
+                links: native_entity_ids(
+                    ctx,
+                    references
+                        .get(&entry.sequence)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(ReferenceEdge::target_sequence),
+                    "iges native reference link slots",
+                )?,
+                references: match references.get(&entry.sequence) {
+                    Some(edges) => {
+                        let mut copies =
+                            reserve_vec(ctx, edges.len(), "iges native reference slots")?;
+                        for edge in edges {
+                            copies.push(edge.copy_for_native(ctx)?);
+                        }
+                        copies
+                    }
+                    None => Vec::new(),
+                },
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        })?;
     let directions = directory
         .iter()
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
