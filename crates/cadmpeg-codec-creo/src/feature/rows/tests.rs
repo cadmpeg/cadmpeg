@@ -484,11 +484,19 @@ fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
 
 #[test]
 fn entity_graph_requires_the_solid_features_root() {
+    let decode = |payload: &[u8]| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+                .expect("root input is admitted");
+        entity_graph(&ctx, payload).expect("entity graph")
+    };
     let packed_lookalike = b"\xe0\x00SlV\xff\0\xf7\x01";
-    assert_eq!(entity_graph(packed_lookalike), (Vec::new(), Vec::new()));
+    assert_eq!(decode(packed_lookalike), (Vec::new(), Vec::new()));
 
     let payload = b"\xe0\x00Sld_Features\0\xe0\x00first_feat_ptr\0\xf7\x00";
-    let (entities, references) = entity_graph(payload);
+    let (entities, references) = decode(payload);
     assert_eq!(entities.len(), 2);
     assert_eq!(entities[0].name, "Sld_Features");
     assert_eq!(references.len(), 1);

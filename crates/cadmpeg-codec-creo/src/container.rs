@@ -1942,13 +1942,14 @@ fn feature_rows(sections: &[ScannedSection<'_>], feature_ids: &[u32]) -> Vec<Fea
 }
 
 fn feature_entity_graph(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
-) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
+) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
     let Some(section) = sections
         .iter()
         .find(|section| section.section.name() == "AllFeatur")
     else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
     let section_bytes = section.region;
     // The payload follows the `#<name>\n` section header. A section without
@@ -1956,14 +1957,14 @@ fn feature_entity_graph(
     let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
     let payload_start = section.section.offset() + header_length;
     let (mut entities, mut references) =
-        feature::entity::entity_graph(&section_bytes[header_length..]);
+        feature::entity::entity_graph(ctx, &section_bytes[header_length..])?;
     for entity in &mut entities {
         entity.offset += payload_start;
     }
     for reference in &mut references {
         reference.offset += payload_start;
     }
-    (entities, references)
+    Ok((entities, references))
 }
 
 fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset: usize) {
@@ -2701,7 +2702,7 @@ pub(crate) fn scan_bytes<'a>(
         },
         &feature_entity_tables,
     );
-    let (feature_entities, feature_entity_references) = feature_entity_graph(&sections);
+    let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
     let declared_body_count = geomlists_value(&sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&sections, b"first_quilt_ptr\0").or_else(|| {
         legacy_ascii

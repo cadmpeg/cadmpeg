@@ -3,6 +3,9 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 use crate::psb;
 
 use super::rows::row_spans;
@@ -324,10 +327,12 @@ pub(super) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
 
 /// Decode the implicit named-record entity table and every canonical `f7`
 /// reference, preserving both source context and unresolved target IDs.
-pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
-    let tokens = psb::tokens(payload);
-    let Some(root) = tokens.first() else {
-        return (Vec::new(), Vec::new());
+pub(crate) fn entity_graph(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
+    let Some(root) = psb::token_at(payload, 0) else {
+        return Ok((Vec::new(), Vec::new()));
     };
     // The root name ends one byte before the record ends, at its NUL.
     let root_name = root
@@ -339,35 +344,41 @@ pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEn
         || payload.get(1) != Some(&0)
         || root_name != Some(b"Sld_Features".as_slice())
     {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut entities = Vec::new();
-    for token in &tokens {
+    let mut offset = 0;
+    while let Some(token) = psb::token_at(payload, offset) {
+        offset += token.length;
         if token.kind != psb::TokenKind::NamedRecord || token.length < 3 {
             continue;
         }
         let name_start = token.offset + 2;
         let name_end = token.offset + token.length - 1;
+        let entity_id = u32::try_from(entities.len())
+            .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
+        ctx.try_reserve_items(&mut entities, 1, "creo feature entity graph nodes")?;
         entities.push(FeatureEntity {
-            entity_id: entities.len() as u32,
+            entity_id,
             type_byte: payload[token.offset + 1],
-            name: String::from_utf8_lossy(&payload[name_start..name_end]).into_owned(),
+            name: copy_lossy_entity_name(ctx, &payload[name_start..name_end])?,
             offset: token.offset,
         });
     }
-    let entity_by_offset = entities
-        .iter()
-        .map(|entity| (entity.offset, entity.entity_id))
-        .collect::<std::collections::BTreeMap<_, _>>();
     let mut source = None;
     let mut references = Vec::new();
-    for token in tokens {
+    let mut next_entity = 0;
+    let mut offset = 0;
+    while let Some(token) = psb::token_at(payload, offset) {
+        offset += token.length;
         if token.kind == psb::TokenKind::NamedRecord {
-            source = entity_by_offset.get(&token.offset).copied();
+            source = entities.get(next_entity).map(|entity| entity.entity_id);
+            next_entity += 1;
         } else if token.kind == psb::TokenKind::EntityReference {
             let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else {
                 continue;
             };
+            ctx.try_reserve_items(&mut references, 1, "creo feature entity graph references")?;
             references.push(FeatureEntityReference {
                 source_entity_id: source,
                 target_entity_id,
@@ -375,7 +386,34 @@ pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEn
             });
         }
     }
-    (entities, references)
+    Ok((entities, references))
+}
+
+fn copy_lossy_entity_name(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<String, CodecError> {
+    let mut text = String::new();
+    let mut remaining = bytes;
+    loop {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                ctx.try_reserve_retained_text(&mut text, valid.len(), "creo feature entity name")?;
+                text.push_str(valid);
+                return Ok(text);
+            }
+            Err(error) => {
+                let valid_len = error.valid_up_to();
+                let valid = std::str::from_utf8(&remaining[..valid_len])
+                    .map_err(|_| CodecError::malformed("creo feature entity UTF-8 prefix"))?;
+                let growth = valid_len
+                    .checked_add('\u{fffd}'.len_utf8())
+                    .ok_or_else(|| CodecError::malformed("creo feature entity name length"))?;
+                ctx.try_reserve_retained_text(&mut text, growth, "creo feature entity name")?;
+                text.push_str(valid);
+                text.push('\u{fffd}');
+                let invalid_len = error.error_len().unwrap_or(remaining.len() - valid_len);
+                remaining = &remaining[valid_len + invalid_len..];
+            }
+        }
+    }
 }
 
 pub(super) fn read_entries(
@@ -526,4 +564,52 @@ pub(crate) fn entity_tables(
         ));
     }
     tables
+}
+
+#[cfg(test)]
+mod tests {
+    use super::entity_graph;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    fn run(items: u64, bytes: u64) -> Result<(usize, usize, String), CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = bytes;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(GRAPH, &arena, &policy).expect("root graph is admitted");
+        let (entities, references) = entity_graph(&ctx, GRAPH)?;
+        Ok((entities.len(), references.len(), entities[1].name.clone()))
+    }
+
+    #[test]
+    fn entity_graph_nodes_refuse_before_vec_growth() {
+        assert_eq!(
+            run(3, u64::MAX).expect("graph admitted"),
+            (2, 1, "N\u{fffd}".into())
+        );
+        let error = run(0, u64::MAX).expect_err("root node needs a Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity graph nodes"));
+    }
+
+    #[test]
+    fn entity_graph_references_refuse_before_vec_growth() {
+        let error = run(2, u64::MAX).expect_err("reference needs a Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity graph references"));
+    }
+
+    #[test]
+    fn entity_graph_lossy_name_refuses_before_retained_growth() {
+        let error = run(3, 15).expect_err("replacement needs three retained bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo feature entity name"));
+    }
 }
