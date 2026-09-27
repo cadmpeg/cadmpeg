@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
@@ -242,6 +243,7 @@ pub(crate) fn legacy_as_built_421_generation(
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
+    ctx: Option<&DecodeContext<'_>>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
@@ -251,6 +253,9 @@ pub(crate) fn project_assembly_joints(
         let Some(stream) = native_stream(&occurrence.id) else {
             continue;
         };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d assembly occurrence map entry")?;
+        }
         occurrences
             .entry((
                 stream,
@@ -491,6 +496,7 @@ mod tests {
     use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -606,6 +612,42 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
             native_ref: Some(native_ref.into()),
         }
+    }
+
+    #[test]
+    fn assembly_occurrence_map_refuses_collection_limit() {
+        let occurrence = crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+                id: "f3d:Design/BulkStream.dat:design-component-occurrence#1".into(),
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                record_index: 1,
+                byte_offset: 0,
+                component_record_index: 1,
+                component_guid: "11111111-2222-4333-8444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                occurrence_guid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+            },
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+            .expect_err("one occurrence needs one map entry");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d assembly occurrence map entry"
+        ));
     }
 
     #[test]
