@@ -7,7 +7,8 @@ use std::ops::Range;
 
 use crate::checked::extents_overlap;
 use crate::object_graph::extent_contains;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -7724,76 +7725,123 @@ fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaC
 }
 
 fn zero_entity_support_runs(
+    ctx: &DecodeContext<'_>,
     runs: Vec<crate::families::zero_entity::records::ZeroEntitySupportRun>,
     records: &[CatiaZeroEntityRecord],
-) -> Vec<CatiaZeroEntitySupportRun> {
-    runs.into_iter()
-        .enumerate()
-        .map(|(index, run)| CatiaZeroEntitySupportRun {
+) -> Result<Vec<CatiaZeroEntitySupportRun>, CodecError> {
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        runs.len(),
+        "catia_native_zero_support_runs",
+    )?;
+    for (index, run) in runs.into_iter().enumerate() {
+        let face = if let Some(face) = run.face {
+            let mut loop_terminals = Vec::new();
+            if let Some(&first) = face.allocations.first() {
+                crate::resource::reserve_vec(
+                    ctx,
+                    &mut loop_terminals,
+                    face.allocations.len() - 1,
+                    "catia_native_zero_loop_terminals",
+                )?;
+                for allocation in &face.allocations[1..] {
+                    if let Some(terminal) = first.checked_sub(*allocation) {
+                        loop_terminals.push(terminal);
+                    }
+                }
+            }
+            let terminal_control = face.terminal_control.as_byte();
+            let loops = face.loops.unwrap_or_default();
+            let mut native_loops = Vec::new();
+            crate::resource::reserve_vec(
+                ctx,
+                &mut native_loops,
+                loops.len(),
+                "catia_native_zero_face_loops",
+            )?;
+            for loop_record in loops {
+                let mut typed_records = Vec::new();
+                crate::resource::reserve_vec(
+                    ctx,
+                    &mut typed_records,
+                    loop_record.typed_references.len(),
+                    "catia_native_zero_typed_records",
+                )?;
+                for ordinal in &loop_record.typed_references {
+                    let Some(record) = zero_entity_record(records, *ordinal) else {
+                        typed_records.clear();
+                        break;
+                    };
+                    typed_records.push(record.id.clone());
+                }
+                let mut member_ids = Vec::new();
+                crate::resource::reserve_vec(
+                    ctx,
+                    &mut member_ids,
+                    loop_record.members.member_ids().count(),
+                    "catia_native_zero_member_ids",
+                )?;
+                member_ids.extend(loop_record.members.member_ids());
+                native_loops.push(CatiaZeroEntityLoop {
+                    byte_offset: loop_record.pos as u64,
+                    record_ordinal: loop_record.record_ordinal,
+                    tag: loop_record.tag,
+                    member_ids,
+                    typed_references: loop_record.typed_references,
+                    typed_records,
+                    support_record_ordinals: loop_record.support_record_ordinals,
+                    terminal_id: loop_record.members.terminal_id(),
+                    gap: loop_record.members.gap(),
+                    loop_class: loop_record.loop_class.as_byte(),
+                    forward_senses: loop_record.forward_senses,
+                    oriented_model_endpoints: loop_record.oriented_model_endpoints,
+                });
+            }
+            Some(CatiaZeroEntityFace {
+                byte_offset: face.pos as u64,
+                record_ordinal: face.record_ordinal,
+                tag: face.tag,
+                allocations: face.allocations,
+                loop_terminals,
+                loops: native_loops,
+                terminal_control,
+            })
+        } else {
+            None
+        };
+        let mut supports = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut supports,
+            run.supports.len(),
+            "catia_native_zero_support_occurrences",
+        )?;
+        for support in run.supports {
+            supports.push(CatiaZeroEntitySupportOccurrence {
+                byte_offset: support.pos as u64,
+                record_ordinal: support.record_ordinal,
+                tag: support.tag,
+                face_local_slot: support.face_local_slot,
+                uv_endpoints: support.uv_endpoints,
+                pcurve: support.pcurve,
+                model_curve: support.model_curve,
+                model_curve_construction: support.model_curve_construction,
+                model_parameters: support.model_parameters,
+                model_midpoint: support.model_midpoint,
+                model_endpoints: support.model_endpoints,
+            });
+        }
+        output.push(CatiaZeroEntitySupportRun {
             id: format!("catia:zero-entity:support-run#{index}"),
             carrier_byte_offset: run.carrier_pos as u64,
             carrier_record_ordinal: run.carrier_record_ordinal,
-            face: run.face.map(|face| {
-                let loop_terminals = face.loop_terminals();
-                let terminal_control = face.terminal_control.as_byte();
-                CatiaZeroEntityFace {
-                    byte_offset: face.pos as u64,
-                    record_ordinal: face.record_ordinal,
-                    tag: face.tag,
-                    allocations: face.allocations,
-                    loop_terminals,
-                    loops: face
-                        .loops
-                        .into_iter()
-                        .flatten()
-                        .map(|loop_record| {
-                            let typed_records = loop_record
-                                .typed_references
-                                .iter()
-                                .map(|ordinal| {
-                                    zero_entity_record(records, *ordinal)
-                                        .map(|record| record.id.clone())
-                                })
-                                .collect::<Option<Vec<_>>>()
-                                .unwrap_or_default();
-                            CatiaZeroEntityLoop {
-                                byte_offset: loop_record.pos as u64,
-                                record_ordinal: loop_record.record_ordinal,
-                                tag: loop_record.tag,
-                                member_ids: loop_record.members.member_ids().collect(),
-                                typed_references: loop_record.typed_references,
-                                typed_records,
-                                support_record_ordinals: loop_record.support_record_ordinals,
-                                terminal_id: loop_record.members.terminal_id(),
-                                gap: loop_record.members.gap(),
-                                loop_class: loop_record.loop_class.as_byte(),
-                                forward_senses: loop_record.forward_senses,
-                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
-                            }
-                        })
-                        .collect(),
-                    terminal_control,
-                }
-            }),
-            supports: run
-                .supports
-                .into_iter()
-                .map(|support| CatiaZeroEntitySupportOccurrence {
-                    byte_offset: support.pos as u64,
-                    record_ordinal: support.record_ordinal,
-                    tag: support.tag,
-                    face_local_slot: support.face_local_slot,
-                    uv_endpoints: support.uv_endpoints,
-                    pcurve: support.pcurve,
-                    model_curve: support.model_curve,
-                    model_curve_construction: support.model_curve_construction,
-                    model_parameters: support.model_parameters,
-                    model_midpoint: support.model_midpoint,
-                    model_endpoints: support.model_endpoints,
-                })
-                .collect(),
-        })
-        .collect()
+            face,
+            supports,
+        });
+    }
+    Ok(output)
 }
 
 fn zero_entity_endpoint_pair_id(index: usize) -> String {
@@ -7801,12 +7849,18 @@ fn zero_entity_endpoint_pair_id(index: usize) -> String {
 }
 
 fn zero_entity_endpoint_pair_candidates(
+    ctx: &DecodeContext<'_>,
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
-) -> Vec<CatiaZeroEntityEndpointPairCandidate> {
-    candidates
-        .into_iter()
-        .enumerate()
-        .map(|(index, candidate)| CatiaZeroEntityEndpointPairCandidate {
+) -> Result<Vec<CatiaZeroEntityEndpointPairCandidate>, CodecError> {
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        candidates.len(),
+        "catia_native_zero_endpoint_pairs",
+    )?;
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        output.push(CatiaZeroEntityEndpointPairCandidate {
             id: zero_entity_endpoint_pair_id(index),
             face_records: candidate
                 .face_record_ordinals
@@ -7816,59 +7870,92 @@ fn zero_entity_endpoint_pair_candidates(
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
             model_endpoints: candidate.model_endpoints,
             model_midpoint: candidate.model_midpoint,
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
 fn zero_entity_endpoint_locus_candidates(
+    ctx: &DecodeContext<'_>,
     candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
-) -> Vec<CatiaZeroEntityEndpointLocusCandidate> {
-    candidates
-        .into_iter()
-        .enumerate()
-        .map(|(index, candidate)| CatiaZeroEntityEndpointLocusCandidate {
+) -> Result<Vec<CatiaZeroEntityEndpointLocusCandidate>, CodecError> {
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        candidates.len(),
+        "catia_native_zero_endpoint_loci",
+    )?;
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        let mut endpoints = Vec::new();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut endpoints,
+            candidate.incident_endpoint_pair_endpoints.len(),
+            "catia_native_zero_locus_incidence",
+        )?;
+        for (pair, endpoint_index) in candidate.incident_endpoint_pair_endpoints {
+            endpoints.push(CatiaZeroEntityEndpointPairEndpoint {
+                endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
+                endpoint_index,
+            });
+        }
+        output.push(CatiaZeroEntityEndpointLocusCandidate {
             id: format!("catia:zero-entity:endpoint-locus-candidate#{index}"),
-            incident_endpoint_pair_endpoints: candidate
-                .incident_endpoint_pair_endpoints
-                .into_iter()
-                .map(
-                    |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
-                        endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
-                        endpoint_index,
-                    },
-                )
-                .collect(),
+            incident_endpoint_pair_endpoints: endpoints,
             representative_point: candidate.representative_point,
             maximum_deviation: candidate.maximum_deviation,
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
-fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
-    crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)
-        .into_iter()
-        .enumerate()
-        .map(|(index, record)| CatiaZeroEntityEdgeStride {
+fn zero_entity_edge_strides(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Result<Vec<CatiaZeroEntityEdgeStride>, CodecError> {
+    let records =
+        crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range);
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        records.len(),
+        "catia_native_zero_edge_strides",
+    )?;
+    for (index, record) in records.into_iter().enumerate() {
+        output.push(CatiaZeroEntityEdgeStride {
             id: format!("catia:zero-entity:edge-stride#{index}"),
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
             topology_refs: record.topology_refs(),
             surface_support_refs: record.surface_support_refs(),
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
 fn zero_entity_oriented_use_pairs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
-) -> Vec<CatiaZeroEntityOrientedUsePair> {
+) -> Result<Vec<CatiaZeroEntityOrientedUsePair>, CodecError> {
     use crate::families::zero_entity::records::ZeroEntityUseSlot;
 
-    crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(bytes, range)
-        .into_iter()
-        .enumerate()
-        .map(|(index, pair)| CatiaZeroEntityOrientedUsePair {
+    let pairs = crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(
+        bytes, range,
+    );
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        pairs.len(),
+        "catia_native_zero_oriented_pairs",
+    )?;
+    for (index, pair) in pairs.into_iter().enumerate() {
+        output.push(CatiaZeroEntityOrientedUsePair {
             id: format!("catia:zero-entity:oriented-use-pair#{index}"),
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
@@ -7883,68 +7970,95 @@ fn zero_entity_oriented_use_pairs(
                 side: slot.side(),
                 allocations: pair.allocations(slot),
             }),
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
 fn zero_entity_ownership_roots(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
-) -> Vec<CatiaZeroEntityOwnershipRoot> {
-    crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)
-        .into_iter()
-        .enumerate()
-        .map(|(index, root)| {
-            let shell_record_ordinal = root.shell_record_ordinal();
-            let body_record_ordinal = root.body_record_ordinal();
-            CatiaZeroEntityOwnershipRoot {
-                id: format!("catia:zero-entity:ownership-root#{index}"),
-                face_roster_byte_offset: root.face_roster_pos as u64,
-                face_roster_record_ordinal: root.face_roster_record_ordinal,
-                face_slots: root.face_slots,
-                shell_byte_offset: root.shell_pos as u64,
-                shell_record_ordinal,
-                body_byte_offset: root.body_pos as u64,
-                body_record_ordinal,
-            }
-        })
-        .collect()
+) -> Result<Vec<CatiaZeroEntityOwnershipRoot>, CodecError> {
+    let roots =
+        crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range);
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        roots.len(),
+        "catia_native_zero_ownership_roots",
+    )?;
+    for (index, root) in roots.into_iter().enumerate() {
+        let shell_record_ordinal = root.shell_record_ordinal();
+        let body_record_ordinal = root.body_record_ordinal();
+        output.push(CatiaZeroEntityOwnershipRoot {
+            id: format!("catia:zero-entity:ownership-root#{index}"),
+            face_roster_byte_offset: root.face_roster_pos as u64,
+            face_roster_record_ordinal: root.face_roster_record_ordinal,
+            face_slots: root.face_slots,
+            shell_byte_offset: root.shell_pos as u64,
+            shell_record_ordinal,
+            body_byte_offset: root.body_pos as u64,
+            body_record_ordinal,
+        });
+    }
+    Ok(output)
 }
 
 fn zero_entity_vertex_incidences(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
     records: &[CatiaZeroEntityRecord],
-) -> Vec<CatiaZeroEntityVertexIncidence> {
-    crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range)
-        .into_iter()
-        .enumerate()
-        .map(|(index, record)| {
-            let vertex_record = zero_entity_vertex_owner(records, record.record_ordinal)
-                .map(|owner| owner.id.clone());
-            CatiaZeroEntityVertexIncidence {
-                id: format!("catia:zero-entity:vertex-incidence#{index}"),
-                byte_offset: record.pos as u64,
-                record_ordinal: record.record_ordinal,
-                tag: record.tag(),
-                allocations: record.allocations.as_slice().to_vec(),
-                vertex_record,
-            }
-        })
-        .collect()
+) -> Result<Vec<CatiaZeroEntityVertexIncidence>, CodecError> {
+    let incidences =
+        crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range);
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut output,
+        incidences.len(),
+        "catia_native_zero_vertex_incidences",
+    )?;
+    for (index, record) in incidences.into_iter().enumerate() {
+        let vertex_record =
+            zero_entity_vertex_owner(records, record.record_ordinal).map(|owner| owner.id.clone());
+        output.push(CatiaZeroEntityVertexIncidence {
+            id: format!("catia:zero-entity:vertex-incidence#{index}"),
+            byte_offset: record.pos as u64,
+            record_ordinal: record.record_ordinal,
+            tag: record.tag(),
+            allocations: crate::resource::copy_slice(
+                ctx,
+                record.allocations.as_slice(),
+                "catia_native_zero_vertex_allocations",
+            )?,
+            vertex_record,
+        });
+    }
+    Ok(output)
 }
 
-fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
-    crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)
-        .into_iter()
-        .map(|record| CatiaZeroEntityRecord {
+fn zero_entity_records(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    range: Range<usize>,
+) -> Result<Vec<CatiaZeroEntityRecord>, CodecError> {
+    let records =
+        crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range);
+    let mut output = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut output, records.len(), "catia_native_zero_records")?;
+    for record in records {
+        output.push(CatiaZeroEntityRecord {
             id: format!("catia:zero-entity:record#{}", record.record_ordinal),
             byte_offset: record.pos as u64,
             logical_end: record.end as u64,
             tag: record.tag,
             record_ordinal: record.record_ordinal,
-        })
-        .collect()
+        });
+    }
+    Ok(output)
 }
 
 fn consolidated_owner_packets(
@@ -9024,12 +9138,13 @@ impl CatiaNative {
                 0..bytes.len()
             }
         });
-        let zero_entity_records = zero_entity_records(bytes, zero_entity_range.clone());
-        let zero_entity_edge_strides = zero_entity_edge_strides(bytes, zero_entity_range.clone());
+        let zero_entity_records = zero_entity_records(ctx, bytes, zero_entity_range.clone())?;
+        let zero_entity_edge_strides =
+            zero_entity_edge_strides(ctx, bytes, zero_entity_range.clone())?;
         let zero_entity_oriented_use_pairs =
-            zero_entity_oriented_use_pairs(bytes, zero_entity_range.clone());
+            zero_entity_oriented_use_pairs(ctx, bytes, zero_entity_range.clone())?;
         let zero_entity_ownership_roots =
-            zero_entity_ownership_roots(bytes, zero_entity_range.clone());
+            zero_entity_ownership_roots(ctx, bytes, zero_entity_range.clone())?;
         let parsed_zero_entity_support_runs =
             crate::families::zero_entity::records::zero_entity_support_runs_in_range(
                 bytes,
@@ -9041,23 +9156,25 @@ impl CatiaNative {
                 ctx,
                 &parsed_zero_entity_support_runs,
             )?;
-        let zero_entity_endpoint_pair_candidates =
-            zero_entity_endpoint_pair_candidates(crate::resource::copy_slice(
+        let zero_entity_endpoint_pair_candidates = zero_entity_endpoint_pair_candidates(
+            ctx,
+            crate::resource::copy_slice(
                 ctx,
                 &parsed_zero_entity_endpoint_pairs,
                 "catia_native_zero_endpoint_pairs",
-            )?);
+            )?,
+        )?;
         let parsed_zero_entity_endpoint_loci =
             crate::families::zero_entity::topology::endpoint_locus_candidates(
                 ctx,
                 &parsed_zero_entity_endpoint_pairs,
             )?;
         let zero_entity_endpoint_locus_candidates =
-            zero_entity_endpoint_locus_candidates(parsed_zero_entity_endpoint_loci);
+            zero_entity_endpoint_locus_candidates(ctx, parsed_zero_entity_endpoint_loci)?;
         let zero_entity_support_runs =
-            zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
+            zero_entity_support_runs(ctx, parsed_zero_entity_support_runs, &zero_entity_records)?;
         let zero_entity_vertex_incidences =
-            zero_entity_vertex_incidences(bytes, zero_entity_range, &zero_entity_records);
+            zero_entity_vertex_incidences(ctx, bytes, zero_entity_range, &zero_entity_records)?;
         let consolidated_edge_nodes =
             consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(
