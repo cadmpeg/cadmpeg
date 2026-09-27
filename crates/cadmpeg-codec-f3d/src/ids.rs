@@ -1004,16 +1004,6 @@ native_record_id!(
     "design-body-member"
 );
 native_record_id!(
-    /// The native design-body-bounds record key.
-    native_design_body_bounds_id,
-    "design-body-bounds"
-);
-native_record_id!(
-    /// The native construction-recipe record key.
-    native_construction_recipe_id,
-    "construction-recipe"
-);
-native_record_id!(
     /// The native design-body-binding record key.
     native_design_body_binding_id,
     "design-body-binding"
