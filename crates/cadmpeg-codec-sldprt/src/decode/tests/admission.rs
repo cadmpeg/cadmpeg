@@ -238,6 +238,30 @@ fn metadata_history_xml_refuses_scoped_limit() {
 }
 
 #[test]
+fn metadata_history_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Feature Name="Boss" Type="Custom">text</Feature></Keywords>"#,
+    ));
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT feature name");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT feature name"
+    ));
+}
+
+#[test]
 fn geometry_history_xml_refuses_scoped_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
