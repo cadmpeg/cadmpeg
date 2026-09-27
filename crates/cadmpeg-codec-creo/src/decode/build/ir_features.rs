@@ -75,11 +75,33 @@ fn refresh_feature_outputs(
     Ok(())
 }
 
-fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32> {
+fn admit_new_feature_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    seen: &mut BTreeSet<u32>,
+    feature_id: u32,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if seen.contains(&feature_id) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, operation)?;
+    seen.insert(feature_id);
+    Ok(true)
+}
+
+fn ordered_row_feature_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &[crate::feature::rows::FeatureRow],
+) -> Result<Vec<u32>, cadmpeg_core::CodecError> {
     let mut seen = BTreeSet::new();
-    rows.iter()
-        .filter_map(|row| seen.insert(row.feature_id).then_some(row.feature_id))
-        .collect()
+    let mut ids = Vec::new();
+    for row in rows {
+        if admit_new_feature_id(ctx, &mut seen, row.feature_id, "creo feature row identity nodes")? {
+            ctx.try_reserve_items(&mut ids, 1, "creo feature row IDs")?;
+            ids.push(row.feature_id);
+        }
+    }
+    Ok(ids)
 }
 
 pub(super) fn emit_model_features(
@@ -91,12 +113,10 @@ pub(super) fn emit_model_features(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(ctx, scan)?;
-    let operation_feature_ids = scan
-        .features
-        .operations
-        .iter()
-        .map(|operation| operation.feature_id)
-        .collect::<BTreeSet<_>>();
+    let mut operation_feature_ids = BTreeSet::new();
+    for operation in &scan.features.operations {
+        admit_new_feature_id(ctx, &mut operation_feature_ids, operation.feature_id, "creo operation feature identity nodes")?;
+    }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
@@ -138,7 +158,7 @@ pub(super) fn emit_model_features(
         };
         source_carriers.admit_feature(ir, feature)?;
     }
-    let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
+    let row_feature_ids = ordered_row_feature_ids(ctx, &scan.features.rows)?;
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
