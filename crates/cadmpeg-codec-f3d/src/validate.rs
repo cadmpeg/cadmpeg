@@ -932,7 +932,7 @@ fn validate_loaded(
     validate_entity_headers(&ctx, &mut findings);
     validate_sketch_relations(&ctx, &mut findings);
     validate_sketch_geometry_identities(&ctx, &mut findings);
-    validate_sketch_relation_owners(&ctx, &mut findings);
+    validate_sketch_relation_owners(decode, &ctx, &mut findings)?;
     validate_body_links(&ctx, &mut findings);
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(decode, &ctx, &mut findings)?;
@@ -7794,13 +7794,66 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate the sketch ownership graph across relations, dimensions, and loci.
-fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn insert_sketch_relation_owner<'a>(
+    decode: Option<&DecodeContext<'_>>,
+    owners: &mut HashMap<(&'a str, u32), u32>,
+    key: (&'a str, u32),
+    owner: u32,
+) -> Result<Option<u32>, CodecError> {
+    if !owners.contains_key(&key) {
+        if let Some(decode) = decode {
+            decode.charge_collection_items(1, "index F3D sketch relation owners")?;
+            owners.try_reserve(1).map_err(|_| {
+                decode.refuse_codec_limit("index F3D sketch relation owners", 0, 1)
+            })?;
+        }
+    }
+    Ok(owners.insert(key, owner))
+}
+
+fn emit_sketch_relation_finding(
+    decode: Option<&DecodeContext<'_>>,
+    findings: &mut Vec<Finding>,
+    entity: &str,
+    message: &'static str,
+) -> Result<(), CodecError> {
+    let entity = if let Some(decode) = decode {
+        decode.charge_collection_items(1, "collect F3D sketch owner findings")?;
+        findings.try_reserve(1).map_err(|_| {
+            decode.refuse_codec_limit("collect F3D sketch owner findings", 0, 1)
+        })?;
+        let length = u64::try_from(entity.len())
+            .map_err(|_| decode.refuse_codec_limit("retain F3D sketch owner finding ID", 0, u64::MAX))?;
+        decode.charge_retained(length, "retain F3D sketch owner finding ID")?;
+        let mut copied = String::new();
+        copied.try_reserve(entity.len()).map_err(|_| {
+            decode.refuse_codec_limit("retain F3D sketch owner finding ID", 0, length)
+        })?;
+        copied.push_str(entity);
+        copied
+    } else {
+        entity.to_owned()
+    };
+    findings.push(Finding {
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        message: message.into(),
+        entity: Some(entity),
+    });
+    Ok(())
+}
+
+fn validate_sketch_relation_owners(
+    decode: Option<&DecodeContext<'_>>,
+    ctx: &Ctx,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let owners_by_index = &ctx.owners_by_index;
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
-    let typed_sketch_records = native
+    let typed_sketch_records = collect_index_set(decode, native
         .sketch_points
         .iter()
         .map(|point| (design_stream(&point.id), point.record_index))
@@ -7816,8 +7869,8 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .map(|surface| (design_stream(&surface.id), surface.record_index)),
         )
-        .collect::<std::collections::HashSet<_>>();
-    let sketch_operands = native
+        , "index F3D typed sketch records")?;
+    let sketch_operands = collect_index(decode, native
         .sketch_points
         .iter()
         .map(|point| {
@@ -7848,7 +7901,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 },
             )
         }))
-        .collect::<std::collections::HashMap<_, _>>();
+        , "index F3D sketch operands")?;
     let mut relation_owners = std::collections::HashMap::new();
     for (id, record_index, owner_reference) in native
         .sketch_points
@@ -7872,7 +7925,12 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         };
         let native_stream = design_stream(id);
         if sketch_owner_ids.contains_key(&(native_stream, owner_reference)) {
-            relation_owners.insert((native_stream, record_index), owner_reference);
+            insert_sketch_relation_owner(
+                decode,
+                &mut relation_owners,
+                (native_stream, record_index),
+                owner_reference,
+            )?;
         }
     }
     for relation in &native.sketch_relations {
@@ -7895,29 +7953,31 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .all(|member| agrees(&member.reference))
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "Fusion sketch relation typed operands disagree with its indexed references"
-                        .into(),
-                entity: Some(relation.id.clone()),
-            });
+            emit_sketch_relation_finding(
+                decode,
+                findings,
+                &relation.id,
+                "Fusion sketch relation typed operands disagree with its indexed references",
+            )?;
         }
         for member in relation.all_member_indices() {
             if !typed_sketch_records.contains(&(native_stream, member)) {
                 continue;
             }
-            if relation_owners
-                .insert((native_stream, member), relation.owner_reference)
+            if insert_sketch_relation_owner(
+                decode,
+                &mut relation_owners,
+                (native_stream, member),
+                relation.owner_reference,
+            )?
                 .is_some_and(|owner| owner != relation.owner_reference)
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
-                    entity: Some(relation.id.clone()),
-                });
+                emit_sketch_relation_finding(
+                    decode,
+                    findings,
+                    &relation.id,
+                    "Fusion sketch member belongs to multiple sketch owners",
+                )?;
             }
         }
     }
@@ -7934,16 +7994,20 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             if !typed_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }
-            if relation_owners
-                .insert((native_stream, *member), owner)
+            if insert_sketch_relation_owner(
+                decode,
+                &mut relation_owners,
+                (native_stream, *member),
+                owner,
+            )?
                 .is_some_and(|existing| existing != owner)
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
-                    entity: Some(entity.id.clone()),
-                });
+                emit_sketch_relation_finding(
+                    decode,
+                    findings,
+                    &entity.id,
+                    "Fusion sketch member belongs to multiple sketch owners",
+                )?;
             }
         }
     }
@@ -7965,16 +8029,20 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             pair.loci()[0].geometry_index(),
             pair.loci()[1].geometry_index(),
         ] {
-            if relation_owners
-                .insert((native_stream, member), owner)
+            if insert_sketch_relation_owner(
+                decode,
+                &mut relation_owners,
+                (native_stream, member),
+                owner,
+            )?
                 .is_some_and(|existing| existing != owner)
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
-                    entity: Some(pair.id.clone()),
-                });
+                emit_sketch_relation_finding(
+                    decode,
+                    findings,
+                    &pair.id,
+                    "Fusion sketch member belongs to multiple sketch owners",
+                )?;
             }
         }
     }
@@ -7986,16 +8054,20 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .map(|locus| locus.geometry_record_index)
             .chain(group.loci.iter().map(|locus| locus.returned.value))
         {
-            if relation_owners
-                .insert((native_stream, member), group.owner_reference)
+            if insert_sketch_relation_owner(
+                decode,
+                &mut relation_owners,
+                (native_stream, member),
+                group.owner_reference,
+            )?
                 .is_some_and(|existing| existing != group.owner_reference)
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
-                    entity: Some(group.id.clone()),
-                });
+                emit_sketch_relation_finding(
+                    decode,
+                    findings,
+                    &group.id,
+                    "Fusion sketch member belongs to multiple sketch owners",
+                )?;
             }
         }
     }
@@ -8013,16 +8085,20 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Some(owner) = owner else {
             continue;
         };
-        if relation_owners
-            .insert((native_stream, pair.loci()[1].geometry_index()), owner)
+        if insert_sketch_relation_owner(
+            decode,
+            &mut relation_owners,
+            (native_stream, pair.loci()[1].geometry_index()),
+            owner,
+        )?
             .is_some_and(|existing| existing != owner)
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch member belongs to multiple sketch owners".into(),
-                entity: Some(pair.id.clone()),
-            });
+            emit_sketch_relation_finding(
+                decode,
+                findings,
+                &pair.id,
+                "Fusion sketch member belongs to multiple sketch owners",
+            )?;
         }
     }
     for (id, record_index, owner_reference) in native
@@ -8041,14 +8117,15 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .copied()
             != owner_reference
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch geometry owner disagrees with its relation graph".into(),
-                entity: Some(id.clone()),
-            });
+            emit_sketch_relation_finding(
+                decode,
+                findings,
+                id,
+                "Fusion sketch geometry owner disagrees with its relation graph",
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate persistent body links and their history ordering.
