@@ -10,6 +10,54 @@ use super::{
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
 
+const REFERENCE_NOTE_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+#[test]
+fn decode_reference_notes_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, diagnostics) = crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE)
+        .expect("valid reference exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..64).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_decode_reference_notes"
+        )
+    });
+    assert!(refused, "no collection limit refused reference note");
+}
+
+#[test]
+fn decode_reference_note_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, diagnostics) = crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE)
+        .expect("valid reference exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..512).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_decode_reference_note_text"
+        )
+    });
+    assert!(refused, "no retained limit refused reference note text");
+}
+
 #[test]
 fn byte_accounting_reports_an_unrecognized_suffix() {
     let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");

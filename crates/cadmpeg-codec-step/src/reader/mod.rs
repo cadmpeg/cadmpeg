@@ -153,11 +153,17 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
-        body.notes = exchange
-            .references()
-            .iter()
-            .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
-            .collect();
+        for entry in exchange.references() {
+            ctx.charge_collection_items(1, "step_decode_reference_notes")?;
+            body.notes.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("step_decode_reference_notes", 0, 1)
+            })?;
+            body.notes.push(crate::decode_alloc::charged_format(
+                ctx,
+                "step_decode_reference_note_text",
+                format_args!("external reference {} -> {}", entry.name, entry.uri),
+            )?);
+        }
         body.losses.extend(dialect_loss);
         body.losses.extend(diagnostics.iter().map(|diagnostic| {
             let (code, tag) = match diagnostic.kind {
