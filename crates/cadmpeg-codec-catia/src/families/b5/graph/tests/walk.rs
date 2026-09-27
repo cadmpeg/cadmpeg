@@ -111,6 +111,37 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
 }
 
 #[test]
+fn a8_class21_jet_refuses_before_each_admitted_lane() {
+    let payload = a8_class21_test_payload();
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, |ctx| parse_a8_class21_pcurve(ctx, 7, &payload)) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("class-21 fixture must decode"),
+            Err(error) => panic!("unexpected pcurve refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia B5 pcurve distinct knots",
+        "catia B5 pcurve knot values",
+        "catia B5 pcurve u jet",
+        "catia B5 pcurve v jet",
+        "catia B5 pcurve du jet",
+        "catia B5 pcurve dv jet",
+        "catia B5 pcurve ddu jet",
+        "catia B5 pcurve ddv jet",
+        "catia B5 pcurve point jets",
+        "catia B5 pcurve first jets",
+        "catia B5 pcurve second jets",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+    assert!(crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+        .expect("service resource budget").is_some());
+}
+
+#[test]
 fn a8_class21_jet_rejects_count_without_frame_extent() {
     let payload = vec![
         0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x10, 0xff, 0xff, 0xff, 0xff, 0x01,

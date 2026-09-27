@@ -1588,8 +1588,7 @@ fn a8_class21_pcurves_from_frames(
         if let Some(pcurve) =
             parse_a8_class21_pcurve(ctx, frame.object_id, &bytes[frame.start + 11..frame.end])?
         {
-            ctx.charge_collection_items(1, "catia B5 class-21 pcurves")?;
-            pcurves.push(pcurve);
+            crate::resource::push(ctx, &mut pcurves, pcurve, "catia B5 class-21 pcurves")?;
         }
     }
     Ok(pcurves)
@@ -1635,23 +1634,26 @@ fn parse_a8_class21_pcurve(
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve distinct knots") {
             return Some(Err(error));
         }
-        let read_values = |position: &mut usize| -> Option<Vec<FiniteReal>> {
-            let mut values = Vec::with_capacity(knot_count);
+        let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| -> Option<()> {
             for _ in 0..knot_count {
                 values.push(f64_le(payload, *position)?);
                 *position = position.checked_add(8)?;
             }
-            Some(values)
+            Some(())
         };
-        let distinct_knots = read_values(&mut position)?;
+        let mut distinct_knots = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut distinct_knots, knot_count, "catia B5 pcurve distinct knots") {
+            return Some(Err(error));
+        }
+        read_values(&mut position, &mut distinct_knots)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve knot values") {
             return Some(Err(error));
         }
-        let knot_values = distinct_knots
-            .iter()
-            .copied()
-            .map(FiniteReal::get)
-            .collect::<Vec<_>>();
+        let mut knot_values = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut knot_values, knot_count, "catia B5 pcurve knot values") {
+            return Some(Err(error));
+        }
+        knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
         knots_strictly_increasing(&knot_values).then_some(())?;
         let mut multiplicities_valid = true;
         for index in 0..knot_count {
@@ -1664,62 +1666,67 @@ fn parse_a8_class21_pcurve(
                 };
         }
         multiplicities_valid.then_some(())?;
-        let read_lane = |position: &mut usize| -> Option<Vec<f64>> {
-            let mut values = Vec::with_capacity(knot_count);
+        let read_lane = |position: &mut usize, values: &mut Vec<f64>| -> Option<()> {
             for _ in 0..knot_count {
                 values.push(f64_le(payload, *position)?.get());
                 *position = position.checked_add(8)?;
             }
-            Some(values)
+            Some(())
         };
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve u jet") {
             return Some(Err(error));
         }
-        let u = read_lane(&mut position)?;
+        let mut u = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut u, knot_count, "catia B5 pcurve u jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut u)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve v jet") {
             return Some(Err(error));
         }
-        let v = read_lane(&mut position)?;
+        let mut v = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut v, knot_count, "catia B5 pcurve v jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut v)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve du jet") {
             return Some(Err(error));
         }
-        let du = read_lane(&mut position)?;
+        let mut du = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut du, knot_count, "catia B5 pcurve du jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut du)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve dv jet") {
             return Some(Err(error));
         }
-        let dv = read_lane(&mut position)?;
+        let mut dv = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut dv, knot_count, "catia B5 pcurve dv jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut dv)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddu jet") {
             return Some(Err(error));
         }
-        let ddu = read_lane(&mut position)?;
+        let mut ddu = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut ddu, knot_count, "catia B5 pcurve ddu jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut ddu)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddv jet") {
             return Some(Err(error));
         }
-        let ddv = read_lane(&mut position)?;
+        let mut ddv = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut ddv, knot_count, "catia B5 pcurve ddv jet") { return Some(Err(error)); }
+        read_lane(&mut position, &mut ddv)?;
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve point jets") {
             return Some(Err(error));
         }
-        let points = u
-            .into_iter()
-            .zip(v)
-            .map(|(u, v)| [u, v])
-            .collect::<Vec<_>>();
+        let mut points = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut points, knot_count, "catia B5 pcurve point jets") { return Some(Err(error)); }
+        points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve first jets") {
             return Some(Err(error));
         }
-        let first = du
-            .into_iter()
-            .zip(dv)
-            .map(|(u, v)| [u, v])
-            .collect::<Vec<_>>();
+        let mut first = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut first, knot_count, "catia B5 pcurve first jets") { return Some(Err(error)); }
+        first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
         if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve second jets") {
             return Some(Err(error));
         }
-        let second = ddu
-            .into_iter()
-            .zip(ddv)
-            .map(|(u, v)| [u, v])
-            .collect::<Vec<_>>();
+        let mut second = Vec::new();
+        if let Err(error) = crate::resource::reserve_admitted_vec(&mut second, knot_count, "catia B5 pcurve second jets") { return Some(Err(error)); }
+        second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
         let control_count = knot_count.checked_sub(1)?.checked_mul(6)?;
         if let Err(error) = admit_items(ctx, control_count, "catia B5 pcurve control net") {
             return Some(Err(error));
