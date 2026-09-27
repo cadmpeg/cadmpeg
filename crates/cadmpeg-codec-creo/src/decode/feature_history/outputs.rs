@@ -68,7 +68,7 @@ fn feature_output_bodies_with_history(
         )
         .chain(affected_geometry.into_iter().flatten().copied());
     let mut outputs = evaluated_sweep_output_bodies(ctx, ir, feature_id)?;
-    let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
+    let edge_outputs = match feature_edge_selection(ctx, scan, ir, feature_id)? {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ctx, ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
             generated_edge_output_bodies(ctx, scan, ir, &edges, visiting)?

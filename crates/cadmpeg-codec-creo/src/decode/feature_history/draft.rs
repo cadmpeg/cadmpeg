@@ -509,7 +509,7 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: feature_edge_selection(scan, ir, feature_id)
+                    edges: feature_edge_selection(ctx, scan, ir, feature_id)?
                         .unwrap_or(EdgeSelection::Unresolved),
                     radius,
                     tangency_weight: None,
@@ -522,7 +522,7 @@ pub(in super::super) fn schema_feature_definition(
             IrFeatureOperation::Chamfer {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::ChamferGroup {
-                        edges: feature_edge_selection(scan, ir, feature_id)
+                        edges: feature_edge_selection(ctx, scan, ir, feature_id)?
                             .unwrap_or(EdgeSelection::Unresolved),
                         spec: chamfer_constant_distance(scan, ir, source_carriers, feature_id)
                             .and_then(cadmpeg_ir::scalar::PositiveLength::new)

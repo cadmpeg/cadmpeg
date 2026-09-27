@@ -225,7 +225,8 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         next_edges: [77, 77],
         offset: 0,
     }];
-    assert_eq!(feature_result_edge_ids(&curve_rows, 97), Some(vec![77]));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids(ctx, &curve_rows, 97))
+        .expect("service profile admits result edge IDs"), Some(vec![77]));
     let duplicate_curve_rows = [
         curve_rows[0].clone(),
         crate::curve::CurveTopologyRow {
@@ -233,7 +234,8 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
             ..curve_rows[0].clone()
         },
     ];
-    assert!(feature_result_edge_ids(&duplicate_curve_rows, 97).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_edge_ids(ctx, &duplicate_curve_rows, 97))
+        .expect("service profile admits duplicate check").is_none());
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, std::slice::from_ref(&table), &rows, 97))
             .expect("service profile admits the result surfaces"),

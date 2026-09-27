@@ -500,7 +500,7 @@ pub(in super::super) fn feature_result_topology(
         .into_iter()
         .map(|surface_id| cadmpeg_core::nonblank_literal!("surface#{surface_id}"))
         .collect::<Vec<_>>();
-    let edges = feature_result_edge_ids(curve_rows, feature_id)
+    let edges = feature_result_edge_ids(ctx, curve_rows, feature_id)?
         .unwrap_or_default()
         .into_iter()
         .map(|curve_id| cadmpeg_core::nonblank_literal!("curve#{curve_id}"))
