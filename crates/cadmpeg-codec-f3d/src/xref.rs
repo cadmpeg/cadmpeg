@@ -502,7 +502,7 @@ fn bind_occurrences(
         );
         ctx.charge_collection_items(1, "collect F3D xref streams")?;
         streams.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D xref streams", 0, 1))?;
-        streams.push((placements, failures, crate::ids::native_scope(&entry.name)));
+        streams.push((placements, failures, crate::ids::native_scope_charged(ctx, &entry.name)?));
     }
     let mut expanded = Vec::new();
     let mut placement_failures = Vec::new();
