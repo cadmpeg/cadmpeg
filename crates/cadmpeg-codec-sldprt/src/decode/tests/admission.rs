@@ -7,6 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
+use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::add_solidworks_version;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
@@ -120,6 +121,13 @@ fn decoded_brep_header_copy_refuses_retained_limit() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain SLDPRT B-rep header description"
     ));
+}
+
+#[test]
+fn geometry_material_appearance_refuses_collection_limit() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [80, 90, 100]);
+    let limit = collection_refusal_at(&source, "admit SLDPRT material appearance");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]

@@ -2248,16 +2248,17 @@ fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> R
 }
 
 fn ensure_display_appearance(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: &crate::appearance::AppearanceDefinition,
     section_ordinal: usize,
     annotations: &mut Annotations,
-) -> AppearanceId {
+) -> Result<AppearanceId, CodecError> {
     if let Some(existing) = ir.model.appearances.iter().find(|appearance| {
         appearance.name.as_deref() == Some(definition.name.as_str())
             && appearance.base_color == Some(definition.color)
     }) {
-        return existing.id.clone();
+        return Ok(existing.id.clone());
     }
     let id = AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
@@ -2271,9 +2272,14 @@ fn ensure_display_appearance(
         "displaylist_visual_properties",
         Exactness::ByteExact,
     );
+    ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT display appearance")?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
-        name: Some(definition.name.clone()),
+        name: Some(copy_retained_string(
+            ctx,
+            &definition.name,
+            "retain SLDPRT display appearance name",
+        )?),
         asset_guid: None,
         library_id: None,
         visual_guid: None,
@@ -2284,7 +2290,7 @@ fn ensure_display_appearance(
         properties: BTreeMap::new(),
         textures: Vec::new(),
     });
-    id
+    Ok(id)
 }
 
 fn build_geometry_ir(
@@ -2312,11 +2318,11 @@ fn build_geometry_ir(
     let mut display_sections = Vec::new();
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
-        ctx.charge_collection_items(1, "collect SLDPRT display sections")?;
         let faces = crate::tessellation::section_display_faces(ctx, section)?;
         let summary = crate::tessellation::summary_for_faces(&faces);
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;
+        ctx.reserve_collection_vec(&mut display_sections, 1, "collect SLDPRT display sections")?;
         display_sections.push((section, faces));
     }
     let mut ir = CadIr::decoded(source_meta(
@@ -2810,6 +2816,7 @@ fn build_geometry_ir(
             .iter()
             .any(|appearance| appearance.id == id)
         {
+            ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT face appearance")?;
             ir.model.appearances.push(Appearance {
                 id: id.clone(),
                 name: None,
@@ -2843,6 +2850,11 @@ fn build_geometry_ir(
                 .iter()
                 .any(|binding| binding.id == binding_id)
             {
+                ctx.reserve_collection_vec(
+                    &mut ir.model.appearance_bindings,
+                    1,
+                    "admit SLDPRT face appearance binding",
+                )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: binding_id,
                     target: AppearanceTarget::Face(target),
@@ -2868,6 +2880,7 @@ fn build_geometry_ir(
             "moVisualProperties_c",
             Exactness::ByteExact,
         );
+        ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT material appearance")?;
         ir.model.appearances.push(Appearance {
             id,
             name: Some(definition.name),
@@ -2916,7 +2929,12 @@ fn build_geometry_ir(
         let resolved =
             crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)?;
         matched_feature_sources.extend(resolved.matched_feature_sources);
-        let mut display_links = Vec::with_capacity(display_faces.len());
+        let mut display_links = Vec::new();
+        ctx.reserve_collection_vec(
+            &mut display_links,
+            display_faces.len(),
+            "collect SLDPRT display links",
+        )?;
         for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
@@ -2924,6 +2942,11 @@ fn build_geometry_ir(
                 table_index
             );
             if let Some(identity) = display_face.persistent_surface_identity() {
+                ctx.reserve_collection_vec(
+                    &mut persistent_face_bindings,
+                    1,
+                    "collect SLDPRT persistent face bindings",
+                )?;
                 persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
                     tessellation: id.clone(),
                     identity,
@@ -2940,11 +2963,17 @@ fn build_geometry_ir(
             display_links.push(id.clone());
             if let Some(definition) = resolved.by_face.get(&table_index) {
                 let appearance = ensure_display_appearance(
+                    ctx,
                     &mut ir,
                     definition,
                     display.ordinal(),
                     &mut annotations,
-                );
+                )?;
+                ctx.reserve_collection_vec(
+                    &mut ir.model.appearance_bindings,
+                    1,
+                    "admit SLDPRT display appearance binding",
+                )?;
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: cadmpeg_ir::ids::AppearanceBindingId::compose(
                         &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
@@ -2965,9 +2994,12 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model
-                .tessellations
-                .push(mesh.into_tessellation(id).map_err(|error| {
+            ctx.reserve_collection_vec(
+                &mut ir.model.tessellations,
+                1,
+                "admit SLDPRT display tessellation",
+            )?;
+            ir.model.tessellations.push(mesh.into_tessellation(id).map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                 })?);
         }
@@ -2983,6 +3015,7 @@ fn build_geometry_ir(
             "displaylist_tessellation",
             Exactness::Unknown,
         );
+        ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT display unknown")?;
         unknowns.push(UnknownRecord::retained(
             display_id,
             0,
