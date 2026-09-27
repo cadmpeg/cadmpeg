@@ -5658,6 +5658,7 @@ pub(crate) struct CurveTransfer {
 }
 
 pub(crate) fn transfer_text_curves(
+    ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
 ) -> Result<CurveTransfer, CodecError> {
@@ -5669,13 +5670,10 @@ pub(crate) fn transfer_text_curves(
         let object_id = properties
             .iter()
             .find(|property| property.id == payload.property)
-            .map_or_else(
-                || payload.property.clone(),
-                |property| property.owner.clone(),
-            );
+            .map_or(payload.property.as_str(), |property| property.owner.as_str());
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(object_id)
+            object_id: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, object_id, "FreeCAD curve source object")?)
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -5689,18 +5687,20 @@ pub(crate) fn transfer_text_curves(
                 native::model_key(&payload.id, (index + 1).to_string())
                     .map_err(CodecError::malformed)?,
             );
-            append_text_curve(curve, id, &association, &mut transfer)?;
+            append_text_curve(ctx, curve, id, &association, &mut transfer)?;
         }
     }
     Ok(transfer)
 }
 
 fn append_text_curve(
+    ctx: &DecodeContext<'_>,
     curve: &TextCurve,
     id: CurveId,
     association: &SourceObjectAssociation,
     transfer: &mut CurveTransfer,
 ) -> Result<CurveGeometry, CodecError> {
+    let _depth = ctx.enter_nested("FreeCAD curve transfer nesting")?;
     let geometry = match curve {
         TextCurve::Line { origin, direction } => {
             let direction = UnitVector3::new(direction.get()).ok_or_else(|| {
@@ -5830,7 +5830,7 @@ fn append_text_curve(
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
             let basis_geometry =
-                append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
+                append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
@@ -5840,6 +5840,7 @@ fn append_text_curve(
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural curves")?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
@@ -5870,7 +5871,8 @@ fn append_text_curve(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
-            append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
+            append_text_curve(ctx, basis.curve(), basis_id.clone(), association, transfer)?;
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural curves")?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
@@ -5892,6 +5894,7 @@ fn append_text_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
         }
     };
+    reserve_vec_items(ctx, &mut transfer.curves, 1, "FreeCAD transferred curves")?;
     transfer.curves.push(Curve {
         id,
         geometry: geometry.clone(),
@@ -5907,6 +5910,7 @@ pub(crate) struct SurfaceTransfer {
 }
 
 pub(crate) fn transfer_text_surfaces(
+    ctx: &DecodeContext<'_>,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
     curve_transfer: &mut CurveTransfer,
@@ -5919,13 +5923,10 @@ pub(crate) fn transfer_text_surfaces(
         let object_id = properties
             .iter()
             .find(|property| property.id == payload.property)
-            .map_or_else(
-                || payload.property.clone(),
-                |property| property.owner.clone(),
-            );
+            .map_or(payload.property.as_str(), |property| property.owner.as_str());
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_core::text::NonBlankString::new(object_id)
+            object_id: cadmpeg_core::text::NonBlankString::new(retained_string(ctx, object_id, "FreeCAD surface source object")?)
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -5935,6 +5936,7 @@ pub(crate) fn transfer_text_surfaces(
         };
         for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
+                ctx,
                 surface,
                 SurfaceId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
@@ -5951,12 +5953,14 @@ pub(crate) fn transfer_text_surfaces(
 }
 
 fn append_text_surface(
+    ctx: &DecodeContext<'_>,
     surface: &TextSurface,
     id: SurfaceId,
     association: &SourceObjectAssociation,
     curve_transfer: &mut CurveTransfer,
     transfer: &mut SurfaceTransfer,
 ) -> Result<SurfaceGeometry, CodecError> {
+    let _depth = ctx.enter_nested("FreeCAD surface transfer nesting")?;
     let geometry = match surface {
         TextSurface::Plane {
             origin,
@@ -6091,6 +6095,7 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("directrix")),
             );
             append_text_curve(
+                ctx,
                 directrix.curve(),
                 directrix_id.clone(),
                 association,
@@ -6104,6 +6109,7 @@ fn append_text_surface(
                     None,
                     None,
                 );
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -6127,11 +6133,13 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("directrix")),
             );
             append_text_curve(
+                ctx,
                 directrix.curve(),
                 directrix_id.clone(),
                 association,
                 curve_transfer,
             )?;
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
@@ -6185,12 +6193,14 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
             let basis_geometry = append_text_surface(
+                ctx,
                 basis.surface(),
                 basis_id.clone(),
                 association,
                 curve_transfer,
                 transfer,
             )?;
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
@@ -6220,6 +6230,7 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
             append_text_surface(
+                ctx,
                 basis.surface(),
                 basis_id.clone(),
                 association,
@@ -6236,6 +6247,7 @@ fn append_text_surface(
                     cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     None,
                 );
+            reserve_vec_items(ctx, &mut transfer.procedural, 1, "FreeCAD procedural surfaces")?;
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
@@ -6250,6 +6262,7 @@ fn append_text_surface(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
     };
+    reserve_vec_items(ctx, &mut transfer.surfaces, 1, "FreeCAD transferred surfaces")?;
     transfer.surfaces.push(Surface {
         id,
         geometry: geometry.clone(),
@@ -6488,6 +6501,54 @@ pub(crate) mod tests {
         assert!(matches!(super::direct_shape_entry(&ctx, &property),
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD shape entry name"));
+    }
+
+    #[test]
+    fn transferred_curve_refuses_at_caller_limit() {
+        let curve = TextCurve::Line {
+            origin: FinitePoint3::ZERO,
+            direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite direction"),
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Fcstd,
+            object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
+            name: None, color: None, visible: None, layer: None, instance_path: Vec::new(),
+        };
+        let result = with_collection_limit(&[], 0, |ctx| {
+            let mut transfer = super::CurveTransfer::default();
+            super::append_text_curve(ctx, &curve,
+                cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#limit").expect("identity grammar"),
+                &association, &mut transfer)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD transferred curves"));
+    }
+
+    #[test]
+    fn transferred_surface_refuses_at_caller_limit() {
+        let surface = TextSurface::Plane {
+            origin: FinitePoint3::ZERO,
+            axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+                .expect("finite normal"),
+            u_axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite u axis"),
+            v_reversed: false,
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Fcstd,
+            object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
+            name: None, color: None, visible: None, layer: None, instance_path: Vec::new(),
+        };
+        let result = with_collection_limit(&[], 0, |ctx| {
+            let mut curves = super::CurveTransfer::default();
+            let mut surfaces = super::SurfaceTransfer::default();
+            super::append_text_surface(ctx, &surface,
+                cadmpeg_ir::ids::SurfaceId::mint("fcstd:test:surface#limit").expect("identity grammar"),
+                &association, &mut curves, &mut surfaces)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD transferred surfaces"));
     }
 
     fn test_parse_text(bytes: &[u8]) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
@@ -7733,12 +7794,13 @@ pub(crate) mod tests {
         };
         let mut transfer = crate::brep::CurveTransfer::default();
 
-        let geometry = crate::brep::append_text_curve(
+        let geometry = in_decode_context(|ctx| crate::brep::append_text_curve(
+            ctx,
             &curve,
             cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#1").expect("identity grammar"),
             &association,
             &mut transfer,
-        )
+        ))
         .unwrap();
 
         assert_eq!(
@@ -7848,14 +7910,15 @@ pub(crate) mod tests {
         };
         let mut curves = crate::brep::CurveTransfer::default();
         let mut surfaces = crate::brep::SurfaceTransfer::default();
-        crate::brep::append_text_surface(
+        in_decode_context(|ctx| crate::brep::append_text_surface(
+            ctx,
             &surface,
             cadmpeg_ir::ids::SurfaceId::mint("fcstd:model:surface#revolution")
                 .expect("identity grammar"),
             &association,
             &mut curves,
             &mut surfaces,
-        )
+        ))
         .unwrap();
         assert!(match surfaces.procedural[0].1.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
@@ -7887,13 +7950,14 @@ pub(crate) mod tests {
         };
         let mut curves = crate::brep::CurveTransfer::default();
         let mut surfaces = crate::brep::SurfaceTransfer::default();
-        let geometry = crate::brep::append_text_surface(
+        let geometry = in_decode_context(|ctx| crate::brep::append_text_surface(
+            ctx,
             &surface,
             cadmpeg_ir::ids::SurfaceId::mint("fcstd:model:surface#cone").expect("identity grammar"),
             &association,
             &mut curves,
             &mut surfaces,
-        )
+        ))
         .expect("a signed half angle is a b-rep cone the reader admits");
         assert!(matches!(
             geometry,
