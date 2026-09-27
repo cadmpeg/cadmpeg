@@ -3138,11 +3138,8 @@ impl TryFrom<FeatureOperationBodyReferenceLaneWire> for FeatureOperationBodyRefe
 }
 
 /// Atomically witnessed extrusion construction profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudeConstructionProfileWire",
-    into = "FeatureExtrudeConstructionProfileWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureExtrudeConstructionProfileWire")]
 pub(super) struct FeatureExtrudeConstructionProfile {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3173,6 +3170,7 @@ struct FeatureExtrudeConstructionProfileWire {
     witness_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudeConstructionProfile> for FeatureExtrudeConstructionProfileWire {
     fn from(value: FeatureExtrudeConstructionProfile) -> Self {
         Self {
@@ -3238,11 +3236,8 @@ impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructi
 }
 
 /// Completely resolved construction-reference field of one `BLOCK` feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBlockConstructionWire",
-    into = "FeatureBlockConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBlockConstructionWire")]
 pub(super) struct FeatureBlockConstruction {
     /// Globally unique construction identity.
     pub(super) id: String,
@@ -3269,6 +3264,7 @@ struct FeatureBlockConstructionWire {
     terminal_data_block: String,
 }
 
+#[cfg(test)]
 impl From<FeatureBlockConstruction> for FeatureBlockConstructionWire {
     fn from(value: FeatureBlockConstruction) -> Self {
         let (member_references, member_data_blocks) = value
@@ -3370,11 +3366,8 @@ pub(super) struct FeatureBlockPayloadPointGroup {
 }
 
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    from = "FeatureBlockDimensionsWire",
-    into = "FeatureBlockDimensionsWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(from = "FeatureBlockDimensionsWire")]
 pub(super) struct FeatureBlockDimensions {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3408,6 +3401,7 @@ struct FeatureBlockDimensionsWire {
     values: [cadmpeg_ir::scalar::FiniteReal; 3],
 }
 
+#[cfg(test)]
 impl From<FeatureBlockDimensions> for FeatureBlockDimensionsWire {
     fn from(dimensions: FeatureBlockDimensions) -> Self {
         Self {
@@ -3460,11 +3454,8 @@ pub(super) enum FeatureBooleanKind {
 }
 
 /// Ordered target/tool binding from a feature-history Boolean operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBooleanOperationWire",
-    into = "FeatureBooleanOperationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBooleanOperationWire")]
 pub(super) struct FeatureBooleanOperation {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3501,6 +3492,7 @@ struct FeatureBooleanOperationWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
     fn from(operation: FeatureBooleanOperation) -> Self {
         Self {

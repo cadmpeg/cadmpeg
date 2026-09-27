@@ -5,8 +5,9 @@ use serde::ser::SerializeMap;
 use serde::Serialize;
 
 use super::{
-    ColumnIndexRowKind, FeatureBodyReference, FeatureDatumCsysConstruction,
-    FeatureDatumCsysDescriptor, FeatureExtrudePayloadHeader, FeatureInputBlockIdentityGroup,
+    ColumnIndexRowKind, FeatureBlockConstruction, FeatureBlockDimensions, FeatureBodyReference,
+    FeatureBooleanOperation, FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor,
+    FeatureExtrudeConstructionProfile, FeatureExtrudePayloadHeader, FeatureInputBlockIdentityGroup,
     FeatureInputColumnTarget, FeatureInputColumnTargetRow, FeatureOperationBodyMember,
     FeatureOperationBodyOperand, FeatureOperationObjectReference, FeatureParameterUse,
     FeaturePayloadScalar, FeatureScalarPayload, FeatureSketchConstructionInputs,
@@ -380,10 +381,126 @@ impl Serialize for FeatureOperationBodyOperand {
     }
 }
 
+impl Serialize for FeatureExtrudeConstructionProfile {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry(
+            "object_indices",
+            &IterWire(self.references.iter().map(|item| item.object_index)),
+        )?;
+        wire.serialize_entry(
+            "data_blocks",
+            &IterWire(self.references.iter().map(|item| item.data_block.as_str())),
+        )?;
+        wire.serialize_entry(
+            "profile_source_offsets",
+            &IterWire(
+                self.references
+                    .iter()
+                    .map(|item| item.profile_source_offset),
+            ),
+        )?;
+        wire.serialize_entry(
+            "witness_source_offsets",
+            &IterWire(
+                self.references
+                    .iter()
+                    .map(|item| item.witness_source_offset),
+            ),
+        )?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureBlockConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("control", &self.control)?;
+        wire.serialize_entry(
+            "member_references",
+            &self
+                .members
+                .each_ref()
+                .map(|member| member.reference.as_str()),
+        )?;
+        wire.serialize_entry(
+            "member_data_blocks",
+            &self
+                .members
+                .each_ref()
+                .map(|member| member.data_block.as_str()),
+        )?;
+        wire.serialize_entry("terminal_reference", &self.terminal_reference)?;
+        wire.serialize_entry("terminal_data_block", &self.terminal_data_block)?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureBlockDimensions {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("construction", &self.construction)?;
+        wire.serialize_entry("anchor_bindings", &self.anchor_bindings)?;
+        wire.serialize_entry(
+            "declarations",
+            &self
+                .dimensions
+                .each_ref()
+                .map(|dimension| dimension.declaration.as_str()),
+        )?;
+        wire.serialize_entry(
+            "expressions",
+            &self
+                .dimensions
+                .each_ref()
+                .map(|dimension| dimension.expression.as_str()),
+        )?;
+        wire.serialize_entry(
+            "values",
+            &self.dimensions.each_ref().map(|dimension| dimension.value),
+        )?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureBooleanOperation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("kind", &self.kind)?;
+        wire.serialize_entry("target_object_index", &self.target.token.value())?;
+        wire.serialize_entry("raw_target_object_index", self.target.token.raw())?;
+        wire.serialize_entry("target_source_offset", &self.target.offset)?;
+        wire.serialize_entry(
+            "tool_object_indices",
+            &IterWire(self.tools.iter().map(|tool| tool.token.value())),
+        )?;
+        wire.serialize_entry(
+            "raw_tool_object_indices",
+            &IterWire(self.tools.iter().map(|tool| tool.token.raw())),
+        )?;
+        wire.serialize_entry(
+            "tool_source_offsets",
+            &IterWire(self.tools.iter().map(|tool| tool.offset)),
+        )?;
+        wire.serialize_entry("source_offset", &self.source_offset)?;
+        wire.end()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{
-        FeatureBodyReferenceWire, FeatureDatumCsysConstructionWire, FeatureDatumCsysDescriptorWire,
+        FeatureBlockConstructionWire, FeatureBlockDimensionsWire, FeatureBodyReferenceWire,
+        FeatureBooleanOperationWire, FeatureDatumCsysConstructionWire,
+        FeatureDatumCsysDescriptorWire, FeatureExtrudeConstructionProfileWire,
         FeatureExtrudePayloadHeaderWire, FeatureInputBlockIdentityGroupWire,
         FeatureInputColumnTargetWire, FeatureOperationBodyMemberWire,
         FeatureOperationBodyOperandWire, FeatureOperationObjectReferenceWire,
@@ -391,11 +508,13 @@ mod tests {
         FeatureSketchPayloadScalarLaneWire, FeatureSketchPointUseWire, OffsetStoreNamedPointWire,
     };
     use super::{
-        FeatureBodyReference, FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor,
-        FeatureExtrudePayloadHeader, FeatureInputBlockIdentityGroup, FeatureInputColumnTarget,
-        FeatureOperationBodyMember, FeatureOperationBodyOperand, FeatureOperationObjectReference,
-        FeatureParameterUse, FeaturePayloadScalar, FeatureSketchConstructionInputs,
-        FeatureSketchPayloadScalarLane, FeatureSketchPointUse, OffsetStoreNamedPoint,
+        FeatureBlockConstruction, FeatureBlockDimensions, FeatureBodyReference,
+        FeatureBooleanOperation, FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor,
+        FeatureExtrudeConstructionProfile, FeatureExtrudePayloadHeader,
+        FeatureInputBlockIdentityGroup, FeatureInputColumnTarget, FeatureOperationBodyMember,
+        FeatureOperationBodyOperand, FeatureOperationObjectReference, FeatureParameterUse,
+        FeaturePayloadScalar, FeatureSketchConstructionInputs, FeatureSketchPayloadScalarLane,
+        FeatureSketchPointUse, OffsetStoreNamedPoint,
     };
 
     macro_rules! route_tests {
@@ -528,6 +647,49 @@ mod tests {
         FeatureOperationBodyOperandWire,
         r#"{"id":"nx:feature:body-operand#0","operation_label":"operation","body_object_index":66,"body_reference_ordinal":0,"ordinal":0,"operand_object_index":4097,"raw_operand_object_index":[144,1],"operand_data_block":"block","segment_body_bindings":["binding"],"source_offset":122}"#
     );
+
+    route_tests!(
+        extrude_profile_borrowed_wire_preserves_bytes,
+        extrude_profile_native_limit_refuses_before_clone,
+        FeatureExtrudeConstructionProfile,
+        FeatureExtrudeConstructionProfileWire,
+        r#"{"id":"nx:feature:extrude-profile#0","operation_label":"operation","object_indices":[1],"data_blocks":["block"],"profile_source_offsets":[10],"witness_source_offsets":[20]}"#
+    );
+    route_tests!(
+        block_dimensions_borrowed_wire_preserves_bytes,
+        block_dimensions_native_limit_refuses_before_clone,
+        FeatureBlockDimensions,
+        FeatureBlockDimensionsWire,
+        r#"{"id":"nx:feature:block-dimensions#0","operation_label":"operation","construction":"construction","anchor_bindings":["binding"],"declarations":["d1","d2","d3"],"expressions":["e1","e2","e3"],"values":[1.0,2.0,3.0]}"#
+    );
+    route_tests!(
+        boolean_operation_borrowed_wire_preserves_bytes,
+        boolean_operation_native_limit_refuses_before_clone,
+        FeatureBooleanOperation,
+        FeatureBooleanOperationWire,
+        r#"{"id":"nx:feature:boolean#0","operation_label":"operation","kind":"subtract","target_object_index":10,"raw_target_object_index":[10],"target_source_offset":100,"tool_object_indices":[20,30],"raw_tool_object_indices":[[20],[30]],"tool_source_offsets":[110,120],"source_offset":90}"#
+    );
+
+    #[test]
+    fn block_construction_borrowed_wire_preserves_bytes_and_retained_limit() {
+        let references = (0..18).map(|n| format!("reference{n}")).collect::<Vec<_>>();
+        let blocks = (0..18).map(|n| format!("block{n}")).collect::<Vec<_>>();
+        let json = format!(
+            r#"{{"id":"nx:feature:block-construction#0","operation_label":"operation","control":38,"member_references":{},"member_data_blocks":{},"terminal_reference":"terminal","terminal_data_block":"last"}}"#,
+            serde_json::to_string(&references).unwrap(),
+            serde_json::to_string(&blocks).unwrap()
+        );
+        let record: FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeatureBlockConstructionWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+        );
+    }
 
     #[test]
     fn input_column_target_borrowed_wire_omits_linked_fields_for_target_rows() {
