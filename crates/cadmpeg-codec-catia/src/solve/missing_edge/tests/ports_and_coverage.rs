@@ -1071,6 +1071,46 @@ fn standard_mesh_runs_include_flanking_segments() {
 }
 
 #[test]
+fn endpoint_pruning_refuses_before_complete_pairs_and_assignment_copies() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let bytes = standard_quad_topology_stream();
+    let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+            ctx, &bytes, &[[0, 0]; 4], &candidates,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    let mut operations = std::collections::HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..512 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(Some(_)) => {
+                completed = true;
+                break;
+            }
+            outcome => panic!("unexpected endpoint pruning outcome: {outcome:?}"),
+        }
+    }
+    assert!(completed, "adaptive limit reaches the service outcome");
+    for operation in [
+        "catia_prune_complete_point_pairs",
+        "catia_prune_candidate_rows",
+        "catia_prune_candidate_pairs",
+        "catia_prune_retained_assignments",
+        "catia_prune_retained_boundary_uses",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
     catia_test_context!(ctx);
     let mut bytes = standard_quad_topology_stream();
