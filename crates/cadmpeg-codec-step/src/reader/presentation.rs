@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
-    AppearanceId, BodyId, CurveId, EdgeId, FaceId, IdentityKey, LayerId, OccurrenceId, PmiId,
+    AppearanceId, BodyId, CurveId, EdgeId, FaceId, Identity, IdentityKey, LayerId, OccurrenceId, PmiId,
     PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
@@ -128,7 +128,13 @@ pub(super) fn decode(
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
             claim_presentation_typed(&mut typed, id, ctx)?;
         } else if !style_targets.is_empty() || !layer_targets.is_empty() {
-            deferred_invisibility.insert(id, (supported, style_targets, layer_targets));
+            insert_presentation_map(
+                &mut deferred_invisibility,
+                id,
+                (supported, style_targets, layer_targets),
+                ctx,
+                "step_presentation_deferred_invisibility",
+            )?;
         }
     }
     for (&layer_id, layer) in exchange.records() {
@@ -186,22 +192,24 @@ pub(super) fn decode(
             .filter(|value| !value.is_empty());
         let mut items = Vec::new();
         for id in assigned_items.iter().filter_map(ValueExt::reference) {
-            items.extend(presentation_item(
+            append_presentation_items(
                 id,
                 exchange,
                 topology,
                 &entity_ids,
                 &face_indices,
                 &body_indices,
-            ));
+                &mut items,
+                ctx,
+            )?;
         }
-        ir.model.presentation_layers.push(PresentationLayer {
+        push_presentation_vec(&mut ir.model.presentation_layers, PresentationLayer {
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items,
-        });
+        }, ctx, "step_presentation_layer_records")?;
         claim_presentation_typed(&mut typed, layer_id, ctx)?;
     }
     let mut styles = Vec::new();
@@ -745,60 +753,65 @@ fn appearance_targets(
     Vec::new()
 }
 
-fn presentation_item(
+fn append_presentation_items(
     id: u64,
     exchange: &Exchange,
     topology: &TopologyData,
     entity_ids: &EntityIds<'_>,
     face_indices: &BTreeMap<String, usize>,
     body_indices: &BTreeMap<String, usize>,
-) -> Vec<PresentationItem> {
+    items: &mut Vec<PresentationItem>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     if let Some(bodies) = topology.body_by_root.get(&id) {
-        return bodies
-            .iter()
-            .filter(|body| body_indices.contains_key(body.as_str()))
-            .cloned()
-            .map(|body| PresentationItem::Body { body })
-            .collect();
+        for body in bodies {
+            if body_indices.contains_key(body.as_str()) {
+                let body = clone_presentation_identity::<BodyId>(body.as_str(), ctx, "step_presentation_layer_body_identity")?;
+                push_presentation_vec(items, PresentationItem::Body { body }, ctx, "step_presentation_layer_items")?;
+            }
+        }
+        return Ok(());
     }
     if let Some(faces) = topology.faces_by_source.get(&id) {
-        return faces
-            .iter()
-            .filter(|face| face_indices.contains_key(face.as_str()))
-            .cloned()
-            .map(|face| PresentationItem::Face { face })
-            .collect();
+        for face in faces {
+            if face_indices.contains_key(face.as_str()) {
+                let face = clone_presentation_identity::<FaceId>(face.as_str(), ctx, "step_presentation_layer_face_identity")?;
+                push_presentation_vec(items, PresentationItem::Face { face }, ctx, "step_presentation_layer_items")?;
+            }
+        }
+        return Ok(());
     }
     if let Some(edges) = topology.edges_by_source.get(&id) {
-        return edges
-            .iter()
-            .filter(|edge| entity_ids.edges.contains(edge.as_str()))
-            .cloned()
-            .map(|edge| PresentationItem::Edge { edge })
-            .collect();
+        for edge in edges {
+            if entity_ids.edges.contains(edge.as_str()) {
+                let edge = clone_presentation_identity::<EdgeId>(edge.as_str(), ctx, "step_presentation_layer_edge_identity")?;
+                push_presentation_vec(items, PresentationItem::Edge { edge }, ctx, "step_presentation_layer_items")?;
+            }
+        }
+        return Ok(());
     }
     if let Some(vertices) = topology.vertices_by_source.get(&id) {
-        return vertices
-            .iter()
-            .filter(|vertex| entity_ids.vertices.contains(vertex.as_str()))
-            .cloned()
-            .map(|vertex| PresentationItem::Vertex { vertex })
-            .collect();
+        for vertex in vertices {
+            if entity_ids.vertices.contains(vertex.as_str()) {
+                let vertex = clone_presentation_identity::<VertexId>(vertex.as_str(), ctx, "step_presentation_layer_vertex_identity")?;
+                push_presentation_vec(items, PresentationItem::Vertex { vertex }, ctx, "step_presentation_layer_items")?;
+            }
+        }
+        return Ok(());
     }
     if let Some(products) = entity_ids.products.get(&id) {
-        return products
-            .iter()
-            .cloned()
-            .map(|product| PresentationItem::Product { product })
-            .collect();
+        for product in products {
+            let product = clone_presentation_identity::<ProductDefinitionId>(product.as_str(), ctx, "step_presentation_layer_product_identity")?;
+            push_presentation_vec(items, PresentationItem::Product { product }, ctx, "step_presentation_layer_items")?;
+        }
+        return Ok(());
     }
-    vec![presentation_item_one(
-        id,
-        exchange,
-        entity_ids,
-        face_indices,
-        body_indices,
-    )]
+    push_presentation_vec(
+        items,
+        presentation_item_one(id, exchange, entity_ids, face_indices, body_indices),
+        ctx,
+        "step_presentation_layer_items",
+    )
 }
 
 fn presentation_item_one(
@@ -938,6 +951,41 @@ fn insert_presentation_set<T: Ord>(
         values.insert(value);
     }
     Ok(())
+}
+
+fn insert_presentation_map<K: Ord, V>(
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    values.insert(key, value);
+    Ok(())
+}
+
+fn clone_presentation_identity<T: From<Identity>>(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+    }
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    copy.push_str(value);
+    Identity::new(copy)
+        .map(T::from)
+        .map_err(|_| CodecError::malformed("presentation identity is invalid"))
 }
 
 fn push_presentation_vec<T>(
