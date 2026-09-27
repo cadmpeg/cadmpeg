@@ -248,3 +248,87 @@ fn topology_built_roots_refuse_collection_limit() {
                 && refusal.operation == "step_topology_built_roots"
     ));
 }
+
+fn source_index_refusal<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
+    group_operation: &'static str,
+    member_operation: &'static str,
+    collection_limit: u64,
+    retained_limit: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    super::super::push_topology_id_group::<T>(
+        &mut BTreeMap::new(), 1, "step:data:body#1", &ctx,
+        group_operation, member_operation,
+    )
+    .expect_err("source index exceeds limit")
+}
+
+#[test]
+fn topology_source_faces_refuse_limits() {
+    use cadmpeg_ir::ids::FaceId;
+    assert!(matches!(
+        source_index_refusal::<FaceId>("step_topology_source_face_groups", "step_topology_source_faces", 0, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_source_face_groups"
+    ));
+    assert!(matches!(
+        source_index_refusal::<FaceId>("step_topology_source_face_groups", "step_topology_source_faces", 1, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_source_faces"
+    ));
+    assert!(matches!(
+        source_index_refusal::<FaceId>("step_topology_source_face_groups", "step_topology_source_faces", u64::MAX, 0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_topology_source_faces"
+    ));
+}
+
+#[test]
+fn topology_source_edges_refuse_limits() {
+    use cadmpeg_ir::ids::EdgeId;
+    assert!(matches!(
+        source_index_refusal::<EdgeId>("step_topology_source_edge_groups", "step_topology_source_edges", 0, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_topology_source_edge_groups"
+    ));
+    assert!(matches!(
+        source_index_refusal::<EdgeId>("step_topology_source_edge_groups", "step_topology_source_edges", 1, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_topology_source_edges"
+    ));
+    assert!(matches!(
+        source_index_refusal::<EdgeId>("step_topology_source_edge_groups", "step_topology_source_edges", u64::MAX, 0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_topology_source_edges"
+    ));
+}
+
+#[test]
+fn topology_source_vertices_refuse_limits() {
+    use cadmpeg_ir::ids::VertexId;
+    assert!(matches!(
+        source_index_refusal::<VertexId>("step_topology_source_vertex_groups", "step_topology_source_vertices", 0, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_topology_source_vertex_groups"
+    ));
+    assert!(matches!(
+        source_index_refusal::<VertexId>("step_topology_source_vertex_groups", "step_topology_source_vertices", 1, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_topology_source_vertices"
+    ));
+    assert!(matches!(
+        source_index_refusal::<VertexId>("step_topology_source_vertex_groups", "step_topology_source_vertices", u64::MAX, 0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_topology_source_vertices"
+    ));
+}

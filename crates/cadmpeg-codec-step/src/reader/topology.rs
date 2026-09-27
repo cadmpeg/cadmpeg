@@ -130,14 +130,22 @@ fn insert_topology_map<K: Ord, V>(
     Ok(())
 }
 
+fn copy_topology_id<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let bytes = ctx.copy_retained(identity.as_bytes(), operation)?;
+    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    T::try_from(text).map_err(CodecError::malformed)
+}
+
 fn copy_topology_body_id(
     body: &BodyId,
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<BodyId, CodecError> {
-    let bytes = ctx.copy_retained(body.as_str().as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
-    BodyId::try_from(text).map_err(CodecError::malformed)
+    copy_topology_id(body.as_str(), ctx, operation)
 }
 
 fn copy_topology_body_ids(
@@ -189,6 +197,21 @@ fn insert_topology_body_group(
     let copy = copy_topology_body_id(body, ctx, member_operation)?;
     groups.entry(key).or_default().insert(copy);
     Ok(())
+}
+
+fn push_topology_id_group<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
+    groups: &mut BTreeMap<u64, Vec<T>>,
+    key: u64,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    member_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, group_operation)?;
+    }
+    let copy = copy_topology_id(identity, ctx, member_operation)?;
+    push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
 }
 
 mod admissions;
@@ -958,29 +981,26 @@ pub(super) fn decode(
     }
     for face in &commit_session.document().model.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
-            result
-                .faces_by_source
-                .entry(source)
-                .or_default()
-                .push(face.id.clone());
+            push_topology_id_group(
+                &mut result.faces_by_source, source, face.id.as_str(), ctx,
+                "step_topology_source_face_groups", "step_topology_source_faces",
+            )?;
         }
     }
     for edge in &commit_session.document().model.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
-            result
-                .edges_by_source
-                .entry(source)
-                .or_default()
-                .push(edge.id.clone());
+            push_topology_id_group(
+                &mut result.edges_by_source, source, edge.id.as_str(), ctx,
+                "step_topology_source_edge_groups", "step_topology_source_edges",
+            )?;
         }
     }
     for vertex in &commit_session.document().model.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
-            result
-                .vertices_by_source
-                .entry(source)
-                .or_default()
-                .push(vertex.id.clone());
+            push_topology_id_group(
+                &mut result.vertices_by_source, source, vertex.id.as_str(), ctx,
+                "step_topology_source_vertex_groups", "step_topology_source_vertices",
+            )?;
         }
     }
     append_topology_vec(&mut result.losses, &mut losses, ctx, "step_topology_loss_merge")?;
