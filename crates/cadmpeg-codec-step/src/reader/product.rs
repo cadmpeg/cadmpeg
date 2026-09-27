@@ -461,6 +461,12 @@ pub(super) fn decode(
             kind!("occurrence"),
             key_word!("definition").dash(definition),
         ));
+        reserve_product_items(
+            &mut ir.model.occurrences,
+            1,
+            ctx,
+            "step_root_occurrence_items",
+        )?;
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -478,6 +484,10 @@ pub(super) fn decode(
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
         root_ordinal = root_ordinal.saturating_add(1);
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
+            ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
+        }
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         enqueue_occurrence(&mut pending_occurrences, definition, id, ctx)?;
     }
@@ -568,21 +578,26 @@ pub(super) fn decode(
                 )));
                 continue;
             };
-            let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
+            let parent_path = occurrence_paths.get(&parent);
             let depth_limit = assembly_depth_limit(ctx);
-            if parent_path.len() >= depth_limit {
+            if parent_path.is_some_and(|path| path.len() >= depth_limit) {
                 reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} exceeds the {depth_limit}-level assembly depth limit"
                 )));
                 continue;
             }
-            if parent_path.contains(&usage.child_definition) {
+            if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
                 reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
                 continue;
+            }
+            if !usage_instances.contains_key(&usage_id) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_usage_instance_counts")?;
+                }
             }
             let instance = usage_instances.entry(usage_id).or_default();
             *instance += 1;
@@ -605,10 +620,20 @@ pub(super) fn decode(
                 )));
                 break 'expansion;
             }
+            if !child_ordinals.contains_key(&parent) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_child_occurrence_ordinals")?;
+                }
+            }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
+                if !missing_placement_reports.contains(&usage_id) {
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "step_missing_placement_reports")?;
+                    }
+                }
                 if missing_placement_reports.insert(usage_id) {
                     reserve_product_items(&mut losses, 1, ctx, "step_product_losses")?;
                     losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
@@ -618,6 +643,12 @@ pub(super) fn decode(
                 }
                 Transform::identity()
             };
+            reserve_product_items(
+                &mut ir.model.occurrences,
+                1,
+                ctx,
+                "step_child_occurrence_items",
+            )?;
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
@@ -641,7 +672,19 @@ pub(super) fn decode(
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;
             *ordinal = ordinal.saturating_add(1);
-            let mut path = parent_path;
+            let mut path = BTreeSet::new();
+            if let Some(parent_path) = parent_path {
+                for &definition in parent_path {
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
+                    }
+                    path.insert(definition);
+                }
+            }
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_child_occurrence_path_members")?;
+                ctx.charge_collection_items(1, "step_child_occurrence_path_map")?;
+            }
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
             enqueue_occurrence(&mut pending_occurrences, usage.child_definition, id, ctx)?;
