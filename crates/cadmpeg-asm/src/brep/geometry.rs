@@ -1057,11 +1057,14 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     Ok(())
 }
 
-pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
+pub(super) fn classify_body_kinds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut AsmBrep,
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {
-            shell_bodies.insert(shell.clone(), region.body.clone());
+            crate::decode_alloc::insert_hash_map(ctx, &mut shell_bodies, shell.clone(), region.body.clone(), "ASM shell bodies")?;
         }
     }
     let mut body_has_faces = HashSet::new();
@@ -1072,13 +1075,13 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
             continue;
         };
         if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
-            body_has_wires.insert(body.clone());
+            crate::decode_alloc::insert_hash_set(ctx, &mut body_has_wires, body.clone(), "ASM bodies with wires")?;
         }
         if !shell.faces().is_empty() {
-            body_has_faces.insert(body.clone());
+            crate::decode_alloc::insert_hash_set(ctx, &mut body_has_faces, body.clone(), "ASM bodies with faces")?;
         }
         for face in shell.faces() {
-            face_bodies.insert(face.clone(), body.clone());
+            crate::decode_alloc::insert_hash_map(ctx, &mut face_bodies, face.clone(), body.clone(), "ASM face bodies")?;
         }
     }
     let mut loop_bodies = HashMap::new();
@@ -1087,7 +1090,7 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
             continue;
         };
         for loop_id in &face.loops {
-            loop_bodies.insert(loop_id.clone(), body.clone());
+            crate::decode_alloc::insert_hash_map(ctx, &mut loop_bodies, loop_id.clone(), body.clone(), "ASM loop bodies")?;
         }
     }
     let mut coedge_bodies = HashMap::new();
@@ -1096,17 +1099,16 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
             continue;
         };
         for coedge in loop_.coedges() {
-            coedge_bodies.insert(coedge.clone(), body.clone());
+            crate::decode_alloc::insert_hash_map(ctx, &mut coedge_bodies, coedge.clone(), body.clone(), "ASM coedge bodies")?;
         }
     }
     let mut edge_use_counts = HashMap::<_, HashMap<EdgeId, usize>>::new();
     for coedge in &out.coedges {
         if let Some(body) = coedge_bodies.get(&coedge.id) {
-            *edge_use_counts
-                .entry(body.clone())
-                .or_default()
-                .entry(coedge.edge.clone())
-                .or_default() += 1;
+            crate::decode_alloc::reserve_hash_map_entry(ctx, &mut edge_use_counts, body, "ASM body edge use counts")?;
+            let counts = edge_use_counts.entry(body.clone()).or_default();
+            crate::decode_alloc::reserve_hash_map_entry(ctx, counts, &coedge.edge, "ASM edge use counts")?;
+            *counts.entry(coedge.edge.clone()).or_default() += 1;
         }
     }
     for body in &mut out.bodies {
@@ -1127,6 +1129,7 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
             cadmpeg_ir::topology::BodyKind::Sheet
         };
     }
+    Ok(())
 }
 
 #[cfg(test)]

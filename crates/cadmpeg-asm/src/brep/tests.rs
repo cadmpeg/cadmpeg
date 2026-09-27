@@ -752,7 +752,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         .collect::<HashMap<_, _>>();
 
     let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+        attribute_chain_color_carrier(&entity, by_index.len(), |index| by_index.get(&index).copied()).unwrap();
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -850,14 +850,14 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
     let (carrier, decoded) =
-        attribute_chain_color_carrier(&entity, |index| by_index.get(&index).copied()).unwrap();
+        attribute_chain_color_carrier(&entity, by_index.len(), |index| by_index.get(&index).copied()).unwrap();
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,
         super::attributes::DirectColorCarrier::NormalizedRgb { fields: [4, 5, 6] }
     );
     assert_eq!(
-        attribute_chain_name(&entity, &by_index).as_deref(),
+        attribute_chain_name(&resource_ctx, &entity, &by_index).unwrap().as_deref(),
         Some("legacy face")
     );
 
@@ -1529,4 +1529,102 @@ fn attribute_values_refuse_collection_limit() {
         panic!("expected collection refusal: {error:?}");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn attribute_chain_tracking_refuses_collection_limit() {
+    use super::attributes::collect_attributes;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let attribute = Record {
+        index: 1,
+        name: "rgb_color-st-attrib".into(),
+        tokens: vec![Token::Ref(-1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let by_index = HashMap::from([(1, &attribute)]);
+    let mut emitted = HashSet::new();
+    let mut out = Vec::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = collect_attributes(
+        &ctx, &entity, &AttributeTarget::Document, &by_index, &mut emitted, &mut out, FORMAT,
+    )
+    .expect_err("one attribute chain member exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM attribute chain");
+}
+
+#[test]
+fn attribute_chain_name_refuses_retained_limit() {
+    use super::attributes::attribute_chain_name;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let entity = Record {
+        index: 0,
+        name: "face".into(),
+        tokens: vec![Token::Ref(1)].into(),
+        offset: 0,
+        len: 0,
+    };
+    let attribute = Record {
+        index: 1,
+        name: "string_attrib-name_attrib-gen-attrib".into(),
+        tokens: vec![Token::Ref(-1), Token::Str("name".into()), Token::Str("x".into())].into(),
+        offset: 0,
+        len: 0,
+    };
+    let by_index = HashMap::from([(1, &attribute)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = attribute_chain_name(&ctx, &entity, &by_index)
+        .expect_err("one name byte exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected retained refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn body_classification_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Region;
+
+    let mut brep = AsmBrep::default();
+    brep.regions.push(Region {
+        id: RegionId::from(id(FORMAT, 1)),
+        body: BodyId::from(id(FORMAT, 2)),
+        shells: vec![ShellId::from(id(FORMAT, 3))],
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::geometry::classify_body_kinds(&ctx, &mut brep)
+        .expect_err("one shell association exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM shell bodies");
 }
