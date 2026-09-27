@@ -198,6 +198,34 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
+    fn duplicate_property_diagnostic_refuses_at_retained_limit() {
+        let property = super::PropertyRecord {
+            id: "fcstd:native:property#LongProperty".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "LongProperty".into(),
+            type_name: "App::PropertyString".into(),
+            family: super::PropertyFamily::Unknown,
+            status: None,
+            body: super::PropertyBody::Transient,
+            order: 0,
+            xml: super::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        };
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FreeCAD duplicate property diagnostic",
+            |ctx| super::sole_named_property(ctx, "product", &[&property, &property], &property.name),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let error = super::sole_named_property(&ctx, "product", &[&property, &property], &property.name)
+            .expect_err("duplicate property");
+        assert_eq!(error.to_string(), "malformed container: product property LongProperty occurs more than once");
+    }
+
+    #[test]
     fn boolean_tokens_parse_without_a_lowercase_copy() {
         for (text, expected) in [
             ("true", Some(true)),
@@ -3083,15 +3111,19 @@ where
 /// `owner` is the noun that names the property carrier in the duplicate
 /// diagnostic.
 pub(crate) fn sole_named_property<'a>(
+    ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    unique_property(properties.iter().copied(), |property| property.name == name).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "{owner} property {name} occurs more than once"
-        ))
-    })
+    match unique_property(properties.iter().copied(), |property| property.name == name) {
+        Ok(property) => Ok(property),
+        Err(_) => Err(CodecError::Malformed(crate::resource::retained_format(
+            ctx,
+            format_args!("{owner} property {name} occurs more than once"),
+            "FreeCAD duplicate property diagnostic",
+        )?)),
+    }
 }
 
 /// Wraps a decode message in the malformed-source error variant.

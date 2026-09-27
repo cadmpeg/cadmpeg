@@ -35,8 +35,8 @@ pub(crate) fn transfer(
         let source = by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
         let mut owned = collection_vec(ctx, source.len(), "fcstd joint selected properties")?;
         owned.extend_from_slice(source);
-        let grounded_property = sole_named_property("joint", &owned, "ObjectToGround")?;
-        let joint_type_property = sole_named_property("joint", &owned, "JointType")?;
+        let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
+        let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "joint object {} carries both ObjectToGround and JointType",
@@ -529,7 +529,7 @@ fn connector(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = sole_named_property("joint", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "joint", properties, name)? else {
         return Err(malformed(format!("joint connector {name} is missing")));
     };
     if !matches!(
@@ -566,7 +566,7 @@ fn placement(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
-    let Some(property) = sole_named_property("joint", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "joint", properties, name)? else {
         return Ok(None);
     };
     crate::placement::placement_matrix(ctx, property)

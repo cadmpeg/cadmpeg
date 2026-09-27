@@ -53,23 +53,23 @@ pub(crate) fn transfer(
         let source = by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
         let mut owned = collection_vec(ctx, source.len(), "fcstd product selected properties")?;
         owned.extend_from_slice(source);
-        let group = sole_named_property("product", &owned, "Group")?;
+        let group = sole_named_property(ctx, "product", &owned, "Group")?;
         let members = group.map(|property| {
             linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "Group")?)
         }).transpose()?.unwrap_or_default();
-        let linked = sole_named_property("product", &owned, "LinkedObject")?;
+        let linked = sole_named_property(ctx, "product", &owned, "LinkedObject")?;
         let prototype_link = linked
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?
             .flatten();
         let placement = selected_placement(ctx, &owned)?;
         let local_transform = placement.map(|property| placement_matrix(ctx, property)).transpose()?.flatten();
-        let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count = integer_property(&owned, "ElementCount")?
+        let link_transform = bool_property(ctx, &owned, "LinkTransform")?;
+        let element_count = integer_property(ctx, &owned, "ElementCount")?
             .map(u64::try_from)
             .transpose()
             .map_err(|_| malformed("negative ElementCount"))?;
-        let claim_child = bool_property(&owned, "LinkClaimChild")?;
+        let claim_child = bool_property(ctx, &owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(ctx, &owned)?;
         let copy_on_change_source = linked_target(
             ctx,
@@ -80,10 +80,10 @@ pub(crate) fn transfer(
         )?;
         let copy_on_change_group =
             linked_target(ctx, &owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
-        let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned)?;
+        let copy_on_change_touched = bool_property(ctx, &owned, "LinkCopyOnChangeTouched")?;
+        let scale = scale_property(ctx, &owned)?;
         let element_visibility = bool_list(ctx, &owned, "VisibilityList")?;
-        let element_objects = sole_named_property("product", &owned, "ElementList")?
+        let element_objects = sole_named_property(ctx, "product", &owned, "ElementList")?
             .map(|property| {
                 linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "ElementList")?)
             })
@@ -643,7 +643,7 @@ fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<FiniteFrame>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "PlacementList")? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
     let Some(view) = side_bytes(
@@ -672,7 +672,7 @@ fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "ScaleList")? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
@@ -797,15 +797,15 @@ fn selected_placement<'a>(
     ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let link_placement = sole_named_property("product", properties, "LinkPlacement")?;
-    let placement = sole_named_property("product", properties, "Placement")?;
+    let link_placement = sole_named_property(ctx, "product", properties, "LinkPlacement")?;
+    let placement = sole_named_property(ctx, "product", properties, "Placement")?;
     for property in [link_placement, placement].into_iter().flatten() {
         placement_matrix(ctx, property)?;
     }
     match (link_placement, placement) {
         (Some(link_placement), Some(placement)) => {
             let use_link_placement =
-                bool_property(properties, "LinkTransform")?.ok_or_else(|| {
+                bool_property(ctx, properties, "LinkTransform")?.ok_or_else(|| {
                     malformed("LinkPlacement and Placement require a valid LinkTransform policy")
                 })?;
             Ok(Some(if use_link_placement {
@@ -938,8 +938,8 @@ fn metadata_string(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name
     value.attribute("value").map(|value| retained_string(ctx, value, "fcstd product metadata")).transpose()
 }
 
-fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
+fn bool_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
+    let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyBool", name, "Bool")?;
@@ -957,8 +957,8 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bo
     })
 }
 
-fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
+fn integer_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
+    let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
@@ -980,7 +980,7 @@ fn copy_on_change_property(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<Option<NativeCopyOnChangePolicy>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "LinkCopyOnChange")? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, "LinkCopyOnChange")? else {
         return Ok(None);
     };
     let value = single_value(
@@ -1012,7 +1012,7 @@ fn linked_target(
     expected_type: &str,
     root: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
@@ -1044,11 +1044,11 @@ fn neutral_link_target(
     }))
 }
 
-fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
-    if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
+fn scale_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
+    if let Some(property) = sole_named_property(ctx, "product", properties, "ScaleVector")? {
         return vector_property(property).map(Some);
     }
-    let Some(property) = sole_named_property("product", properties, "Scale")? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, "Scale")? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
@@ -1104,7 +1104,7 @@ fn parse_finite(
 }
 
 fn bool_list(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(Vec::new());
     };
     let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;

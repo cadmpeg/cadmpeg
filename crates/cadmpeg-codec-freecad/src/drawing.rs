@@ -40,7 +40,7 @@ pub(crate) fn transfer(
             owned.extend_from_slice(source);
             ensure_unique_property_names(ctx, &owned)?;
             let kind = if is_page_type(&object.type_name) {
-                let view_links = typed_property(&owned, "Views", "App::PropertyLinkList")?
+                let view_links = typed_property(ctx, &owned, "Views", "App::PropertyLinkList")?
                     .map(PropertyRecord::links).unwrap_or(&[]);
                 let mut views = collection_vec(ctx, view_links.len(), "fcstd drawing page views")?;
                 for link in view_links.iter().flatten() {
@@ -48,7 +48,7 @@ pub(crate) fn transfer(
                         views.push(retained_string(ctx, name, "fcstd drawing page view")?);
                     }
                 }
-                let template_link = typed_single_link(&owned, "Template", "App::PropertyLink")?;
+                let template_link = typed_single_link(ctx, &owned, "Template", "App::PropertyLink")?;
                 let template = template_link.and_then(|link| link.object())
                     .map(|name| retained_string(ctx, name, "fcstd drawing page template")).transpose()?;
                 TechDrawKind::Page {
@@ -140,7 +140,7 @@ pub(crate) fn transfer_neutral(
             };
             Ok(ReferenceSelection::new(target, retained_strings(ctx, link.subelements(), "fcstd drawing relationship subelements")?))
         };
-        let parameter = |name: &str| scalar_property(&owned, name);
+        let parameter = |name: &str| scalar_property(ctx, &owned, name);
         let x = parameter("X")?;
         let y = parameter("Y")?;
         let position = match (x, y) {
@@ -162,7 +162,7 @@ pub(crate) fn transfer_neutral(
             .transpose()?;
         let rotation_degrees = parameter("Rotation")?;
         let direction = if record.parameters.contains_key("Direction") {
-            let value = vector_property(&owned, "Direction")?
+            let value = vector_property(ctx, &owned, "Direction")?
                 .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
             Some(NonzeroVector::from_finite(value).ok_or_else(|| {
                 CodecError::malformed("drawing direction must be finite and nonzero")
@@ -316,10 +316,11 @@ fn registered_drawing_kind(runtime_type: &str) -> Option<DrawingKind> {
 }
 
 fn scalar_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
@@ -337,10 +338,11 @@ fn scalar_property(
 }
 
 fn vector_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<FiniteVector<3>>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
@@ -360,7 +362,7 @@ fn source_links(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(Vec::new());
     };
     let valid_type = match name {
@@ -435,11 +437,12 @@ fn is_link_list_type(type_name: &str) -> bool {
 }
 
 fn typed_single_link<'a>(
+    ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
     name: &str,
     type_name: &str,
 ) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_name)? else {
+    let Some(property) = typed_property(ctx, properties, name, type_name)? else {
         return Ok(None);
     };
     match property.links() {
@@ -452,11 +455,12 @@ fn typed_single_link<'a>(
 }
 
 fn typed_property<'a>(
+    ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
     name: &str,
     type_name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let Some(property) = sole_named_property("drawing", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
     if property.type_name != type_name {
@@ -494,7 +498,7 @@ fn drawing_parameters(
     ];
     let mut parameters = BTreeMap::new();
     for name in NAMES {
-        let Some(property) = sole_named_property("drawing", properties, name)? else {
+        let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
             continue;
         };
         validate_drawing_property(name, property)?;
@@ -508,7 +512,7 @@ fn drawing_parameters(
         );
     }
     for name in VALIDATED_ONLY_NAMES {
-        if let Some(property) = sole_named_property("drawing", properties, name)? {
+        if let Some(property) = sole_named_property(ctx, "drawing", properties, name)? {
             validate_drawing_property(name, property)?;
         }
     }

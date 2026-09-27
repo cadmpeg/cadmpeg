@@ -379,7 +379,7 @@ fn optional_scalar_property(
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<f64>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_names)? else {
+    let Some(property) = typed_property(ctx, properties, name, type_names)? else {
         return Ok(None);
     };
     let attributes = direct_value_attributes(ctx, property, "Float", &["value"])?;
@@ -401,7 +401,7 @@ fn optional_vector_property(
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_names)? else {
+    let Some(property) = typed_property(ctx, properties, name, type_names)? else {
         return Ok(None);
     };
     let attributes =
@@ -430,7 +430,7 @@ fn string_property(
     name: &str,
     type_name: &str,
 ) -> Result<Option<String>, CodecError> {
-    let Some(property) = typed_property(properties, name, &[type_name])? else {
+    let Some(property) = typed_property(ctx, properties, name, &[type_name])? else {
         return Ok(None);
     };
     let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
@@ -443,11 +443,12 @@ fn string_property(
 }
 
 fn typed_property<'a>(
+    ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let Some(property) = sole_named_property("annotation", properties, name)? else {
+    let Some(property) = sole_named_property(ctx, "annotation", properties, name)? else {
         return Ok(None);
     };
     if !type_names.contains(&property.type_name.as_str()) {
@@ -468,7 +469,7 @@ fn validate_text_carriers(
     let Some(carrier) = &schema.text else {
         return Ok(());
     };
-    if let Some(property) = typed_property(properties, carrier.property, &[carrier.type_name])? {
+    if let Some(property) = typed_property(ctx, properties, carrier.property, &[carrier.type_name])? {
         strict_text_values(ctx, property, carrier.type_name)?;
     }
     Ok(())
