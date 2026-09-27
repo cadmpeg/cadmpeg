@@ -594,8 +594,8 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     let prefix_len = crate::ids::native_scope(bulk_name).len() as u64;
     let suffix_len = ":design-component-naming-space#2".len() as u64;
     for (allowance, operation) in [
-        (prefix_len - 1, "f3d native stream key"),
-        (prefix_len + suffix_len - 1, "f3d component naming space id suffix"),
+        (context_uuid.len() as u64 + prefix_len - 1, "f3d native stream key"),
+        (context_uuid.len() as u64 + prefix_len + suffix_len - 1, "f3d component naming space id suffix"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = allowance;
@@ -614,6 +614,45 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     assert_eq!(spaces.len(), 1);
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(spaces[0].id, crate::ids::native_design_component_naming_space_id(bulk_name, 2));
+}
+
+#[test]
+fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    const TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
+    const UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let meta = design_metastream_with_records(
+        &[(TYPE_GUID, "21F379C8-CAFD-4985-B461-767673A4C502", 0, "Component", &[17])],
+        &[],
+    );
+    for inline_type in [false, true] {
+        let mut bulk = vec![0xaa, 0xbb, 1];
+        bulk.extend_from_slice(&17u64.to_le_bytes());
+        if inline_type {
+            bulk.extend_from_slice(&(TYPE_GUID.len() as u32).to_le_bytes());
+            bulk.extend_from_slice(TYPE_GUID.as_bytes());
+        }
+        bulk.extend_from_slice(&[0, 0]);
+        crate::test_support::lp_utf16(&mut bulk, UUID);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored).unwrap();
+        zip.write_all(&meta).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(UUID.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = with_scan(&archive, |scan| super::decode_component_naming_spaces(&ctx, scan))
+            .err().unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "f3d Design UTF-16 text"));
+    }
 }
 
 #[test]
