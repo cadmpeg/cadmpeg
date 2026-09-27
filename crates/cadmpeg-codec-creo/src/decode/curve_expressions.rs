@@ -433,35 +433,64 @@ pub(super) fn transfer_curve_expression_features(
                     .dash(record.offset)
                     .dash(assignment_ordinal),
             );
-            let mut dependencies = assignment
-                .dependencies
-                .iter()
-                .filter_map(|name| {
-                    unique_assignment_indices
-                        .get(&crate::curve::expression_identifier_key(name))
-                        .copied()
-                })
-                .filter(|dependency| !cyclic_edges.contains(&(assignment_ordinal, *dependency)))
-                .scan(BTreeSet::new(), |seen, dependency| {
-                    seen.insert(dependency).then_some(dependency)
-                })
-                .map(|dependency| {
-                    ParameterId::compose(
+            let mut seen = BTreeSet::new();
+            let mut dependencies = Vec::new();
+            let mut dimension_dependencies = Vec::new();
+            for name in &assignment.dependencies {
+                let (mut key, _key_reservation) =
+                    ctx.copy_scoped_text(name, "creo curve-expression dependency key")?;
+                key.make_ascii_lowercase();
+                if let Some(&dependency) = unique_assignment_indices.get(&key) {
+                    if cyclic_edges.contains(&(assignment_ordinal, dependency))
+                        || seen.contains(&dependency)
+                    {
+                        continue;
+                    }
+                    ctx.charge_collection_items(1, "creo curve-expression seen dependencies")?;
+                    seen.insert(dependency);
+                    ctx.try_reserve_items(
+                        &mut dependencies,
+                        1,
+                        "creo curve-expression parameter dependencies",
+                    )?;
+                    dependencies.push(ParameterId::compose(
                         &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
                         cadmpeg_ir::ids::IdentityKey::from(record.entity_id)
                             .dash(record.offset)
                             .dash(dependency),
-                    )
-                })
-                .collect::<Vec<_>>();
-            dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
-                let key = crate::curve::expression_identifier_key(name);
-                if assignment_indices_by_name.contains_key(&key) {
-                    None
-                } else {
-                    dimension_parameters.get(&key).cloned()
+                    ));
                 }
-            }));
+                if assignment_indices_by_name.contains_key(&key) {
+                    continue;
+                }
+                let Some(parameter) = dimension_parameters.get(&key) else {
+                    continue;
+                };
+                if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
+                    continue;
+                }
+                ctx.try_reserve_items(
+                    &mut dimension_dependencies,
+                    1,
+                    "creo curve-expression dimension candidates",
+                )?;
+                dimension_dependencies.push(parameter);
+            }
+            for parameter in dimension_dependencies {
+                ctx.try_reserve_items(
+                    &mut dependencies,
+                    1,
+                    "creo curve-expression dimension dependencies",
+                )?;
+                let copied = ctx.copy_retained_text(
+                    parameter.as_str(),
+                    "creo curve-expression dimension parameter id",
+                )?;
+                let copied = ParameterId::try_from(copied).map_err(|_| {
+                    CodecError::malformed("curve expression dimension parameter id is invalid")
+                })?;
+                dependencies.push(copied);
+            }
             let external_dependencies = assignment
                 .dependencies
                 .iter()
@@ -582,6 +611,12 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model parameters")?;
+            for prior_members in 0..dependencies.len() {
+                ctx.charge_work(
+                    prior_members as u64,
+                    "validate Creo curve-expression dependency uniqueness",
+                )?;
+            }
             source_carriers.admit_parameter(
                 ir,
                 DesignParameter {
@@ -608,7 +643,10 @@ pub(super) fn transfer_curve_expression_features(
                             Some(ParameterValue::String(value.clone()))
                         }
                     }),
-                    dependencies: dependencies.into_iter().collect(),
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+                        dependencies,
+                    )
+                    .map_err(CodecError::malformed)?,
                     properties: cadmpeg_core::text::named_entries(
                         parameter_id.as_str(),
                         properties,

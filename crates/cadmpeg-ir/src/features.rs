@@ -6388,6 +6388,18 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
 }
 
 impl<T: PartialEq> DistinctMembers<T> {
+    /// Validates source-order uniqueness without allocating another collection.
+    ///
+    /// The caller owns admission and fallible reservation of `values`.
+    pub fn try_from_reserved_vec(values: Vec<T>) -> Result<Self, &'static str> {
+        for (index, member) in values.iter().enumerate() {
+            if values[..index].contains(member) {
+                return Err("members must be distinct");
+            }
+        }
+        Ok(Self(values))
+    }
+
     /// Inserts a member unless it is already present, and returns whether it was added.
     pub fn insert(&mut self, value: T) -> bool {
         if self.0.contains(&value) {

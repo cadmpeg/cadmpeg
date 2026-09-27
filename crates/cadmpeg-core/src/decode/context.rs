@@ -272,6 +272,21 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
+    /// Copies temporary UTF-8 text while its scoped-byte reservation is held.
+    pub fn copy_scoped_text(
+        &self,
+        value: &str,
+        operation: &'static str,
+    ) -> Result<(String, ScopedReservation<'_>), CodecError> {
+        let bytes = u64_from_index(value.len());
+        let reservation = self.reserve_scoped(bytes, operation)?;
+        let mut text = String::new();
+        text.try_reserve(value.len())
+            .map_err(|_| self.budget.materialized_allocation_failed(bytes, operation))?;
+        text.push_str(value);
+        Ok((text, reservation))
+    }
+
     /// Allocates `count` copies of `value` after charging collection items and
     /// reserving without panicking on allocator refusal.
     ///
@@ -737,5 +752,32 @@ mod tests {
                     && limit.operation == "test collection reservation"
         ));
         assert!(ctx.finish_session().is_err());
+    }
+
+    #[test]
+    fn scoped_text_copy_refuses_before_allocation_and_releases_on_drop() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+            .expect("test input fits the policy");
+        {
+            let (copy, _reservation) = ctx
+                .copy_scoped_text("abc", "test scoped text")
+                .expect("three temporary bytes are admitted");
+            assert_eq!(copy, "abc");
+        }
+        assert_eq!(
+            ctx.copy_scoped_text("def", "test scoped text")
+                .expect("the prior reservation was released")
+                .0,
+            "def"
+        );
+        let error = ctx
+            .copy_scoped_text("abcd", "test scoped text")
+            .expect_err("four bytes exceed the temporary limit");
+        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "test scoped text"));
     }
 }
