@@ -20,6 +20,35 @@ pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) ->
         .collect()
 }
 
+/// Compare a numbered identity without constructing a temporary identity string.
+pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32) -> bool {
+    let Some(suffix) = actual.strip_prefix(prefix) else {
+        return false;
+    };
+    let mut digits = 1;
+    let mut remaining = number;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    suffix.len() == digits && suffix.parse::<u32>().ok() == Some(number)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matches_numbered_identity;
+
+    #[test]
+    fn numbered_identity_match_requires_canonical_decimal_bytes() {
+        let prefix = "creo:visibgeom:surface#";
+        assert!(matches_numbered_identity("creo:visibgeom:surface#0", prefix, 0));
+        assert!(matches_numbered_identity("creo:visibgeom:surface#4294967295", prefix, u32::MAX));
+        assert!(!matches_numbered_identity("creo:visibgeom:surface#01", prefix, 1));
+        assert!(!matches_numbered_identity("creo:visibgeom:surface#+1", prefix, 1));
+        assert!(!matches_numbered_identity("creo:visibgeom:face#1", prefix, 1));
+    }
+}
+
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "body");
 pub(crate) const VISIBGEOM_COEDGE: IdentityNamespace =
