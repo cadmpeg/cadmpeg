@@ -177,3 +177,38 @@ fn depdb_curve_boundaries_refuse_before_vec_growth() {
                 && limit.operation == "creo cross-section row boundaries"
     ));
 }
+
+#[test]
+fn depdb_segment_unique_candidates_need_no_collection_items() {
+    let segment = [7, 8, 4, 1, 0xf6, 0, 9, 10, 0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&segment, &arena, &policy).expect("root input is admitted");
+    let row = super::super::parse_depdb_curve_segment(
+        &ctx,
+        &segment,
+        0,
+        &crate::scalar::ScalarCache::default(),
+    )
+    .expect("candidate scan has no collection")
+    .expect("one prefix and one suffix");
+    assert_eq!(row.id, 7);
+    assert_eq!(row.suffix.x1, 9);
+}
+
+#[test]
+fn depdb_segment_distinct_prefixes_remain_ambiguous() {
+    let segment = [7, 8, 4, 1, 0xf6, 8, 8, 4, 1, 0xf6, 0, 9, 10, 0];
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::parse_depdb_curve_segment(
+            ctx,
+            &segment,
+            0,
+            &crate::scalar::ScalarCache::default(),
+        )
+    })
+    .expect("ambiguous segment is parsed")
+    .is_none());
+}
