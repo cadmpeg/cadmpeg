@@ -247,35 +247,49 @@ impl<T> From<SearchOutcome<T>> for MeshSolve<T, MeshCandidateFailure<(), (), ()>
 }
 
 fn enforce_edge_arc_consistency(
+    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
     edges: &[[usize; 2]],
     edge_ids: &[usize],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget<'_>>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let support_work = edge_ids
         .iter()
         .map(|edge| edge_candidates[*edge].len().saturating_mul(2))
         .sum::<usize>();
     if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
-        return false;
+        return Ok(false);
     }
-    let supports = edge_ids
-        .iter()
-        .map(|edge| {
-            let mut supports = HashMap::<usize, HashSet<usize>>::new();
-            for [left, right] in edge_candidates[*edge].iter().copied() {
-                supports.entry(left).or_default().insert(right);
-                supports.entry(right).or_default().insert(left);
+    let mut supports = Vec::new();
+    for &edge in edge_ids {
+        let mut edge_supports = HashMap::<usize, HashSet<usize>>::new();
+        for [left, right] in edge_candidates[edge].iter().copied() {
+            for (point, neighbor) in [(left, right), (right, left)] {
+                crate::resource::admit_map_entry(
+                    ctx,
+                    &mut edge_supports,
+                    &point,
+                    "catia_arc_support_points",
+                )?;
+                crate::resource::insert_set(
+                    ctx,
+                    edge_supports.entry(point).or_default(),
+                    neighbor,
+                    "catia_arc_support_neighbors",
+                )?;
             }
-            supports
-        })
-        .collect::<Vec<_>>();
-    let mut queued = vec![[true; 2]; edges.len()];
-    let mut queue = (0..edges.len())
-        .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
-        .collect::<VecDeque<_>>();
+        }
+        crate::resource::push(ctx, &mut supports, edge_supports, "catia_arc_support_edges")?;
+    }
+    let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_queued")?;
+    let mut queue = VecDeque::new();
+    for edge in 0..edges.len() {
+        for side in 0..2 {
+            crate::resource::push_back(ctx, &mut queue, (edge, side), "catia_arc_queue")?;
+        }
+    }
     while let Some((edge, side)) = queue.pop_front() {
         queued[edge][side] = false;
         if supports[edge].is_empty() {
@@ -283,7 +297,10 @@ fn enforce_edge_arc_consistency(
         }
         let root = edges[edge][side];
         let other = edges[edge][1 - side];
-        let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
+        let mut other_domain = HashSet::new();
+        for &point in &domains[other] {
+            crate::resource::insert_set(ctx, &mut other_domain, point, "catia_arc_other_domain")?;
+        }
         let before = domains[root].len();
         domains[root].retain(|point| {
             let Some(supported) = supports[edge].get(point) else {
@@ -295,7 +312,7 @@ fn enforce_edge_arc_consistency(
             supported.iter().any(|point| other_domain.contains(point))
         });
         if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
-            return false;
+            return Ok(false);
         }
         if domains[root].len() == before {
             continue;
@@ -305,27 +322,34 @@ fn enforce_edge_arc_consistency(
             let revised_side = 1 - neighbor_side;
             if !queued[neighbor][revised_side] {
                 queued[neighbor][revised_side] = true;
-                queue.push_back((neighbor, revised_side));
+                crate::resource::push_back(
+                    ctx,
+                    &mut queue,
+                    (neighbor, revised_side),
+                    "catia_arc_queue",
+                )?;
             }
         }
     }
-    true
+    Ok(true)
 }
 
 fn enforce_edge_arc_consistency_from(
+    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
     edges: &[[usize; 2]],
     root_edges: &[Vec<usize>],
     edge_candidates: &[Vec<[usize; 2]>],
     initial_edges: &[usize],
     budget: Option<&WorkBudget<'_>>,
-) -> bool {
-    let mut queued = vec![[true; 2]; edges.len()];
-    let mut queue = initial_edges
-        .iter()
-        .copied()
-        .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
-        .collect::<VecDeque<_>>();
+) -> Result<bool, CodecError> {
+    let mut queued = ctx.alloc_filled(edges.len(), [true; 2], "catia_arc_from_queued")?;
+    let mut queue = VecDeque::new();
+    for &edge in initial_edges {
+        for side in 0..2 {
+            crate::resource::push_back(ctx, &mut queue, (edge, side), "catia_arc_from_queue")?;
+        }
+    }
     queued.fill([false; 2]);
     for &edge in initial_edges {
         queued[edge] = [true; 2];
@@ -338,7 +362,15 @@ fn enforce_edge_arc_consistency_from(
         }
         let root = edges[edge][side];
         let other = edges[edge][1 - side];
-        let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
+        let mut other_domain = HashSet::new();
+        for &point in &domains[other] {
+            crate::resource::insert_set(
+                ctx,
+                &mut other_domain,
+                point,
+                "catia_arc_from_other_domain",
+            )?;
+        }
         let before = domains[root].len();
         domains[root].retain(|point| {
             if budget.is_some_and(|budget| !budget.charge_by(work_units(candidates.len()))) {
@@ -350,7 +382,7 @@ fn enforce_edge_arc_consistency_from(
             })
         });
         if budget.is_some_and(WorkBudget::exhausted) || domains[root].is_empty() {
-            return false;
+            return Ok(false);
         }
         if domains[root].len() == before {
             continue;
@@ -360,21 +392,30 @@ fn enforce_edge_arc_consistency_from(
             let revised_side = 1 - neighbor_side;
             if !queued[neighbor][revised_side] {
                 queued[neighbor][revised_side] = true;
-                queue.push_back((neighbor, revised_side));
+                crate::resource::push_back(
+                    ctx,
+                    &mut queue,
+                    (neighbor, revised_side),
+                    "catia_arc_from_queue",
+                )?;
             }
         }
     }
-    true
+    Ok(true)
 }
 
 fn enforce_sparse_endpoint_membership(
+    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<usize>],
     edges: &[[usize; 2]],
     edge_ids: &[usize],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget<'_>>,
-) -> bool {
-    let mut ordered = (0..edges.len()).collect::<Vec<_>>();
+) -> Result<bool, CodecError> {
+    let mut ordered = Vec::new();
+    for edge in 0..edges.len() {
+        crate::resource::push(ctx, &mut ordered, edge, "catia_sparse_ordered_edges")?;
+    }
     ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
     for edge in ordered {
         let candidates = &edge_candidates[edge_ids[edge]];
@@ -393,18 +434,121 @@ fn enforce_sparse_endpoint_membership(
             continue;
         }
         if budget.is_some_and(|budget| !budget.charge_by(work)) {
-            return false;
+            return Ok(false);
         }
-        let allowed = candidates.iter().flatten().copied().collect::<HashSet<_>>();
+        let mut allowed = HashSet::new();
+        for point in candidates.iter().flatten().copied() {
+            crate::resource::insert_set(ctx, &mut allowed, point, "catia_sparse_allowed_points")?;
+        }
         domains[left].retain(|point| allowed.contains(point));
         if right != left {
             domains[right].retain(|point| allowed.contains(point));
         }
         if domains[left].is_empty() || domains[right].is_empty() {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
+}
+
+#[test]
+fn arc_consistency_refuses_before_incompatible_domains() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_edge_arc_consistency(
+            ctx,
+            &mut domains,
+            &[[0, 1]],
+            &[0],
+            &[vec![0], vec![0]],
+            &[vec![[0, 1]]],
+            None,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(false) => break,
+            _ => panic!("unexpected arc consistency result"),
+        }
+    }
+    for operation in [
+        "catia_arc_support_points",
+        "catia_arc_support_neighbors",
+        "catia_arc_support_edges",
+        "catia_arc_queued",
+        "catia_arc_queue",
+        "catia_arc_other_domain",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn arc_consistency_from_refuses_before_incompatible_domains() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_edge_arc_consistency_from(
+            ctx,
+            &mut domains,
+            &[[0, 1]],
+            &[vec![0], vec![0]],
+            &[vec![[0, 1]]],
+            &[0],
+            None,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(false) => break,
+            _ => panic!("unexpected incremental arc result"),
+        }
+    }
+    for operation in [
+        "catia_arc_from_queued",
+        "catia_arc_from_queue",
+        "catia_arc_from_other_domain",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn sparse_membership_refuses_before_incompatible_domains() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut domains = vec![vec![2, 3], vec![1, 2]];
+        enforce_sparse_endpoint_membership(
+            ctx,
+            &mut domains,
+            &[[0, 1]],
+            &[0],
+            &[vec![[0, 1]]],
+            None,
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(false) => break,
+            _ => panic!("unexpected sparse membership result"),
+        }
+    }
+    for operation in ["catia_sparse_ordered_edges", "catia_sparse_allowed_points"] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[derive(Clone)]
@@ -727,13 +871,14 @@ impl MeshCoordinateRootDomains {
         loop {
             let domain_lengths = domains.iter().map(Vec::len).collect::<Vec<_>>();
             if !enforce_edge_arc_consistency_from(
+                ctx,
                 &mut domains,
                 &self.edges,
                 &self.root_edges,
                 edge_candidates,
                 &affected_edges,
                 budget,
-            ) {
+            )? {
                 return Ok(None);
             }
             let mut roots_by_point =
@@ -1498,22 +1643,24 @@ impl MeshQuotient {
             }
         }
         if !enforce_sparse_endpoint_membership(
+            ctx,
             &mut domains,
             &edges,
             &edge_ids,
             edge_candidates,
             budget,
-        ) {
+        )? {
             return Ok(None);
         }
         if !enforce_edge_arc_consistency(
+            ctx,
             &mut domains,
             &edges,
             &edge_ids,
             &root_edges,
             edge_candidates,
             budget,
-        ) {
+        )? {
             return Ok(None);
         }
         let mut supported_candidates = edge_candidates.to_vec();
@@ -1546,13 +1693,14 @@ impl MeshQuotient {
                 break;
             }
             if !enforce_edge_arc_consistency_from(
+                ctx,
                 &mut domains,
                 &edges,
                 &root_edges,
                 &supported_candidates,
                 &changed,
                 budget,
-            ) {
+            )? {
                 return Ok(None);
             }
         }

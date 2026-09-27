@@ -1657,12 +1657,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
             }
         }
         if !enforce_sparse_endpoint_membership(
+            ctx,
             &mut local_domains,
             &local_edges,
             &edge_ids,
             edge_candidates,
             budget,
-        ) {
+        )? {
             if budget.is_some_and(WorkBudget::exhausted) {
                 exhausted.set(true);
             }
@@ -1684,13 +1685,14 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
         let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
         let arc_consistent = enforce_edge_arc_consistency(
+            ctx,
             &mut arc_domains,
             &local_edges,
             &edge_ids,
             &root_edges,
             edge_candidates,
             arc_budget.as_ref(),
-        );
+        )?;
         if arc_consistent {
             if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
                 let work = budget.remaining() - arc_budget.remaining();
