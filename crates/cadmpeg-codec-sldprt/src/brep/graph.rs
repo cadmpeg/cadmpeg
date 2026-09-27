@@ -655,7 +655,7 @@ fn resolve_sweep_surface(
         "sldprt sweep construction at byte {} for surface attr {}",
         construction.offset, face.surface_attr
     );
-    let Some(curve) = sweep::profile_nurbs(&profile.carrier().geometry, &record, refusal) else { return Ok(None) };
+    let Some(curve) = sweep::profile_nurbs(ctx, &profile.carrier().geometry, &record, refusal)? else { return Ok(None) };
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
@@ -1854,6 +1854,7 @@ fn decode_graph(
                         };
                         let Some((geometry, parameter_range, source)) =
                             intersection_support_pcurve(
+                                ctx,
                                 support_data,
                                 curve,
                                 f.surface_attr,
@@ -4005,9 +4006,10 @@ fn derive_nurbs_isoparametric_pcurves(
                     Ok(resolution) => resolution,
                     Err(NurbsPcurveFailure::Carrier(error)) => {
                         lane_refusals.note(
+                            ctx,
                             format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
                             &error,
-                        );
+                        )?;
                         continue;
                     }
                     Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit.into()),
@@ -4172,37 +4174,44 @@ fn analytic_pcurve_chord_bound(
 }
 
 fn intersection_support_pcurve(
+    ctx: &DecodeContext<'_>,
     support_data: &super::intersection::IntersectionSupportData,
     chart: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     surface_attr: u16,
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<
-    Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>,
-    cadmpeg_core::decode::ResourceLimit,
-> {
-    let candidate = (|| {
+) -> Result<Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>, cadmpeg_core::CodecError> {
+    macro_rules! some_or_none {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    (|| -> Result<Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>, cadmpeg_core::CodecError> {
         if chart.degree() != 1
-            || chart.weights().is_some()
+            || matches!(chart.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. })
             || chart.periodic()
             || !support_data.fit_tolerance_mm.is_finite()
             || support_data.fit_tolerance_mm <= 0.0
         {
-            return None;
+            return Ok(None);
         }
-        let parameter_range = nurbs_curve_parameter_domain(chart)?.endpoints();
+        let parameter_range = some_or_none!(nurbs_curve_parameter_domain(chart)).endpoints();
+        let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points: chart_points } = chart.pole_rows() else { return Ok(None) };
         let support_index = match support_data.supports.map(|support| support == surface_attr) {
             [true, false] => 0,
             [false, true] => 1,
-            _ => return None,
+            _ => return Ok(None),
         };
         let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
             (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
         };
         let model_endpoints = [
-            *chart.control_points().first()?,
-            *chart.control_points().last()?,
+            *some_or_none!(chart_points.first()),
+            *some_or_none!(chart_points.last()),
         ];
         let direct_error = squared_distance(model_endpoints[0].get(), edge_endpoints[0])
             + squared_distance(model_endpoints[1].get(), edge_endpoints[1]);
@@ -4214,7 +4223,10 @@ fn intersection_support_pcurve(
             [edge_endpoints[1], edge_endpoints[0]]
         };
         let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
-            let mut control_points = support_uv[support_index].clone();
+            let source_points = &support_uv[support_index];
+            let mut control_points = Vec::new();
+            ctx.reserve_collection_vec(&mut control_points, source_points.len(), "copy intersection support UV controls")?;
+            control_points.extend_from_slice(source_points);
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
                     for point in &mut control_points {
@@ -4235,14 +4247,15 @@ fn intersection_support_pcurve(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {}
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {}
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {}
-                _ => return None,
+                _ => return Ok(None),
             }
             (control_points, IntersectionPcurveSource::StoredCache)
         } else {
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                    let mut control_points = Vec::with_capacity(chart.pole_count());
-                    for point in chart.control_points() {
+                    let mut control_points = Vec::new();
+                    ctx.reserve_collection_vec(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
+                    for point in chart_points {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             surface,
                             point.get(),
@@ -4250,22 +4263,20 @@ fn intersection_support_pcurve(
                             support_data.fit_tolerance_mm,
                         ) {
                             Ok(Some(parameters)) => parameters,
-                            Ok(None) => return None,
-                            Err(limit) => return Some(Err(limit)),
+                            Ok(None) => return Ok(None),
+                            Err(limit) => return Err(limit.into()),
                         };
                         control_points.push(parameters.get());
                     }
                     (control_points, IntersectionPcurveSource::NurbsInverse)
                 }
                 _ => {
-                    let mut control_points = chart
-                        .control_points()
-                        .into_iter()
-                        .map(|point| {
-                            analytic_surface_parameters(surface, point.get())
-                                .map(cadmpeg_ir::math::Point2::from)
-                        })
-                        .collect::<Option<Vec<_>>>()?;
+                    let mut control_points = Vec::new();
+                    ctx.reserve_collection_vec(&mut control_points, chart_points.len(), "project intersection analytic controls")?;
+                    for point in chart_points {
+                        let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
+                        control_points.push(cadmpeg_ir::math::Point2::from(parameters));
+                    }
                     for index in 1..control_points.len() {
                         let previous = control_points[index - 1];
                         match surface {
@@ -4294,7 +4305,7 @@ fn intersection_support_pcurve(
                                     * std::f64::consts::TAU;
                             }
                             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
-                            _ => return None,
+                            _ => return Ok(None),
                         }
                         if matches!(
                             surface,
@@ -4310,8 +4321,8 @@ fn intersection_support_pcurve(
                 }
             }
         };
-        if control_points.len() != chart.control_points().len() {
-            return None;
+        if control_points.len() != chart_points.len() {
+            return Ok(None);
         }
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = surface {
             let tolerance = inverse_coordinate_tolerance(edge_endpoints);
@@ -4324,8 +4335,8 @@ fn intersection_support_pcurve(
                     tolerance,
                 ) {
                     Ok(Some(parameters)) => parameters.get(),
-                    Ok(None) => return None,
-                    Err(limit) => return Some(Err(limit)),
+                    Ok(None) => return Ok(None),
+                    Err(limit) => return Err(limit.into()),
                 };
             }
         } else {
@@ -4338,7 +4349,7 @@ fn intersection_support_pcurve(
             for (index, target) in [(0, targets[0]), (last, targets[1])] {
                 let reference = control_points[index];
                 let mut parameters =
-                    cadmpeg_ir::math::Point2::from(analytic_surface_parameters(surface, target)?);
+                    cadmpeg_ir::math::Point2::from(some_or_none!(analytic_surface_parameters(surface, target)));
                 match surface {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
                         parameters.u = adjust_periodic(parameters.u, reference.u);
@@ -4353,7 +4364,7 @@ fn intersection_support_pcurve(
                         parameters.u = adjust_periodic(parameters.u, reference.u);
                     }
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
-                    _ => return None,
+                    _ => return Ok(None),
                 }
                 if matches!(
                     surface,
@@ -4365,46 +4376,47 @@ fn intersection_support_pcurve(
             }
         }
         let tolerance = inverse_coordinate_tolerance(edge_endpoints);
-        for (parameters, target) in [control_points.first()?, control_points.last()?]
+        for (parameters, target) in [some_or_none!(control_points.first()), some_or_none!(control_points.last())]
             .into_iter()
             .zip(targets)
         {
             let point = match surface_point(surface, parameters.u, parameters.v) {
                 Ok(point) => point.get(),
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                    return Some(Err(limit))
+                    return Err(limit.into())
                 }
-                Err(_) => return None,
+                Err(_) => return Ok(None),
             };
             if squared_distance(point, target) > tolerance * tolerance {
-                return None;
+                return Ok(None);
             }
         }
-        let mut mapped_points = Vec::with_capacity(control_points.len());
+        let mut mapped_points = Vec::new();
+        ctx.reserve_collection_vec(&mut mapped_points, control_points.len(), "map intersection support controls")?;
         for parameters in &control_points {
             let point = match surface_point(surface, parameters.u, parameters.v) {
                 Ok(point) => point.get(),
                 Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                    return Some(Err(limit))
+                    return Err(limit.into())
                 }
-                Err(_) => return None,
+                Err(_) => return Ok(None),
             };
             mapped_points.push(point);
         }
-        let control_errors = mapped_points
-            .iter()
-            .zip(chart.control_points())
-            .map(|(point, target)| squared_distance(*point, target.get()).sqrt())
-            .collect::<Vec<_>>();
+        let mut control_errors = Vec::new();
+        ctx.reserve_collection_vec(&mut control_errors, mapped_points.len(), "check intersection support control errors")?;
+        control_errors.extend(mapped_points.iter().zip(chart_points).map(|(point, target)| {
+            squared_distance(*point, target.get()).sqrt()
+        }));
         if control_errors
             .iter()
             .any(|error| !error.is_finite() || *error > support_data.fit_tolerance_mm)
         {
-            return None;
+            return Ok(None);
         }
         for ((parameters, chord), endpoint_errors) in control_points
             .windows(2)
-            .zip(chart.control_points().windows(2))
+            .zip(chart_points.windows(2))
             .zip(control_errors.windows(2))
         {
             let exceeds = match surface {
@@ -4417,7 +4429,7 @@ fn intersection_support_pcurve(
                         Ok(error) => {
                             error.is_none_or(|error| error > support_data.fit_tolerance_mm)
                         }
-                        Err(limit) => return Some(Err(limit)),
+                        Err(limit) => return Err(limit.into()),
                     }
                 }
                 _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
@@ -4428,29 +4440,37 @@ fn intersection_support_pcurve(
                 ),
             };
             if exceeds {
-                return None;
+                return Ok(None);
             }
         }
+        let knots_source = chart.knots().as_slice();
+        let mut knots = Vec::new();
+        ctx.reserve_collection_vec(&mut knots, knots_source.len(), "copy intersection support pcurve knots")?;
+        knots.extend_from_slice(knots_source);
+        ctx.charge_collection_items(
+            u64::try_from(control_points.len()).map_err(|_| ctx.refuse_codec_limit("admit intersection support pcurve controls", u64::MAX - 1, u64::MAX))?,
+            "admit intersection support pcurve controls",
+        )?;
         let nurbs =
-            match PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false) {
+            match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     refusal.note(
+                        ctx,
                         format_args!(
                             "sldprt intersection support pcurve for surface attr {surface_attr}"
                         ),
                         &error,
-                    );
-                    return None;
+                    )?;
+                    return Ok(None);
                 }
             };
-        Some(Ok((
+        Ok(Some((
             PcurveGeometry::Nurbs { nurbs },
             parameter_range,
             source,
         )))
-    })();
-    candidate.transpose()
+    })()
 }
 
 fn resolve_axis_candidates<T, const N: usize>(
@@ -6286,6 +6306,23 @@ mod tests {
     use cadmpeg_ir::topology::Color;
     use cadmpeg_ir::topology::Sense;
 
+    fn intersection_support_pcurve(
+        support_data: &crate::brep::intersection::IntersectionSupportData,
+        chart: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+        surface_attr: u16,
+        surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+        edge_endpoints: [cadmpeg_ir::math::Point3; 2],
+        refusal: &mut crate::lane_refusal::LaneRefusals,
+    ) -> Result<Option<(super::PcurveGeometry, [f64; 2], super::IntersectionPcurveSource)>, cadmpeg_core::CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("empty test root fits service policy");
+        super::intersection_support_pcurve(
+            &ctx, support_data, chart, surface_attr, surface, edge_endpoints, refusal,
+        )
+    }
+
     fn test_nurbs_curve(
         degree: u32,
         knots: Vec<f64>,
@@ -6551,7 +6588,7 @@ mod tests {
                 ],
             ]),
         };
-        let (geometry, range, source) = super::intersection_support_pcurve(
+        let (geometry, range, source) = intersection_support_pcurve(
             &support_data,
             &chart,
             10,
@@ -6579,7 +6616,7 @@ mod tests {
             supports: [10, 10],
             ..support_data.clone()
         };
-        assert!(super::intersection_support_pcurve(
+        assert!(intersection_support_pcurve(
             &ambiguous,
             &chart,
             10,
@@ -6594,7 +6631,7 @@ mod tests {
             support_uv: Some([Vec::new(), Vec::new()]),
             ..support_data
         };
-        assert!(super::intersection_support_pcurve(
+        assert!(intersection_support_pcurve(
             &malformed,
             &chart,
             10,
@@ -6604,6 +6641,48 @@ mod tests {
         )
         .expect("resource allocation did not fail")
         .is_none());
+    }
+
+    #[test]
+    fn intersection_support_pcurve_refuses_collection_limit() {
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                ).expect("valid cylinder"),
+            ),
+        );
+        let endpoints = [
+            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("start").get(),
+            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("end").get(),
+        ];
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
+        let support_data = super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm: 0.2,
+            support_uv: Some([
+                vec![cadmpeg_ir::math::Point2::new(0.0, 0.0029), cadmpeg_ir::math::Point2::new(0.5, 0.0018)],
+                vec![cadmpeg_ir::math::Point2::new(0.0, 0.0), cadmpeg_ir::math::Point2::new(1.0, 0.0)],
+            ]),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).expect("empty root fits policy");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::intersection_support_pcurve(
+            &ctx, &support_data, &chart, 10, &surface, endpoints,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        ) else { panic!("two UV controls exceed one collection item") };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+        assert!(intersection_support_pcurve(
+            &support_data, &chart, 10, &surface, endpoints,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        ).expect("service policy").is_some());
     }
 
     #[test]
@@ -6633,7 +6712,7 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, source) = super::intersection_support_pcurve(
+        let (geometry, _, source) = intersection_support_pcurve(
             &support_data,
             &chart,
             10,
@@ -6661,7 +6740,7 @@ mod tests {
             fit_tolerance_mm: 0.009,
             ..support_data
         };
-        assert!(super::intersection_support_pcurve(
+        assert!(intersection_support_pcurve(
             &under_toleranced,
             &chart,
             10,
@@ -6701,7 +6780,7 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, _) = super::intersection_support_pcurve(
+        let (geometry, _, _) = intersection_support_pcurve(
             &support_data,
             &chart,
             10,
@@ -6756,7 +6835,7 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, source) = super::intersection_support_pcurve(
+        let (geometry, _, source) = intersection_support_pcurve(
             &support_data,
             &chart,
             10,
@@ -6806,7 +6885,7 @@ mod tests {
             support_uv: None,
         };
 
-        assert!(super::intersection_support_pcurve(
+        assert!(intersection_support_pcurve(
             &support_data(0.3),
             &chart,
             10,
@@ -6816,7 +6895,7 @@ mod tests {
         )
         .expect("resource allocation did not fail")
         .is_none());
-        assert!(super::intersection_support_pcurve(
+        assert!(intersection_support_pcurve(
             &support_data(0.34),
             &chart,
             10,

@@ -130,33 +130,81 @@ pub(super) struct SketchPlaneFrame {
 }
 
 pub(super) fn project_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
     frame: SketchPlaneFrame,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let SketchPlaneFrame {
         origin,
         u_axis,
         v_axis,
     } = frame;
-    let start = project_point(
-        *points.get(vertices.get(&edge.start)?)?,
-        origin,
-        u_axis,
-        v_axis,
-    );
-    let end = project_point(
-        *points.get(vertices.get(&edge.end)?)?,
-        origin,
-        u_axis,
-        v_axis,
-    );
+    let Some(start_id) = vertices.get(&edge.start) else { return Ok(None) };
+    let Some(start_point) = points.get(start_id) else { return Ok(None) };
+    let start = project_point(*start_point, origin, u_axis, v_axis);
+    let Some(end_id) = vertices.get(&edge.end) else { return Ok(None) };
+    let Some(end_point) = points.get(end_id) else { return Ok(None) };
+    let end = project_point(*end_point, origin, u_axis, v_axis);
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
-    let tolerance = EdgeProjectionTolerance::of(edge)?.get();
-    match edge.curve().and_then(|id| curves.get(id).copied()) {
+    let Some(tolerance) = EdgeProjectionTolerance::of(edge) else { return Ok(None) };
+    let tolerance = tolerance.get();
+    if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) =
+        edge.curve().and_then(|id| curves.get(id).copied())
+    {
+        let count = nurbs.pole_count();
+        let operation = "project SLDPRT sketch NURBS edge";
+        let knot_count = u64::try_from(nurbs.knots().as_slice().len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_collection_items(knot_count, operation)?;
+        let knots = nurbs.knots().try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        let mut projected = Vec::new();
+        ctx.reserve_collection_vec(&mut projected, count, operation)?;
+        match nurbs.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                projected.extend(points.iter().map(|point| {
+                    project_point(point.get(), origin, u_axis, v_axis)
+                }));
+            }
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                projected.extend(points.iter().map(|point| {
+                    project_point(point.point.get(), origin, u_axis, v_axis)
+                }));
+            }
+        }
+        let weights = match nurbs.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                let mut weights = Vec::new();
+                ctx.reserve_collection_vec(&mut weights, count, operation)?;
+                weights.extend(points.iter().map(|point| point.weight));
+                Some(weights)
+            }
+        };
+        let passes = if weights.is_some() { 2usize } else { 1usize };
+        let admitted = count.checked_mul(passes).ok_or_else(|| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_collection_items(
+            u64::try_from(admitted).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            operation,
+        )?;
+        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+            nurbs.degree(), knots, projected, weights, nurbs.periodic(),
+        ) {
+            Ok(nurbs) => Ok(Some(SketchGeometry::nurbs(nurbs))),
+            Err(error) => {
+                refusal.note(ctx, format_args!("sldprt projected sketch edge {}", edge.id), &error)?;
+                Ok(None)
+            }
+        };
+    }
+    let projected = (|| match edge.curve().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center().get();
             let radius = circle_curve.radius();
@@ -262,28 +310,7 @@ pub(super) fn project_edge(
                 .ok()?,
             )
         }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
-            match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-                nurbs.degree(),
-                nurbs.knots().clone(),
-                nurbs
-                    .control_points()
-                    .iter()
-                    .map(|point| project_point(point.get(), origin, u_axis, v_axis))
-                    .collect::<Vec<_>>(),
-                nurbs.weights(),
-                nurbs.periodic(),
-            ) {
-                Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),
-                Err(error) => {
-                    refusal.note(
-                        format_args!("sldprt projected sketch edge {}", edge.id),
-                        &error,
-                    );
-                    None
-                }
-            }
-        }
+        Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))) => None,
         None if edge.start == edge.end => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
@@ -291,7 +318,8 @@ pub(super) fn project_edge(
         Some(other) => Some(SketchGeometry::native(
             cadmpeg_core::text::NonBlankString::new(format!("{other:?}"))?,
         )),
-    }
+    })();
+    Ok(projected)
 }
 
 fn circle_contains_point(

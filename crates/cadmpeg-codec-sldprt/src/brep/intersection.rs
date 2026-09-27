@@ -515,9 +515,10 @@ fn solved_curve(
         Ok(nurbs) => nurbs,
         Err(error) => {
             refusal.note(
+                ctx,
                 format_args!("sldprt intersection chart curve for record attr {record_attr}"),
                 &error,
-            );
+            )?;
             return Ok(None);
         }
     };
