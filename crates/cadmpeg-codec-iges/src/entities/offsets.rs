@@ -3,6 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome};
+use crate::decode_resource::{reserve_optional_vec, reserve_optional_vec_growth};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -603,16 +604,17 @@ pub(super) fn project(
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source end cannot be evaluated"))?;
                     continue;
                 };
-                let controls = vec![
+                let mut controls = reserve_optional_vec(ctx, 2, "iges linear-offset controls")?;
+                controls.extend([
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
-                ];
-                // The controls are admitted with the offset construction, so a
-                // carrier refusal is stated first.
+                ]);
+                let mut knots = reserve_optional_vec(ctx, 4, "iges linear-offset knots")?;
+                knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
                 let offset_nurbs = match NurbsCurve::from_lanes(
                     1,
-                    vec![start, start, end, end],
+                    knots,
                     controls,
                     None,
                     false,
@@ -720,7 +722,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
+                let mut controls = reserve_optional_vec(ctx, function_nurbs.control_points().len(), "iges function-offset controls")?;
                 for (index, function_control) in
                     function_nurbs.control_points().iter().copied().enumerate()
                 {
@@ -750,11 +752,8 @@ pub(super) fn project(
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function controls cannot be composed"))?;
                     continue;
                 }
-                let knots = function_nurbs
-                    .knots()
-                    .iter()
-                    .map(|value| source_parameter(inverse_parameter(*value)))
-                    .collect();
+                let mut knots = reserve_optional_vec(ctx, function_nurbs.knots().len(), "iges function-offset knots")?;
+                knots.extend(function_nurbs.knots().iter().map(|value| source_parameter(inverse_parameter(*value))));
                 let Some(function_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
                     &function.geometry,
                     function_range[0],
@@ -856,6 +855,7 @@ pub(super) fn project(
         };
         if offset_source_id != source_id {
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
+            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset source curve slots")?;
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
@@ -868,10 +868,12 @@ pub(super) fn project(
                 }),
             });
         }
+        reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges offset neutral point slots")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start_position, None),
             Point::new(end_point.clone(), end_position, None),
         ]);
+        reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges offset neutral vertex slots")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -885,6 +887,7 @@ pub(super) fn project(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset neutral curve slots")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -906,6 +909,7 @@ pub(super) fn project(
                 continue;
             }
         };
+        reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges offset neutral edge slots")?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -914,6 +918,7 @@ pub(super) fn project(
             tolerance: None,
         });
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
+        reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges offsets decoded sequences")?;
     }
