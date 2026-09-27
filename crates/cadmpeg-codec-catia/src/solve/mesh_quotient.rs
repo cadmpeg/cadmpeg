@@ -10823,41 +10823,39 @@ fn resolve_mesh_selection_from_quotient(
     )?;
     let mut points_by_identity = HashMap::<u32, usize>::new();
     for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
-        let points = [start, end]
-            .into_iter()
-            .enumerate()
-            .map(|(port, vertex)| {
-                let root = quotient.union.find(edge * 2 + port);
-                let point = *root_points.get(&root)?;
-                match point_assignment[vertex] {
-                    Some(stored) if stored != point => return None,
-                    Some(_) => {}
-                    None => point_assignment[vertex] = Some(point),
-                }
-                Some(point)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(points) = points else {
-            return Ok(None);
-        };
-        let Ok(points) = <[usize; 2]>::try_from(points.as_slice()) else {
-            return Ok(None);
-        };
+        let mut points = [0; 2];
+        for (port, vertex) in [start, end].into_iter().enumerate() {
+            let root = quotient.union.find(edge * 2 + port);
+            let Some(&point) = root_points.get(&root) else {
+                return Ok(None);
+            };
+            match point_assignment[vertex] {
+                Some(stored) if stored != point => return Ok(None),
+                Some(_) => {}
+                None => point_assignment[vertex] = Some(point),
+            }
+            points[port] = point;
+        }
         let closed_ports = quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
         if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
             return Ok(None);
         }
         for (identity, point) in port_identities[edge].into_iter().zip(points) {
-            match points_by_identity.insert(identity, point) {
+            match crate::resource::insert_map(ctx, &mut points_by_identity, identity, point, "catia_merged_mesh_identity_points")? {
                 Some(previous) if previous != point => return Ok(None),
                 _ => {}
             }
         }
     }
-    Ok(point_assignment
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .map(|point_assignment| MeshSolve::Solved((topology, point_assignment))))
+    let mut completed = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut completed, point_assignment.len(), "catia_merged_mesh_completed_points")?;
+    for point in point_assignment {
+        let Some(point) = point else {
+            return Ok(None);
+        };
+        completed.push(point);
+    }
+    Ok(Some(MeshSolve::Solved((topology, completed))))
 }
 
 fn reduced_distinct_matching(
@@ -10883,25 +10881,22 @@ fn reduced_distinct_matching(
             assignment[root] = Some(point);
             continue;
         }
-        let values = domain
-            .iter()
-            .copied()
-            .filter(|point| {
-                !used[*point]
-                    && excluded.is_none_or(|(excluded_root, excluded_point)| {
-                        excluded_root != root || excluded_point != *point
-                    })
-            })
-            .collect::<Vec<_>>();
+        let mut values = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut values, domain.len(), "catia_reduced_matching_domain_values")?;
+        values.extend(domain.iter().copied().filter(|point| {
+            !used[*point]
+                && excluded.is_none_or(|(excluded_root, excluded_point)| {
+                    excluded_root != root || excluded_point != *point
+                })
+        }));
         if values.is_empty() {
             return Ok(None);
         }
-        remaining.push((root, values));
+        crate::resource::push(ctx, &mut remaining, (root, values), "catia_reduced_matching_remaining_rows")?;
     }
-    let remaining_domains = remaining
-        .iter()
-        .map(|(_, domain)| domain.as_slice())
-        .collect::<Vec<_>>();
+    let mut remaining_domains = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut remaining_domains, remaining.len(), "catia_reduced_matching_domain_refs")?;
+    remaining_domains.extend(remaining.iter().map(|(_, domain)| domain.as_slice()));
     let Some(matching) = distinct_domain_matching_with_budget(
         ctx,
         remaining_domains,
@@ -10915,7 +10910,15 @@ fn reduced_distinct_matching(
     for ((root, _), point) in remaining.into_iter().zip(matching) {
         assignment[root] = Some(point);
     }
-    Ok(assignment.into_iter().collect())
+    let mut completed = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut completed, assignment.len(), "catia_reduced_matching_completed")?;
+    for point in assignment {
+        let Some(point) = point else {
+            return Ok(None);
+        };
+        completed.push(point);
+    }
+    Ok(Some(completed))
 }
 
 // The selection owns the complete quotient inputs and the optional gauge. The
@@ -10977,44 +10980,48 @@ fn resolve_singleton_mesh_selection(
         if left_root == right_root && left_point != right_point {
             return Ok(None);
         }
-        let allowed = [left_point, right_point]
-            .into_iter()
-            .collect::<HashSet<_>>();
         for root in [left_root, right_root] {
-            let mut domain = quotient.domains[root].as_ref().clone();
-            domain.retain(|point| allowed.contains(point));
+            let retained = quotient.domains[root].len()
+                .checked_mul(std::mem::size_of::<usize>())
+                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
+                .and_then(|bytes| u64::try_from(bytes).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit("catia_singleton_root_domain_copy", u64::MAX, u64::MAX))?;
+            ctx.charge_retained(retained, "catia_singleton_root_domain_copy")?;
+            let mut domain = HashSet::new();
+            crate::resource::reserve_set(ctx, &mut domain, quotient.domains[root].len(), "catia_singleton_root_domain_copy")?;
+            domain.extend(quotient.domains[root].iter().copied().filter(|point| *point == left_point || *point == right_point));
             if domain.is_empty() {
                 return Ok(None);
             }
             quotient.domains[root] = Arc::new(domain);
         }
     }
-    let roots = (0..quotient.union.len())
-        .filter(|node| quotient.union.find(*node) == *node)
-        .collect::<Vec<_>>();
+    let mut roots = Vec::new();
+    for node in 0..quotient.union.len() {
+        if quotient.union.find(node) == node {
+            crate::resource::push(ctx, &mut roots, node, "catia_singleton_root_rows")?;
+        }
+    }
     if roots.len() != vertex_points.len() {
         return Ok(None);
     }
-    let root_indices = roots
-        .iter()
-        .enumerate()
-        .map(|(index, root)| (*root, index))
-        .collect::<HashMap<_, _>>();
-    let domain_sets = roots
-        .iter()
-        .map(|root| quotient.domains[*root].as_ref().clone())
-        .collect::<Vec<HashSet<_>>>();
-    if domain_sets.iter().any(HashSet::is_empty) {
-        return Ok(None);
+    let mut root_indices = HashMap::new();
+    for (index, &root) in roots.iter().enumerate() {
+        crate::resource::insert_map(ctx, &mut root_indices, root, index, "catia_singleton_root_indices")?;
     }
-    let domain_values = domain_sets
-        .iter()
-        .map(|domain| {
-            let mut values = domain.iter().copied().collect::<Vec<_>>();
-            values.sort_unstable();
-            values
-        })
-        .collect::<Vec<_>>();
+    let mut domain_values = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut domain_values, roots.len(), "catia_singleton_domain_rows")?;
+    for &root in &roots {
+        let domain = &quotient.domains[root];
+        if domain.is_empty() {
+            return Ok(None);
+        }
+        let mut values = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut values, domain.len(), "catia_singleton_domain_values")?;
+        values.extend(domain.iter().copied());
+        values.sort_unstable();
+        domain_values.push(values);
+    }
     let first_assignment =
         reduced_distinct_matching(ctx, &domain_values, vertex_points.len(), budget, None)?;
     let Some(first_assignment) = first_assignment else {
@@ -11049,53 +11056,53 @@ fn resolve_singleton_mesh_selection(
             )?;
             let mut points_by_identity = HashMap::<u32, usize>::new();
             for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
-                let Some(points) = [start, end]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(port, vertex)| {
-                        let root = quotient.union.find(edge * 2 + port);
-                        let root = *root_indices.get(&root)?;
-                        let point = *assignment.get(root)?;
-                        match point_assignment[vertex] {
-                            Some(stored) if stored != point => return None,
-                            Some(_) => {}
-                            None => point_assignment[vertex] = Some(point),
-                        }
-                        Some(point)
-                    })
-                    .collect::<Option<Vec<_>>>()
-                else {
-                    return Ok(None);
-                };
-                let Some(points) = <[usize; 2]>::try_from(points.as_slice()).ok() else {
-                    return Ok(None);
-                };
+                let mut points = [0; 2];
+                for (port, vertex) in [start, end].into_iter().enumerate() {
+                    let root = quotient.union.find(edge * 2 + port);
+                    let Some(&root) = root_indices.get(&root) else {
+                        return Ok(None);
+                    };
+                    let Some(&point) = assignment.get(root) else {
+                        return Ok(None);
+                    };
+                    match point_assignment[vertex] {
+                        Some(stored) if stored != point => return Ok(None),
+                        Some(_) => {}
+                        None => point_assignment[vertex] = Some(point),
+                    }
+                    points[port] = point;
+                }
                 let closed_ports =
                     quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
                 if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
                     return Ok(None);
                 }
                 for (identity, point) in port_identities[edge].into_iter().zip(points) {
-                    match points_by_identity.insert(identity, point) {
+                    match crate::resource::insert_map(ctx, &mut points_by_identity, identity, point, "catia_singleton_identity_points")? {
                         Some(previous) if previous != point => return Ok(None),
                         _ => {}
                     }
                 }
             }
-            Ok(point_assignment
-                .into_iter()
-                .collect::<Option<Vec<_>>>()
-                .map(|points| (topology.clone(), points)))
+            let mut points = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut points, point_assignment.len(), "catia_singleton_completed_points")?;
+            for point in point_assignment {
+                let Some(point) = point else {
+                    return Ok(None);
+                };
+                points.push(point);
+            }
+            Ok(Some((topology.clone_charged(ctx)?, points)))
         };
     let Some(first) = materialize(&first_assignment)? else {
         return Ok(None);
     };
-    let ambiguous_roots = domain_values
-        .iter()
-        .enumerate()
-        .filter(|(_, domain)| domain.len() > 1)
-        .map(|(root, _)| root)
-        .collect::<Vec<_>>();
+    let mut ambiguous_roots = Vec::new();
+    for (root, domain) in domain_values.iter().enumerate() {
+        if domain.len() > 1 {
+            crate::resource::push(ctx, &mut ambiguous_roots, root, "catia_singleton_ambiguous_roots")?;
+        }
+    }
     for root in ambiguous_roots {
         let Some(alternate) = reduced_distinct_matching(
             ctx,
@@ -12601,6 +12608,14 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
     for operation in [
         "catia_reduced_matching",
         "catia_reduced_matching_used",
+        "catia_reduced_matching_completed",
+        "catia_singleton_root_domain_copy",
+        "catia_singleton_root_rows",
+        "catia_singleton_root_indices",
+        "catia_singleton_domain_rows",
+        "catia_singleton_domain_values",
+        "catia_singleton_identity_points",
+        "catia_singleton_completed_points",
         "catia_mesh_edge_use_counts",
         "catia_selection_singleton_point_assignment",
     ] {
@@ -14876,7 +14891,13 @@ mod direct_matching_tests {
                 Err(error) => panic!("unexpected direct quotient refusal: {error}"),
             }
         }
-        assert!(refused.contains("catia_merged_mesh_point_assignment"));
+        for operation in [
+            "catia_merged_mesh_point_assignment",
+            "catia_merged_mesh_identity_points",
+            "catia_merged_mesh_completed_points",
+        ] {
+            assert!(refused.contains(operation), "no refusal at {operation}");
+        }
     }
 }
 
