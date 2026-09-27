@@ -2260,15 +2260,14 @@ impl<'a> DecodeContext<'a> {
         if self.ir.model.procedural_curves.len() > procedural_curve_start
             || self.ir.model.procedural_surfaces.len() > procedural_surface_start
         {
-            let omitted_ids = self.ir.model.procedural_curves[procedural_curve_start..]
-                .iter()
-                .map(|procedure| procedure.id.to_string())
-                .chain(
-                    self.ir.model.procedural_surfaces[procedural_surface_start..]
-                        .iter()
-                        .map(|procedure| procedure.id.to_string()),
-                )
-                .collect::<Vec<_>>();
+            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
+            for procedure in &self.ir.model.procedural_curves[procedural_curve_start..] {
+                annotations.remove_entity_str(procedure.id.as_str());
+            }
+            for procedure in &self.ir.model.procedural_surfaces[procedural_surface_start..] {
+                annotations.remove_entity_str(procedure.id.as_str());
+            }
+            self.annotations = annotations.build();
             self.ir
                 .model
                 .procedural_curves
@@ -2277,11 +2276,6 @@ impl<'a> DecodeContext<'a> {
                 .model
                 .procedural_surfaces
                 .truncate(procedural_surface_start);
-            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
-            for id in omitted_ids {
-                annotations.remove_entity(id);
-            }
-            self.annotations = annotations.build();
             self.report.phase_warnings.push(
                 "instance: transformed procedural definition omitted; exact solved carrier retained"
                     .to_string(),
