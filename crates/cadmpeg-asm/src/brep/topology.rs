@@ -194,7 +194,7 @@ pub(super) fn keep_faces_and_carriers(
                     }
                 } else {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(unknown_record_id(surf_rec, format)?),
+                        record: Some(unknown_record_id(ctx, surf_rec, format)?),
                     })
                 }, "ASM topology surface_geo")?;
             if !construction_is_exact_carrier {

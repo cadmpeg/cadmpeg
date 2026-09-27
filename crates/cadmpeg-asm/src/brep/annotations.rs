@@ -147,9 +147,9 @@ pub(super) fn emit_annotation_records(
             crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
-                stream: stream.to_owned(),
+                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
                 derived_fields,
             });
         }
@@ -158,20 +158,20 @@ pub(super) fn emit_annotation_records(
             crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
-                stream: stream.to_owned(),
+                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
                 derived_fields: Vec::new(),
             });
         }
-        let unknown_id = unknown_record_id(record, format)?;
+        let unknown_id = unknown_record_id(ctx, record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
             crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id.into_string(),
-                stream: stream.to_owned(),
+                stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(record.name.clone()),
+                tag: AnnotationTag::Record(crate::decode_alloc::copy_string(ctx, &record.name, "ASM annotation record name")?),
                 derived_fields: Vec::new(),
             });
         }
@@ -195,7 +195,7 @@ pub(super) fn emit_annotation_records(
                 crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
-                    stream: stream.to_owned(),
+                    stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
                     offset: record.offset as u64,
                     tag,
                     derived_fields: Vec::new(),
@@ -221,8 +221,8 @@ pub(super) fn emit_annotation_records(
         })?;
         crate::decode_alloc::reserve_vec_slot(ctx, &mut out.annotation_records, "ASM annotation records")?;
         out.annotation_records.push(AnnotationRecord {
-            id: entity_id.to_owned(),
-            stream: stream.to_owned(),
+            id: crate::decode_alloc::copy_string(ctx, entity_id, "ASM synthetic annotation id")?,
+            stream: crate::decode_alloc::copy_string(ctx, stream, "ASM annotation stream")?,
             offset: record.offset as u64,
             tag,
             derived_fields: Vec::new(),
