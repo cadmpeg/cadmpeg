@@ -1339,7 +1339,7 @@ impl NativeModel {
         let external_reference_empty_records =
             external_reference_empty_records(container, &external_reference_indexed_records);
         let external_reference_tail_reference_pairs =
-            external_reference_tail_reference_pairs(container, &external_reference_records);
+            external_reference_tail_reference_pairs(ctx, container, &external_reference_records)?;
         let external_reference_record_string_uses = external_reference_record_string_uses(
             &external_reference_records,
             &external_references,

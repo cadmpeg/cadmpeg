@@ -2828,23 +2828,23 @@ pub(super) fn external_reference_empty_records(
 
 /// Decode exact adjacent reference pairs from bounded handle-set tails.
 pub(super) fn external_reference_tail_reference_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     records: &[ExternalReferenceRecord],
-) -> Vec<ExternalReferenceTailReferencePair> {
-    records
-        .iter()
-        .flat_map(|record| {
+) -> Result<Vec<ExternalReferenceTailReferencePair>, cadmpeg_core::CodecError> {
+    let mut out = Vec::new();
+    for record in records {
             let Some(source_offset) = record
                 .source_offset
                 .checked_add(record.handles.prefix_byte_len() as u64)
             else {
-                return Vec::new();
+                continue;
             };
             let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len)
             else {
-                return Vec::new();
+                continue;
             };
-            crate::container::parse_extref_reference_pairs(bytes)
+            out.extend(crate::container::parse_extref_reference_pairs(ctx, bytes)?
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, (offset, persistent_handle, tagged_reference))| {
@@ -2863,9 +2863,9 @@ pub(super) fn external_reference_tail_reference_pairs(
                         source_offset: source_offset + offset as u64,
                     }
                 })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+            );
+    }
+    Ok(out)
 }
 
 /// Resolve complete four-slot record lanes through same-stream string tables.
