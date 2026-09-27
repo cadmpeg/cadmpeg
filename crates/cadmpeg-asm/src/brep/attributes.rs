@@ -450,13 +450,40 @@ pub fn unknown_record_id(
             "invalid ASM source identity component: {error}"
         ))
     })?;
-    Ok(UnknownId::from(format.brep_identity(&kind, rec.index)))
+    Ok(UnknownId::from(format.try_brep_identity(ctx, &kind, rec.index)?))
 }
 
 #[cfg(test)]
 mod tests {
     use super::decode_transform;
     use crate::sab::{Record, Token};
+
+    #[test]
+    fn unknown_record_identity_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let record = Record {
+            index: 1,
+            name: "mystery".into(),
+            tokens: std::sync::Arc::from([]),
+            offset: 0,
+            len: 0,
+        };
+        let expected = "f3d:brep:mystery#1";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7 + expected.len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d"))
+            .expect_err("dynamic identity exceeds retained limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM unknown record identity");
+    }
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {
         Record {
