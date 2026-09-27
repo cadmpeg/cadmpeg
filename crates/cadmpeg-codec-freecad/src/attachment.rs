@@ -142,11 +142,11 @@ pub(crate) fn transfer(
             let Some(owned) = by_owner.get(object.id.as_str()) else {
                 continue;
             };
-            let support = sole_named_property("attachment", owned, "AttachmentSupport")?;
-            let mode = sole_named_property("attachment", owned, "MapMode")?;
+            let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
+            let mode = sole_named_property(ctx, "attachment", owned, "MapMode")?;
             let placement =
-                placement_matrix(ctx, sole_named_property("attachment", owned, "Placement")?)?;
-            let offset = placement_matrix(ctx, sole_named_property(
+                placement_matrix(ctx, sole_named_property(ctx, "attachment", owned, "Placement")?)?;
+            let offset = placement_matrix(ctx, sole_named_property(ctx,
                 "attachment",
                 owned,
                 "AttachmentOffset",
