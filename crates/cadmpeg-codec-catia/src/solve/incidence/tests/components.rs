@@ -1034,6 +1034,46 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
 }
 
 #[test]
+fn compact_partial_subtour_refuses_new_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3, 4]);
+    let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0]), Some([3, 4]), None];
+    catia_test_context!(service_ctx);
+    assert!(
+        !compact_boundary_domain_viable(&service_ctx, &domain, &assignment, None)
+            .expect("service resource budget")
+    );
+
+    let mut operations = HashSet::new();
+    for limit in 0..=128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match compact_boundary_domain_viable(&ctx, &domain, &assignment, None) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(false) => {}
+            Ok(true) => panic!("partial subtour must remain invalid"),
+            Err(error) => panic!("unexpected compact boundary refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_compact_boundary_nodes",
+        "catia_compact_boundary_degrees",
+        "catia_compact_boundary_points",
+        "catia_compact_boundary_open_components",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn compact_unordered_boundary_refuses_degree_overflow() {
     catia_test_context!(ctx);
     let domain = MeshFaceBoundaryDomain::UnorderedFullCycle((0..129).collect());
@@ -1076,6 +1116,7 @@ fn compact_boundary_viability_refuses_labeled_edge_point_limit() {
         }
     }
     assert!(refused.contains("catia labeled edge points"));
+    assert!(refused.contains("catia_compact_boundary_complete_pairs"));
 }
 
 #[test]

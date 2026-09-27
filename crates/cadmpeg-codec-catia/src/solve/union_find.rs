@@ -43,6 +43,16 @@ impl UnionFind {
         index
     }
 
+    pub(crate) fn push_charged(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<usize, CodecError> {
+        let index = self.parents.len();
+        crate::resource::push(ctx, &mut self.parents, index, operation)?;
+        Ok(index)
+    }
+
     /// Returns the representative of `node`, compressing the path to it.
     pub(crate) fn find(&mut self, mut node: usize) -> usize {
         let root = self.root(node);
