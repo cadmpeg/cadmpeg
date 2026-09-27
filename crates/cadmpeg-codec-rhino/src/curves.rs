@@ -137,6 +137,12 @@ impl DecodedCurve {
         }
     }
 
+    pub(crate) fn into_warnings(self) -> Diagnostics {
+        match self {
+            Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
+        }
+    }
+
     fn warnings_mut(&mut self) -> &mut Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
