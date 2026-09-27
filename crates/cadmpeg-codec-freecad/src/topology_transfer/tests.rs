@@ -24,6 +24,146 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
+fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_collection_items = 0;
+    for _ in 0..4096 {
+        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect_err("collection admission must refuse");
+        let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected {operation} collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        if limit.operation == operation {
+            options.policy.limits.max_collection_items = threshold - 1;
+            let final_error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+                .expect_err("one item below the site must refuse");
+            assert!(matches!(final_error,
+                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
+                    if refusal.operation == operation));
+            return;
+        }
+        options.policy.limits.max_collection_items = threshold;
+    }
+    panic!("{operation} was not reached");
+}
+
+fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 0;
+    for _ in 0..4096 {
+        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect_err("retained admission must refuse");
+        let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected {operation} retained refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        if limit.operation == operation {
+            options.policy.limits.max_retained_bytes = threshold - 1;
+            let final_error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+                .expect_err("one byte below the site must refuse");
+            assert!(matches!(final_error,
+                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
+                    if refusal.operation == operation));
+            return;
+        }
+        options.policy.limits.max_retained_bytes = threshold;
+    }
+    panic!("{operation} was not reached");
+}
+
+fn triangulated_face_archive() -> Vec<u8> {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade
+Locations 1
+1 1 0 0 10 0 1 0 0 0 0 1 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 1
+2 1 2 p 0.01 1 0 1
+Surfaces 0
+Triangulations 1
+3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3
+TShapes 7
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 6 1 1 0 0 1001000 +7 0 -6 0 *
+Wi 1001000 +5 0 *
+Fa 0 0.001 0 1 2 1 1001000 +4 0 *
+Sh 1001000 +3 0 *
+So 1001000 +2 0 *
++1 0 *";
+    archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
+}
+
+fn unowned_triangulation_archive() -> Vec<u8> {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 1
+3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3
+TShapes 0";
+    archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
+}
+
+#[test]
+fn unowned_triangulation_nodes_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&unowned_triangulation_archive(), "FreeCAD unowned triangulation nodes");
+}
+
+#[test]
+fn unowned_triangulation_triangles_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&unowned_triangulation_archive(), "FreeCAD unowned triangulation triangles");
+}
+
+#[test]
+fn unowned_triangulation_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&unowned_triangulation_archive(), "FreeCAD model identity");
+}
+
+#[test]
+fn unowned_triangulation_source_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&unowned_triangulation_archive(), "FreeCAD topology source association");
+}
+
+#[test]
+fn placed_triangulation_source_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD topology source association");
+}
+
+#[test]
+fn placed_triangulation_nodes_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD placed triangulation nodes");
+}
+
+#[test]
+fn placed_triangulation_triangles_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD placed triangulation triangles");
+}
+
+#[test]
+fn polygonal_surface_vertices_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD polygonal surface vertices");
+}
+
+#[test]
+fn polygonal_surface_triangles_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD polygonal surface triangles");
+}
+
+#[test]
+fn tessellation_faces_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD tessellation faces");
+}
+
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
     values.map(|value| FiniteReal::new(value).expect("finite test endpoint"))
 }

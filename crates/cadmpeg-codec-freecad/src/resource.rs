@@ -144,6 +144,16 @@ pub(crate) fn retained_strings(
     Ok(copies)
 }
 
+pub(crate) fn copied_items<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    values: &[T],
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut copies = collection_vec(ctx, values.len(), operation)?;
+    copies.extend_from_slice(values);
+    Ok(copies)
+}
+
 pub(crate) fn retained_suffix(
     ctx: &DecodeContext<'_>,
     value: &str,
