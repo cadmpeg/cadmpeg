@@ -326,9 +326,10 @@ pub(super) fn e5_edges(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Edg
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
 pub(in crate::families) fn e5_surfaces(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<E5Surface> {
+) -> Result<Vec<E5Surface>, CodecError> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -362,20 +363,20 @@ pub(in crate::families) fn e5_surfaces(
                     ],
                 ))
             }),
-            0xe7 => e5_nurbs_surface(data, record, refusal)
+            0xe7 => e5_nurbs_surface(ctx, data, record, refusal)?
                 .map(|geometry| (geometry, [FiniteReal::ONE, FiniteReal::ONE])),
             _ => None,
         };
         if let Some((geometry, uv_scale)) = decoded {
-            out.push(E5Surface {
+            crate::resource::push(ctx, &mut out, E5Surface {
                 pos,
                 record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
                 geometry,
                 uv_scale,
-            });
+            }, "catia_e5_surfaces")?;
         }
     }
-    out
+    Ok(out)
 }
 
 /// Decode E5 class-`0xd8` rolling-ball surface carriers.
@@ -659,117 +660,197 @@ pub(in crate::families) fn e5_surface_wrappers(
 }
 
 fn e5_nurbs_surface(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: E5Record,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<SurfaceGeometry> {
-    let mut view = View::over_retained(data).child(record.pos + 13, record.end())?;
-    if view.u8()? != 0x80 {
-        return None;
+) -> Result<Option<SurfaceGeometry>, CodecError> {
+    let Some(mut view) = View::over_retained(data).child(record.pos + 13, record.end()) else {
+        return Ok(None);
+    };
+    if view.u8() != Some(0x80) {
+        return Ok(None);
     }
-    let (u_degree, u_knots, u_multiplicities) = read_nurbs_axis(&mut view)?;
-    let (v_degree, v_knots, v_multiplicities) = read_nurbs_axis(&mut view)?;
-    let (u_knots, u_count) = expand_nurbs_axis(u_degree, &u_knots, &u_multiplicities, record.size)?;
-    let (v_knots, v_count) = expand_nurbs_axis(v_degree, &v_knots, &v_multiplicities, record.size)?;
-    let mode = view.u16_le()?;
+    let Some((u_degree, u_knots, u_multiplicities)) = read_nurbs_axis(ctx, &mut view)? else {
+        return Ok(None);
+    };
+    let Some((v_degree, v_knots, v_multiplicities)) = read_nurbs_axis(ctx, &mut view)? else {
+        return Ok(None);
+    };
+    let Some((u_knots, u_count)) = expand_nurbs_axis(ctx, u_degree, &u_knots, &u_multiplicities, record.size)? else {
+        return Ok(None);
+    };
+    let Some((v_knots, v_count)) = expand_nurbs_axis(ctx, v_degree, &v_knots, &v_multiplicities, record.size)? else {
+        return Ok(None);
+    };
+    let Some(mode) = view.u16_le() else { return Ok(None); };
     if !matches!(mode, 0 | 1) {
-        return None;
+        return Ok(None);
     }
-    let control_count = u_count.checked_mul(v_count)?;
-    let control_points = view.read_counted(u64::try_from(control_count).ok()?, 24, |view| {
-        FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
-    })?;
+    let Some(control_count) = u_count.checked_mul(v_count) else { return Ok(None); };
+    let Some(control_count_u64) = u64::try_from(control_count).ok() else { return Ok(None); };
+    let point_bytes = if mode == 1 { 32 } else { 24 };
+    if view.counted(control_count_u64, point_bytes).is_none() {
+        return Ok(None);
+    }
+    let Some(retained_bytes) = control_count_u64.checked_mul(24) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_nurbs_poles", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(retained_bytes, "catia_e5_nurbs_poles")?;
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count, "catia_e5_nurbs_control_points")?;
+    for _ in 0..control_count {
+        let Some(point) = (|| FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?)))() else {
+            return Ok(None);
+        };
+        control_points.push(point);
+    }
     let weights = if mode == 1 {
-        Some(
-            view.read_counted(u64::try_from(control_count).ok()?, 8, |view| {
-                NonZeroReal::new(view.f64_le()?)
-            })?,
-        )
+        let Some(bytes) = control_count_u64.checked_mul(8) else {
+            return Err(ctx.refuse_codec_limit("catia_e5_nurbs_weights", u64::MAX, u64::MAX));
+        };
+        ctx.charge_retained(bytes, "catia_e5_nurbs_weights")?;
+        let mut weights = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut weights, control_count, "catia_e5_nurbs_weights")?;
+        for _ in 0..control_count {
+            let Some(weight) = view.f64_le().and_then(NonZeroReal::new) else { return Ok(None); };
+            weights.push(weight);
+        }
+        Some(weights)
     } else {
         None
     };
     if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
-        return None;
+        return Ok(None);
     }
-    view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
-    let row_len = v_count;
-    view.is_empty()
-        .then(|| {
-            crate::nurbs::note_refusal(
-                cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
-                    control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-                    weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                )
-                .and_then(|poles| {
-                    NurbsSurface::new(
-                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                            u_degree, u_knots, false,
-                        ),
-                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                            v_degree, v_knots, false,
-                        ),
-                        poles,
-                        false,
-                    )
-                }),
-                refusal,
-                format_args!("e5 NURBS surface record at byte {}", record.pos),
-            )
-            .map(SolvedSurfaceGeometry::Nurbs)
-            .map(SurfaceGeometry::Solved)
-        })
-        .flatten()
+    if view.skip(E5_NURBS_SURFACE_TAIL_BYTES).is_none() || !view.is_empty() {
+        return Ok(None);
+    }
+    let mut point_rows = Vec::new();
+    for row in control_points.chunks(v_count) {
+        let copied = crate::resource::copy_retained_slice(ctx, row, "catia_e5_nurbs_point_row")?;
+        crate::resource::push(ctx, &mut point_rows, copied, "catia_e5_nurbs_point_rows")?;
+    }
+    let weight_rows = if let Some(weights) = weights {
+        let mut rows = Vec::new();
+        for row in weights.chunks(v_count) {
+            let copied = crate::resource::copy_retained_slice(ctx, row, "catia_e5_nurbs_weight_row")?;
+            crate::resource::push(ctx, &mut rows, copied, "catia_e5_nurbs_weight_rows")?;
+        }
+        Some(rows)
+    } else {
+        None
+    };
+    let poles = if let Some(weight_rows) = weight_rows {
+        let Some(bytes) = control_count.checked_mul(size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>>()).and_then(|bytes| u64::try_from(bytes).ok()) else {
+            return Err(ctx.refuse_codec_limit("catia_e5_nurbs_weighted_poles", u64::MAX, u64::MAX));
+        };
+        ctx.charge_retained(bytes, "catia_e5_nurbs_weighted_poles")?;
+        let mut rows = Vec::new();
+        for (points, weights) in point_rows.into_iter().zip(weight_rows) {
+            let mut row = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut row, points.len(), "catia_e5_nurbs_weighted_poles")?;
+            row.extend(points.into_iter().zip(weights).map(|(point, weight)| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight }));
+            crate::resource::push(ctx, &mut rows, row, "catia_e5_nurbs_weighted_rows")?;
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows }
+    } else {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows: point_rows }
+    };
+    Ok(crate::nurbs::note_refusal(
+        NurbsSurface::from_admitted(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            poles,
+            false,
+        ),
+        refusal,
+        format_args!("e5 NURBS surface record at byte {}", record.pos),
+    )
+    .map(SolvedSurfaceGeometry::Nurbs)
+    .map(SurfaceGeometry::Solved))
 }
 
-fn read_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, Vec<u32>)> {
-    let degree = view.u32_le()?;
-    let zero0 = view.u32_le()?;
-    let zero1 = view.u32_le()?;
-    let knot_count = usize::try_from(view.u32_le()?).ok()?;
-    let zero2 = view.u32_le()?;
+fn read_nurbs_axis(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+) -> Result<Option<(u32, Vec<f64>, Vec<u32>)>, CodecError> {
+    let Some((degree, zero0, zero1, knot_count, zero2)) = (|| {
+        Some((view.u32_le()?, view.u32_le()?, view.u32_le()?, usize::try_from(view.u32_le()?).ok()?, view.u32_le()?))
+    })() else {
+        return Ok(None);
+    };
     if degree == 0 || [zero0, zero1, zero2] != [0; 3] || knot_count == 0 {
-        return None;
+        return Ok(None);
     }
-    let knot_count_u64 = u64::try_from(knot_count).ok()?;
-    let knots = view.read_counted(knot_count_u64, 8, View::f64_le)?;
-    let multiplicities = view.read_counted(knot_count_u64, 4, View::u32_le)?;
-    Some((degree, knots, multiplicities))
+    let Some(knot_count_u64) = u64::try_from(knot_count).ok() else {
+        return Ok(None);
+    };
+    if view.counted(knot_count_u64, 12).is_none() {
+        return Ok(None);
+    }
+    let Some(bytes) = knot_count_u64.checked_mul(8) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_nurbs_axis", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_nurbs_axis")?;
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, knot_count, "catia_e5_nurbs_axis_knots")?;
+    for _ in 0..knot_count {
+        let Some(knot) = view.f64_le() else { return Ok(None); };
+        knots.push(knot);
+    }
+    let Some(bytes) = knot_count_u64.checked_mul(4) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_nurbs_axis", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_nurbs_axis")?;
+    let mut multiplicities = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut multiplicities, knot_count, "catia_e5_nurbs_axis_multiplicities")?;
+    for _ in 0..knot_count {
+        let Some(multiplicity) = view.u32_le() else { return Ok(None); };
+        multiplicities.push(multiplicity);
+    }
+    Ok(Some((degree, knots, multiplicities)))
 }
 
 fn expand_nurbs_axis(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     multiplicities: &[u32],
     payload_size: usize,
-) -> Option<(Vec<f64>, usize)> {
+) -> Result<Option<(Vec<f64>, usize)>, CodecError> {
     if knots.len() != multiplicities.len()
         || knots.iter().any(|knot| !knot.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities.contains(&0)
     {
-        return None;
+        return Ok(None);
     }
-    let total = multiplicities
+    let Some(total) = multiplicities
         .iter()
         .try_fold(0usize, |total, multiplicity| {
             total.checked_add(usize::try_from(*multiplicity).ok()?)
-        })?;
+        }) else { return Ok(None); };
     if total > payload_size {
-        return None;
+        return Ok(None);
     }
-    let degree = usize::try_from(degree).ok()?;
-    let control_count = total.checked_sub(degree.checked_add(1)?)?;
-    if control_count <= degree || knots.first()? >= knots.last()? {
-        return None;
+    let Some((degree, control_count)) = usize::try_from(degree).ok().and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?))) else {
+        return Ok(None);
+    };
+    if control_count <= degree || knots.first() >= knots.last() {
+        return Ok(None);
     }
-    let mut expanded = Vec::with_capacity(total);
+    let Some(bytes) = total.checked_mul(size_of::<f64>()).and_then(|bytes| u64::try_from(bytes).ok()) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_nurbs_expanded_axis", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_nurbs_expanded_axis")?;
+    let mut expanded = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut expanded, total, "catia_e5_nurbs_expanded_axis")?;
     for (knot, multiplicity) in knots.iter().zip(multiplicities) {
-        expanded.extend(std::iter::repeat_n(
-            *knot,
-            usize::try_from(*multiplicity).ok()?,
-        ));
+        let Ok(count) = usize::try_from(*multiplicity) else { return Ok(None); };
+        expanded.extend(std::iter::repeat_n(*knot, count));
     }
-    (expanded.len() == total).then_some((expanded, control_count))
+    Ok((expanded.len() == total).then_some((expanded, control_count)))
 }
 
 fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength)> {
@@ -1026,7 +1107,7 @@ mod tests {
         for mode in [0, 1] {
             let mut bytes = Vec::new();
             append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
-            let surfaces = e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new());
+            let surfaces = crate::test_support::with_service_context(|ctx| e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())).expect("service resource budget");
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
             };
@@ -1050,7 +1131,43 @@ mod tests {
         payload.pop();
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
-        assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new()).is_empty());
+        assert!(crate::test_support::with_service_context(|ctx| e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())).expect("service resource budget").is_empty());
+    }
+
+    #[test]
+    fn e7_nurbs_surface_collections_refuse_before_growth() {
+        for (mode, expected) in [
+            (0, [
+                "catia_e5_nurbs_axis_knots",
+                "catia_e5_nurbs_axis_multiplicities",
+                "catia_e5_nurbs_expanded_axis",
+                "catia_e5_nurbs_control_points",
+                "catia_e5_nurbs_point_row",
+                "catia_e5_nurbs_point_rows",
+                "catia_e5_surfaces",
+            ].as_slice()),
+            (1, [
+                "catia_e5_nurbs_weights",
+                "catia_e5_nurbs_weight_row",
+                "catia_e5_nurbs_weight_rows",
+                "catia_e5_nurbs_weighted_poles",
+                "catia_e5_nurbs_weighted_rows",
+            ].as_slice()),
+        ] {
+            let mut bytes = Vec::new();
+            append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
+            let mut operations = std::collections::HashSet::new();
+            for cap in 0..64 {
+                if let Err(CodecError::ResourceLimit(limit)) = crate::test_support::with_collection_limit(cap, |ctx| {
+                    e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+                }) {
+                    operations.insert(limit.operation);
+                }
+            }
+            for operation in expected {
+                assert!(operations.contains(operation), "no refusal at {operation}");
+            }
+        }
     }
 
     #[test]
