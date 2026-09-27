@@ -1688,7 +1688,7 @@ fn classify_rdk_material_payload(
         reader.skip_remaining()?;
         return Ok(RdkMaterialPayload::Compatibility(None));
     }
-    let xml = reader.take(length as usize)?.to_vec();
+    let xml = reader.take(length as usize)?;
     reader.skip_remaining()?;
 
     // The legacy writer omits the UTF-8 terminator that ON_XMLUserData::Write
@@ -1697,7 +1697,7 @@ fn classify_rdk_material_payload(
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
-    let xml = std::str::from_utf8(&xml).map_err(|_| {
+    let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
     let document = roxmltree::Document::parse(xml).map_err(|error| {
