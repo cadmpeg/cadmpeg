@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -41,16 +42,20 @@ pub(super) fn decode(
         });
     }
     let mut losses = Vec::new();
-    let representations = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            let items = super::representation::items(record)?
-                .into_iter()
-                .collect::<BTreeSet<_>>();
-            (!items.is_empty()).then_some((id, items))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut representations = BTreeMap::new();
+    for (&id, record) in exchange.records() {
+        let Some(representation_items) = super::representation::items(record) else {
+            continue;
+        };
+        let mut items = BTreeSet::new();
+        for item in representation_items {
+            insert_tree(&mut items, item, ctx, "step_validation_representation_items")?;
+        }
+        if !items.is_empty() {
+            ctx.charge_collection_items(1, "step_validation_representations")?;
+            representations.insert(id, items);
+        }
+    }
     let mut properties = BTreeMap::new();
     for (id, record) in exchange.entities("PROPERTY_DEFINITION") {
         let Some(property) = record.partial("PROPERTY_DEFINITION") else {
@@ -116,7 +121,12 @@ pub(super) fn decode(
         let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        validation_representations.insert(representation_id);
+        insert_tree(
+            &mut validation_representations,
+            representation_id,
+            ctx,
+            "step_validation_used_representations",
+        )?;
         for &item_id in item_ids {
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
@@ -130,11 +140,18 @@ pub(super) fn decode(
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
-                validation_points.insert(item_id);
+                insert_tree(
+                    &mut validation_points,
+                    item_id,
+                    ctx,
+                    "step_validation_points",
+                )?;
             }
-            typed.extend([property_id, relation_id, representation_id, item_id]);
+            for id in [property_id, relation_id, representation_id, item_id] {
+                insert_hash(&mut typed, id, ctx, "step_validation_claims")?;
+            }
             if let Some(unit) = measure_unit(item) {
-                collect_unit_records(unit, exchange, &mut typed);
+                collect_unit_records(unit, exchange, &mut typed, ctx)?;
             }
             let (kind, expected_text, actual) = match expected {
                 Expected::Area(value) => {
@@ -179,7 +196,8 @@ pub(super) fn decode(
                     value,
                     &validation_points,
                     &mut referenced_validation_points,
-                );
+                    ctx,
+                )?;
             }
         }
     }
@@ -298,16 +316,21 @@ fn derived_unit_elements(record: &RawRecord) -> Option<&Value> {
         .and_then(|partial| partial.parameters.first())
 }
 
-fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) {
-    typed.insert(id);
+fn collect_unit_records(
+    id: u64,
+    exchange: &Exchange,
+    typed: &mut HashSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    insert_hash(typed, id, ctx, "step_validation_claims")?;
     let Some(record) = exchange.records().get(&id) else {
-        return;
+        return Ok(());
     };
     let Some(elements) = derived_unit_elements(record).and_then(ValueExt::list) else {
-        return;
+        return Ok(());
     };
     for element in elements.iter().filter_map(ValueExt::reference) {
-        typed.insert(element);
+        insert_hash(typed, element, ctx, "step_validation_claims")?;
         if let Some(base) = exchange
             .records()
             .get(&element)
@@ -315,9 +338,10 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) 
             .and_then(|record| record.parameters.first())
             .and_then(ValueExt::reference)
         {
-            typed.insert(base);
+            insert_hash(typed, base, ctx, "step_validation_claims")?;
         }
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -474,21 +498,53 @@ fn collect_validation_references(
     value: &Value,
     validation_points: &BTreeSet<u64>,
     referenced: &mut BTreeSet<u64>,
-) {
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _nested = ctx.enter_nested("step_validation_reference_walk")?;
     match value {
         Value::Reference(id) if validation_points.contains(id) => {
-            referenced.insert(*id);
+            insert_tree(referenced, *id, ctx, "step_validation_referenced_points")?;
         }
         Value::List(values) => {
             for value in values {
-                collect_validation_references(value, validation_points, referenced);
+                collect_validation_references(value, validation_points, referenced, ctx)?;
             }
         }
         Value::Typed(_, value) => {
-            collect_validation_references(value, validation_points, referenced);
+            collect_validation_references(value, validation_points, referenced, ctx)?;
         }
         _ => {}
     }
+    Ok(())
+}
+
+fn insert_tree(
+    values: &mut BTreeSet<u64>,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&id) {
+        ctx.charge_collection_items(1, operation)?;
+        values.insert(id);
+    }
+    Ok(())
+}
+
+fn insert_hash(
+    values: &mut HashSet<u64>,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&id) {
+        ctx.charge_collection_items(1, operation)?;
+        values.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len() + 1))
+        })?;
+        values.insert(id);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
