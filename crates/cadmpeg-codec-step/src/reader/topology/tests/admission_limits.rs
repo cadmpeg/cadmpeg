@@ -332,3 +332,18 @@ fn topology_source_vertices_refuse_limits() {
                 && refusal.operation == "step_topology_source_vertices"
     ));
 }
+
+#[test]
+fn topology_admissions_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::append_topology_vec(&mut Vec::new(), &mut vec![1u64], &ctx, "step_topology_admissions"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_admissions"
+    ));
+}

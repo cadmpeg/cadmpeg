@@ -830,7 +830,10 @@ pub(super) fn decode(
                 }
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
-                admissions.extend(std::mem::take(&mut built.pcurve_admissions));
+                append_topology_vec(
+                    &mut admissions, &mut built.pcurve_admissions, ctx,
+                    "step_topology_admissions",
+                )?;
             }
         }
         if body_ids.is_empty() {
