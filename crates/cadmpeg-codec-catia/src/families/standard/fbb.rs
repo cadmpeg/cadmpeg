@@ -281,18 +281,16 @@ pub(super) fn parse_standard_motif(
     let Some(port_points) = motif_port_points(ctx, &trims, vertex_points.len())? else {
         return Ok(None);
     };
-    let edge_points = edge_rows
-        .iter()
-        .map(|row| {
-            Some([
-                *port_points.get(row.handles.first()?)?,
-                *port_points.get(row.handles.last()?)?,
-            ])
-        })
-        .collect::<Option<Vec<[usize; 2]>>>();
-    let Some(edge_points) = edge_points else {
-        return Ok(None);
-    };
+    let mut edge_points = Vec::new();
+    for row in &edge_rows {
+        let Some(first) = row.handles.first().and_then(|handle| port_points.get(handle)) else {
+            return Ok(None);
+        };
+        let Some(last) = row.handles.last().and_then(|handle| port_points.get(handle)) else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut edge_points, [*first, *last], "catia_motif_edge_points")?;
+    }
     let anchors_match = edge_points
         .iter()
         .zip(circle_anchors)
