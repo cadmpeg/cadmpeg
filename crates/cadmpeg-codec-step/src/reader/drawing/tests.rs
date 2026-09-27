@@ -488,13 +488,23 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
         1,
         std::collections::BTreeSet::from(["step:data:surface#1".into()]),
     )]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source.as_bytes(),
+        &arena,
+        &policy,
+    )
+    .expect("root fits service policy");
     let resolved = super::target_resolution(
         target,
         &identities,
         &std::collections::HashSet::new(),
         &exchange,
         &std::collections::BTreeMap::new(),
-    );
+        &ctx,
+    )
+    .expect("target resolution fits service policy");
     let super::TargetResolution::Resolved(resolved) = resolved else {
         panic!("deep mapped graph lost its unique surface target");
     };

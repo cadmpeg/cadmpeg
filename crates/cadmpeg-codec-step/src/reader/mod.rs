@@ -10,7 +10,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
@@ -453,7 +453,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &session.typed_records,
         &product.value.product_definition_ids_by_shape,
-        Some(session.ctx),
+        session.ctx,
     )?;
     session.absorb(&mut drawing);
     let mut post_decode_losses = Vec::new();
@@ -483,24 +483,30 @@ fn decode_exchange_mode(
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
     if matches!(mode, DecodeMode::Decode(_)) {
-        opaque_ids = exchange
-            .records()
-            .iter()
-            .filter(|(id, _)| !session.typed_records.contains(id))
-            .map(|(&id, record)| (id, opaque_record_id(id, record)))
-            .collect::<BTreeMap<_, _>>();
-        opaque_sources.reserve(opaque_ids.len());
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
             }
-            let kind = record
-                .partials
-                .iter()
-                .map(|partial| partial.name.as_str())
-                .collect::<Vec<_>>()
-                .join("+");
-            *counts.entry(kind).or_default() += 1;
+            let unknown_id = opaque_record_id(id, record, session.ctx)?;
+            session.ctx.charge_collection_items(1, "step_opaque_ids")?;
+            opaque_ids.insert(id, unknown_id);
+        }
+        session.ctx.charge_collection_items(
+            u64_from_index(opaque_ids.len()),
+            "step_opaque_sources",
+        )?;
+        opaque_sources.try_reserve_exact(opaque_ids.len()).map_err(|_| {
+            session.ctx.refuse_codec_limit(
+                "step_opaque_sources",
+                0,
+                u64_from_index(opaque_ids.len()),
+            )
+        })?;
+        for (&id, record) in exchange.records() {
+            if session.typed_records.contains(&id) {
+                continue;
+            }
+            count_unknown_kind(&mut counts, record, session.ctx)?;
             let mut links = BTreeSet::new();
             let reference_work = record
                 .partials
@@ -513,30 +519,36 @@ fn decode_exchange_mode(
                     collect_references(value, &mut links, session.ctx)?;
                 }
             }
+            let unknown_id = &opaque_ids[&id];
+            session.ctx.charge_retained(
+                u64_from_index(unknown_id.as_str().len()),
+                "step_opaque_source_identity",
+            )?;
             opaque_sources.push(OpaqueSourceRecord {
-                unknown_id: opaque_ids[&id].clone(),
+                unknown_id: unknown_id.clone(),
                 span: record.span.clone(),
                 links,
                 reference_work,
             });
         }
-        let target_ids = opaque_sources
-            .iter()
-            .flat_map(|source| source.links.iter().copied())
-            .collect::<BTreeSet<_>>();
-        source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
+        let mut target_ids = BTreeSet::new();
+        for id in opaque_sources.iter().flat_map(|source| source.links.iter().copied()) {
+            if !target_ids.contains(&id) {
+                session.ctx.charge_collection_items(1, "step_opaque_target_ids_index")?;
+                target_ids.insert(id);
+            }
+        }
+        source_targets = record_targets(
+            &session.ir,
+            |record_id| target_ids.contains(&record_id),
+            session.ctx,
+        )?;
     } else {
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
             }
-            let kind = record
-                .partials
-                .iter()
-                .map(|partial| partial.name.as_str())
-                .collect::<Vec<_>>()
-                .join("+");
-            *counts.entry(kind).or_default() += 1;
+            count_unknown_kind(&mut counts, record, session.ctx)?;
         }
     }
     let accounting = {
@@ -550,7 +562,14 @@ fn decode_exchange_mode(
     };
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = exchange.release_source_graph();
-        let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
+        let opaque_count = opaque_sources.len().checked_add(signature_spans.len()).ok_or_else(|| {
+            session.ctx.refuse_codec_limit("step_opaque_records", 0, u64::MAX)
+        })?;
+        session.ctx.charge_collection_items(u64_from_index(opaque_count), "step_opaque_records")?;
+        let mut opaque = Vec::new();
+        opaque.try_reserve_exact(opaque_count).map_err(|_| {
+            session.ctx.refuse_codec_limit("step_opaque_records", 0, u64_from_index(opaque_count))
+        })?;
         for source in opaque_sources {
             session
                 .ctx
@@ -558,27 +577,31 @@ fn decode_exchange_mode(
             let bytes = session
                 .ctx
                 .copy_retained(&input[source.span.clone()], "step_opaque_record")?;
+            let mut links = Vec::new();
+            for id in source.links {
+                if let Some(unknown_id) = opaque_ids.get(&id) {
+                    push_opaque_link(&mut links, unknown_id.as_str(), session.ctx)?;
+                }
+                if let Some(targets) = source_targets.get(&id) {
+                    for target in targets {
+                        push_opaque_link(&mut links, target, session.ctx)?;
+                    }
+                }
+            }
             opaque.push(UnknownRecord::retained(
                 source.unknown_id,
                 source.span.start as u64,
                 bytes,
-                source
-                    .links
-                    .into_iter()
-                    .flat_map(|id| {
-                        opaque_ids
-                            .get(&id)
-                            .map(|id| id.as_str().to_owned())
-                            .into_iter()
-                            .chain(source_targets.get(&id).into_iter().flatten().cloned())
-                    })
-                    .collect(),
+                links,
             ));
         }
         for (index, signature) in signature_spans.into_iter().enumerate() {
             let bytes = session
                 .ctx
                 .copy_retained(&input[signature.clone()], "step_signature_record")?;
+            if !counts.contains_key("SIGNATURE") {
+                session.ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
+            }
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
@@ -1054,31 +1077,114 @@ fn referenced_record_ids(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result
     Ok(references)
 }
 
-fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
-    let kind = record
+fn count_unknown_kind(
+    counts: &mut BTreeMap<String, usize>,
+    record: &parse::RawRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let kind = crate::decode_alloc::charged_join(
+        ctx,
+        "step_opaque_kind_text",
+        record.partials.iter().map(|partial| partial.name.as_str()),
+        "+",
+    )?;
+    if !counts.contains_key(&kind) {
+        ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
+    }
+    *counts.entry(kind).or_default() += 1;
+    Ok(())
+}
+
+fn push_opaque_link(
+    links: &mut Vec<String>,
+    identity: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let copy = crate::decode_alloc::charged_format(
+        ctx,
+        "step_opaque_link_text",
+        format_args!("{identity}"),
+    )?;
+    ctx.charge_collection_items(1, "step_opaque_links")?;
+    links
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_opaque_links", 0, 1))?;
+    links.push(copy);
+    Ok(())
+}
+
+fn opaque_record_id(
+    id: u64,
+    record: &parse::RawRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<UnknownId, CodecError> {
+    let operation = "step_opaque_kind_name";
+    let len = record
         .partials
         .iter()
-        .map(|partial| partial.name.to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join("_");
+        .enumerate()
+        .try_fold(0usize, |length, (index, partial)| {
+            length
+                .checked_add(usize::from(index > 0))?
+                .checked_add(partial.name.len())
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(u64_from_index(len), operation)?;
+    let mut kind = String::new();
+    kind.try_reserve_exact(len)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(len)))?;
+    for (index, partial) in record.partials.iter().enumerate() {
+        if index > 0 {
+            kind.push('_');
+        }
+        for byte in partial.name.bytes() {
+            kind.push(char::from(byte.to_ascii_lowercase()));
+        }
+    }
     let derived = crate::ids::IdentityKind::try_new(kind).ok();
-    UnknownId::from(ids::data(derived.as_ref().unwrap_or(kind!("record")), id))
+    let kind = derived
+        .as_ref()
+        .map_or("record", crate::ids::IdentityKind::as_str);
+    let text = crate::decode_alloc::charged_format(
+        ctx,
+        "step_opaque_identity_text",
+        format_args!("step:data:{kind}#{id}"),
+    )?;
+    let identity = Identity::new(text)
+        .map_err(|_| CodecError::WrongFormat("invalid STEP opaque identity".into()))?;
+    Ok(UnknownId::from(identity))
 }
 
 fn record_targets(
     ir: &CadIr,
     include_record: impl Fn(u64) -> bool,
-) -> BTreeMap<u64, BTreeSet<String>> {
-    cadmpeg_ir::index::ModelIndex::new(ir)
-        .identities()
-        .filter_map(|identity| {
-            let record_id = source_record_id(identity)?;
-            include_record(record_id).then(|| (record_id, identity.to_owned()))
-        })
-        .fold(BTreeMap::new(), |mut targets, (record_id, identity)| {
-            targets.entry(record_id).or_default().insert(identity);
-            targets
-        })
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, BTreeSet<String>>, CodecError> {
+    let mut targets = BTreeMap::<u64, BTreeSet<String>>::new();
+    for identity in cadmpeg_ir::index::ModelIndex::new(ir).identities() {
+        let Some(record_id) = source_record_id(identity) else {
+            continue;
+        };
+        if !include_record(record_id) {
+            continue;
+        }
+        if !targets.contains_key(&record_id) {
+            ctx.charge_collection_items(1, "step_opaque_target_records")?;
+            targets.insert(record_id, BTreeSet::new());
+        }
+        let values = targets.get_mut(&record_id).ok_or_else(|| {
+            ctx.refuse_codec_limit("step_opaque_target_records", 0, 1)
+        })?;
+        if !values.contains(identity) {
+            ctx.charge_collection_items(1, "step_opaque_target_ids")?;
+            values.insert(crate::decode_alloc::charged_format(
+                ctx,
+                "step_opaque_target_identity",
+                format_args!("{identity}"),
+            )?);
+        }
+    }
+    Ok(targets)
 }
 
 fn source_record_id(identity: &str) -> Option<u64> {
