@@ -126,7 +126,7 @@ fn presentation_layer_expands_all_product_definition_views() {
             definition.id.as_str() == "step:product:product#3-definition-6"
                 && definition.native_ref.as_deref() == Some("#6")
         }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -200,7 +200,7 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
     reordered_members.sort();
     assert_eq!(source_members, reordered_members);
     for result in [&source_order, &reordered] {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -232,7 +232,7 @@ fn presentation_layer_preserves_empty_label_and_visibility() {
         [PresentationItem::Source { source_id }] if source_id == "#1"
     ));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -344,7 +344,7 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
             if tessellation.ends_with("#7")
     )));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
@@ -521,7 +521,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#10")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#7")
@@ -594,7 +594,7 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             && loss.message.contains("#76")
             && loss.message.contains("scalar color omitted")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -643,7 +643,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
                 && loss.message.contains("#76")
                 && loss.message.contains("scalar color omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -689,7 +689,7 @@ fn independent_same_rgb_styles_choose_lower_alpha_for_scalar_color() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingScalarColors.kind() }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -759,7 +759,7 @@ fn context_dependent_styles_are_not_flattened_without_context() {
             && loss.message.contains("#7 in #5")
             && loss.message.contains("#8 in #6")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1004,7 +1004,7 @@ fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
                 && loss.message.contains("#11=0.75")
                 && loss.message.contains("transparency omitted")
         }));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1140,7 +1140,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
             .object_id,
         "#10"
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1195,7 +1195,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .expect("STEP unknown arena")
         .iter()
         .all(|record| record.id.as_str() != "step:data:styled_item#6"));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1284,7 +1284,7 @@ fn surface_style_usage_permutations_keep_positive_side_scalar_color() {
             Some(cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("valid color"))
         );
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1451,7 +1451,7 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
         PmiDefinition::DatumSystem { references }
             if references.as_slice().len() == 1 && references.as_slice()[0].common_group.is_none()
     )));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

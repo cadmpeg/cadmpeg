@@ -190,7 +190,8 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -225,7 +226,9 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         midpoint.distance(Point3::new(1.5, 0.5, 0.0)) <= EPS_LINEAR_BEZIER_RULED,
         "{midpoint:?}"
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -271,11 +274,13 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
             "{actual:?} vs {expected:?}"
         );
     }
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
-fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
+fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -299,6 +304,17 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::ruled_surface_carrier(&first, &second, Some(&ctx))
+        .expect_err("two unit weights exceed one admitted collection item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
+    ));
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
@@ -383,7 +399,9 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("entity type 118")
     }));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -425,7 +443,9 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
-    assert!(cadmpeg_ir::validate_neutral(ruled.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(ruled.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 
     let tabulated = IgesCodec
         .decode(
@@ -439,7 +459,9 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
         "{:#?}",
         tabulated.report().losses
     );
-    assert!(cadmpeg_ir::validate_neutral(tabulated.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(tabulated.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
 }
 
 #[test]
@@ -466,7 +488,8 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!((point.y - expected).abs() < 1.0e-12);
     assert!((point.z - 1.0).abs() < 1.0e-12);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -499,7 +522,8 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
     assert!((point.x - 0.5).abs() < 1.0e-12);
     assert!((point.y - 1.5).abs() < 1.0e-12);
     assert!(point.z.abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -569,7 +593,8 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -699,7 +724,8 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             "{:#?}",
             result.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -766,7 +792,8 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -823,7 +850,8 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -988,7 +1016,8 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             "{:#?}",
             result.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1090,7 +1119,8 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             "{:#?}",
             result.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1176,7 +1206,8 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             "{:#?}",
             result.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1204,7 +1235,8 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         Ok(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1289,7 +1321,8 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1328,7 +1361,8 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         let distance = definition_payload.distance();
         assert_eq!(distance.get(), expected_z);
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1363,7 +1397,8 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             "{:#?}",
             result.report().losses
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1456,7 +1491,8 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1484,7 +1520,8 @@ fn decode_projects_a_degree_zero_bspline_surface() {
         Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1515,7 +1552,8 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
         Ok(Point3::new(4.0, 5.0, 6.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1594,7 +1632,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     }
     .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(true)
     );
 
@@ -1609,7 +1647,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         })
         .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(false)
     );
 }
@@ -1726,7 +1764,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
     let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
     let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&a, &b, [0., 2.], 0.),
+        homogeneous_curve_boundary_matches(None, &a, &b, [0., 2.], 0.).unwrap(),
         Some(false)
     );
     for weight in [1., 1e-200, 1e200] {
@@ -1747,11 +1785,11 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         )
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(&a, &b, [0., 1.], 0.001),
+            homogeneous_curve_boundary_matches(None, &a, &b, [0., 1.], 0.001).unwrap(),
             Some(false)
         );
         assert_eq!(
-            homogeneous_curve_boundary_matches(&a, &a, [0., 1.], 0.),
+            homogeneous_curve_boundary_matches(None, &a, &a, [0., 1.], 0.).unwrap(),
             Some(true)
         );
     }
@@ -1784,7 +1822,9 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         false,
     )
     .unwrap();
-    let pairs = super::aligned_homogeneous_spans(&first, &second).unwrap();
+    let pairs = super::aligned_homogeneous_spans(None, &first, &second)
+        .unwrap()
+        .unwrap();
     assert_eq!(pairs.len(), 2);
     for (index, (a, b)) in pairs.into_iter().enumerate() {
         assert_eq!(a.controls.len(), 2);

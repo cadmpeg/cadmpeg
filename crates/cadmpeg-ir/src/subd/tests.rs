@@ -49,7 +49,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         )
         .unwrap(),
     });
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
     let wire = serde_json::to_value(&ir.model.subds[0]).unwrap();

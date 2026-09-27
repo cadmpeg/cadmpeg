@@ -1,5 +1,7 @@
 //! Axial hole-profile role tests.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_test_support::edit;
 
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
@@ -20,6 +22,25 @@ use crate::resolved_features::holes::profiled_hole_construction;
 use crate::resolved_features::holes::profiled_hole_construction_with_evidence;
 use crate::resolved_features::holes::project_profiled_hole_constructions;
 use crate::resolved_features::holes::ProfileEvidence;
+
+#[test]
+fn profiled_hole_histories_report_collection_limit() {
+    let histories = [native_history()];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    project_profiled_hole_constructions(Some(&ctx), &mut [], &[], &histories, &[])
+        .expect("service profile admits one history");
+
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_profiled_hole_constructions(Some(&ctx), &mut [], &[], &histories, &[])
+        .expect_err("one history exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "SLDPRT unowned incomplete-hole histories"));
+}
 
 #[test]
 fn axial_profile_resolves_counterbore_roles() {
@@ -830,7 +851,8 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
-    project_profiled_hole_constructions(&mut features, &entities, &[history], &[lane]).unwrap();
+    project_profiled_hole_constructions(None, &mut features, &entities, &[history], &[lane])
+        .unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -958,7 +980,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     ]
     .concat();
 
-    project_profiled_hole_constructions(&mut features, &entities, &[history], &[]).unwrap();
+    project_profiled_hole_constructions(None, &mut features, &entities, &[history], &[]).unwrap();
 
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {

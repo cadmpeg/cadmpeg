@@ -36,15 +36,19 @@ impl DimensionedScalars {
         }))
     }
 
-    /// Allocates the declared shape with undecoded slots.
+    /// Allocates a test array outside a decode session.
     #[cfg(test)]
-    pub(crate) fn empty(dimensions: u32, count: u32) -> Option<Self> {
+    pub(crate) fn empty(dimensions: u32, count: u32) -> Result<Self, CodecError> {
         let len = usize::try_from(dimensions)
-            .ok()?
-            .checked_mul(usize::try_from(count).ok()?)?;
-        Some(Self {
+            .map_err(|_| CodecError::malformed("test scalar grid dimensions"))?
+            .checked_mul(
+                usize::try_from(count)
+                    .map_err(|_| CodecError::malformed("test scalar grid count"))?,
+            )
+            .ok_or_else(|| CodecError::malformed("test scalar grid extent"))?;
+        Ok(Self {
             shape: [dimensions, count],
-            values: cadmpeg_core::decode::alloc_filled(len, None, "creo scalar slots").ok()?,
+            values: cadmpeg_core::decode::alloc_filled(len, None, "creo scalar slots")?,
             tokens: None,
         })
     }
@@ -75,17 +79,17 @@ impl CountedScalars {
         }))
     }
 
-    /// Allocates a test array with undecoded slots.
+    /// Allocates a test array outside a decode session.
     #[cfg(test)]
-    pub(crate) fn empty(count: u32) -> Option<Self> {
-        Some(Self {
+    pub(crate) fn empty(count: u32) -> Result<Self, CodecError> {
+        Ok(Self {
             shape: count,
             values: cadmpeg_core::decode::alloc_filled(
-                usize::try_from(count).ok()?,
+                usize::try_from(count)
+                    .map_err(|_| CodecError::malformed("test scalar array count"))?,
                 None,
                 "creo scalar slots",
-            )
-            .ok()?,
+            )?,
             tokens: None,
         })
     }

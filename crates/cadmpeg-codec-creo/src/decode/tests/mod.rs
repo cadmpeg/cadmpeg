@@ -200,7 +200,10 @@ fn section_skamp_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    section_skamp_constraints_for_geometry(definition, sketch, None)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_skamp_constraints_for_geometry(ctx, definition, sketch, None)
+    })
+    .expect("test section solve")
 }
 
 pub(super) fn opaque(external_id: u32) -> crate::feature::definitions::FeatureOpaqueSegment {

@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 pub(super) mod material_texture;
 pub(super) mod object_uuid;
 mod reference_wire;
+mod registry_borrowed_wires;
 mod state_index_wire;
 use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
@@ -87,11 +88,8 @@ pub(super) struct OmRecordArea {
 }
 
 /// One complete row retained from an audit-trail record area.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmAuditTrailRowWire",
-    into = "state_index_wire::OmAuditTrailRowWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "state_index_wire::OmAuditTrailRowWire")]
 pub(super) struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub(super) id: String,
@@ -135,11 +133,8 @@ impl OmAuditTrailRow {
 }
 
 /// One row from the feature-history operation-state counter map.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "state_index_wire::OmOperationStateCounterWire",
-    into = "state_index_wire::OmOperationStateCounterWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "state_index_wire::OmOperationStateCounterWire")]
 pub(super) struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub(super) id: String,
@@ -338,57 +333,14 @@ pub(super) fn operation_state_journal_groups(
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
 pub(super) fn operation_state_groups(
+    ctx: Option<&DecodeContext<'_>>,
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .filter_map(|(section_ordinal, link)| {
-            let (entry, section) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            })?;
-            let table = section.operation_state_group_table()?;
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let table_end_offset = entry_offset + table.end_offset() as u64;
-            let table_footer = table.footer();
-            let frames = table
-                .into_groups()
-                .into_iter()
-                .filter_map(|group| group.into_absolute(entry_offset))
-                .collect();
-            Some(
-                OmRollForwardStateTable::from_frames(
-                    section_ordinal,
-                    &link.id,
-                    &entry.name,
-                    table_footer,
-                    table_end_offset,
-                    frames,
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format!(
-                        "{}: {error}",
-                        crate::loss::NxLossCode::RollForwardTableRejected.code()
-                    ))
-                }),
-            )
-        })
-        .collect()
-}
-
-/// Decode standalone operation-state messages from canonical feature-history areas.
-pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMessage> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -397,14 +349,65 @@ pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperation
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(None);
             };
-            let Some(messages) = section.operation_state_messages() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_group_table(ctx)? else {
+                return Ok(None);
+            };
+            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+            let table_end_offset = entry_offset + table.end_offset() as u64;
+            let table_footer = table.footer();
+            let frames = table
+                .into_groups()
+                .into_iter()
+                .filter_map(|group| group.into_absolute(entry_offset))
+                .collect();
+            let table = OmRollForwardStateTable::from_frames(
+                section_ordinal,
+                &link.id,
+                &entry.name,
+                table_footer,
+                table_end_offset,
+                frames,
+            )
+            .map_err(|error| {
+                CodecError::malformed(format!(
+                    "{}: {error}",
+                    crate::loss::NxLossCode::RollForwardTableRejected.code()
+                ))
+            })?;
+            Ok(Some(table))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()
+        .map(|tables| tables.into_iter().flatten().collect())
+}
+
+/// Decode standalone operation-state messages from canonical feature-history areas.
+pub(super) fn operation_state_messages(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateMessage>, CodecError> {
+    let sections = container.om_sections();
+    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+        .into_iter()
+        .enumerate()
+        .map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span()
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.location.section_offset()
+            }) else {
+                return Ok(Vec::new());
+            };
+            let Some(messages) = section.operation_state_messages(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            messages
+            Ok(messages
                 .into_iter()
                 .enumerate()
                 .filter_map(move |(ordinal, message)| {
@@ -420,18 +423,22 @@ pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperation
                         source_offset: entry_offset + message.offset() as u64,
                     })
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Decode exact per-object operation-state status rows from feature-history areas.
-pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateStatus> {
+pub(super) fn operation_state_statuses(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateStatus>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -440,14 +447,14 @@ pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperation
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            let Some(table) = section.operation_state_status_table() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_status_table(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            table
+            Ok(table
                 .into_entries()
                 .filter_map(|(offset, entry)| match entry {
                     StateTableEntry::Status(row) => Some((offset, row)),
@@ -467,18 +474,22 @@ pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperation
                         entry_offset.checked_add(offset as u64)?,
                     )
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Decode exact feature-record slot lanes from feature-history status blocks.
-pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationStateSlotLane> {
+pub(super) fn operation_state_slot_lanes(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+        .map(|(section_ordinal, link)| {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -487,14 +498,14 @@ pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperati
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            let Some(table) = section.operation_state_status_table() else {
-                return Vec::new();
+            let Some(table) = section.operation_state_status_table(ctx)? else {
+                return Ok(Vec::new());
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            table
+            Ok(table
                 .into_entries()
                 .filter_map(|(offset, entry)| match entry {
                     StateTableEntry::Status(_) => None,
@@ -513,9 +524,10 @@ pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperati
                         source_entry: entry.name.clone(),
                     })
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<Vec<_>>, CodecError>>()
+        .map(|rows| rows.into_iter().flatten().collect())
 }
 
 /// Unit declared by an NX numeric expression.
@@ -563,11 +575,8 @@ pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> 
 }
 
 /// Named parameter declaration in a bounded NX expression object record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ExpressionDeclarationWire",
-    into = "ExpressionDeclarationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ExpressionDeclarationWire")]
 pub(super) struct ExpressionDeclaration {
     /// Globally unique declaration identity.
     pub(super) id: String,
@@ -584,6 +593,43 @@ pub(super) struct ExpressionDeclaration {
     pub(super) source_entry: String,
     /// Absolute file offset of the declaration-name marker.
     pub(super) source_offset: u64,
+}
+
+#[cfg(test)]
+mod expression_wire_tests;
+#[cfg(test)]
+mod record_wire_tests;
+
+#[derive(Serialize)]
+struct ExpressionDeclarationRef<'a> {
+    id: &'a str,
+    object_id: u32,
+    record: &'a str,
+    name: &'a str,
+    parameter_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    qualifier: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    literal: Option<&'a str>,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for ExpressionDeclaration {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ExpressionDeclarationRef {
+            id: &self.id,
+            object_id: self.object_id,
+            record: &self.record,
+            name: self.name.as_str(),
+            parameter_index: self.name.index(),
+            qualifier: self.name.qualifier(),
+            literal: self.literal.as_deref(),
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -618,6 +664,7 @@ struct ExpressionDeclarationWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ExpressionDeclaration> for ExpressionDeclarationWire {
     fn from(value: ExpressionDeclaration) -> Self {
         Self {
@@ -655,8 +702,8 @@ impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
 }
 
 /// Explicit numeric expression serialized in one NX OM entity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ExpressionWire", into = "ExpressionWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ExpressionWire")]
 pub(super) struct Expression {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -681,6 +728,46 @@ pub(super) struct Expression {
     pub(super) source_table: cadmpeg_core::text::NonBlankString,
     /// Absolute file offset of the expression text.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ExpressionRef<'a> {
+    id: &'a str,
+    object_id: Option<u32>,
+    record: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declaration: Option<&'a str>,
+    name: &'a str,
+    parameter_index: Option<u32>,
+    qualifier: Option<&'a str>,
+    unit: &'a ExpressionUnit,
+    expression: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<f64>,
+    source_entry: &'a str,
+    source_table: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for Expression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ExpressionRef {
+            id: &self.id,
+            object_id: self.owner.as_ref().map(|owner| owner.object_id),
+            record: self.owner.as_ref().map(|owner| owner.record.as_str()),
+            declaration: self.declaration.as_deref(),
+            name: self.name.as_str(),
+            parameter_index: self.name.index(),
+            qualifier: self.name.qualifier(),
+            unit: &self.unit,
+            expression: &self.expression,
+            value: self.value.map(FiniteReal::get),
+            source_entry: &self.source_entry,
+            source_table: self.source_table.as_str(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -730,6 +817,7 @@ struct ExpressionWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<Expression> for ExpressionWire {
     fn from(value: Expression) -> Self {
         let (object_id, record) = value.owner.map_or((None, None), |owner| {
@@ -843,8 +931,8 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
 }
 
 /// Length-framed class definition from an NX OM type registry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ClassDefinitionWire", into = "ClassDefinitionWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ClassDefinitionWire")]
 pub(super) struct ClassDefinition {
     /// Globally unique native-record identity.
     id: String,
@@ -995,8 +1083,8 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
 }
 
 /// Member declaration from an NX OM field registry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FieldDefinitionWire", into = "FieldDefinitionWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FieldDefinitionWire")]
 pub(super) struct FieldDefinition {
     /// Globally unique declaration identity.
     id: String,
@@ -1134,8 +1222,8 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
 }
 
 /// Directory entry for one externally bounded NX OM entity record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ObjectRecordWire")]
 pub(super) struct ObjectRecord {
     /// Globally unique record identity.
     id: String,
@@ -1164,6 +1252,48 @@ pub(super) struct ObjectRecord {
     source_entry: String,
     /// Absolute file offset of the record start.
     source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ObjectRecordRef<'a> {
+    id: &'a str,
+    object_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_id_source_offset: Option<u64>,
+    section_ordinal: u32,
+    record_ordinal: u32,
+    section_offset: u64,
+    byte_len: u64,
+    sha256: &'a crate::native::hex::Sha256Hex,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependencies: &'a Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependents: &'a Vec<String>,
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for ObjectRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ObjectRecordRef {
+            id: &self.id,
+            object_id: Some(self.object_id.0),
+            object_id_source_offset: Some(self.object_id.1),
+            section_ordinal: self.section_ordinal,
+            record_ordinal: self.record_ordinal,
+            section_offset: self.section_offset,
+            byte_len: self.byte_len,
+            sha256: &self.sha256,
+            stable_identity: self.stable_identity.as_deref(),
+            dependencies: &self.dependencies,
+            dependents: &self.dependents,
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 // The identity and its offset are stated together, so the refusal names which
@@ -1203,6 +1333,7 @@ struct ObjectRecordWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(value: ObjectRecord) -> Self {
         let (id, offset) = value.object_id;
@@ -1431,11 +1562,8 @@ fn stable_object_record_graph_identity(
 }
 
 /// Counted active-object membership table from `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "membership_wire::TableWire",
-    into = "membership_wire::TableWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "membership_wire::TableWire")]
 pub(super) struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
     id: String,
@@ -1450,11 +1578,8 @@ pub(super) struct RmFastLoadObjectIdTable {
 }
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "membership_wire::MemberWire",
-    into = "membership_wire::MemberWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "membership_wire::MemberWire")]
 pub(super) struct RmFastLoadObjectId {
     /// Globally unique member identity.
     id: String,
@@ -1526,11 +1651,8 @@ enum DataBlockControlFormKind {
 }
 
 /// Atomic classification of one complete offset-store control lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockControlFormWire",
-    into = "DataBlockControlFormWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockControlFormWire")]
 pub(super) struct DataBlockControlForm {
     /// Globally unique control-form identity.
     pub(super) id: String,
@@ -1540,6 +1662,46 @@ pub(super) struct DataBlockControlForm {
     kind: DataBlockControlFormKind,
     /// Absolute file offset of the control block.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockControlFormRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    kind: DataBlockControlFormKindWire,
+    value_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leading_value_width: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leading_value: Option<u32>,
+    byte_len: u64,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockControlForm {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (kind, leading_value_width, leading_value) = match self.kind {
+            DataBlockControlFormKind::ZeroPrefixed { .. } => {
+                (DataBlockControlFormKindWire::ZeroPrefixed, None, None)
+            }
+            DataBlockControlFormKind::ProductAnchored { leading, .. } => (
+                DataBlockControlFormKindWire::ProductAnchored,
+                leading.map(ControlLeadingValue::width),
+                leading.map(ControlLeadingValue::value),
+            ),
+        };
+        DataBlockControlFormRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            kind,
+            value_count: self.kind.value_count(),
+            leading_value_width,
+            leading_value,
+            byte_len: self.kind.byte_len(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DataBlockControlFormKind {
@@ -1588,6 +1750,7 @@ enum DataBlockControlFormKindWire {
     ProductAnchored,
 }
 
+#[cfg(test)]
 impl From<DataBlockControlForm> for DataBlockControlFormWire {
     fn from(value: DataBlockControlForm) -> Self {
         let (kind, leading_value_width, leading_value) = match value.kind {
@@ -1699,11 +1862,8 @@ pub(super) struct DataBlockControlIndexValue {
 }
 
 /// Registered class selected by the leading lane of an offset-store control block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockControlClassReferenceWire",
-    into = "DataBlockControlClassReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockControlClassReferenceWire")]
 pub(super) struct DataBlockControlClassReference {
     /// Globally unique class-reference identity.
     pub(super) id: String,
@@ -1717,6 +1877,34 @@ pub(super) struct DataBlockControlClassReference {
     class: Option<DataBlockControlClassRef>,
     /// Absolute file offset of the four-byte control word.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockControlClassReferenceRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    ordinal: u32,
+    class_ordinal: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_definition: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_name: Option<&'a str>,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockControlClassReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DataBlockControlClassReferenceRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            ordinal: self.ordinal,
+            class_ordinal: self.class_ordinal,
+            class_definition: self.class.as_ref().map(|class| class.definition.as_str()),
+            class_name: self.class.as_ref().map(|class| class.name.as_str()),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Retained class-definition identity and registered name.
@@ -1747,6 +1935,7 @@ struct DataBlockControlClassReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockControlClassReference> for DataBlockControlClassReferenceWire {
     fn from(value: DataBlockControlClassReference) -> Self {
         let (class_definition, class_name) = match value.class {
@@ -1790,8 +1979,8 @@ impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassRefere
 }
 
 /// Ordered object reference carried by an offset-only OM data block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DataBlockReferenceWire", into = "DataBlockReferenceWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockReferenceWire")]
 pub(super) struct DataBlockReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -1807,6 +1996,36 @@ pub(super) struct DataBlockReference {
     pub(super) target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DataBlockReferenceRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    ordinal: u32,
+    object_id: u32,
+    raw_object_id: &'a [u8],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_record: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_expression_declaration: Option<&'a str>,
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DataBlockReferenceRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            ordinal: self.ordinal,
+            object_id: self.object.value(),
+            raw_object_id: self.object.raw(),
+            target_record: self.target_record.as_deref(),
+            target_expression_declaration: self.target_expression_declaration.as_deref(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1839,6 +2058,7 @@ struct DataBlockReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockReference> for DataBlockReferenceWire {
     fn from(value: DataBlockReference) -> Self {
         Self {
@@ -1874,11 +2094,8 @@ impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
 }
 
 /// Complete named NX part palette for color indices 1 through 216.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "color_wire::PartColorTableWire",
-    into = "color_wire::PartColorTableWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "color_wire::PartColorTableWire")]
 pub(super) struct PartColorTable {
     /// Globally unique table identity.
     id: String,
@@ -1895,11 +2112,8 @@ pub(super) struct PartColorTable {
 }
 
 /// One named RGB entry from an NX part palette.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "color_wire::PartColorDefinitionWire",
-    into = "color_wire::PartColorDefinitionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "color_wire::PartColorDefinitionWire")]
 pub(super) struct PartColorDefinition {
     /// Globally unique color-definition identity.
     pub(super) id: String,
@@ -1934,13 +2148,33 @@ pub(super) struct DataBlockColumnIndexTable {
 }
 
 /// Product/version header from one indexed NX OM store.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "StoreHeaderWire", into = "StoreHeaderWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "StoreHeaderWire")]
 pub(super) enum StoreHeader {
     /// Header in an ID-bounded store record.
     Fixed(FixedStoreHeader),
     /// Header in an offset-bounded store block.
     OffsetOnly(OffsetStoreHeader),
+}
+
+#[derive(Serialize)]
+struct StoreHeaderRef<'a> {
+    object_id: Option<u32>,
+    #[serde(flatten)]
+    header: &'a OffsetStoreHeader,
+}
+
+impl Serialize for StoreHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        StoreHeaderRef {
+            object_id: match self {
+                Self::Fixed(value) => Some(value.object_id),
+                Self::OffsetOnly(_) => None,
+            },
+            header: self.header(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Product/version header in an ID-bounded store record.
@@ -1995,6 +2229,7 @@ impl From<StoreHeaderWire> for StoreHeader {
     }
 }
 
+#[cfg(test)]
 impl From<StoreHeader> for StoreHeaderWire {
     fn from(header: StoreHeader) -> Self {
         match header {
@@ -3475,15 +3710,16 @@ pub(super) fn data_block_control_values(container: &Container) -> Vec<DataBlockC
 
 /// Resolve each atomic leading control lane through its store-local class registry.
 pub(super) fn data_block_control_class_references(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockControlClassReference> {
-    container
+) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
+    let rows = container
         .indexed_om_sections()
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
+        .map(|(section_ordinal, (entry, section))| -> Result<Vec<_>, CodecError> {
             let Some((control, _, records)) = section.as_offset_only() else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if !matches!(
                 crate::om::offset_store_control_form(
@@ -3492,7 +3728,7 @@ pub(super) fn data_block_control_class_references(
                 ),
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let mut registry = BTreeMap::new();
             for definition in container
@@ -3513,14 +3749,14 @@ pub(super) fn data_block_control_class_references(
                 registry.entry(definition.offset).or_insert(definition);
             }
             let registry = registry.into_values().collect::<Vec<_>>();
-            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(control.bytes)
+            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(ctx, control.bytes)?
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let entry_index = entry.index();
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            ordinals
+            Ok(ordinals
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, class_ordinal)| {
@@ -3544,9 +3780,10 @@ pub(super) fn data_block_control_class_references(
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
                     }
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    Ok(rows.into_iter().flatten().collect())
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
@@ -4402,6 +4639,14 @@ mod tests {
     use crate::test_support::test_prt::prt_with_named_payloads;
     use crate::test_support::test_prt::prt_with_size_framed_om_section;
     use cadmpeg_test_support::EditableDecodeResult;
+    fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test decode context");
+        run(&ctx)
+    }
+
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -5529,7 +5774,9 @@ mod tests {
         assert_eq!(control_values[0].ordinal, 0);
         assert_eq!(control_values[0].value.value(), 0);
         assert_eq!(control_values[1].value.value(), 1);
-        let classes = super::data_block_control_class_references(&container);
+        let classes =
+            with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+                .expect("test OM class ordinals");
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
@@ -5673,7 +5920,9 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        let classes = super::data_block_control_class_references(&container);
+        let classes =
+            with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+                .expect("test OM class ordinals");
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].class_ordinal, 1);
         assert_eq!(
@@ -5900,7 +6149,8 @@ mod tests {
             )) if value.get() == 120_f64.to_radians()
         ));
         assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 
@@ -6158,7 +6408,8 @@ mod tests {
         let mut duplicate = attributes.clone();
         duplicate.push(attributes[0].clone());
         assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
-        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     }
 

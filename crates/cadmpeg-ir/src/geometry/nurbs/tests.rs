@@ -606,18 +606,18 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])).expect("resource allocation did not fail"),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
             Some(&[1.0, 1.0, 2.0, 2.0])
-        )
+        ).expect("resource allocation did not fail")
     );
     assert_eq!(
-        positive_controls(&surface.poles(), None),
-        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+        positive_controls(&surface.poles(), None).expect("resource allocation did not fail"),
+        positive_controls(&surface.poles(), Some(&[1.0; 4])).expect("resource allocation did not fail")
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])),
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])).expect("resource allocation did not fail"),
         None
     );
     let mut mapped = surface.clone();

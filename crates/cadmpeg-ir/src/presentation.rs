@@ -483,7 +483,7 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 
     #[test]
@@ -499,7 +499,7 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 
     #[test]
@@ -515,7 +515,7 @@ mod tests {
             }],
         });
 
-        assert!(validate_neutral(&ir, Vec::new())
+        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == Check::Presentation));

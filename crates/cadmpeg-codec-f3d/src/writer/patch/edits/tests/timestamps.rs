@@ -66,7 +66,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     let unordered: cadmpeg_ir::CadIr =
         serde_json::from_value(serde_json::to_value(&unordered).unwrap()).unwrap();
     assert!(
-        cadmpeg_ir::validate::validate_neutral(&unordered, Vec::new())
+        cadmpeg_ir::validate::validate_neutral(&unordered, Vec::new()).expect("resource allocation did not fail")
             .findings
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)

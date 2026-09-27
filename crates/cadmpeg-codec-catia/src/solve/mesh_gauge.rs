@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use super::mesh_quotient::{
     MeshEndpointRelationChoice, MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
@@ -202,16 +203,19 @@ fn intern_gauge_signatures<T: Ord>(signatures: impl IntoIterator<Item = T>) -> V
 }
 
 pub(super) fn build_mesh_coordinate_gauge(
+    ctx: &DecodeContext<'_>,
     point_count: usize,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_geometry: &[MeshEdgeGeometry],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
-) -> MeshCoordinateGauge {
+) -> Result<MeshCoordinateGauge, CodecError> {
     const MAX_COORDINATE_GAUGE_PERMUTATIONS: usize = 4_096;
-    let identity = || MeshCoordinateGauge {
-        components: Vec::new(),
+    let identity = || {
+        Ok(MeshCoordinateGauge {
+            components: Vec::new(),
+        })
     };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_geometry.len()
@@ -235,9 +239,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         .map(|options| normalized_endpoint_options(options))
         .collect::<Vec<_>>();
     let mut parent = (0..point_count).collect::<Vec<_>>();
-    let Ok(mut active) = alloc_filled(point_count, false, "catia_coordinate_gauge_active") else {
-        return identity();
-    };
+    let mut active = ctx.alloc_filled(point_count, false, "catia_coordinate_gauge_active")?;
     for edges in groups.values() {
         let mut group_points = Vec::new();
         for &edge in edges {
@@ -268,13 +270,11 @@ pub(super) fn build_mesh_coordinate_gauge(
         components
     };
     let coordinate_components = components_by_root.into_values().collect::<Vec<_>>();
-    let Ok(mut component_by_point) = alloc_filled(
+    let mut component_by_point = ctx.alloc_filled(
         point_count,
         None::<usize>,
         "catia_coordinate_gauge_components",
-    ) else {
-        return identity();
-    };
+    )?;
     for (component, points) in coordinate_components.iter().enumerate() {
         for &point in points {
             let Some(slot) = component_by_point.get_mut(point) else {
@@ -416,11 +416,7 @@ pub(super) fn build_mesh_coordinate_gauge(
                 bounded = false;
                 break;
             };
-            let Ok(mut used) = alloc_filled(class.len(), false, "catia_coordinate_gauge_used")
-            else {
-                bounded = false;
-                break;
-            };
+            let mut used = ctx.alloc_filled(class.len(), false, "catia_coordinate_gauge_used")?;
             let mut class_orders = Vec::with_capacity(class_order_count);
             enumerate_coordinate_permutations(
                 class,
@@ -459,7 +455,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         permutations.dedup();
         components.push(permutations);
     }
-    MeshCoordinateGauge { components }
+    Ok(MeshCoordinateGauge { components })
 }
 
 fn mapped_endpoint_pair(
@@ -583,185 +579,207 @@ pub(super) fn canonicalize_complete_endpoint_pairs(
 }
 
 fn canonicalize_mesh_edge_row_gauges(
+    ctx: &DecodeContext<'_>,
     mut topology: StandardTopology,
     gauge: MeshCandidateGauge<'_>,
     permutation: Option<&[usize]>,
-) -> Option<StandardTopology> {
-    let edge_count = topology.edge_rows.len();
-    if gauge.edge_geometry.len() != edge_count
-        || gauge.edge_candidates.len() != edge_count
-        || gauge.edge_identity_evidence.len() != edge_count
-    {
-        return Some(topology);
-    }
+) -> Result<Option<StandardTopology>, CodecError> {
+    (|| -> Option<Result<StandardTopology, CodecError>> {
+        let edge_count = topology.edge_rows.len();
+        if gauge.edge_geometry.len() != edge_count
+            || gauge.edge_candidates.len() != edge_count
+            || gauge.edge_identity_evidence.len() != edge_count
+        {
+            return Some(Ok(topology));
+        }
 
-    let edge_vertices = topology.edge_vertices()?;
-    let mut incident_faces = alloc_filled(
-        edge_count,
-        Vec::<usize>::new(),
-        "catia_mesh_edge_gauge_faces",
-    )
-    .ok()?;
-    let mut usage = alloc_filled(
-        edge_count,
-        Vec::<(usize, usize, usize, bool, usize, usize)>::new(),
-        "catia_mesh_edge_gauge_usage",
-    )
-    .ok()?;
-    for (face, face_topology) in topology.faces.iter().enumerate() {
-        for (boundary, boundary_topology) in face_topology.boundaries.iter().enumerate() {
-            for (position, coedge) in boundary_topology.coedges.iter().enumerate() {
-                let faces = incident_faces.get_mut(coedge.edge_row)?;
-                if !faces.contains(&face) {
-                    faces.push(face);
+        let edge_vertices = match topology.edge_vertices(ctx) {
+            Ok(Some(vertices)) => vertices,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut incident_faces = match ctx.alloc_filled(
+            edge_count,
+            Vec::<usize>::new(),
+            "catia_mesh_edge_gauge_faces",
+        ) {
+            Ok(faces) => faces,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut usage = match ctx.alloc_filled(
+            edge_count,
+            Vec::<(usize, usize, usize, bool, usize, usize)>::new(),
+            "catia_mesh_edge_gauge_usage",
+        ) {
+            Ok(usage) => usage,
+            Err(error) => return Some(Err(error)),
+        };
+        for (face, face_topology) in topology.faces.iter().enumerate() {
+            for (boundary, boundary_topology) in face_topology.boundaries.iter().enumerate() {
+                for (position, coedge) in boundary_topology.coedges.iter().enumerate() {
+                    let faces = incident_faces.get_mut(coedge.edge_row)?;
+                    if !faces.contains(&face) {
+                        faces.push(face);
+                    }
+                    usage.get_mut(coedge.edge_row)?.push((
+                        face,
+                        boundary,
+                        position,
+                        coedge.reversed,
+                        coedge.start_vertex,
+                        coedge.end_vertex,
+                    ));
                 }
-                usage.get_mut(coedge.edge_row)?.push((
-                    face,
-                    boundary,
-                    position,
-                    coedge.reversed,
-                    coedge.start_vertex,
-                    coedge.end_vertex,
-                ));
             }
         }
-    }
-    for faces in &mut incident_faces {
-        faces.sort_unstable();
-    }
-    for uses in &mut usage {
-        uses.sort_unstable();
-    }
+        for faces in &mut incident_faces {
+            faces.sort_unstable();
+        }
+        for uses in &mut usage {
+            uses.sort_unstable();
+        }
 
-    if gauge.edge_faces.len() == edge_count {
-        for (edge, actual_faces) in incident_faces.iter().enumerate() {
-            let mut expected_faces = *gauge.edge_faces.get(edge)?;
-            expected_faces.sort_unstable();
-            if *actual_faces != expected_faces {
+        if gauge.edge_faces.len() == edge_count {
+            for (edge, actual_faces) in incident_faces.iter().enumerate() {
+                let mut expected_faces = *gauge.edge_faces.get(edge)?;
+                expected_faces.sort_unstable();
+                if *actual_faces != expected_faces {
+                    return None;
+                }
+            }
+        }
+
+        let endpoint_keys = edge_vertices
+            .iter()
+            .copied()
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<Vec<_>>();
+        let source_option_keys = gauge
+            .edge_candidates
+            .iter()
+            .map(|options| normalized_endpoint_options(options))
+            .collect::<Vec<_>>();
+        let mut source_groups = BTreeMap::<MeshTopologyEdgeGaugeKey, Vec<usize>>::new();
+        let mut target_groups = BTreeMap::<MeshTopologyEdgeGaugeKey, Vec<usize>>::new();
+        for edge in 0..edge_count {
+            if gauge.edge_identity_evidence[edge] {
+                continue;
+            }
+            let row = &topology.edge_rows[edge];
+            let base = (
+                row.kind,
+                row.boundary_layout,
+                gauge.edge_geometry[edge],
+                row.handles.len(),
+                incident_faces[edge].clone(),
+            );
+            let target_options = match permutation {
+                Some(permutation) => {
+                    mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
+                }
+                None => source_option_keys[edge].clone(),
+            };
+            source_groups
+                .entry((base.clone(), target_options))
+                .or_default()
+                .push(edge);
+            target_groups
+                .entry((base, source_option_keys[edge].clone()))
+                .or_default()
+                .push(edge);
+        }
+
+        let mut row_permutation = (0..edge_count).collect::<Vec<_>>();
+        let mut normalize_rows =
+            match ctx.alloc_filled(edge_count, false, "catia_mesh_edge_gauge_normalize_rows") {
+                Ok(rows) => rows,
+                Err(error) => return Some(Err(error)),
+            };
+        for (key, group) in source_groups {
+            let mut slots = target_groups.remove(&key)?;
+            if slots.len() != group.len() {
                 return None;
             }
-        }
-    }
-
-    let endpoint_keys = edge_vertices
-        .iter()
-        .copied()
-        .map(|mut pair| {
-            pair.sort_unstable();
-            pair
-        })
-        .collect::<Vec<_>>();
-    let source_option_keys = gauge
-        .edge_candidates
-        .iter()
-        .map(|options| normalized_endpoint_options(options))
-        .collect::<Vec<_>>();
-    let mut source_groups = BTreeMap::<MeshTopologyEdgeGaugeKey, Vec<usize>>::new();
-    let mut target_groups = BTreeMap::<MeshTopologyEdgeGaugeKey, Vec<usize>>::new();
-    for edge in 0..edge_count {
-        if gauge.edge_identity_evidence[edge] {
-            continue;
-        }
-        let row = &topology.edge_rows[edge];
-        let base = (
-            row.kind,
-            row.boundary_layout,
-            gauge.edge_geometry[edge],
-            row.handles.len(),
-            incident_faces[edge].clone(),
-        );
-        let target_options = match permutation {
-            Some(permutation) => {
-                mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
+            slots.sort_unstable();
+            let mut ordered = group.clone();
+            ordered.sort_unstable_by(|left, right| {
+                endpoint_keys[*left]
+                    .cmp(&endpoint_keys[*right])
+                    .then_with(|| usage[*left].cmp(&usage[*right]))
+                    .then_with(|| left.cmp(right))
+            });
+            for (slot, old_edge) in slots.into_iter().zip(ordered) {
+                row_permutation[old_edge] = slot;
+                normalize_rows[slot] = group.len() > 1 || old_edge != slot;
             }
-            None => source_option_keys[edge].clone(),
-        };
-        source_groups
-            .entry((base.clone(), target_options))
-            .or_default()
-            .push(edge);
-        target_groups
-            .entry((base, source_option_keys[edge].clone()))
-            .or_default()
-            .push(edge);
-    }
-
-    let mut row_permutation = (0..edge_count).collect::<Vec<_>>();
-    let mut normalize_rows =
-        alloc_filled(edge_count, false, "catia_mesh_edge_gauge_normalize_rows").ok()?;
-    for (key, group) in source_groups {
-        let mut slots = target_groups.remove(&key)?;
-        if slots.len() != group.len() {
+        }
+        if !target_groups.is_empty() {
             return None;
         }
-        slots.sort_unstable();
-        let mut ordered = group.clone();
-        ordered.sort_unstable_by(|left, right| {
-            endpoint_keys[*left]
-                .cmp(&endpoint_keys[*right])
-                .then_with(|| usage[*left].cmp(&usage[*right]))
-                .then_with(|| left.cmp(right))
-        });
-        for (slot, old_edge) in slots.into_iter().zip(ordered) {
-            row_permutation[old_edge] = slot;
-            normalize_rows[slot] = group.len() > 1 || old_edge != slot;
+        if !normalize_rows.iter().any(|normalize| *normalize) {
+            return Some(Ok(topology));
         }
-    }
-    if !target_groups.is_empty() {
-        return None;
-    }
-    if !normalize_rows.iter().any(|normalize| *normalize) {
-        return Some(topology);
-    }
 
-    let old_rows = topology.edge_rows.clone();
-    let mut new_rows = old_rows.clone();
-    for (old_edge, &new_edge) in row_permutation.iter().enumerate() {
-        new_rows[new_edge] = old_rows[old_edge].clone();
-    }
-    for (edge, row) in new_rows.iter_mut().enumerate() {
-        if normalize_rows[edge] {
-            row.handles = row.handles.iter().map(|_| 0).collect();
+        let old_rows = topology.edge_rows.clone();
+        let mut new_rows = old_rows.clone();
+        for (old_edge, &new_edge) in row_permutation.iter().enumerate() {
+            new_rows[new_edge] = old_rows[old_edge].clone();
         }
-    }
-    for coedge in topology
-        .faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .flat_map(|boundary| &mut boundary.coedges)
-    {
-        coedge.edge_row = *row_permutation.get(coedge.edge_row)?;
-    }
-    topology.edge_rows = new_rows;
-    canonicalize_topology_boundary_gauges(&mut topology);
-    Some(topology)
+        for (edge, row) in new_rows.iter_mut().enumerate() {
+            if normalize_rows[edge] {
+                row.handles = row.handles.iter().map(|_| 0).collect();
+            }
+        }
+        for coedge in topology
+            .faces
+            .iter_mut()
+            .flat_map(|face| &mut face.boundaries)
+            .flat_map(|boundary| &mut boundary.coedges)
+        {
+            coedge.edge_row = *row_permutation.get(coedge.edge_row)?;
+        }
+        topology.edge_rows = new_rows;
+        canonicalize_topology_boundary_gauges(&mut topology);
+        Some(Ok(topology))
+    })()
+    .transpose()
 }
 
 fn permute_mesh_coordinate_labels(
+    ctx: &DecodeContext<'_>,
     mut topology: StandardTopology,
     permutation: &[usize],
-) -> Option<StandardTopology> {
-    if permutation.len() != topology.vertex_points.len() {
-        return None;
-    }
-    let mut seen =
-        alloc_filled(permutation.len(), false, "catia_mesh_coordinate_gauge_seen").ok()?;
-    for &target in permutation {
-        let seen_target = seen.get_mut(target)?;
-        if std::mem::replace(seen_target, true) {
+) -> Result<Option<StandardTopology>, CodecError> {
+    (|| -> Option<Result<StandardTopology, CodecError>> {
+        if permutation.len() != topology.vertex_points.len() {
             return None;
         }
-    }
-    for coedge in topology
-        .faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .flat_map(|boundary| &mut boundary.coedges)
-    {
-        coedge.start_vertex = *permutation.get(coedge.start_vertex)?;
-        coedge.end_vertex = *permutation.get(coedge.end_vertex)?;
-    }
-    Some(topology)
+        let mut seen =
+            match ctx.alloc_filled(permutation.len(), false, "catia_mesh_coordinate_gauge_seen") {
+                Ok(seen) => seen,
+                Err(error) => return Some(Err(error)),
+            };
+        for &target in permutation {
+            let seen_target = seen.get_mut(target)?;
+            if std::mem::replace(seen_target, true) {
+                return None;
+            }
+        }
+        for coedge in topology
+            .faces
+            .iter_mut()
+            .flat_map(|face| &mut face.boundaries)
+            .flat_map(|boundary| &mut boundary.coedges)
+        {
+            coedge.start_vertex = *permutation.get(coedge.start_vertex)?;
+            coedge.end_vertex = *permutation.get(coedge.end_vertex)?;
+        }
+        Some(Ok(topology))
+    })()
+    .transpose()
 }
 
 fn mesh_topology_gauge_key(topology: &StandardTopology) -> Vec<u64> {
@@ -795,136 +813,172 @@ fn mesh_topology_gauge_key(topology: &StandardTopology) -> Vec<u64> {
 }
 
 fn canonicalize_mesh_coordinate_gauges(
+    ctx: &DecodeContext<'_>,
     mut topology: StandardTopology,
     gauge: MeshCandidateGauge<'_>,
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     let Some(coordinate_gauge) = gauge.coordinate_gauge else {
-        return canonicalize_mesh_edge_row_gauges(topology, gauge, None);
+        return canonicalize_mesh_edge_row_gauges(ctx, topology, gauge, None);
     };
     if coordinate_gauge.components.is_empty() {
-        return canonicalize_mesh_edge_row_gauges(topology, gauge, None);
+        return canonicalize_mesh_edge_row_gauges(ctx, topology, gauge, None);
     }
     for permutations in &coordinate_gauge.components {
         let mut best = None::<(Vec<u64>, StandardTopology)>;
         for permutation in permutations {
-            let mut candidate = permute_mesh_coordinate_labels(topology.clone(), permutation)?;
+            let Some(mut candidate) =
+                permute_mesh_coordinate_labels(ctx, topology.clone(), permutation)?
+            else {
+                return Ok(None);
+            };
             canonicalize_topology_boundary_gauges(&mut candidate);
-            candidate = canonicalize_mesh_edge_row_gauges(candidate, gauge, Some(permutation))?;
+            let Some(canonical) =
+                canonicalize_mesh_edge_row_gauges(ctx, candidate, gauge, Some(permutation))?
+            else {
+                return Ok(None);
+            };
+            candidate = canonical;
             let key = mesh_topology_gauge_key(&candidate);
             if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
                 best = Some((key, candidate));
             }
         }
-        topology = best?.1;
+        let Some((_, best)) = best else {
+            return Ok(None);
+        };
+        topology = best;
     }
-    Some(topology)
+    Ok(Some(topology))
 }
 
 fn canonicalize_mesh_candidate(
+    ctx: &DecodeContext<'_>,
     source_topology: &StandardTopology,
     point_assignment: &[usize],
     gauge: Option<MeshCandidateGauge<'_>>,
-) -> Option<(StandardTopology, Vec<usize>)> {
-    let mut topology = source_topology.clone();
-    if point_assignment.len() != topology.logical_vertex_count
-        || point_assignment.len() != topology.vertex_points.len()
-    {
-        return None;
-    }
-    let mut seen = alloc_filled(point_assignment.len(), false, "catia_mesh_vertex_seen").ok()?;
-    for &point in point_assignment {
-        let entry = seen.get_mut(point)?;
-        if std::mem::replace(entry, true) {
+) -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+    (|| -> Option<Result<(StandardTopology, Vec<usize>), CodecError>> {
+        let mut topology = source_topology.clone();
+        if point_assignment.len() != topology.logical_vertex_count
+            || point_assignment.len() != topology.vertex_points.len()
+        {
             return None;
         }
-    }
-    for coedge in topology
-        .faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .flat_map(|boundary| &mut boundary.coedges)
-    {
-        coedge.start_vertex = *point_assignment.get(coedge.start_vertex)?;
-        coedge.end_vertex = *point_assignment.get(coedge.end_vertex)?;
-    }
-    let mut edge_vertices =
-        alloc_filled(topology.edge_rows.len(), None, "catia_mesh_edge_vertices").ok()?;
-    for coedge in topology
-        .faces
-        .iter()
-        .flat_map(|face| &face.boundaries)
-        .flat_map(|boundary| &boundary.coedges)
-    {
-        let vertices = if coedge.reversed {
-            [coedge.end_vertex, coedge.start_vertex]
-        } else {
-            [coedge.start_vertex, coedge.end_vertex]
-        };
-        let stored = edge_vertices.get_mut(coedge.edge_row)?;
-        match stored {
-            Some(existing) if *existing != vertices => return None,
-            Some(_) => {}
-            None => *stored = Some(vertices),
+        let mut seen =
+            match ctx.alloc_filled(point_assignment.len(), false, "catia_mesh_vertex_seen") {
+                Ok(seen) => seen,
+                Err(error) => return Some(Err(error)),
+            };
+        for &point in point_assignment {
+            let entry = seen.get_mut(point)?;
+            if std::mem::replace(entry, true) {
+                return None;
+            }
         }
-    }
-    let reverse_edges = edge_vertices
-        .into_iter()
-        .map(|vertices| vertices.is_some_and(|vertices| vertices[0] > vertices[1]))
-        .collect::<Vec<_>>();
-    for coedge in topology
-        .faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .flat_map(|boundary| &mut boundary.coedges)
-    {
-        if *reverse_edges.get(coedge.edge_row)? {
-            coedge.reversed = !coedge.reversed;
+        for coedge in topology
+            .faces
+            .iter_mut()
+            .flat_map(|face| &mut face.boundaries)
+            .flat_map(|boundary| &mut boundary.coedges)
+        {
+            coedge.start_vertex = *point_assignment.get(coedge.start_vertex)?;
+            coedge.end_vertex = *point_assignment.get(coedge.end_vertex)?;
         }
-    }
-    canonicalize_topology_boundary_gauges(&mut topology);
-    if let Some(gauge) = gauge {
-        topology = canonicalize_mesh_coordinate_gauges(topology, gauge)?;
-    }
-    Some((topology, (0..point_assignment.len()).collect::<Vec<_>>()))
+        let mut edge_vertices =
+            match ctx.alloc_filled(topology.edge_rows.len(), None, "catia_mesh_edge_vertices") {
+                Ok(vertices) => vertices,
+                Err(error) => return Some(Err(error)),
+            };
+        for coedge in topology
+            .faces
+            .iter()
+            .flat_map(|face| &face.boundaries)
+            .flat_map(|boundary| &boundary.coedges)
+        {
+            let vertices = if coedge.reversed {
+                [coedge.end_vertex, coedge.start_vertex]
+            } else {
+                [coedge.start_vertex, coedge.end_vertex]
+            };
+            let stored = edge_vertices.get_mut(coedge.edge_row)?;
+            match stored {
+                Some(existing) if *existing != vertices => return None,
+                Some(_) => {}
+                None => *stored = Some(vertices),
+            }
+        }
+        let reverse_edges = edge_vertices
+            .into_iter()
+            .map(|vertices| vertices.is_some_and(|vertices| vertices[0] > vertices[1]))
+            .collect::<Vec<_>>();
+        for coedge in topology
+            .faces
+            .iter_mut()
+            .flat_map(|face| &mut face.boundaries)
+            .flat_map(|boundary| &mut boundary.coedges)
+        {
+            if *reverse_edges.get(coedge.edge_row)? {
+                coedge.reversed = !coedge.reversed;
+            }
+        }
+        canonicalize_topology_boundary_gauges(&mut topology);
+        if let Some(gauge) = gauge {
+            topology = match canonicalize_mesh_coordinate_gauges(ctx, topology, gauge) {
+                Ok(Some(topology)) => topology,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        }
+        Some(Ok((
+            topology,
+            (0..point_assignment.len()).collect::<Vec<_>>(),
+        )))
+    })()
+    .transpose()
 }
 
 /// Materialize the canonical representative of one admitted topology orbit.
 ///
 /// Returns `None` when the candidate does not satisfy the canonicalizer's
-/// structural invariants or its bounded working storage is unavailable.
+/// structural invariants.
 pub(super) fn canonicalize_mesh_candidate_for_output(
+    ctx: &DecodeContext<'_>,
     topology: &StandardTopology,
     point_assignment: &[usize],
     gauge: Option<MeshCandidateGauge<'_>>,
-) -> Option<(StandardTopology, Vec<usize>)> {
-    canonicalize_mesh_candidate(topology, point_assignment, gauge)
+) -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+    canonicalize_mesh_candidate(ctx, topology, point_assignment, gauge)
 }
 
 #[cfg(test)]
 pub(crate) fn canonicalize_mesh_vertex_labels(
+    ctx: &DecodeContext<'_>,
     topology: &StandardTopology,
     point_assignment: &[usize],
-) -> Option<(StandardTopology, Vec<usize>)> {
-    canonicalize_mesh_candidate(topology, point_assignment, None)
+) -> Result<Option<(StandardTopology, Vec<usize>)>, CodecError> {
+    canonicalize_mesh_candidate(ctx, topology, point_assignment, None)
 }
 
 #[cfg(test)]
 pub(crate) fn mesh_candidates_equivalent(
+    ctx: &DecodeContext<'_>,
     left: &(StandardTopology, Vec<usize>),
     right: &(StandardTopology, Vec<usize>),
-) -> bool {
-    mesh_candidates_equivalent_with_context(left, right, None)
+) -> Result<bool, CodecError> {
+    mesh_candidates_equivalent_with_context(ctx, left, right, None)
 }
 
 #[cfg(test)]
 pub(crate) fn mesh_candidates_equivalent_with_gauge(
+    ctx: &DecodeContext<'_>,
     left: &(StandardTopology, Vec<usize>),
     right: &(StandardTopology, Vec<usize>),
     edge_geometry: &[MeshEdgeGeometry],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
-) -> bool {
+) -> Result<bool, CodecError> {
     mesh_candidates_equivalent_with_context(
+        ctx,
         left,
         right,
         Some(MeshCandidateGauge {
@@ -939,17 +993,18 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
 }
 
 pub(super) fn mesh_candidates_equivalent_with_context(
+    ctx: &DecodeContext<'_>,
     left: &(StandardTopology, Vec<usize>),
     right: &(StandardTopology, Vec<usize>),
     gauge: Option<MeshCandidateGauge<'_>>,
-) -> bool {
+) -> Result<bool, CodecError> {
     if left.0.vertex_points != right.0.vertex_points {
-        return false;
+        return Ok(false);
     }
-    let left = canonicalize_mesh_candidate(&left.0, &left.1, gauge);
-    let right = canonicalize_mesh_candidate(&right.0, &right.1, gauge);
+    let left = canonicalize_mesh_candidate(ctx, &left.0, &left.1, gauge)?;
+    let right = canonicalize_mesh_candidate(ctx, &right.0, &right.1, gauge)?;
     let equivalent = matches!((&left, &right), (Some(left), Some(right)) if left == right);
-    equivalent
+    Ok(equivalent)
 }
 
 #[test]
@@ -989,6 +1044,7 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
 
 #[test]
 fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
+    catia_test_context!(ctx);
     let edge_rows = vec![
         EdgeRow {
             kind: 1,
@@ -1067,29 +1123,29 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let left = (topology(false), vec![0, 1, 2, 3]);
     let right = (topology(true), vec![0, 1, 2, 3]);
 
-    assert!(!mesh_candidates_equivalent_with_context(
-        &left, &right, None
-    ));
-    assert!(mesh_candidates_equivalent_with_context(
-        &left,
-        &right,
-        Some(gauge)
-    ));
+    assert!(
+        !mesh_candidates_equivalent_with_context(&ctx, &left, &right, None)
+            .expect("service resource budget")
+    );
+    assert!(
+        mesh_candidates_equivalent_with_context(&ctx, &left, &right, Some(gauge))
+            .expect("service resource budget")
+    );
 
     let mut mismatched_topology = topology(false);
     let boundary = &mut mismatched_topology.faces[1].boundaries[0];
     boundary.coedges = NonEmptyCoedges::one(boundary.coedges[0]);
     let mismatched = (mismatched_topology, vec![0, 1, 2, 3]);
-    assert!(!mesh_candidates_equivalent_with_context(
-        &left,
-        &mismatched,
-        Some(gauge)
-    ));
+    assert!(
+        !mesh_candidates_equivalent_with_context(&ctx, &left, &mismatched, Some(gauge))
+            .expect("service resource budget")
+    );
 }
 
 #[test]
 fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorphisms() {
     const COMPONENT_COUNT: usize = 3;
+    catia_test_context!(ctx);
     let edge_rows = (0..COMPONENT_COUNT * 2)
         .map(|edge| EdgeRow {
             kind: 2,
@@ -1121,13 +1177,15 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         .collect::<Vec<_>>();
     let edge_identity_evidence = (0..COMPONENT_COUNT * 2).map(|_| false).collect::<Vec<_>>();
     let coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     assert_eq!(coordinate_gauge.components.len(), COMPONENT_COUNT);
     for component in 0..COMPONENT_COUNT {
         let mut coordinate_swap = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
@@ -1188,21 +1246,26 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     };
     let identity = (0..COMPONENT_COUNT * 4).collect::<Vec<_>>();
     let left = (topology(0), identity.clone());
-    let canonical_left = canonicalize_mesh_candidate_for_output(&left.0, &left.1, Some(gauge))
-        .expect("seam candidate canonicalization");
+    let canonical_left =
+        canonicalize_mesh_candidate_for_output(&ctx, &left.0, &left.1, Some(gauge))
+            .expect("service resource budget")
+            .expect("seam candidate canonicalization");
 
     for mask in 1..(1 << COMPONENT_COUNT) {
         let right = (topology(mask), identity.clone());
-        assert!(!mesh_candidates_equivalent_with_context(
-            &left, &right, None
-        ));
         assert!(
-            mesh_candidates_equivalent_with_context(&left, &right, Some(gauge)),
+            !mesh_candidates_equivalent_with_context(&ctx, &left, &right, None)
+                .expect("service resource budget")
+        );
+        assert!(
+            mesh_candidates_equivalent_with_context(&ctx, &left, &right, Some(gauge))
+                .expect("service resource budget"),
             "seam gauge did not collapse mask {mask:#b}"
         );
         assert_eq!(
             canonical_left,
-            canonicalize_mesh_candidate_for_output(&right.0, &right.1, Some(gauge))
+            canonicalize_mesh_candidate_for_output(&ctx, &right.0, &right.1, Some(gauge))
+                .expect("service resource budget")
                 .expect("seam candidate canonicalization"),
             "seam gauge representative depends on search arrival order for mask {mask:#b}"
         );
@@ -1211,10 +1274,12 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     let mut displaced = topology(0);
     displaced.vertex_points[0][0] = -1.0;
     assert!(!mesh_candidates_equivalent_with_context(
+        &ctx,
         &left,
         &(displaced, identity),
         Some(gauge)
-    ));
+    )
+    .expect("service resource budget"));
 
     let mut mismatched_geometry = edge_geometry;
     mismatched_geometry[1] = MeshEdgeGeometry::Circle {
@@ -1222,13 +1287,15 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
         radius: 1,
     };
     let mismatched_coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         COMPONENT_COUNT * 4,
         &edge_rows,
         &edge_faces,
         &mismatched_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     let mismatched_gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1240,10 +1307,12 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     let mut row_swapped = topology(0);
     row_swapped.edge_rows.swap(0, 1);
     assert!(!mesh_candidates_equivalent_with_context(
+        &ctx,
         &left,
         &(row_swapped, (0..COMPONENT_COUNT * 4).collect()),
         Some(mismatched_gauge),
-    ));
+    )
+    .expect("service resource budget"));
 }
 
 pub(super) fn canonicalize_endpoint_relation_state(
@@ -1577,6 +1646,7 @@ fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
 
 #[test]
 fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
+    catia_test_context!(ctx);
     let edge_rows = [
         EdgeRow {
             kind: 2,
@@ -1594,13 +1664,15 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
     let edge_identity_evidence = [false, false];
     let coordinate_gauge = build_mesh_coordinate_gauge(
+        &ctx,
         4,
         &edge_rows,
         &edge_faces,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    );
+    )
+    .expect("service resource budget");
     let gauge = MeshCandidateGauge {
         edge_rows: &edge_rows,
         edge_faces: &edge_faces,
@@ -1625,4 +1697,161 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let right = state(vec![None, Some([0, 3])], vec![(0, [0, 3]), (1, [1, 2])]);
 
     assert_eq!(left, right);
+}
+
+#[test]
+fn mesh_coordinate_gauge_propagates_collection_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let edge_rows = [
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let edge_faces = [[0, 1], [0, 1]];
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+    let run = |ctx: &DecodeContext<'_>| {
+        build_mesh_coordinate_gauge(
+            ctx,
+            4,
+            &edge_rows,
+            &edge_faces,
+            &edge_geometry,
+            &edge_candidates,
+            &edge_identity_evidence,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(!run(&service_ctx)
+        .expect("service resource budget")
+        .components
+        .is_empty());
+
+    let mut refused = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_gauge_active",
+        "catia_coordinate_gauge_components",
+        "catia_coordinate_gauge_used",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn mesh_candidate_canonicalization_propagates_collection_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let edge_rows = vec![EdgeRow {
+        kind: 1,
+        handles: vec![10],
+        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let topology = StandardTopology {
+        faces: vec![crate::families::standard::topology::FaceTopology {
+            boundaries: vec![
+                crate::families::standard::topology::Boundary::new(vec![CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }])
+                .expect("nonempty topology boundary"),
+            ],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        logical_vertex_count: 2,
+    };
+    let candidate = (topology, vec![0, 1]);
+    let edge_geometry = [MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 1]]];
+    let edge_identity_evidence = [false];
+    let coordinate_gauge = MeshCoordinateGauge {
+        components: vec![vec![vec![0, 1]]],
+    };
+    let gauge = MeshCandidateGauge {
+        edge_rows: &edge_rows,
+        edge_faces: &[],
+        edge_geometry: &edge_geometry,
+        edge_candidates: &edge_candidates,
+        edge_identity_evidence: &edge_identity_evidence,
+        coordinate_gauge: Some(&coordinate_gauge),
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, Some(gauge))
+    };
+    catia_test_context!(service_ctx);
+    assert!(run(&service_ctx).expect("service resource budget"));
+    assert!(canonicalize_mesh_candidate_for_output(
+        &service_ctx,
+        &candidate.0,
+        &candidate.1,
+        Some(gauge),
+    )
+    .expect("service resource budget")
+    .is_some());
+
+    let mut refused = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(true) => break,
+            Ok(false) => panic!("a candidate must equal itself"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_mesh_vertex_seen",
+        "catia_mesh_edge_vertices",
+        "catia_mesh_coordinate_gauge_seen",
+        "catia_mesh_edge_gauge_faces",
+        "catia_mesh_edge_gauge_usage",
+        "catia_mesh_edge_gauge_normalize_rows",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error =
+        canonicalize_mesh_candidate_for_output(&ctx, &candidate.0, &candidate.1, Some(gauge))
+            .expect_err("canonicalization exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_mesh_vertex_seen"));
 }

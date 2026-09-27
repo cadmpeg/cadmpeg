@@ -75,7 +75,7 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
             })
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &F::Atom, &O)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, &F::Atom, &O)> + Clone {
         let mut at = self.offset + self.form.prefix_len();
         self.values.iter().map(move |(atom, location)| {
             let offset = at;

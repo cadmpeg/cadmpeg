@@ -158,7 +158,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
-    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").findings;
     assert!(
         findings
             .iter()
@@ -1891,7 +1891,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     ));
     let native_findings = crate::validate_native(result.ir());
     assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     let design_findings = validation
         .findings
         .iter()

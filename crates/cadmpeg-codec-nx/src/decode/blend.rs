@@ -10,6 +10,7 @@ use super::offset::{
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
+#[cfg(test)]
 use cadmpeg_core::decode::alloc_filled;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
@@ -92,10 +93,12 @@ mod tests {
                 Point2::new(0.5, 0.),
                 0.2 * domain,
             )
+            .expect("evaluator allocation succeeds")
             .unwrap();
             assert!((result / domain - 0.5).abs() < 16. * f64::EPSILON);
             let coarse =
                 super::closest_pcurve_parameter_from_coarse_grid(&line, Point2::new(0.5, 1e200))
+                    .expect("evaluator allocation succeeds")
                     .unwrap();
             assert!((coarse / domain - 0.5).abs() < 16. * f64::EPSILON);
         }
@@ -266,6 +269,7 @@ mod tests {
             .unwrap();
             let parameter =
                 super::closest_nurbs_curve_parameter(&curve, Point3::new(0.25, 0.0, 0.0), None)
+                    .expect("evaluator allocation succeeds")
                     .unwrap();
             assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
         }
@@ -279,13 +283,16 @@ pub(super) fn decoded_surface_point_inner_with_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the blend construction.
     match model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget) {
-        Ok(point) => Some(point.get()),
-        Err(EvaluationFailure::NonFinite(point)) => Some(point),
+        Ok(point) => Ok(Some(point.get())),
+        Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
         Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
             index,
             surface,
@@ -305,8 +312,10 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the next route.
     let evaluated = match surface_point_with_budget(geometry, u, v, geometry_budget) {
@@ -316,8 +325,9 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
         direct => direct,
     };
     match evaluated {
-        Ok(point) => Some(point.get()),
-        Err(EvaluationFailure::NonFinite(point)) => Some(point),
+        Ok(point) => Ok(Some(point.get())),
+        Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
         Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
             index,
             surface,
@@ -335,7 +345,7 @@ pub(super) fn blend_surface_parameters(
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_inner(
@@ -358,7 +368,7 @@ pub(super) fn blend_surface_parameters_for_fit(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_surface_parameters_for_fit_with_grid(
         &index,
@@ -386,7 +396,7 @@ fn blend_surface_parameters_for_fit_with_grid(
     seed: Option<Point2>,
     fit_tolerance: f64,
     grid: BlendParameterGrid<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_parameters_for_fit_with_grid_and_budget(
         index,
@@ -407,7 +417,7 @@ pub(super) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     fit_tolerance: f64,
     grid: BlendParameterGrid<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
         index,
         surface,
@@ -428,7 +438,7 @@ pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budg
     fit_tolerance: f64,
     grid: BlendParameterGrid<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_for_fit_with_section_domain_and_budget(
         index,
         surface,
@@ -453,7 +463,7 @@ fn blend_surface_parameters_for_fit_with_section_domain_and_budget(
     grid: BlendParameterGrid<'_>,
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_inner(
         index,
         surface,
@@ -480,9 +490,13 @@ fn blend_surface_parameters_inner(
     section_domain: BlendSectionDomain,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    (depth < 32).then_some(())?;
-    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
+    };
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         let seed_u_is_valid = index
             .curves(spine.as_str())
@@ -512,10 +526,10 @@ fn blend_surface_parameters_inner(
                 seed.v,
                 depth + 1,
                 geometry_budget,
-            )
+            )?
             .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
         {
-            return Some(seed);
+            return Ok(Some(seed));
         }
         if let Some(parameters) = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
@@ -525,9 +539,8 @@ fn blend_surface_parameters_inner(
             depth + 1,
             section_domain,
             geometry_budget,
-        )
-        .filter(|parameters| {
-            section_domain.contains(parameters.v)
+        )? {
+            if section_domain.contains(parameters.v)
                 && blend_surface_point_inner_with_index_and_budget(
                     index,
                     surface,
@@ -535,10 +548,11 @@ fn blend_surface_parameters_inner(
                     parameters.v,
                     depth + 1,
                     geometry_budget,
-                )
+                )?
                 .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
-        }) {
-            return Some(parameters);
+            {
+                return Ok(Some(parameters));
+            }
         }
     }
     let angular_spine = closest_spine_parameter_with_index_and_budget(
@@ -547,54 +561,74 @@ fn blend_surface_parameters_inner(
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    );
-    let angular = angular_spine.and_then(|u| {
-        let (center, tangent, first, second, _) = blend_surface_frame_with_index_and_budget(
-            index,
-            surface,
-            u,
-            depth + 1,
-            geometry_budget,
-        )?;
-        let radial = FiniteVector3::new(Vector3::new(
-            point.x - center.x,
-            point.y - center.y,
-            point.z - center.z,
-        ))
-        .and_then(FiniteVector3::unit_nonzero)?;
-        let alpha = signed_angle(first, second, tangent);
-        if !alpha.is_finite() || alpha.abs() <= EPS_BLEND_EXACT_GEOMETRY {
-            return None;
-        }
-        let theta = signed_angle(first, radial, tangent);
-        (-2..=2)
-            .filter_map(|turn| {
-                let raw_v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
-                let v = section_domain.clamp_near_boundary(raw_v)?;
-                let candidate = blend_surface_point_inner_with_index_and_budget(
-                    index,
-                    surface,
-                    u,
-                    v,
-                    depth + 1,
-                    geometry_budget,
-                )?;
-                let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
-                Some((
-                    Point2::new(u, v),
-                    Point3::distance(candidate, point),
-                    branch_distance,
-                ))
-            })
-            .min_by(|first, second| {
-                if (first.1 - second.1).abs() <= EPS_BLEND_EXACT_GEOMETRY {
-                    first.2.total_cmp(&second.2)
+    )?;
+    let angular = if let Some(u) = angular_spine {
+        if let Some((center, tangent, first, second, _)) =
+            blend_surface_frame_with_index_and_budget(
+                index,
+                surface,
+                u,
+                depth + 1,
+                geometry_budget,
+            )?
+        {
+            if let Some(radial) = FiniteVector3::new(Vector3::new(
+                point.x - center.x,
+                point.y - center.y,
+                point.z - center.z,
+            ))
+            .and_then(FiniteVector3::unit_nonzero)
+            {
+                let alpha = signed_angle(first, second, tangent);
+                if alpha.is_finite() && alpha.abs() > EPS_BLEND_EXACT_GEOMETRY {
+                    let theta = signed_angle(first, radial, tangent);
+                    let mut candidates = [None; 5];
+                    for (slot, turn) in (-2..=2).enumerate() {
+                        let raw_v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+                        let Some(v) = section_domain.clamp_near_boundary(raw_v) else {
+                            continue;
+                        };
+                        let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
+                            index,
+                            surface,
+                            u,
+                            v,
+                            depth + 1,
+                            geometry_budget,
+                        )?
+                        else {
+                            continue;
+                        };
+                        let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
+                        candidates[slot] = Some((
+                            Point2::new(u, v),
+                            Point3::distance(candidate, point),
+                            branch_distance,
+                        ));
+                    }
+                    candidates
+                        .into_iter()
+                        .flatten()
+                        .min_by(|first, second| {
+                            if (first.1 - second.1).abs() <= EPS_BLEND_EXACT_GEOMETRY {
+                                first.2.total_cmp(&second.2)
+                            } else {
+                                first.1.total_cmp(&second.1)
+                            }
+                        })
+                        .map(|(parameters, distance, _)| (parameters, distance))
                 } else {
-                    first.1.total_cmp(&second.1)
+                    None
                 }
-            })
-            .map(|(parameters, distance, _)| (parameters, distance))
-    });
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     if let Some((initial, angular_distance)) = angular {
         // The angular candidate has already been evaluated against the query
         // point. A fit-qualified candidate is a complete inverse result; do
@@ -602,7 +636,7 @@ fn blend_surface_parameters_inner(
         if section_domain.contains(initial.v)
             && fit_tolerance.is_some_and(|tolerance| angular_distance <= tolerance)
         {
-            return Some(initial);
+            return Ok(Some(initial));
         }
         let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
             index,
@@ -612,7 +646,7 @@ fn blend_surface_parameters_inner(
             depth + 1,
             section_domain,
             geometry_budget,
-        )
+        )?
         .unwrap_or(initial);
         if section_domain.contains(parameters.v) {
             if let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
@@ -622,10 +656,10 @@ fn blend_surface_parameters_inner(
                 parameters.v,
                 depth + 1,
                 geometry_budget,
-            ) {
+            )? {
                 let distance = Point3::distance(candidate, point);
                 if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
-                    return Some(parameters);
+                    return Ok(Some(parameters));
                 }
             }
         }
@@ -638,7 +672,7 @@ fn blend_surface_parameters_inner(
             point,
             depth + 1,
             geometry_budget,
-        ),
+        )?,
         BlendParameterGrid::Disabled => None,
         BlendParameterGrid::Provided(grid) => closest_blend_surface_grid_parameters(grid, point),
     };
@@ -651,45 +685,58 @@ fn blend_surface_parameters_inner(
             depth + 1,
             section_domain,
             geometry_budget,
-        )
+        )?
         .unwrap_or(initial);
         if section_domain.contains(parameters.v) {
-            let candidate = blend_surface_point_inner_with_index_and_budget(
+            let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
                 index,
                 surface,
                 parameters.u,
                 parameters.v,
                 depth + 1,
                 geometry_budget,
-            )?;
+            )?
+            else {
+                return Ok(None);
+            };
             let distance = Point3::distance(candidate, point);
             if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
-                return Some(parameters);
+                return Ok(Some(parameters));
             }
         }
     }
     if let Some(fit_tolerance) = fit_tolerance {
-        let boundary_parameters = [0usize, 1usize].map(|boundary| {
+        let boundary_parameters = [
             blend_boundary_parameter_with_index_and_budget(
                 index,
                 surface,
                 point,
-                boundary,
+                0,
                 seed.map(|seed| seed.u),
                 fit_tolerance,
                 depth + 1,
                 geometry_budget,
-            )
-        });
+            )?,
+            blend_boundary_parameter_with_index_and_budget(
+                index,
+                surface,
+                point,
+                1,
+                seed.map(|seed| seed.u),
+                fit_tolerance,
+                depth + 1,
+                geometry_budget,
+            )?,
+        ];
         if let Some((parameter, boundary)) = match boundary_parameters {
             [Some(parameter), None] => Some((parameter, 0usize)),
             [None, Some(parameter)] => Some((parameter, 1usize)),
             _ => None,
         } {
-            return Some(Point2::new(parameter, boundary as f64));
+            return Ok(Some(Point2::new(parameter, boundary as f64)));
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -698,7 +745,7 @@ pub(super) fn coarse_blend_surface_parameters(
     surface: &SurfaceId,
     point: Point3,
     depth: usize,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coarse_blend_surface_parameters_with_index_and_budget(
@@ -717,10 +764,13 @@ fn coarse_blend_surface_parameters_with_index_and_budget(
     point: Point3,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let grid =
-        blend_surface_parameter_grid_with_index_and_budget(index, surface, depth, geometry_budget)?;
-    closest_blend_surface_grid_parameters(&grid, point)
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(grid) =
+        blend_surface_parameter_grid_with_index_and_budget(index, surface, depth, geometry_budget)?
+    else {
+        return Ok(None);
+    };
+    Ok(closest_blend_surface_grid_parameters(&grid, point))
 }
 
 pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
@@ -728,30 +778,44 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     surface: &SurfaceId,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vec<(Point2, Point3)>> {
-    (depth < 32).then_some(())?;
-    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let curve = index.curves(spine.as_str())?;
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-        return None;
+) -> Result<Option<Vec<(Point2, Point3)>>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
     };
-    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let Some(curve) = index.curves(spine.as_str()) else {
+        return Ok(None);
+    };
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        return Ok(None);
+    };
+    let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
+        return Ok(None);
+    };
     let count = nurbs.control_points().len();
-    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
+    let (Some(lower), Some(upper)) = (nurbs.knots().get(degree), nurbs.knots().get(count)) else {
+        return Ok(None);
+    };
+    let domain = [*lower, *upper];
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
-        return None;
+        return Ok(None);
     }
     let mut grid = Vec::with_capacity(9 * 5);
     for u_index in 0..=8 {
-        let u =
-            cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)?.get();
+        let Some(u) = cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)
+        else {
+            return Ok(None);
+        };
+        let u = u.get();
         let frame = blend_surface_frame_with_index_and_budget(
             index,
             surface,
             u,
             depth + 1,
             geometry_budget,
-        );
+        )?;
         for v_index in 0..=4 {
             let parameters = Point2::new(u, f64::from(v_index) / 4.0);
             let point = match v_index {
@@ -762,7 +826,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
                     0,
                     depth + 1,
                     geometry_budget,
-                ),
+                )?,
                 4 => blend_boundary_point_with_index_and_budget(
                     index,
                     surface,
@@ -770,7 +834,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
                     1,
                     depth + 1,
                     geometry_budget,
-                ),
+                )?,
                 _ => frame.map(|frame| blend_surface_point_from_frame(frame, parameters.v)),
             };
             let Some(point) = point else {
@@ -779,7 +843,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
             grid.push((parameters, point));
         }
     }
-    (!grid.is_empty()).then_some(grid)
+    Ok((!grid.is_empty()).then_some(grid))
 }
 
 fn closest_blend_surface_grid_parameters(
@@ -800,7 +864,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     fit_tolerance: f64,
     grid: &[(Point2, Point3)],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
         index,
         surface,
@@ -819,7 +883,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_with_source_continuatio
     fit_tolerance: f64,
     grid: &[(Point2, Point3)],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
         index,
         surface,
@@ -839,8 +903,10 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
     grid: &[(Point2, Point3)],
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let initial = closest_blend_surface_grid_parameters(grid, point)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(initial) = closest_blend_surface_grid_parameters(grid, point) else {
+        return Ok(None);
+    };
     let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
         index,
         surface,
@@ -849,20 +915,23 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
         0,
         section_domain,
         geometry_budget,
-    )
+    )?
     .unwrap_or(initial);
     if !section_domain.contains(parameters.v) {
-        return None;
+        return Ok(None);
     }
-    let candidate = blend_surface_point_inner_with_index_and_budget(
+    let Some(candidate) = blend_surface_point_inner_with_index_and_budget(
         index,
         surface,
         parameters.u,
         parameters.v,
         0,
         geometry_budget,
-    )?;
-    (Point3::distance(candidate, point) <= fit_tolerance).then_some(parameters)
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok((Point3::distance(candidate, point) <= fit_tolerance).then_some(parameters))
 }
 
 #[cfg(test)]
@@ -872,7 +941,7 @@ pub(super) fn refine_blend_surface_parameters(
     point: Point3,
     parameters: Point2,
     depth: usize,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     refine_blend_surface_parameters_with_section_domain_and_budget(
@@ -894,9 +963,13 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
     depth: usize,
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    (depth < 32).then_some(())?;
-    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
+    };
     let u_domain = index
         .curves(spine.as_str())
         .and_then(|curve| match curve.geometry.solved() {
@@ -918,14 +991,17 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
             + (candidate.z - point.z).powi(2)
     };
     for _ in 0..16 {
-        let position = blend_surface_point_inner_with_index_and_budget(
+        let Some(position) = blend_surface_point_inner_with_index_and_budget(
             index,
             surface,
             parameters.u,
             parameters.v,
             depth + 1,
             geometry_budget,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -933,41 +1009,48 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         );
         let current_distance = squared_distance(position);
         let u_step = parameter_derivative_step(parameters.u, u_domain);
-        let derivative = |step: f64| {
-            let mut before = parameters;
-            let mut after = parameters;
-            before.u -= step;
-            after.u += step;
-            if let Some(domain) = u_domain {
-                before.u = before.u.clamp(domain[0], domain[1]);
-                after.u = after.u.clamp(domain[0], domain[1]);
-            }
-            let width = after.u - before.u;
-            if !width.is_finite() || width == 0.0 {
-                return None;
-            }
-            let first = blend_surface_point_inner_with_index_and_budget(
-                index,
-                surface,
-                before.u,
-                before.v,
-                depth + 1,
-                geometry_budget,
-            )?;
-            let second = blend_surface_point_inner_with_index_and_budget(
-                index,
-                surface,
-                after.u,
-                after.v,
-                depth + 1,
-                geometry_budget,
-            )?;
-            Some(Vector3::new(
-                (second.x - first.x) / width,
-                (second.y - first.y) / width,
-                (second.z - first.z) / width,
-            ))
-        };
+        let derivative =
+            |step: f64| -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+                let mut before = parameters;
+                let mut after = parameters;
+                before.u -= step;
+                after.u += step;
+                if let Some(domain) = u_domain {
+                    before.u = before.u.clamp(domain[0], domain[1]);
+                    after.u = after.u.clamp(domain[0], domain[1]);
+                }
+                let width = after.u - before.u;
+                if !width.is_finite() || width == 0.0 {
+                    return Ok(None);
+                }
+                let Some(first) = blend_surface_point_inner_with_index_and_budget(
+                    index,
+                    surface,
+                    before.u,
+                    before.v,
+                    depth + 1,
+                    geometry_budget,
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Some(second) = blend_surface_point_inner_with_index_and_budget(
+                    index,
+                    surface,
+                    after.u,
+                    after.v,
+                    depth + 1,
+                    geometry_budget,
+                )?
+                else {
+                    return Ok(None);
+                };
+                Ok(Some(Vector3::new(
+                    (second.x - first.x) / width,
+                    (second.y - first.y) / width,
+                    (second.z - first.z) / width,
+                )))
+            };
         let du = blend_surface_u_derivative_with_index_and_budget(
             index,
             surface,
@@ -975,15 +1058,25 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
             parameters.v,
             depth + 1,
             geometry_budget,
-        )
-        .or_else(|| derivative(u_step))?;
-        let (_, tangent, first, second, radius) = blend_surface_frame_with_index_and_budget(
+        )?;
+        let du = if du.is_some() {
+            du
+        } else {
+            derivative(u_step)?
+        };
+        let Some(du) = du else {
+            return Ok(None);
+        };
+        let Some((_, tangent, first, second, radius)) = blend_surface_frame_with_index_and_budget(
             index,
             surface,
             parameters.u,
             depth + 1,
             geometry_budget,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         let alpha = signed_angle(first, second, tangent);
         let radial = rodrigues_rotate(first, tangent, parameters.v * alpha);
         let section_tangent = tangent.cross(radial);
@@ -1015,7 +1108,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
                 candidate.v,
                 depth + 1,
                 geometry_budget,
-            ) {
+            )? {
                 if squared_distance(position) < current_distance {
                     accepted = Some(candidate);
                     break;
@@ -1035,7 +1128,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
             break;
         }
     }
-    Some(parameters)
+    Ok(Some(parameters))
 }
 
 #[cfg(test)]
@@ -1044,7 +1137,7 @@ pub(super) fn blend_surface_point(
     surface: &SurfaceId,
     u: f64,
     v: f64,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_point_inner(ir, surface, u, v, 0)
 }
 
@@ -1055,7 +1148,7 @@ fn blend_surface_point_inner(
     u: f64,
     v: f64,
     depth: usize,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
@@ -1068,51 +1161,38 @@ pub(super) fn blend_surface_point_inner_with_index_and_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     if v.to_bits() == 0.0f64.to_bits() {
-        return blend_boundary_point_with_index_and_budget(
+        if let Some(point) = blend_boundary_point_with_index_and_budget(
             index,
             surface,
             u,
             0,
             depth + 1,
             geometry_budget,
-        )
-        .or_else(|| {
-            let frame = blend_surface_frame_with_index_and_budget(
-                index,
-                surface,
-                u,
-                depth + 1,
-                geometry_budget,
-            )?;
-            Some(blend_surface_point_from_frame(frame, v))
-        });
+        )? {
+            return Ok(Some(point));
+        }
     }
     if v.to_bits() == 1.0f64.to_bits() {
-        return blend_boundary_point_with_index_and_budget(
+        if let Some(point) = blend_boundary_point_with_index_and_budget(
             index,
             surface,
             u,
             1,
             depth + 1,
             geometry_budget,
-        )
-        .or_else(|| {
-            let frame = blend_surface_frame_with_index_and_budget(
-                index,
-                surface,
-                u,
-                depth + 1,
-                geometry_budget,
-            )?;
-            Some(blend_surface_point_from_frame(frame, v))
-        });
+        )? {
+            return Ok(Some(point));
+        }
     }
-    let frame =
-        blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?;
-    Some(blend_surface_point_from_frame(frame, v))
+    Ok(
+        blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?
+            .map(|frame| blend_surface_point_from_frame(frame, v)),
+    )
 }
 
 type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
@@ -1351,7 +1431,7 @@ pub(super) fn blend_surface_u_derivative(
     u: f64,
     v: f64,
     depth: usize,
-) -> Option<Vector3> {
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
@@ -1364,17 +1444,42 @@ fn blend_surface_u_derivative_with_index_and_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    (depth < 32).then_some(())?;
-    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    let carrier = index.curves(spine.as_str())?;
-    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
-    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
-    let acceleration =
-        curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface)
+    else {
+        return Ok(None);
+    };
+    let Some(carrier) = index.curves(spine.as_str()) else {
+        return Ok(None);
+    };
+    let Some(center) = cadmpeg_ir::eval::finite_or_refusal(curve_point_with_budget(
+        &carrier.geometry,
+        u,
+        geometry_budget,
+    ))?
+    else {
+        return Ok(None);
+    };
+    let Some(velocity) = cadmpeg_ir::eval::finite_or_refusal(curve_tangent_with_budget(
+        &carrier.geometry,
+        u,
+        geometry_budget,
+    ))?
+    else {
+        return Ok(None);
+    };
+    let Some(acceleration) = cadmpeg_ir::eval::finite_or_refusal(
+        curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget),
+    )?
+    else {
+        return Ok(None);
+    };
     let speed = velocity.norm();
     if !speed.is_finite() || speed == 0.0 {
-        return None;
+        return Ok(None);
     }
     let tangent = Vector3::new(velocity.x / speed, velocity.y / speed, velocity.z / speed);
     let tangential_acceleration = tangent.dot(acceleration.get());
@@ -1392,10 +1497,16 @@ fn blend_surface_u_derivative_with_index_and_budget(
         radius,
         depth: depth + 1,
     };
-    let (first, first_derivative) =
-        contact_context.direction_derivative(&supports[0], geometry_budget)?;
-    let (second, second_derivative) =
-        contact_context.direction_derivative(&supports[1], geometry_budget)?;
+    let Some((first, first_derivative)) =
+        contact_context.direction_derivative(&supports[0], geometry_budget)?
+    else {
+        return Ok(None);
+    };
+    let Some((second, second_derivative)) =
+        contact_context.direction_derivative(&supports[1], geometry_budget)?
+    else {
+        return Ok(None);
+    };
 
     let cross = first.cross(second);
     let cosine = first.dot(second);
@@ -1405,7 +1516,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
     let sine_derivative = cross_derivative.dot(tangent) + cross.dot(tangent_derivative);
     let angle_denominator = cosine * cosine + sine * sine;
     if !angle_denominator.is_finite() || angle_denominator == 0.0 {
-        return None;
+        return Ok(None);
     }
     let alpha = sine.atan2(cosine);
     let alpha_derivative =
@@ -1459,11 +1570,11 @@ fn blend_surface_u_derivative_with_index_and_budget(
             tangent_derivative.z,
         ),
     );
-    Some(Vector3::new(
+    Ok(Some(Vector3::new(
         velocity.x + radius * radial_derivative.x,
         velocity.y + radius * radial_derivative.y,
         velocity.z + radius * radial_derivative.z,
-    ))
+    )))
 }
 
 struct BlendContactDerivativeContext<'a> {
@@ -1481,26 +1592,40 @@ impl BlendContactDerivativeContext<'_> {
         &self,
         support: &SurfaceId,
         geometry_budget: &GeometryWorkBudget<'_>,
-    ) -> Option<(Vector3, Vector3)> {
-        (self.depth < 32).then_some(())?;
-        let pcurve = spine_contact_pcurve_with_index(
+    ) -> Result<Option<(Vector3, Vector3)>, cadmpeg_core::decode::ResourceLimit> {
+        if self.depth >= 32 {
+            return Ok(None);
+        }
+        let Some(pcurve) = spine_contact_pcurve_with_index(
             self.index,
             support,
             self.spine,
             self.radius,
             self.depth + 1,
-        )?;
-        let uv = pcurve_uv(pcurve, self.parameter).ok()?;
-        let uv_derivative = pcurve_tangent(pcurve, self.parameter).ok()?;
-        let support = model_surface_partials_by_id_with_budget(
-            self.index,
-            support,
-            uv.u,
-            uv.v,
-            geometry_budget,
-        )
-        .ok()?
-        .into_raw();
+        ) else {
+            return Ok(None);
+        };
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, self.parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(uv_derivative) =
+            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(pcurve, self.parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(support) =
+            cadmpeg_ir::eval::finite_or_refusal(model_surface_partials_by_id_with_budget(
+                self.index,
+                support,
+                uv.u,
+                uv.v,
+                geometry_budget,
+            ))?
+        else {
+            return Ok(None);
+        };
+        let support = support.into_raw();
         let contact_derivative = Vector3::new(
             support.du.x * uv_derivative.u + support.dv.x * uv_derivative.v,
             support.du.y * uv_derivative.u + support.dv.y * uv_derivative.v,
@@ -1513,7 +1638,7 @@ impl BlendContactDerivativeContext<'_> {
         );
         let magnitude = offset.norm();
         if !magnitude.is_finite() || magnitude == 0.0 {
-            return None;
+            return Ok(None);
         }
         let direction = Vector3::new(
             offset.x / magnitude,
@@ -1531,7 +1656,7 @@ impl BlendContactDerivativeContext<'_> {
             (offset_derivative.y - radial_derivative * direction.y) / magnitude,
             (offset_derivative.z - radial_derivative * direction.z) / magnitude,
         );
-        Some((direction, direction_derivative))
+        Ok(Some((direction, direction_derivative)))
     }
 }
 
@@ -1541,7 +1666,7 @@ fn blend_surface_frame_with_index_and_budget(
     u: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<BlendSurfaceFrame> {
+) -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
     let mut contact_seeds = BlendContactSeedCache::default();
     blend_surface_frame_with_index_and_budget_and_options(
         index,
@@ -1562,8 +1687,10 @@ fn blend_surface_frame_with_index_and_budget_and_options(
     allow_offset_contact: bool,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<BlendSurfaceFrame> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     if !allow_offset_contact {
         if let Some(frame) =
             geometry_budget
@@ -1571,13 +1698,25 @@ fn blend_surface_frame_with_index_and_budget_and_options(
                 .borrow()
                 .get(surface, u, allow_offset_contact)
         {
-            return geometry_budget.charge().then_some(frame);
+            return Ok(geometry_budget.charge().then_some(frame));
         }
     }
-    let frame = (|| {
-        let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-        let center = model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?;
-        let tangent = model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?;
+    let frame = (|| -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
+        let Some((supports, spine, radius, _)) =
+            blend_surface_definition_with_index(index, surface)
+        else {
+            return Ok(None);
+        };
+        let Some(center) =
+            model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?
+        else {
+            return Ok(None);
+        };
+        let Some(tangent) =
+            model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?
+        else {
+            return Ok(None);
+        };
         let first = spine_contact_direction_with_index_and_budget_and_options(
             index,
             &supports[0],
@@ -1589,8 +1728,10 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             allow_offset_contact,
             contact_seeds,
             geometry_budget,
-        )
-        .or_else(|| {
+        )?;
+        let first = if first.is_some() {
+            first
+        } else {
             surface_contact_direction_with_index_and_budget(
                 index,
                 &supports[0],
@@ -1598,8 +1739,11 @@ fn blend_surface_frame_with_index_and_budget_and_options(
                 radius,
                 depth + 1,
                 geometry_budget,
-            )
-        })?;
+            )?
+        };
+        let Some(first) = first else {
+            return Ok(None);
+        };
         let second = spine_contact_direction_with_index_and_budget_and_options(
             index,
             &supports[1],
@@ -1611,8 +1755,10 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             allow_offset_contact,
             contact_seeds,
             geometry_budget,
-        )
-        .or_else(|| {
+        )?;
+        let second = if second.is_some() {
+            second
+        } else {
             surface_contact_direction_with_index_and_budget(
                 index,
                 &supports[1],
@@ -1620,10 +1766,10 @@ fn blend_surface_frame_with_index_and_budget_and_options(
                 radius,
                 depth + 1,
                 geometry_budget,
-            )
-        })?;
-        Some((center, tangent, first, second, radius))
-    })();
+            )?
+        };
+        Ok(second.map(|second| (center, tangent, first, second, radius)))
+    })()?;
     if !allow_offset_contact {
         if let Some(frame) = frame {
             geometry_budget.blend_frame_cache().borrow_mut().remember(
@@ -1634,7 +1780,7 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             );
         }
     }
-    frame
+    Ok(frame)
 }
 
 // Keep the frame inputs, recursion depth, contact policy, seed cache, and
@@ -1651,8 +1797,8 @@ fn spine_contact_direction_with_index_and_budget_and_options(
     allow_offset_contact: bool,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    let contact = spine_contact_point_with_index_and_budget_and_options(
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(contact) = spine_contact_point_with_index_and_budget_and_options(
         index,
         support,
         spine,
@@ -1662,13 +1808,16 @@ fn spine_contact_direction_with_index_and_budget_and_options(
         allow_offset_contact,
         contact_seeds,
         geometry_budget,
-    )?;
-    FiniteVector3::new(Vector3::new(
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(FiniteVector3::new(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
     ))
-    .and_then(FiniteVector3::unit_nonzero)
+    .and_then(FiniteVector3::unit_nonzero))
 }
 
 fn blend_boundary_point_with_index_and_budget(
@@ -1678,34 +1827,40 @@ fn blend_boundary_point_with_index_and_budget(
     boundary: usize,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     let cached = geometry_budget
         .blend_frame_cache()
         .borrow()
         .get_boundary_point(surface, parameter, boundary);
     if let Some(point) = cached {
-        return geometry_budget.charge().then_some(point);
+        return Ok(geometry_budget.charge().then_some(point));
     }
-    let point = (|| {
-        let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-        spine_contact_point_with_index_and_budget(
-            index,
-            supports.get(boundary)?,
-            &spine,
-            parameter,
-            radius,
-            depth + 1,
-            geometry_budget,
-        )
-    })();
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface)
+    else {
+        return Ok(None);
+    };
+    let Some(support) = supports.get(boundary) else {
+        return Ok(None);
+    };
+    let point = spine_contact_point_with_index_and_budget(
+        index,
+        support,
+        &spine,
+        parameter,
+        radius,
+        depth + 1,
+        geometry_budget,
+    )?;
     if let Some(point) = point {
         geometry_budget
             .blend_frame_cache()
             .borrow_mut()
             .remember_boundary_point(surface, parameter, boundary, point);
     }
-    point
+    Ok(point)
 }
 
 // Boundary inversion carries the geometric query state and the shared work
@@ -1720,23 +1875,30 @@ fn blend_boundary_parameter_with_index_and_budget(
     fit_tolerance: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    (depth < 32).then_some(())?;
-    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
+    };
     // A circular blend's u parameter is its spine parameter. Invert that
     // defining carrier directly, then certify the requested boundary point.
-    closest_spine_parameter_with_index_and_budget(index, &spine, point, seed, geometry_budget)
-        .filter(|parameter| {
-            blend_boundary_point_with_index_and_budget(
-                index,
-                surface,
-                *parameter,
-                boundary,
-                depth + 1,
-                geometry_budget,
-            )
-            .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
-        })
+    let Some(parameter) =
+        closest_spine_parameter_with_index_and_budget(index, &spine, point, seed, geometry_budget)?
+    else {
+        return Ok(None);
+    };
+    Ok(blend_boundary_point_with_index_and_budget(
+        index,
+        surface,
+        parameter,
+        boundary,
+        depth + 1,
+        geometry_budget,
+    )?
+    .filter(|candidate| Point3::distance(*candidate, point) <= fit_tolerance)
+    .map(|_| parameter))
 }
 
 #[derive(Clone, Copy)]
@@ -1755,8 +1917,11 @@ pub(super) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     curve_parameter: f64,
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let support_geometry = &index.surfaces(support.as_str())?.geometry;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.surfaces(support.as_str()) else {
+        return Ok(None);
+    };
+    let support_geometry = &carrier.geometry;
     blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         index,
         blend,
@@ -1779,8 +1944,11 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
     curve_parameter: f64,
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let (supports, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, blend)
+    else {
+        return Ok(None);
+    };
     let matches = supports
         .iter()
         .enumerate()
@@ -1790,9 +1958,12 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         .map(|(boundary, _)| boundary)
         .collect::<Vec<_>>();
     let [boundary] = matches.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let contact_pcurve = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?;
+    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)
+    else {
+        return Ok(None);
+    };
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
         index,
         support,
@@ -1817,7 +1988,7 @@ pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
     curve_parameter: f64,
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
         index,
         support,
@@ -1848,8 +2019,10 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     target: BoundaryInverseTarget,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let (supports, _, _, _) = blend_surface_definition_with_index(index, blend)?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((supports, _, _, _)) = blend_surface_definition_with_index(index, blend) else {
+        return Ok(None);
+    };
     let matches = supports
         .iter()
         .filter(|candidate| {
@@ -1857,11 +2030,15 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         })
         .count();
     if matches != 1 {
-        return None;
+        return Ok(None);
     }
-    let source_uv = pcurve_uv(source_pcurve, curve_parameter).ok()?;
+    let Some(source_uv) =
+        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(source_pcurve, curve_parameter))?
+    else {
+        return Ok(None);
+    };
     if !target.point.is_finite() || !target.tolerance.is_finite() || target.tolerance < 0.0 {
-        return None;
+        return Ok(None);
     }
 
     // A nested blend support does not use the source blend's spine contact
@@ -1879,36 +2056,50 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
             target.tolerance,
             contact_seeds,
             geometry_budget,
-        ) {
-            return Some(parameters);
+        )? {
+            return Ok(Some(parameters));
         }
     }
 
-    let (_, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
-    let contact_pcurve = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?;
-    let certify = |parameter: f64| {
-        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
-        let candidate = decoded_surface_point_inner_with_budget(
+    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
+        return Ok(None);
+    };
+    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)
+    else {
+        return Ok(None);
+    };
+    let certify = |parameter: f64| -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(candidate) = decoded_surface_point_inner_with_budget(
             index,
             support,
             uv.u,
             uv.v,
             0,
             geometry_budget,
-        )?;
-        (Point3::distance(candidate, target.point) <= target.tolerance).then_some(uv.get())
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok((Point3::distance(candidate, target.point) <= target.tolerance).then_some(uv.get()))
     };
-    if let Some(uv) = certify(source_uv.u) {
-        return Some(uv);
+    if let Some(uv) = certify(source_uv.u)? {
+        return Ok(Some(uv));
     }
-    let parameter = closest_contact_pcurve_parameter_with_geometry_and_budget(
+    let Some(parameter) = closest_contact_pcurve_parameter_with_geometry_and_budget(
         index,
         support,
         contact_pcurve,
         target.point,
         Some(source_uv.u),
         geometry_budget,
-    )?;
+    )?
+    else {
+        return Ok(None);
+    };
     certify(parameter)
 }
 
@@ -1920,19 +2111,24 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
     fit_tolerance: f64,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     // A circular blend sample can lie on the finite continuation of either
     // rail.  Keep both chart domains bounded and require point reproduction
     // before admitting the recovered section parameter.
-    let (_, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    let parameter = closest_spine_parameter_with_index_and_budget(
+    let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
+    };
+    let Some(parameter) = closest_spine_parameter_with_index_and_budget(
         index,
         &spine,
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    )?;
-    let (center, tangent, first, second, _) =
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some((center, tangent, first, second, _)) =
         blend_surface_frame_with_index_and_budget_and_options(
             index,
             surface,
@@ -1941,16 +2137,21 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
             true,
             contact_seeds,
             geometry_budget,
-        )?;
-    let radial = FiniteVector3::new(Vector3::new(
+        )?
+    else {
+        return Ok(None);
+    };
+    let Some(radial) = FiniteVector3::new(Vector3::new(
         point.x - center.x,
         point.y - center.y,
         point.z - center.z,
     ))
-    .and_then(FiniteVector3::unit_nonzero)?;
+    .and_then(FiniteVector3::unit_nonzero) else {
+        return Ok(None);
+    };
     let alpha = signed_angle(first, second, tangent);
     if !alpha.is_finite() || alpha.abs() <= BLEND_INVERSE_MIN_SWEEP {
-        return None;
+        return Ok(None);
     }
     let theta = signed_angle(first, radial, tangent);
     let mut candidates = Vec::new();
@@ -1975,7 +2176,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
             }
         }
     }
-    candidates
+    Ok(candidates
         .into_iter()
         .min_by(|first, second| {
             first
@@ -1983,7 +2184,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
                 .total_cmp(&second.2)
                 .then_with(|| first.1.total_cmp(&second.1))
         })
-        .map(|(parameters, _, _)| parameters)
+        .map(|(parameters, _, _)| parameters))
 }
 
 fn closest_contact_pcurve_parameter_with_geometry_and_budget(
@@ -1993,8 +2194,10 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    let (domain, periodic) = pcurve_domain(contact_pcurve)?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((domain, periodic)) = pcurve_domain(contact_pcurve) else {
+        return Ok(None);
+    };
     let normalize = |parameter: f64| {
         if periodic {
             canonical_periodic_parameter(domain, true, parameter)
@@ -2002,45 +2205,68 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             parameter.clamp(domain[0], domain[1])
         }
     };
-    let distance = |parameter: f64| {
-        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
-        let candidate = decoded_surface_point_inner_with_budget(
+    let distance = |parameter: f64| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(candidate) = decoded_surface_point_inner_with_budget(
             index,
             support,
             uv.u,
             uv.v,
             0,
             geometry_budget,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         let distance = candidate.distance(point);
-        distance.is_finite().then_some(distance)
+        Ok(distance.is_finite().then_some(distance))
     };
-    let mut candidates = (0..=COARSE_CONTACT_PCURVE_SEARCH_INTERVALS)
-        .filter_map(|index| {
-            let parameter = cadmpeg_ir::math::interpolate(
-                domain[0],
-                domain[1],
-                index as f64 / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64,
-            )?
-            .get();
-            Some((parameter, distance(parameter)?))
-        })
-        .collect::<Vec<_>>();
-    if let Some(seed) = seed.filter(|seed| seed.is_finite()) {
-        let parameter = normalize(seed);
-        if let Some(distance) = distance(parameter) {
-            candidates.push((parameter, distance));
+    let mut best = None;
+    for index in 0..=COARSE_CONTACT_PCURVE_SEARCH_INTERVALS {
+        let Some(parameter) = cadmpeg_ir::math::interpolate(
+            domain[0],
+            domain[1],
+            index as f64 / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64,
+        ) else {
+            continue;
+        };
+        let parameter = parameter.get();
+        if let Some(candidate_distance) = distance(parameter)? {
+            if best.is_none_or(|(_, best_distance)| candidate_distance <= best_distance) {
+                best = Some((parameter, candidate_distance));
+            }
         }
     }
-    let (mut parameter, mut best_distance) = candidates
-        .into_iter()
-        .min_by(|first, second| first.1.total_cmp(&second.1))?;
+    if let Some(seed) = seed.filter(|seed| seed.is_finite()) {
+        let parameter = normalize(seed);
+        if let Some(candidate_distance) = distance(parameter)? {
+            if best.is_none_or(|(_, best_distance)| candidate_distance <= best_distance) {
+                best = Some((parameter, candidate_distance));
+            }
+        }
+    }
+    let Some((mut parameter, mut best_distance)) = best else {
+        return Ok(None);
+    };
     for _ in 0..LOCAL_CONTACT_PCURVE_SEARCH_STEPS {
-        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
-        let uv_tangent = pcurve_tangent(contact_pcurve, parameter).ok()?;
-        let partials =
-            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget)
-                .ok()?;
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(uv_tangent) =
+            cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(contact_pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
+            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget),
+        )?
+        else {
+            return Ok(None);
+        };
         let tangent = Vector3::new(
             partials.du.x * uv_tangent.u + partials.dv.x * uv_tangent.v,
             partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
@@ -2081,7 +2307,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         };
         let previous = parameter;
         let next = normalize(parameter - step);
-        let Some(distance) = distance(next) else {
+        let Some(distance) = distance(next)? else {
             break;
         };
         if distance >= best_distance {
@@ -2095,7 +2321,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             break;
         }
     }
-    Some(parameter)
+    Ok(Some(parameter))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2109,34 +2335,43 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
     curve_parameter: f64,
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let support_uv = pcurve_uv(support_pcurve, curve_parameter).ok()?;
-    let parameter = target
-        .seed
-        .and_then(|seed| {
-            closest_pcurve_parameter_from_seed(contact_pcurve, support_uv.get(), seed.u)
-        })
-        .or_else(|| closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv.get()))?;
-    [parameter]
-        .into_iter()
-        .find(|parameter| {
-            let Some(uv) = pcurve_uv(contact_pcurve, *parameter).ok() else {
-                return false;
-            };
-            let candidate = decoded_surface_point_with_geometry_and_budget(
-                index,
-                support,
-                support_geometry,
-                uv.u,
-                uv.v,
-                0,
-                geometry_budget,
-            );
-            candidate.is_some_and(|candidate| {
-                Point3::distance(candidate, target.point) <= target.tolerance
-            })
-        })
-        .map(|parameter| Point2::new(parameter, boundary as f64))
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(support_uv) =
+        cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(support_pcurve, curve_parameter))?
+    else {
+        return Ok(None);
+    };
+    let seeded = match target.seed {
+        Some(seed) => closest_pcurve_parameter_from_seed(contact_pcurve, support_uv.get(), seed.u)?,
+        None => None,
+    };
+    let parameter = match seeded {
+        Some(parameter) => Some(parameter),
+        None => closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv.get())?,
+    };
+    let Some(parameter) = parameter else {
+        return Ok(None);
+    };
+    let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(contact_pcurve, parameter))?
+    else {
+        return Ok(None);
+    };
+    let Some(candidate) = decoded_surface_point_with_geometry_and_budget(
+        index,
+        support,
+        support_geometry,
+        uv.u,
+        uv.v,
+        0,
+        geometry_budget,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (Point3::distance(candidate, target.point) <= target.tolerance)
+            .then_some(Point2::new(parameter, boundary as f64)),
+    )
 }
 
 const LOCAL_PCURVE_SEARCH_STEPS: usize = 12;
@@ -2158,17 +2393,24 @@ fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
 fn closest_pcurve_parameter_from_coarse_grid(
     pcurve: &PcurveGeometry,
     point: Point2,
-) -> Option<f64> {
-    let (domain, _) = pcurve_domain(pcurve)?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((domain, _)) = pcurve_domain(pcurve) else {
+        return Ok(None);
+    };
     let mut closest = None;
     for index in 0..=COARSE_PCURVE_SEARCH_INTERVALS {
-        let parameter = cadmpeg_ir::math::interpolate(
+        let Some(parameter) = cadmpeg_ir::math::interpolate(
             domain[0],
             domain[1],
             index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64,
-        )?
-        .get();
-        let candidate = pcurve_uv(pcurve, parameter).ok()?;
+        ) else {
+            return Ok(None);
+        };
+        let parameter = parameter.get();
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
         let distance = (candidate.u - point.u).hypot(candidate.v - point.v);
         if !distance.is_finite() {
             continue;
@@ -2177,48 +2419,68 @@ fn closest_pcurve_parameter_from_coarse_grid(
             closest = Some((parameter, distance));
         }
     }
-    closest.and_then(|(parameter, _)| closest_pcurve_parameter_from_seed(pcurve, point, parameter))
+    let Some((parameter, _)) = closest else {
+        return Ok(None);
+    };
+    closest_pcurve_parameter_from_seed(pcurve, point, parameter)
 }
 
 fn closest_pcurve_parameter_from_seed(
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: f64,
-) -> Option<f64> {
-    let (domain, periodic) = pcurve_domain(pcurve)?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((domain, periodic)) = pcurve_domain(pcurve) else {
+        return Ok(None);
+    };
     let mut parameter = if periodic {
         canonical_periodic_parameter(domain, true, seed)
     } else {
         seed.clamp(domain[0], domain[1])
     };
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
-        let candidate = pcurve_uv(pcurve, parameter).ok()?;
-        let tangent = pcurve_tangent(pcurve, parameter).ok()?;
+        let Some(candidate) = cadmpeg_ir::eval::finite_or_refusal(pcurve_uv(pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(tangent) = cadmpeg_ir::eval::finite_or_refusal(pcurve_tangent(pcurve, parameter))?
+        else {
+            return Ok(None);
+        };
         let tangent_scale = tangent.u.abs().max(tangent.v.abs());
         if tangent_scale == 0.0 {
-            return None;
+            return Ok(None);
         }
         let tangent = Point2::new(tangent.u / tangent_scale, tangent.v / tangent_scale);
         let speed_squared = tangent.u * tangent.u + tangent.v * tangent.v;
         let gradient = (candidate.u - point.u) * tangent.u + (candidate.v - point.v) * tangent.v;
-        let step =
-            cadmpeg_ir::math::product_quotient([gradient], [speed_squared, tangent_scale])?.get();
+        let Some(step) =
+            cadmpeg_ir::math::product_quotient([gradient], [speed_squared, tangent_scale])
+        else {
+            return Ok(None);
+        };
+        let step = step.get();
         let next = if periodic {
             canonical_periodic_parameter(domain, true, parameter - step)
         } else {
             (parameter - step).clamp(domain[0], domain[1])
         };
-        if next == parameter
-            || (cadmpeg_ir::math::parameter_fraction(next, domain[0], domain[1])?.get()
-                - cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])?.get())
-            .abs()
-                <= 64.0 * f64::EPSILON
-        {
-            return Some(next);
+        if next == parameter {
+            return Ok(Some(next));
+        }
+        let next_fraction = cadmpeg_ir::math::parameter_fraction(next, domain[0], domain[1]);
+        let current_fraction =
+            cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1]);
+        let (Some(next_fraction), Some(current_fraction)) = (next_fraction, current_fraction)
+        else {
+            return Ok(None);
+        };
+        if (next_fraction.get() - current_fraction.get()).abs() <= 64.0 * f64::EPSILON {
+            return Ok(Some(next));
         }
         parameter = next;
     }
-    Some(parameter)
+    Ok(Some(parameter))
 }
 
 #[cfg(test)]
@@ -2226,77 +2488,91 @@ pub(super) fn closest_pcurve_parameters(
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: Option<f64>,
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
-        return None;
+        return Ok(None);
     };
-    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let Ok(degree) = usize::try_from(nurbs.degree()) else {
+        return Ok(None);
+    };
     let count = nurbs.control_points().len();
-    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
+    let (Some(lower), Some(upper)) = (nurbs.knots().get(degree), nurbs.knots().get(count)) else {
+        return Ok(None);
+    };
+    let domain = [*lower, *upper];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
-        return None;
+        return Ok(None);
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
-    let control_points = nurbs.pole_rows().raw_points();
-    let weights = nurbs.pole_rows().weights();
-    let homogeneous = homogeneous_pcurve_spans(
+    let control_points = nurbs.pole_rows().try_raw_points()?;
+    let weights = nurbs.pole_rows().try_weights()?;
+    let Some(homogeneous) = homogeneous_pcurve_spans(
         degree,
         nurbs.knots(),
         &control_points,
         weights.as_deref(),
         point,
-    )?;
-    let candidates = if degree != 1 || nurbs.weights().is_some() {
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-        closest_parameter_candidates(
-            stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?,
-            search_seed,
-        )?
-    } else {
-        let candidates = nurbs
-            .control_points()
-            .windows(2)
-            .enumerate()
-            .filter_map(|(index, segment)| {
-                let start = segment[0];
-                let end = segment[1];
-                let direction = Point2::new(end.u - start.u, end.v - start.v);
-                let squared_length = direction.u * direction.u + direction.v * direction.v;
-                if !squared_length.is_finite() || squared_length == 0.0 {
-                    return None;
-                }
-                let fraction = (((point.u - start.u) * direction.u
-                    + (point.v - start.v) * direction.v)
-                    / squared_length)
-                    .clamp(0.0, 1.0);
-                let span_start = *nurbs.knots().get(index + 1)?;
-                let span_end = *nurbs.knots().get(index + 2)?;
-                if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
-                    return None;
-                }
-                let projected = Point2::new(
-                    start.u + fraction * direction.u,
-                    start.v + fraction * direction.v,
-                );
-                let squared_distance =
-                    (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
-                Some((
-                    span_start + fraction * (span_end - span_start),
-                    squared_distance,
-                ))
-            })
-            .collect::<Vec<_>>();
-        closest_parameter_candidates(candidates, search_seed)?
+    )?
+    else {
+        return Ok(None);
     };
-    Some(lift_periodic_parameters(
-        candidates,
-        domain,
-        nurbs.periodic(),
-        seed,
-    ))
+    Ok((|| {
+        let candidates = if degree != 1 || nurbs.weights().is_some() {
+            let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+            closest_parameter_candidates(
+                stationary_rational_distance_candidates(
+                    &homogeneous,
+                    search_seed,
+                    &geometry_budget,
+                )?,
+                search_seed,
+            )?
+        } else {
+            let candidates = nurbs
+                .control_points()
+                .windows(2)
+                .enumerate()
+                .filter_map(|(index, segment)| {
+                    let start = segment[0];
+                    let end = segment[1];
+                    let direction = Point2::new(end.u - start.u, end.v - start.v);
+                    let squared_length = direction.u * direction.u + direction.v * direction.v;
+                    if !squared_length.is_finite() || squared_length == 0.0 {
+                        return None;
+                    }
+                    let fraction = (((point.u - start.u) * direction.u
+                        + (point.v - start.v) * direction.v)
+                        / squared_length)
+                        .clamp(0.0, 1.0);
+                    let span_start = *nurbs.knots().get(index + 1)?;
+                    let span_end = *nurbs.knots().get(index + 2)?;
+                    if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
+                        return None;
+                    }
+                    let projected = Point2::new(
+                        start.u + fraction * direction.u,
+                        start.v + fraction * direction.v,
+                    );
+                    let squared_distance =
+                        (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
+                    Some((
+                        span_start + fraction * (span_end - span_start),
+                        squared_distance,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            closest_parameter_candidates(candidates, search_seed)?
+        };
+        Some(lift_periodic_parameters(
+            candidates,
+            domain,
+            nurbs.periodic(),
+            seed,
+        ))
+    })())
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -2311,54 +2587,56 @@ fn homogeneous_pcurve_spans(
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
-) -> Option<HomogeneousCurveSpans<3>> {
+) -> Result<Option<HomogeneousCurveSpans<3>>, cadmpeg_core::CodecError> {
     let count = control_points.len();
+    let Some(expected_knots) = count
+        .checked_add(degree)
+        .and_then(|length| length.checked_add(1))
+    else {
+        return Ok(None);
+    };
     if degree == 0
         || count <= degree
-        || knots.len() != count.checked_add(degree)?.checked_add(1)?
+        || knots.len() != expected_knots
         || knots.iter().any(|knot| !knot.is_finite())
         || !cadmpeg_ir::geometry::nurbs::knots_nondecreasing(knots)
         || control_points.iter().any(|control| !control.is_finite())
         || !point.is_finite()
     {
-        return None;
+        return Ok(None);
     }
-    let weights = match weights {
-        Some(weights)
-            if weights.len() == count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
-        {
-            weights.to_vec()
-        }
-        Some(_) => return None,
-        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
-    };
+    if weights.is_some_and(|weights| {
+        weights.len() != count
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    }) {
+        return Ok(None);
+    }
     let coordinate_scale = control_points
         .iter()
         .flat_map(|control| [control.u, control.v])
         .chain([point.u, point.v])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let controls = control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * (control.u - point.u),
-                weight * (control.v - point.v),
-                weight,
-            ]
-        })
-        .collect::<Vec<_>>();
-    if controls.iter().flatten().any(|value| !value.is_finite()) {
-        return None;
+    let mut controls = alloc_filled(count, [0.0; 3], "nx blend pcurve controls")?;
+    for (index, control) in control_points.iter().enumerate() {
+        let weight = weights.map_or(1.0, |weights| weights[index]);
+        controls[index] = [
+            weight * (control.u - point.u),
+            weight * (control.v - point.v),
+            weight,
+        ];
     }
-    let spans = homogeneous_spans(degree, knots, controls)?;
-    Some(HomogeneousCurveSpans {
+    if controls.iter().flatten().any(|value| !value.is_finite()) {
+        return Ok(None);
+    }
+    let Some(spans) = homogeneous_spans(degree, knots, controls)? else {
+        return Ok(None);
+    };
+    Ok(Some(HomogeneousCurveSpans {
         spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
-    })
+    }))
 }
 
 fn stationary_rational_distance_candidates<const DIMENSION: usize>(
@@ -2802,7 +3080,7 @@ fn spine_contact_point_with_index_and_budget(
     radius: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let mut contact_seeds = BlendContactSeedCache::default();
     spine_contact_point_with_index_and_budget_and_options(
         index,
@@ -2830,45 +3108,55 @@ fn spine_contact_point_with_index_and_budget_and_options(
     allow_offset_contact: bool,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
-    if let Some(pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
-    {
-        let uv = pcurve_uv(pcurve, parameter).ok()?;
-        return decoded_surface_point_inner_with_budget(
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
+        (depth < 32).then_some(())?;
+        if let Some(pcurve) =
+            spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
+        {
+            let uv = match pcurve_uv(pcurve, parameter) {
+                Ok(uv) => uv,
+                Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
+                Err(_) => return None,
+            };
+            return decoded_surface_point_inner_with_budget(
+                index,
+                support,
+                uv.u,
+                uv.v,
+                depth + 1,
+                geometry_budget,
+            )
+            .transpose();
+        }
+        if !allow_offset_contact {
+            return None;
+        }
+        let support_has_nurbs_parameterization =
+            surface_offset_lineage_with_index(index, support, depth + 1)
+                .and_then(|(base, _)| index.surfaces(base.as_str()))
+                .is_some_and(|surface| {
+                    matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+                    )
+                });
+        if !support_has_nurbs_parameterization {
+            return None;
+        }
+        spine_contact_point_from_offset_side_with_index_and_budget(
             index,
             support,
-            uv.u,
-            uv.v,
+            spine,
+            parameter,
+            radius,
             depth + 1,
+            contact_seeds,
             geometry_budget,
-        );
-    }
-    if !allow_offset_contact {
-        return None;
-    }
-    let support_has_nurbs_parameterization =
-        surface_offset_lineage_with_index(index, support, depth + 1)
-            .and_then(|(base, _)| index.surfaces(base.as_str()))
-            .is_some_and(|surface| {
-                matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-                )
-            });
-    if !support_has_nurbs_parameterization {
-        return None;
-    }
-    spine_contact_point_from_offset_side_with_index_and_budget(
-        index,
-        support,
-        spine,
-        parameter,
-        radius,
-        depth + 1,
-        contact_seeds,
-        geometry_budget,
-    )
+        )
+        .transpose()
+    })()
+    .transpose()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2881,149 +3169,190 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     depth: usize,
     contact_seeds: &mut BlendContactSeedCache,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
-    let tolerance = index.ir().tolerances.linear.get();
-    if !radius.is_finite() || radius <= 0.0 {
-        return None;
-    }
-    let center = model_curve_point_with_index_and_budget(index, spine, parameter, geometry_budget)?;
-    let tangent =
-        model_curve_tangent_with_index_and_budget(index, spine, parameter, geometry_budget)?;
-    let (procedural, context) = index
-        .procedural_curves_for_curve(spine.as_str())?
-        .iter()
-        .copied()
-        .find_map(|candidate| match candidate.definition() {
-            ProceduralCurveDefinition::Intersection { context, .. } => Some((candidate, context)),
-            _ => None,
-        })?;
-    let contact_fit_tolerance = procedural
-        .cache_fit_tolerance()
-        .filter(|fit| fit.get() > 0.0)
-        .map_or(tolerance, |fit| tolerance.max(fit.get()));
-    let offset_surfaces = context
-        .sides()
-        .iter()
-        .filter_map(|side| {
-            let surface = side.surface.as_ref()?;
-            // The carrier pcurve may belong to a neighboring offset of the
-            // same base surface.  Compare relative lineage offsets so the
-            // stored pcurve remains usable after multiple offset operations.
-            let distance =
-                constant_surface_offset_between_with_index(index, support, surface, depth + 1)?;
-            blend_contact_offset_matches(0.0, distance, radius).then_some((surface, distance.abs()))
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = Vec::new();
-    for side in context.sides() {
-        let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
-            continue;
-        };
-        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter).ok() else {
-            continue;
-        };
-        let Some(side_point) = decoded_surface_point_inner_with_budget(
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
+        (depth < 32).then_some(())?;
+        let tolerance = index.ir().tolerances.linear.get();
+        if !radius.is_finite() || radius <= 0.0 {
+            return None;
+        }
+        let center =
+            match model_curve_point_with_index_and_budget(index, spine, parameter, geometry_budget)
+            {
+                Ok(Some(center)) => center,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit)),
+            };
+        let tangent = match model_curve_tangent_with_index_and_budget(
             index,
-            side_surface,
-            side_uv.u,
-            side_uv.v,
-            depth + 1,
+            spine,
+            parameter,
             geometry_budget,
-        ) else {
-            continue;
+        ) {
+            Ok(Some(tangent)) => tangent,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
         };
-        for (offset_surface, offset_distance) in &offset_surfaces {
-            let cached_seed = contact_seeds.seed_for(support, spine, parameter, offset_surface);
-            let inverse_seed = cached_seed.or_else(|| {
-                surface_parameter_domain_with_index(index, offset_surface).and_then(|domain| {
-                    coarse_model_surface_parameters(
+        let (procedural, context) = index
+            .procedural_curves_for_curve(spine.as_str())?
+            .iter()
+            .copied()
+            .find_map(|candidate| match candidate.definition() {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
+                    Some((candidate, context))
+                }
+                _ => None,
+            })?;
+        let contact_fit_tolerance = procedural
+            .cache_fit_tolerance()
+            .filter(|fit| fit.get() > 0.0)
+            .map_or(tolerance, |fit| tolerance.max(fit.get()));
+        let offset_surfaces = context
+            .sides()
+            .iter()
+            .filter_map(|side| {
+                let surface = side.surface.as_ref()?;
+                // The carrier pcurve may belong to a neighboring offset of the
+                // same base surface.  Compare relative lineage offsets so the
+                // stored pcurve remains usable after multiple offset operations.
+                let distance =
+                    constant_surface_offset_between_with_index(index, support, surface, depth + 1)?;
+                blend_contact_offset_matches(0.0, distance, radius)
+                    .then_some((surface, distance.abs()))
+            })
+            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+        for side in context.sides() {
+            let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+                continue;
+            };
+            let side_uv = match pcurve_uv(&pcurve.geometry, parameter) {
+                Ok(side_uv) => side_uv,
+                Err(EvaluationFailure::ResourceLimit(limit)) => return Some(Err(limit)),
+                Err(_) => continue,
+            };
+            let side_point = match decoded_surface_point_inner_with_budget(
+                index,
+                side_surface,
+                side_uv.u,
+                side_uv.v,
+                depth + 1,
+                geometry_budget,
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => continue,
+                Err(limit) => return Some(Err(limit)),
+            };
+            for (offset_surface, offset_distance) in &offset_surfaces {
+                let cached_seed = contact_seeds.seed_for(support, spine, parameter, offset_surface);
+                let inverse_seed = if cached_seed.is_some() {
+                    cached_seed
+                } else if let Some(domain) =
+                    surface_parameter_domain_with_index(index, offset_surface)
+                {
+                    match coarse_model_surface_parameters(
                         index,
                         offset_surface,
                         side_point,
                         domain,
                         geometry_budget,
-                    )
-                })
-            });
-            let Some(inverse_seed) = inverse_seed else {
-                continue;
-            };
-            let Some(parameters) = refine_offset_surface_parameters_with_index_and_budget(
-                index,
-                offset_surface,
-                side_point,
-                inverse_seed,
-                contact_fit_tolerance,
-                geometry_budget,
-            ) else {
-                continue;
-            };
-            let Some(offset_point) = decoded_surface_point_inner_with_budget(
-                index,
-                offset_surface,
-                parameters.u,
-                parameters.v,
-                depth + 1,
-                geometry_budget,
-            ) else {
-                continue;
-            };
-            let offset_fit = Point3::distance(offset_point, side_point);
-            if offset_fit > contact_fit_tolerance {
-                continue;
+                    ) {
+                        Ok(seed) => seed,
+                        Err(limit) => return Some(Err(limit)),
+                    }
+                } else {
+                    None
+                };
+                let Some(inverse_seed) = inverse_seed else {
+                    continue;
+                };
+                let parameters = match refine_offset_surface_parameters_with_index_and_budget(
+                    index,
+                    offset_surface,
+                    side_point,
+                    inverse_seed,
+                    contact_fit_tolerance,
+                    geometry_budget,
+                ) {
+                    Ok(parameters) => parameters,
+                    Err(limit) => return Some(Err(limit)),
+                };
+                let Some(parameters) = parameters else {
+                    continue;
+                };
+                let offset_point = match decoded_surface_point_inner_with_budget(
+                    index,
+                    offset_surface,
+                    parameters.u,
+                    parameters.v,
+                    depth + 1,
+                    geometry_budget,
+                ) {
+                    Ok(Some(point)) => point,
+                    Ok(None) => continue,
+                    Err(limit) => return Some(Err(limit)),
+                };
+                let offset_fit = Point3::distance(offset_point, side_point);
+                if offset_fit > contact_fit_tolerance {
+                    continue;
+                }
+                let reproduced = match decoded_surface_point_inner_with_budget(
+                    index,
+                    support,
+                    parameters.u,
+                    parameters.v,
+                    depth + 1,
+                    geometry_budget,
+                ) {
+                    Ok(Some(point)) => point,
+                    Ok(None) => continue,
+                    Err(limit) => return Some(Err(limit)),
+                };
+                let offset_error =
+                    (Point3::distance(side_point, reproduced) - offset_distance).abs();
+                if offset_error > contact_fit_tolerance {
+                    continue;
+                }
+                let Some(radial) = FiniteVector3::new(Vector3::new(
+                    reproduced.x - center.x,
+                    reproduced.y - center.y,
+                    reproduced.z - center.z,
+                )) else {
+                    continue;
+                };
+                let radial_length = radial.norm();
+                if !radial_length.is_finite()
+                    || (radial_length - radius).abs() > contact_fit_tolerance
+                {
+                    continue;
+                }
+                let Some(radial) = radial.unit_nonzero() else {
+                    continue;
+                };
+                // The gate is the stated fit tolerance over the stated radius. A
+                // floor under it would admit a contact the source's own tolerance
+                // rejects, so a large radius states a strict gate and keeps it.
+                let angular_tolerance = contact_fit_tolerance / radius;
+                if radial.dot(tangent).abs() > angular_tolerance {
+                    continue;
+                }
+                let contact_seed = BlendContactSeed {
+                    support: support.clone(),
+                    spine: spine.clone(),
+                    parameter,
+                    offset_surface: (*offset_surface).clone(),
+                    parameters,
+                };
+                candidates.push((reproduced, contact_seed));
             }
-            let Some(reproduced) = decoded_surface_point_inner_with_budget(
-                index,
-                support,
-                parameters.u,
-                parameters.v,
-                depth + 1,
-                geometry_budget,
-            ) else {
-                continue;
-            };
-            let offset_error = (Point3::distance(side_point, reproduced) - offset_distance).abs();
-            if offset_error > contact_fit_tolerance {
-                continue;
-            }
-            let Some(radial) = FiniteVector3::new(Vector3::new(
-                reproduced.x - center.x,
-                reproduced.y - center.y,
-                reproduced.z - center.z,
-            )) else {
-                continue;
-            };
-            let radial_length = radial.norm();
-            if !radial_length.is_finite() || (radial_length - radius).abs() > contact_fit_tolerance
-            {
-                continue;
-            }
-            let Some(radial) = radial.unit_nonzero() else {
-                continue;
-            };
-            // The gate is the stated fit tolerance over the stated radius. A
-            // floor under it would admit a contact the source's own tolerance
-            // rejects, so a large radius states a strict gate and keeps it.
-            let angular_tolerance = contact_fit_tolerance / radius;
-            if radial.dot(tangent).abs() > angular_tolerance {
-                continue;
-            }
-            let contact_seed = BlendContactSeed {
-                support: support.clone(),
-                spine: spine.clone(),
-                parameter,
-                offset_surface: (*offset_surface).clone(),
-                parameters,
-            };
-            candidates.push((reproduced, contact_seed));
         }
-    }
-    let [(candidate, contact_seed)] = candidates.as_slice() else {
-        return None;
-    };
-    contact_seeds.remember(contact_seed.clone());
-    Some(*candidate)
+        let [(candidate, contact_seed)] = candidates.as_slice() else {
+            return None;
+        };
+        contact_seeds.remember(contact_seed.clone());
+        Some(Ok(*candidate))
+    })()
+    .transpose()
 }
 
 pub(super) fn spine_contact_pcurve_with_index<'a>(
@@ -3404,7 +3733,7 @@ pub(super) fn surface_contact_direction(
     center: Point3,
     radius: f64,
     depth: usize,
-) -> Option<Vector3> {
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_contact_direction_with_index(&index, surface, center, radius, depth)
 }
@@ -3416,7 +3745,7 @@ fn surface_contact_direction_with_index(
     center: Point3,
     radius: f64,
     depth: usize,
-) -> Option<Vector3> {
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     surface_contact_direction_with_index_and_budget(
         index,
@@ -3435,8 +3764,10 @@ fn surface_contact_direction_with_index_and_budget(
     radius: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     let ir = index.ir();
     if let Some(direction) = blend_surface_contact_direction_with_budget(
         index,
@@ -3444,13 +3775,15 @@ fn surface_contact_direction_with_index_and_budget(
         center,
         depth + 1,
         geometry_budget,
-    ) {
-        return Some(direction);
+    )? {
+        return Ok(Some(direction));
     }
-    let carrier = index.surfaces(surface.as_str())?;
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
+        return Ok(None);
+    };
     let tolerance = ir.tolerances.linear.get();
     if !radius.is_finite() || radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let requires_radius_certificate = matches!(
         &carrier.geometry,
@@ -3465,52 +3798,64 @@ fn surface_contact_direction_with_index_and_budget(
                 None,
                 radius + tolerance,
                 geometry_budget,
-            )
+            )?
             .map(cadmpeg_ir::units::FinitePoint2::get)
         }
-        None => offset_surface_parameters_with_tolerance_with_index_and_budget(
-            index,
-            surface,
-            center,
-            None,
-            Some(radius + tolerance),
-            geometry_budget,
-        )
-        .or_else(|| {
-            blend_surface_parameters_inner(
+        None => {
+            let offset = offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,
                 surface,
                 center,
                 None,
-                None,
-                BlendParameterGrid::Disabled,
-                BlendSectionDomain::Canonical,
-                depth + 1,
+                Some(radius + tolerance),
                 geometry_budget,
-            )
-        }),
+            )?;
+            if offset.is_some() {
+                offset
+            } else {
+                blend_surface_parameters_inner(
+                    index,
+                    surface,
+                    center,
+                    None,
+                    None,
+                    BlendParameterGrid::Disabled,
+                    BlendSectionDomain::Canonical,
+                    depth + 1,
+                    geometry_budget,
+                )?
+            }
+        }
         geometry => geometry
             .and_then(|geometry| {
                 cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, center)
             })
             .map(Point2::from),
-    }?;
-    let contact = decoded_surface_point_inner_with_budget(
+    };
+    let Some(parameters) = parameters else {
+        return Ok(None);
+    };
+    let Some(contact) = decoded_surface_point_inner_with_budget(
         index,
         surface,
         parameters.u,
         parameters.v,
         depth + 1,
         geometry_budget,
-    )?;
+    )?
+    else {
+        return Ok(None);
+    };
     let offset = Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
     );
-    (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
-        .then(|| FiniteVector3::new(offset).and_then(FiniteVector3::unit_nonzero))
-        .flatten()
+    Ok(
+        (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
+            .then(|| FiniteVector3::new(offset).and_then(FiniteVector3::unit_nonzero))
+            .flatten(),
+    )
 }
 
 fn blend_surface_contact_direction_with_budget(
@@ -3519,25 +3864,37 @@ fn blend_surface_contact_direction_with_budget(
     point: Point3,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    (depth < 32).then_some(())?;
-    let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let u =
-        closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?;
-    let frame =
-        blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?;
-    let radial = FiniteVector3::new(Vector3::new(
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let Some((_, spine, _, _)) = blend_surface_definition_with_index(index, surface) else {
+        return Ok(None);
+    };
+    let Some(u) =
+        closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?
+    else {
+        return Ok(None);
+    };
+    let Some(frame) =
+        blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?
+    else {
+        return Ok(None);
+    };
+    let Some(radial) = FiniteVector3::new(Vector3::new(
         point.x - frame.0.x,
         point.y - frame.0.y,
         point.z - frame.0.z,
     ))
-    .and_then(FiniteVector3::unit_nonzero)?;
+    .and_then(FiniteVector3::unit_nonzero) else {
+        return Ok(None);
+    };
     let sweep = signed_angle(frame.2, frame.3, frame.1);
     if !sweep.is_finite() || sweep.abs() <= EPS_BLEND_EXACT_GEOMETRY {
-        return None;
+        return Ok(None);
     }
     let angle = signed_angle(frame.2, radial, frame.1);
-    let candidate = (-2..=2)
+    let Some(candidate) = (-2..=2)
         .map(|turn| (angle + f64::from(turn) * std::f64::consts::TAU) / sweep)
         .filter(|v| BlendSectionDomain::Canonical.contains(*v))
         .map(|v| blend_surface_point_from_frame(frame, v))
@@ -3547,13 +3904,16 @@ fn blend_surface_contact_direction_with_budget(
         ])
         .min_by(|first, second| {
             Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
-        })?;
-    FiniteVector3::new(Vector3::new(
+        })
+    else {
+        return Ok(None);
+    };
+    Ok(FiniteVector3::new(Vector3::new(
         candidate.x - point.x,
         candidate.y - point.y,
         candidate.z - point.z,
     ))
-    .and_then(FiniteVector3::unit_nonzero)
+    .and_then(FiniteVector3::unit_nonzero))
 }
 
 fn model_curve_point_with_index_and_budget(
@@ -3561,11 +3921,16 @@ fn model_curve_point_with_index_and_budget(
     curve: &CurveId,
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    let carrier = index.curves(curve.as_str())?;
-    curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
-        .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.curves(curve.as_str()) else {
+        return Ok(None);
+    };
+    cadmpeg_ir::eval::finite_or_refusal(curve_point_with_budget(
+        &carrier.geometry,
+        parameter,
+        geometry_budget,
+    ))
+    .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
 }
 
 fn model_curve_tangent_with_index_and_budget(
@@ -3573,11 +3938,16 @@ fn model_curve_tangent_with_index_and_budget(
     curve: &CurveId,
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vector3> {
-    let carrier = index.curves(curve.as_str())?;
-    curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)
-        .ok()?
-        .unit_nonzero()
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.curves(curve.as_str()) else {
+        return Ok(None);
+    };
+    cadmpeg_ir::eval::finite_or_refusal(curve_tangent_with_budget(
+        &carrier.geometry,
+        parameter,
+        geometry_budget,
+    ))
+    .map(|tangent| tangent.and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero))
 }
 
 #[cfg(test)]
@@ -3586,7 +3956,7 @@ pub(super) fn closest_spine_parameter(
     curve: &CurveId,
     point: Point3,
     seed: Option<f64>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
@@ -3598,38 +3968,40 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    let carrier = index.curves(curve.as_str())?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.curves(curve.as_str()) else {
+        return Ok(None);
+    };
     match carrier.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
-            Some(
+            Ok(Some(
                 (point.x - origin.x) * direction.x
                     + (point.y - origin.y) * direction.y
                     + (point.z - origin.z) * direction.z,
-            )
+            ))
         }
-        Some(SolvedCurveGeometry::Circle(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                carrier.geometry.solved()?,
+        Some(geometry @ SolvedCurveGeometry::Circle(_)) => {
+            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+                geometry,
                 point,
                 seed,
                 geometry_budget,
-            )
+            ))
         }
-        Some(SolvedCurveGeometry::Ellipse(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                carrier.geometry.solved()?,
+        Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => {
+            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+                geometry,
                 point,
                 seed,
                 geometry_budget,
-            )
+            ))
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -3854,7 +4226,7 @@ pub(super) fn closest_nurbs_curve_parameter(
     curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_nurbs_curve_parameter_with_budget(curve, point, seed, &geometry_budget)
 }
@@ -3864,54 +4236,70 @@ fn closest_nurbs_curve_parameter_with_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let count = curve.control_points().len();
-    if !point.is_finite() {
-        return None;
-    }
-    let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
-    if domain[0] >= domain[1] {
-        return None;
-    }
-    if seed.is_some_and(|seed| !seed.is_finite()) {
-        return None;
-    }
-    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
-    let weights = match curve.pole_rows().weights() {
-        Some(weights) if weights.iter().all(|weight| *weight > 0.0) => weights,
-        Some(_) => return None,
-        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
-    };
-    let coordinate_scale = curve
-        .control_points()
-        .iter()
-        .flat_map(|control| [control.x, control.y, control.z])
-        .chain([point.x, point.y, point.z])
-        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let residuals = curve
-        .control_points()
-        .iter()
-        .map(|control| {
-            Point3::new(
-                control.x - point.x,
-                control.y - point.y,
-                control.z - point.z,
-            )
-        })
-        .collect::<Vec<_>>();
-    let controls = positive_controls(&residuals, Some(&weights))?;
-    let homogeneous = HomogeneousCurveSpans {
-        spans: homogeneous_spans(degree, curve.knots(), controls)?,
-        coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
-    };
-    let parameters = closest_parameter_candidates(
-        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?,
-        search_seed,
-    )?;
-    lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
-        .into_iter()
-        .next()
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
+        let degree = usize::try_from(curve.degree()).ok()?;
+        let count = curve.control_points().len();
+        if !point.is_finite() {
+            return None;
+        }
+        let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
+        if domain[0] >= domain[1] {
+            return None;
+        }
+        if seed.is_some_and(|seed| !seed.is_finite()) {
+            return None;
+        }
+        let search_seed =
+            seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
+        let weights = curve.pole_rows().weights();
+        if weights
+            .as_ref()
+            .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        {
+            return None;
+        }
+        let coordinate_scale = curve
+            .control_points()
+            .iter()
+            .flat_map(|control| [control.x, control.y, control.z])
+            .chain([point.x, point.y, point.z])
+            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+        let residuals = curve
+            .control_points()
+            .iter()
+            .map(|control| {
+                Point3::new(
+                    control.x - point.x,
+                    control.y - point.y,
+                    control.z - point.z,
+                )
+            })
+            .collect::<Vec<_>>();
+        let controls = match positive_controls(&residuals, weights.as_deref()) {
+            Ok(Some(controls)) => controls,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let spans = match homogeneous_spans(degree, curve.knots(), controls) {
+            Ok(Some(spans)) => spans,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let homogeneous = HomogeneousCurveSpans {
+            spans,
+            coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
+        };
+        let parameters = closest_parameter_candidates(
+            stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?,
+            search_seed,
+        )?;
+        lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
+            .into_iter()
+            .next()
+            .map(Ok)
+    })()
+    .transpose()
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

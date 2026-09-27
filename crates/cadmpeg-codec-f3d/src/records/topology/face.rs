@@ -10,13 +10,14 @@ use crate::records::identity::Located;
 use crate::records::identity::NonEmptyByteSpan;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
+use crate::records::serde_column::SliceColumn;
 use cadmpeg_ir::ids::FaceId;
 use serde::Deserialize;
 use serde::Serialize;
 
 /// Face-selection operand owned by a parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignFaceOperandWire")]
 pub(crate) struct DesignFaceOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
@@ -78,6 +79,130 @@ pub(crate) struct DesignFaceOperand {
     next_byte_offset: u64,
 }
 
+#[cfg(test)]
+thread_local! {
+    static FACE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignFaceOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        FACE_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            group: self.group,
+            class_tag: self.class_tag.clone(),
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag.clone(),
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: self.recipe_id.clone(),
+            recipe_prefix_bytes: self.recipe_prefix_bytes.clone(),
+            recipe_references: self.recipe_references.clone(),
+            recipe_kind: self.recipe_kind,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: self.recipe_program.clone(),
+            recipe_nodes: self.recipe_nodes.clone(),
+            candidate_faces: self.candidate_faces.clone(),
+            unreferenced_candidate_faces: self.unreferenced_candidate_faces.clone(),
+            alternate_selector_candidate_faces: self.alternate_selector_candidate_faces.clone(),
+            preceding_candidate_faces: self.preceding_candidate_faces.clone(),
+            changed_candidate_faces: self.changed_candidate_faces.clone(),
+            historical_support_contexts: self.historical_support_contexts.clone(),
+            resolved_face_slots: self.resolved_face_slots.clone(),
+            resolved_active_face: self.resolved_active_face.clone(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
+}
+
+impl Serialize for DesignFaceOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            scope_reference_ordinal: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            group_record_index: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            group_member_ordinal: Option<u32>,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            paired_byte_offset: u64,
+            paired_class_tag: &'a str,
+            recipe_record_index: u32,
+            recipe_record_byte_offset: u64,
+            recipe_id: &'a str,
+            recipe_prefix_offset: u64,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            recipe_prefix_bytes: &'a [u8],
+            recipe_references: &'a Vec<DesignRecipeReference>,
+            recipe_kind: ConstructionRecipeKind,
+            recipe_program_offset: u64,
+            recipe_program: &'a Vec<i32>,
+            recipe_node_offsets: SliceColumn<'a, DesignFaceRecipeNode, u64>,
+            recipe_nodes: &'a Vec<DesignFaceRecipeNode>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            unreferenced_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            alternate_selector_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            preceding_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            changed_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            historical_support_contexts: &'a Vec<DesignHistoricalFaceSupportContext>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            resolved_face_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_active_face: Option<&'a FaceId>,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        BorrowedWire {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            group_record_index: self.group_record_index(),
+            group_member_ordinal: self.group_member_ordinal(),
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: self.paired_class_tag.as_str(),
+            recipe_record_index: self.recipe_record_index(),
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: &self.recipe_id,
+            recipe_prefix_offset: self.recipe_prefix_offset(),
+            recipe_prefix_bytes: &self.recipe_prefix_bytes,
+            recipe_references: &self.recipe_references,
+            recipe_kind: self.recipe_kind,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: &self.recipe_program,
+            recipe_node_offsets: SliceColumn::new(&self.recipe_nodes, |node| node.byte_offset),
+            recipe_nodes: &self.recipe_nodes,
+            candidate_faces: &self.candidate_faces,
+            unreferenced_candidate_faces: &self.unreferenced_candidate_faces,
+            alternate_selector_candidate_faces: &self.alternate_selector_candidate_faces,
+            preceding_candidate_faces: &self.preceding_candidate_faces,
+            changed_candidate_faces: &self.changed_candidate_faces,
+            historical_support_contexts: &self.historical_support_contexts,
+            resolved_face_slots: &self.resolved_face_slots,
+            resolved_active_face: self.resolved_active_face.as_ref(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl DesignFaceOperand {
     pub(crate) fn try_new(draft: DesignFaceOperandDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.paired_byte_offset
@@ -135,6 +260,7 @@ impl DesignFaceOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignFaceOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -415,6 +541,7 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFaceOperand> for DesignFaceOperandWire {
     fn from(operand: DesignFaceOperand) -> Self {
         let operand = operand.into_draft();
@@ -470,11 +597,8 @@ impl DesignFaceOperand {
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignFaceSourceGroupWire",
-    into = "DesignFaceSourceGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignFaceSourceGroupWire")]
 pub(crate) struct DesignFaceSourceGroup {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -494,6 +618,67 @@ pub(crate) struct DesignFaceSourceGroup {
     pub(crate) paired_class_tag: DesignClassTag,
     /// Ordered persistent source-shape identities.
     pub(crate) source_members: Vec<Located<DesignFaceSourceMember>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FACE_SOURCE_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignFaceSourceGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        FACE_SOURCE_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            carrier_reference_ordinal: self.carrier_reference_ordinal,
+            carrier_record_index: self.carrier_record_index,
+            carrier_span: self.carrier_span,
+            carrier_class_tag: self.carrier_class_tag.clone(),
+            paired_record_index: self.paired_record_index,
+            paired_class_tag: self.paired_class_tag.clone(),
+            source_members: self.source_members.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignFaceSourceGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            carrier_reference_ordinal: u32,
+            carrier_record_index: u32,
+            carrier_byte_offset: u64,
+            carrier_class_tag: &'a str,
+            carrier_frame_length: u64,
+            paired_record_index: u32,
+            paired_byte_offset: u64,
+            paired_class_tag: &'a str,
+            source_reference_offsets: SliceColumn<'a, Located<DesignFaceSourceMember>, u64>,
+            source_members:
+                SliceColumn<'a, Located<DesignFaceSourceMember>, &'a DesignFaceSourceMember>,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            carrier_reference_ordinal: self.carrier_reference_ordinal,
+            carrier_record_index: self.carrier_record_index,
+            carrier_byte_offset: self.carrier_span.start(),
+            carrier_class_tag: self.carrier_class_tag.as_str(),
+            carrier_frame_length: self.carrier_span.byte_len(),
+            paired_record_index: self.paired_record_index,
+            paired_byte_offset: self.carrier_span.end(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            source_reference_offsets: SliceColumn::new(&self.source_members, |member| {
+                member.offset
+            }),
+            source_members: SliceColumn::new(&self.source_members, |member| &member.value),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
@@ -557,6 +742,7 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
     fn from(group: DesignFaceSourceGroup) -> Self {
         let (source_members, source_reference_offsets) = group

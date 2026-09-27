@@ -1014,7 +1014,7 @@ mod tests {
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             tiny * 0.5,
-        )
+        ).expect("resource allocation did not fail")
         .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1059,7 +1059,7 @@ mod tests {
             ),
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5
-        )
+        ).expect("resource allocation did not fail")
         .is_none());
     }
 

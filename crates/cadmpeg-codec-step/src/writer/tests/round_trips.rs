@@ -781,7 +781,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
         decoded.ir().model.bodies[0].color,
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1541,7 +1541,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode reordered edge loops");
     assert_eq!(decoded.ir().model.faces.len(), source.model.faces.len());
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

@@ -131,21 +131,23 @@ pub(crate) fn transfer(
         insert_appearance(ctx, ir, packet.rgba())?;
     }
 
-    let positional_colors = standard_fbb
-        .and_then(standard_face_colors)
-        .filter(|colors| colors.len() == ir.model.faces.len())
-        .filter(|colors| match all_faces.as_slice() {
-            [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
-            [base] => {
-                let overrides = colors
-                    .iter()
-                    .copied()
-                    .filter(|rgba| rgba != base)
-                    .collect::<Vec<_>>();
-                same_color_multiset(&overrides, &body)
-            }
-            _ => false,
-        });
+    let positional_colors = match standard_fbb {
+        Some(bytes) => standard_face_colors(ctx, bytes)?,
+        None => None,
+    }
+    .filter(|colors| colors.len() == ir.model.faces.len())
+    .filter(|colors| match all_faces.as_slice() {
+        [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
+        [base] => {
+            let overrides = colors
+                .iter()
+                .copied()
+                .filter(|rgba| rgba != base)
+                .collect::<Vec<_>>();
+            same_color_multiset(&overrides, &body)
+        }
+        _ => false,
+    });
     if let Some(colors) = positional_colors {
         let faces = ir
             .model

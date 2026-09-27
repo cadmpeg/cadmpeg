@@ -54,6 +54,51 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
+fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
+    use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
+    use crate::records::dimensions::DesignDimensionLocusPair;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let pair: DesignDimensionLocusPair = serde_json::from_str(
+        r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
+    )
+    .unwrap();
+    let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
+    let native = super::F3dNative {
+        design_dimension_null_locus_pairs: vec![pair].try_into().unwrap(),
+        ..super::F3dNative::default()
+    };
+    let name = "design_dimension_null_locus_pairs";
+    let prefix_names = super::F3D_FAMILIES
+        .iter()
+        .take_while(|row| row.arena != name)
+        .map(|row| row.arena.len())
+        .sum::<usize>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
+    assert_eq!(namespace.arenas()[name].len(), 1);
+}
+
+#[test]
 fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()

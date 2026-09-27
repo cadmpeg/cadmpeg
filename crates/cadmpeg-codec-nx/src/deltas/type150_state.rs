@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::packet_marker::Type150Marker;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "StateWire", into = "StateWire")]
 pub(crate) struct Type150State {
     references: [u32; 4],
@@ -80,7 +80,7 @@ mod tests {
         let state: Type150State = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&state).unwrap(), json);
         for references in [[2, 3, 4, 5, 6], [1, 0, 4, 5, 6], [1, 3, 4, 1, 6]] {
-            let mut wire = serde_json::to_value(&state).unwrap();
+            let mut wire = serde_json::to_value(state).unwrap();
             wire["references"] = serde_json::to_value(references).unwrap();
             assert!(serde_json::from_value::<Type150State>(wire)
                 .unwrap_err()

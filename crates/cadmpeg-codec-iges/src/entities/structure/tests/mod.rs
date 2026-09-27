@@ -1392,7 +1392,7 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
                 || !loss.message.contains("IGES entity type 402 form 9")
         }));
         assert!(
-            cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok(),
+            cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok(),
             "IGES {version} legacy hole topology is invalid"
         );
     }

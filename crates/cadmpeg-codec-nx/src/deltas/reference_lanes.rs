@@ -3,6 +3,7 @@
 
 use super::record_kind::RecordKind;
 use crate::framing::xmt_reference::NonNullXmt;
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,11 +66,21 @@ impl MapKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<(u16, u32)>", into = "Vec<(u16, u32)>")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Vec<(u16, u32)>")]
 pub(crate) struct TaggedReferences {
     first: (TaggedKind, NonNullXmt),
     rest: Vec<(TaggedKind, NonNullXmt)>,
+}
+
+impl Serialize for TaggedReferences {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(1 + self.rest.len()))?;
+        for (kind, reference) in std::iter::once(&self.first).chain(&self.rest) {
+            sequence.serialize_element(&(kind.code(), u32::from(*reference)))?;
+        }
+        sequence.end()
+    }
 }
 impl TryFrom<Vec<(u16, u32)>> for TaggedReferences {
     type Error = &'static str;
@@ -88,8 +99,16 @@ impl TryFrom<Vec<(u16, u32)>> for TaggedReferences {
         Ok(Self { first, rest })
     }
 }
+#[cfg(test)]
+std::thread_local! {
+    static TAGGED_REFERENCES_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static MAP_ENTRIES_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<TaggedReferences> for Vec<(u16, u32)> {
     fn from(lane: TaggedReferences) -> Self {
+        TAGGED_REFERENCES_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         std::iter::once(lane.first)
             .chain(lane.rest)
             .map(|(kind, reference)| (kind.code(), reference.into()))
@@ -97,11 +116,21 @@ impl From<TaggedReferences> for Vec<(u16, u32)> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<(u32, u16)>", into = "Vec<(u32, u16)>")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Vec<(u32, u16)>")]
 pub(crate) struct MapEntries {
     first: (u32, MapKind),
     rest: Vec<(u32, MapKind)>,
+}
+
+impl Serialize for MapEntries {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(1 + self.rest.len()))?;
+        for (reference, kind) in std::iter::once(&self.first).chain(&self.rest) {
+            sequence.serialize_element(&(*reference, kind.code()))?;
+        }
+        sequence.end()
+    }
 }
 impl MapEntries {
     pub(super) fn last_kind(&self) -> u16 {
@@ -124,8 +153,10 @@ impl TryFrom<Vec<(u32, u16)>> for MapEntries {
         Ok(Self { first, rest })
     }
 }
+#[cfg(test)]
 impl From<MapEntries> for Vec<(u32, u16)> {
     fn from(map: MapEntries) -> Self {
+        MAP_ENTRIES_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         std::iter::once(map.first)
             .chain(map.rest)
             .map(|(reference, kind)| (reference, kind.code()))
@@ -135,13 +166,20 @@ impl From<MapEntries> for Vec<(u32, u16)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MapEntries, TaggedReferences};
+    use super::{
+        MapEntries, TaggedReferences, MAP_ENTRIES_INTO_WIRE_COUNT,
+        TAGGED_REFERENCES_INTO_WIRE_COUNT,
+    };
 
     #[test]
     fn reference_lanes_preserve_distinct_kind_and_reference_domains() {
         for json in ["[[79,2],[80,40000]]", "[[67,4],[81,5]]"] {
             let lane: TaggedReferences = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&lane).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&lane).unwrap(),
+                serde_json::to_vec(&Vec::<(u16, u32)>::from(lane.clone())).unwrap()
+            );
         }
         for json in ["[]", "[[98,2]]", "[[100,2]]", "[[79,1]]", "[[79,0]]"] {
             assert!(serde_json::from_str::<TaggedReferences>(json)
@@ -152,6 +190,10 @@ mod tests {
         for json in ["[[0,11]]", "[[40000,81],[3,100]]", "[[2,67],[3,61]]"] {
             let map: MapEntries = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&map).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&map).unwrap(),
+                serde_json::to_vec(&Vec::<(u32, u16)>::from(map.clone())).unwrap()
+            );
         }
         for json in ["[]", "[[1,81]]", "[[2,98]]", "[[2,612]]"] {
             assert!(serde_json::from_str::<MapEntries>(json)
@@ -159,5 +201,45 @@ mod tests {
                 .to_string()
                 .contains("entries"));
         }
+    }
+
+    #[test]
+    fn tagged_references_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            references: &'a TaggedReferences,
+        }
+        let references: TaggedReferences = serde_json::from_str("[[79,2],[80,40000]]").unwrap();
+        let record = Record {
+            id: "nx:deltas:tagged-references#0",
+            references: &references,
+        };
+        TAGGED_REFERENCES_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:tagged-references#0", "references": [[79,2],[80,40000]]}),
+        );
+        TAGGED_REFERENCES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
+    fn map_entries_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            entries: &'a MapEntries,
+        }
+        let entries: MapEntries = serde_json::from_str("[[40000,81],[3,100]]").unwrap();
+        let record = Record {
+            id: "nx:deltas:map-entries#0",
+            entries: &entries,
+        };
+        MAP_ENTRIES_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:deltas:map-entries#0", "entries": [[40000,81],[3,100]]}),
+        );
+        MAP_ENTRIES_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

@@ -50,7 +50,7 @@ use crate::test_support::test_surface_fixtures::{
 };
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
 }
@@ -973,7 +973,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             result.ir(),
             result.source_fidelity(),
             Vec::new(),
-        );
+        ).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }

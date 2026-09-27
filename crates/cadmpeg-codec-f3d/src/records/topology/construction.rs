@@ -9,6 +9,7 @@ use super::extrude_selection::DesignOperandRole;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
+use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::Deserialize;
 use serde::Serialize;
@@ -62,11 +63,8 @@ impl DesignConstructionOperandRole {
 }
 
 /// Construction-operand group owned by a feature scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandGroupSerde",
-    into = "DesignConstructionOperandGroupSerde"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandGroupSerde")]
 pub(crate) struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
     pub(crate) id: String,
@@ -92,6 +90,90 @@ pub(crate) struct DesignConstructionOperandGroup {
     paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub(crate) paired_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            members: self.members.clone(),
+            lost_edge_references: self.lost_edge_references.clone(),
+            frame: self.frame.clone(),
+            operand_role: self.operand_role,
+            paired_class_tag: self.paired_class_tag.clone(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            scope_reference_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            members: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            lost_edge_references: &'a Vec<String>,
+            member_offsets: SliceColumn<'a, Located<u32>, u64>,
+            frame: &'a DesignConstructionOperandGroupFrame,
+            role: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            extrude_role: Option<DesignExtrudeOperandRoleTag>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            extrude_face_role: Option<DesignExtrudeFaceRole>,
+            role_offset: u64,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        let (extrude_role, extrude_face_role) = match self.operand_role.extrude() {
+            Some(DesignExtrudeOperandRole::Bodies) => {
+                (Some(DesignExtrudeOperandRoleTag::Bodies), None)
+            }
+            Some(DesignExtrudeOperandRole::Profile) => {
+                (Some(DesignExtrudeOperandRoleTag::Profile), None)
+            }
+            Some(DesignExtrudeOperandRole::Faces(face_role)) => {
+                (Some(DesignExtrudeOperandRoleTag::Faces), Some(face_role))
+            }
+            None => (None, None),
+        };
+        BorrowedWire {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            members: SliceColumn::new(&self.members, |member| member.value),
+            lost_edge_references: &self.lost_edge_references,
+            member_offsets: SliceColumn::new(&self.members, |member| member.offset),
+            frame: &self.frame,
+            role: self.role().raw(),
+            extrude_role,
+            extrude_face_role,
+            role_offset: self.role_offset(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Unchecked construction-group input.
@@ -267,6 +349,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
     fn from(group: DesignConstructionOperandGroup) -> Self {
         let role_offset = group.role_offset();
@@ -309,11 +392,8 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
 }
 
 /// Serialized framing of a construction-operand group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandGroupFrameWire",
-    into = "DesignConstructionOperandGroupFrameWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandGroupFrameWire")]
 pub(crate) struct DesignConstructionOperandGroupFrame {
     /// Byte offset of the member count.
     pub(crate) member_count_offset: u64,
@@ -344,6 +424,79 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_FRAME_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandGroupFrame {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_FRAME_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            member_count_offset: self.member_count_offset,
+            auxiliary_records: self.auxiliary_records.clone(),
+            auxiliary_paths: self.auxiliary_paths.clone(),
+            trailing_records: self.trailing_records,
+            trailing_transforms: self.trailing_transforms.clone(),
+            trailing_dual_transforms: self.trailing_dual_transforms.clone(),
+            trailing_flags: self.trailing_flags.clone(),
+            opaque_index: self.opaque_index,
+            opaque_index_offset: self.opaque_index_offset,
+            opaque_scalar: self.opaque_scalar,
+            variant: self.variant,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandGroupFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            member_count_offset: u64,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            auxiliary_record_indices: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            auxiliary_record_offsets: SliceColumn<'a, Located<u32>, u64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            auxiliary_paths: &'a Vec<DesignConstructionOperandPath>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            trailing_record_indices: SliceColumn<'a, Located<u32>, u32>,
+            #[serde(skip_serializing_if = "SliceColumn::is_empty")]
+            trailing_record_offsets: SliceColumn<'a, Located<u32>, u64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_transforms: &'a Vec<DesignConstructionOperandTransform>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_dual_transforms: &'a Vec<DesignConstructionOperandDualTransform>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            trailing_flags: &'a Vec<DesignConstructionOperandFlag>,
+            opaque_index: u32,
+            opaque_index_offset: u64,
+            opaque_scalar: f64,
+            opaque_scalar_offset: u64,
+            variant: bool,
+        }
+        let trailing = self.trailing_records.as_slice();
+        BorrowedWire {
+            member_count_offset: self.member_count_offset,
+            auxiliary_record_indices: SliceColumn::new(&self.auxiliary_records, |row| row.value),
+            auxiliary_record_offsets: SliceColumn::new(&self.auxiliary_records, |row| row.offset),
+            auxiliary_paths: &self.auxiliary_paths,
+            trailing_record_indices: SliceColumn::new(trailing, |row| row.value),
+            trailing_record_offsets: SliceColumn::new(trailing, |row| row.offset),
+            trailing_transforms: &self.trailing_transforms,
+            trailing_dual_transforms: &self.trailing_dual_transforms,
+            trailing_flags: &self.trailing_flags,
+            opaque_index: self.opaque_index.get(),
+            opaque_index_offset: self.opaque_index_offset(),
+            opaque_scalar: self.opaque_scalar().get(),
+            opaque_scalar_offset: self.opaque_scalar_offset(),
+            variant: self.variant,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Construction-frame fields before aggregate validation.
@@ -615,6 +768,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
         let opaque_scalar_offset = frame.opaque_scalar_offset();
@@ -671,11 +825,8 @@ pub(crate) struct DesignConstructionOperandFlag {
 }
 
 /// Affine placement named by a construction-operand group's trailing run.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandTransformDraft",
-    into = "DesignConstructionOperandTransformDraft"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandTransformDraft")]
 pub(crate) struct DesignConstructionOperandTransform {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Per-file dynamic transform-record class tag.
@@ -684,6 +835,51 @@ pub(crate) struct DesignConstructionOperandTransform {
     pub(crate) transform: SketchPlacementMatrix,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_TRANSFORM_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandTransform {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            class_tag: self.class_tag.clone(),
+            transform: self.transform,
+            following_class_tag: self.following_class_tag.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandTransform {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a DesignClassTag,
+            transform: SketchPlacementMatrix,
+            transform_offset: u64,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a DesignClassTag,
+        }
+        WireRef {
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: &self.class_tag,
+            transform: self.transform,
+            transform_offset: self.transform_offset(),
+            following_record_index: self.following_record_index(),
+            following_byte_offset: self.following_byte_offset(),
+            following_class_tag: &self.following_class_tag,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionOperandTransform {
@@ -711,6 +907,7 @@ impl DesignConstructionOperandTransform {
         }
         Ok(value)
     }
+    #[cfg(test)]
     fn into_draft(self) -> DesignConstructionOperandTransformDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -773,6 +970,7 @@ impl TryFrom<DesignConstructionOperandTransformDraft> for DesignConstructionOper
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandTransform> for DesignConstructionOperandTransformDraft {
     fn from(value: DesignConstructionOperandTransform) -> Self {
         let value = value.into_draft();
@@ -809,11 +1007,8 @@ pub(crate) struct DesignConstructionOperandDualTransform {
 }
 
 /// One persistent-entity step in a construction operand's selection path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandPathWire",
-    into = "DesignConstructionOperandPathWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandPathWire")]
 pub(crate) struct DesignConstructionOperandPath {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Per-file dynamic path-record class tag.
@@ -826,6 +1021,76 @@ pub(crate) struct DesignConstructionOperandPath {
     pub(crate) scope_record_index: u32,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_PATH_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandPath {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_PATH_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            class_tag: self.class_tag.clone(),
+            entity_ref: self.entity_ref,
+            placement: self.placement,
+            scope_record_index: self.scope_record_index,
+            following_class_tag: self.following_class_tag.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            entity_ref: u64,
+            entity_ref_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform: Option<SketchPlacementMatrix>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            transform_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            compact_variant: Option<bool>,
+            scope_record_index: u32,
+            scope_record_index_offset: u64,
+            nested_record_index: u32,
+            nested_record_index_offset: u64,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a str,
+        }
+        let (transform, transform_offset, compact_variant) = match self.placement {
+            DesignConstructionPathPlacement::Transform(transform) => {
+                (Some(transform), Some(self.byte_offset() + 33), None)
+            }
+            DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
+        };
+        BorrowedWire {
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            entity_ref: self.entity_ref,
+            entity_ref_offset: self.entity_ref_offset(),
+            transform,
+            transform_offset,
+            compact_variant,
+            scope_record_index: self.scope_record_index,
+            scope_record_index_offset: self.scope_record_index_offset(),
+            nested_record_index: self.nested_record_index(),
+            nested_record_index_offset: self.nested_record_index_offset(),
+            following_record_index: self.following_record_index(),
+            following_byte_offset: self.following_byte_offset(),
+            following_class_tag: self.following_class_tag.as_str(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionOperandPath {
@@ -871,6 +1136,7 @@ impl DesignConstructionOperandPath {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignConstructionOperandPathDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -1036,6 +1302,7 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
     fn from(record: DesignConstructionOperandPath) -> Self {
         let record = record.into_draft();
@@ -1073,11 +1340,8 @@ pub(crate) enum DesignConstructionPathPlacement {
 }
 
 /// Nested identity chain named by a construction-operand group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionOperandIdentityWire",
-    into = "DesignConstructionOperandIdentityWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionOperandIdentityWire")]
 pub(crate) struct DesignConstructionOperandIdentity {
     /// Globally unique deterministic identifier.
     pub(crate) id: String,
@@ -1097,6 +1361,61 @@ pub(crate) struct DesignConstructionOperandIdentity {
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     persistent_identity: Option<DesignConstructionPersistentIdentity>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionOperandIdentity {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            group_record_index: self.group_record_index,
+            wrappers: self.wrappers.clone(),
+            following_record_index: self.following_record_index,
+            following_byte_offset: self.following_byte_offset,
+            following_class_tag: self.following_class_tag.clone(),
+            tracking_path: self.tracking_path.clone(),
+            persistent_identity: self.persistent_identity.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionOperandIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            group_record_index: u32,
+            wrapper_record_indices: SliceColumn<'a, DesignIdentityWrapper, u32>,
+            wrapper_byte_offsets: SliceColumn<'a, DesignIdentityWrapper, u64>,
+            wrapper_class_tags: SliceColumn<'a, DesignIdentityWrapper, &'a str>,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            tracking_path: Option<&'a DesignConstructionTrackingPath>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persistent_identity: Option<&'a DesignConstructionPersistentIdentity>,
+        }
+        BorrowedWire {
+            id: &self.id,
+            group_record_index: self.group_record_index,
+            wrapper_record_indices: SliceColumn::new(&self.wrappers, |row| row.record_index),
+            wrapper_byte_offsets: SliceColumn::new(&self.wrappers, |row| row.byte_offset),
+            wrapper_class_tags: SliceColumn::new(&self.wrappers, |row| row.class_tag.as_str()),
+            following_record_index: self.following_record_index,
+            following_byte_offset: self.following_byte_offset,
+            following_class_tag: self.following_class_tag.as_str(),
+            tracking_path: self.tracking_path.as_ref(),
+            persistent_identity: self.persistent_identity.as_ref(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionOperandIdentity {
@@ -1150,6 +1469,7 @@ impl DesignConstructionOperandIdentity {
         };
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignConstructionOperandIdentityDraft {
         DesignConstructionOperandIdentityDraft {
             id: self.id,
@@ -1280,6 +1600,7 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdentityWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
@@ -1309,11 +1630,8 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
 }
 
 /// Entity-tracking path embedded in a construction-operand identity chain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionTrackingPathWire",
-    into = "DesignConstructionTrackingPathWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionTrackingPathWire")]
 pub(crate) struct DesignConstructionTrackingPath {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Outer tracking-wrapper dynamic class tag.
@@ -1334,6 +1652,84 @@ pub(crate) struct DesignConstructionTrackingPath {
     second_related_identity: Option<u64>,
     /// Following-record dynamic class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_TRACKING_PATH_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionTrackingPath {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            wrapper_class_tag: self.wrapper_class_tag.clone(),
+            carrier_class_tag: self.carrier_class_tag.clone(),
+            primary_identity: self.primary_identity,
+            selector: self.selector,
+            kind: self.kind,
+            first_related_identity: self.first_related_identity,
+            second_related_identity: self.second_related_identity,
+            following_class_tag: self.following_class_tag.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignConstructionTrackingPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            wrapper_record_index: u32,
+            wrapper_byte_offset: u64,
+            wrapper_class_tag: &'a str,
+            carrier_record_index: u32,
+            carrier_byte_offset: u64,
+            carrier_class_tag: &'a str,
+            primary_identity: u64,
+            primary_identity_offset: u64,
+            selector: i32,
+            selector_offset: u64,
+            kind: u32,
+            kind_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_related_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_related_identity_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_related_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_related_identity_offset: Option<u64>,
+            following_record_index: u32,
+            following_byte_offset: u64,
+            following_class_tag: &'a str,
+        }
+        WireRef {
+            wrapper_record_index: self.wrapper_record_index(),
+            wrapper_byte_offset: self.wrapper_byte_offset(),
+            wrapper_class_tag: self.wrapper_class_tag.as_str(),
+            carrier_record_index: self.carrier_record_index(),
+            carrier_byte_offset: self.carrier_byte_offset(),
+            carrier_class_tag: self.carrier_class_tag.as_str(),
+            primary_identity: self.primary_identity,
+            primary_identity_offset: self.primary_identity_offset(),
+            selector: self.selector,
+            selector_offset: self.selector_offset(),
+            kind: self.kind,
+            kind_offset: self.kind_offset(),
+            first_related_identity: self.first_related_identity().map(|value| value.value),
+            first_related_identity_offset: self.first_related_identity().map(|value| value.offset),
+            second_related_identity: self.second_related_identity().map(|value| value.value),
+            second_related_identity_offset: self
+                .second_related_identity()
+                .map(|value| value.offset),
+            following_record_index: self.following_record_index(),
+            following_byte_offset: self.following_byte_offset(),
+            following_class_tag: self.following_class_tag.as_str(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionTrackingPath {
@@ -1389,6 +1785,7 @@ impl DesignConstructionTrackingPath {
         }
         Ok(value)
     }
+    #[cfg(test)]
     fn into_draft(self) -> DesignConstructionTrackingPathDraft {
         let first_related_identity = self.first_related_identity();
         let second_related_identity = self.second_related_identity();
@@ -1582,6 +1979,7 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire {
     fn from(value: DesignConstructionTrackingPath) -> Self {
         let value = value.into_draft();
@@ -1614,11 +2012,8 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
 }
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionPersistentIdentityDraft",
-    into = "DesignConstructionPersistentIdentityDraft"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionPersistentIdentityDraft")]
 pub(crate) struct DesignConstructionPersistentIdentity {
     tail: PersistentIdentityTail,
     /// Local persistent identity preceding the two UUID fields.
@@ -1636,6 +2031,59 @@ pub(crate) struct DesignConstructionPersistentIdentity {
     tail_slot_present: bool,
     /// Identity of the indexed record immediately following this identity.
     pub(crate) next_record_index: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static PERSISTENT_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionPersistentIdentity {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        PERSISTENT_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            tail: self.tail,
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset,
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            next_record_index: self.next_record_index,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionPersistentIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            local_id: u64,
+            local_id_offset: u64,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            tail_slot_present: bool,
+            tail_slot_offset: u64,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset,
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionPersistentIdentity {
@@ -1676,6 +2124,7 @@ impl DesignConstructionPersistentIdentity {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignConstructionPersistentIdentityDraft {
         let tail_slot_offset = self.tail_slot_offset();
         let next_byte_offset = self.next_byte_offset();
@@ -1751,6 +2200,7 @@ impl TryFrom<DesignConstructionPersistentIdentityDraft> for DesignConstructionPe
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionPersistentIdentity> for DesignConstructionPersistentIdentityDraft {
     fn from(value: DesignConstructionPersistentIdentity) -> Self {
         let value = value.into_draft();

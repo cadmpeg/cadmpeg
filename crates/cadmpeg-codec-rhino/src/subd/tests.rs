@@ -1125,7 +1125,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -1206,7 +1206,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/2 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

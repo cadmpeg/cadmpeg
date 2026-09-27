@@ -4,6 +4,63 @@
 use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
 #[test]
+fn fillet_radius_law_borrowed_wire_matches_owned_wire_bytes() {
+    let cases = [
+        super::DesignFilletRadiusLaw::Constant {
+            radius_parameter_record_index: 3,
+        },
+        super::DesignFilletRadiusLaw::Chordal {
+            chord_length_parameter_record_index: 4,
+        },
+        super::DesignFilletRadiusLaw::Asymmetric {
+            offset_one_parameter_record_index: 5,
+            offset_two_parameter_record_index: 6,
+        },
+        super::DesignFilletRadiusLaw::Variable {
+            start_radius_parameter_record_index: 7,
+            end_radius_parameter_record_index: 8,
+            middle: vec![super::DesignFilletMidpoint {
+                radius_parameter_record_index: 9,
+                parameter_record_index: 10,
+            }],
+        },
+    ];
+    for law in cases {
+        let owned = super::DesignFilletRadiusLawWire::from(law.clone());
+        assert_eq!(
+            serde_json::to_vec(&law).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn fillet_radius_law_native_retained_limit_refuses_before_clone() {
+    let record = super::DesignFilletRadiusGroup {
+        id: "f3d:native:fillet-radius-group#0".into(),
+        scope_record_index: 1,
+        group_ordinal: 0,
+        group_record_index: 2,
+        edge_operand_record_indices: vec![3],
+        law: super::DesignFilletRadiusLaw::Variable {
+            start_radius_parameter_record_index: 4,
+            end_radius_parameter_record_index: 5,
+            middle: vec![super::DesignFilletMidpoint {
+                radius_parameter_record_index: 6,
+                parameter_record_index: 7,
+            }],
+        },
+        tangency_weight_parameter_record_index: None,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_fillet_radius_groups",
+        || super::FILLET_RADIUS_LAW_CLONE_COUNT.with(|count| count.set(0)),
+        || super::FILLET_RADIUS_LAW_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
     let wire = r#"{"kind":"variable","start_radius_parameter_record_index":51,"end_radius_parameter_record_index":61,"middle_radius_parameter_record_indices":[71],"middle_parameter_record_indices":[81]}"#;
     let law: super::DesignFilletRadiusLaw = serde_json::from_str(wire).unwrap();

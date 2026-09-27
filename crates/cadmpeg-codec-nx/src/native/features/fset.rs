@@ -8,14 +8,12 @@ use super::{
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 /// Exact two-group object-reference graph carried by an `FSET` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureFsetReferenceGraphWire",
-    into = "FeatureFsetReferenceGraphWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureFsetReferenceGraphWire")]
 pub(in crate::native) struct FeatureFsetReferenceGraph {
     /// Globally unique graph identity.
     pub(in crate::native) id: String,
@@ -52,6 +50,50 @@ struct FeatureFsetReferenceGraphWire {
     second_source_offsets: [u64; 3],
 }
 
+impl Serialize for FeatureFsetReferenceGraph {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let first = self.references.first();
+        let second = self.references.second();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("selector", self.references.selector())?;
+        wire.serialize_entry(
+            "first_object_indices",
+            &first.each_ref().map(|(index, _)| u32::from(*index)),
+        )?;
+        wire.serialize_entry(
+            "raw_first_object_indices",
+            &first
+                .each_ref()
+                .map(|(index, _)| word_reference_bytes(*index)),
+        )?;
+        wire.serialize_entry(
+            "first_data_blocks",
+            &first.each_ref().map(|(_, target)| target.as_deref()),
+        )?;
+        wire.serialize_entry(
+            "second_object_indices",
+            &second.each_ref().map(|(index, _)| u32::from(*index)),
+        )?;
+        wire.serialize_entry(
+            "raw_second_object_indices",
+            &second
+                .each_ref()
+                .map(|(index, _)| word_reference_bytes(*index)),
+        )?;
+        wire.serialize_entry(
+            "second_data_blocks",
+            &second.each_ref().map(|(_, target)| target.as_deref()),
+        )?;
+        wire.serialize_entry("source_offset", &self.references.offset())?;
+        wire.serialize_entry("first_source_offsets", &self.references.first_offsets())?;
+        wire.serialize_entry("second_source_offsets", &self.references.second_offsets())?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureFsetReferenceGraph> for FeatureFsetReferenceGraphWire {
     fn from(value: FeatureFsetReferenceGraph) -> Self {
         Self {
@@ -242,7 +284,22 @@ pub(in crate::native) fn feature_fset_construction_payloads(
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureFsetReferenceGraph;
+    use super::{FeatureFsetReferenceGraph, FeatureFsetReferenceGraphWire};
+
+    #[test]
+    fn fset_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:fset-reference#0","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
+        let record: FeatureFsetReferenceGraph = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeatureFsetReferenceGraphWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn fset_wire_requires_fixed_words_and_selector_framed_positions(

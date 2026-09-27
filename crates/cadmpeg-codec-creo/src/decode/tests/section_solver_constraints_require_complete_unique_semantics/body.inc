@@ -449,7 +449,7 @@ offset: 30,
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        resolved_section_points(&point_row_symmetry).get(&7),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &point_row_symmetry)).expect("test section solve").get(&7),
         Some(&[2.0, 2.0])
     );
     let mut circle_center_symmetry = point_row_symmetry.clone();
@@ -474,7 +474,7 @@ offset: 30,
         .items[1]
         .entity_id = 21;
     assert_eq!(
-        resolved_section_points(&circle_center_symmetry).get(&7),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &circle_center_symmetry)).expect("test section solve").get(&7),
         Some(&[2.0, 2.0])
     );
     let mut projected_copy = definition.clone();
@@ -531,11 +531,11 @@ offset: 30,
         ),
     ]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &projected_copy,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&mismatched_projected_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -792,11 +792,11 @@ offset: 30,
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:18".to_string()).expect("valid test fixture"),
         SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("bounded_curve").expect("nonempty source identity")),
     )]);
-    let emitted_type_33_constraints = section_skamp_constraints_for_geometry(
+    let emitted_type_33_constraints = crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
         &type_33_bounded_curve,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
         Some(&emitted_type_33_geometry),
-    );
+    )).expect("test section solve");
     assert!(matches!(
         emitted_type_33_constraints[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Fixed { entity }
@@ -1045,7 +1045,7 @@ offset: 30,
             SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("point").expect("nonempty source identity")),
         ),
     ]);
-    assert_eq!(*(section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&point_pair_geometry))[0]
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx, &point_pair, &sketch, Some(&point_pair_geometry))).expect("test section solve")[0]
             .0
             .definition).kind(),
         SketchConstraintDefinitionInput::CoincidentLoci {
@@ -1064,7 +1064,7 @@ offset: 30,
         SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("point").expect("nonempty source identity")),
     )]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(&point_pair, &sketch, Some(&missing_point_geometry))
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx, &point_pair, &sketch, Some(&missing_point_geometry))).expect("test section solve")
             [0]
         .0
         .definition.kind(),
@@ -1203,11 +1203,11 @@ offset: 30,
         ),
     ]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1222,11 +1222,11 @@ offset: 30,
         sense: 0,
     };
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1239,11 +1239,11 @@ offset: 30,
         .items[1]
         .sense = 4;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1270,11 +1270,11 @@ offset: 30,
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
         SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("arc").expect("nonempty source identity")),
     );
-    let inactive = section_skamp_constraints_for_geometry(
+    let inactive = crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
         &point_coincidence_definition,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
         Some(&unresolved_arc_geometry),
-    );
+    )).expect("test section solve");
     assert_eq!(*(inactive[0].0.definition).kind(),
         SketchConstraintDefinitionInput::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::End(SketchEntityId::mint(
                 "creo:featdefs:sketch_entity#917:13".to_string()
@@ -1302,11 +1302,11 @@ offset: 30,
         SketchEntityId::mint("creo:featdefs:sketch_entity#917:99".to_string()).expect("valid test fixture"),
         SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("solver_only_section_entity").expect("nonempty source identity")),
     );
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_arc_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::SameCoordinate { relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(SketchLocus::End(SketchEntityId::mint(
@@ -1336,11 +1336,11 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .kind = 15;
-    let inactive_type_fifteen = section_skamp_constraints_for_geometry(
+    let inactive_type_fifteen = crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
         &point_coincidence_definition,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
         Some(&unresolved_arc_geometry),
-    );
+    )).expect("test section solve");
     assert_eq!(
         inactive_type_fifteen[0].0.definition,
         inactive[0].0.definition
@@ -1352,11 +1352,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .flags = 3;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_arc_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1385,11 +1385,11 @@ offset: 30,
             sense: 2,
         },
     ];
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_tangent_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_arc_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::TangentLoci {
@@ -1408,11 +1408,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_tangent_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_arc_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1444,11 +1444,11 @@ offset: 30,
             SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("circle").expect("nonempty source identity")),
         ),
     ]);
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_point_on_curve_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_curve_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::PointOnObject {
@@ -1465,11 +1465,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_point_on_curve_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_curve_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::PointOnObject {
@@ -1512,11 +1512,11 @@ offset: 30,
             SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("circle").expect("nonempty source identity")),
         ),
     ]);
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_point_symmetry_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_point_symmetry_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::PointSymmetric {
@@ -1538,11 +1538,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &inactive_point_symmetry_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_point_symmetry_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -1553,11 +1553,11 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .status = 1;
-    let active_native_arc = section_skamp_constraints_for_geometry(
+    let active_native_arc = crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
         &point_coincidence_definition,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
         Some(&unresolved_arc_geometry),
-    );
+    )).expect("test section solve");
     assert!(matches!(
         active_native_arc[0].0.definition.kind(),
         SketchConstraintDefinitionInput::SameCoordinate { .. }
@@ -1599,11 +1599,11 @@ offset: 30,
         .expect("skamp header")
         .declared_count = 2;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].status = 0;
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Horizontal {
@@ -1626,21 +1626,21 @@ offset: 30,
         },
     ];
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
     ));
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[1]
+        )).expect("test section solve")[1]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Midpoint { .. }
@@ -1653,11 +1653,11 @@ offset: 30,
         .items[1]
         .sense = 0;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &point_coincidence_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&incidence_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
@@ -1758,7 +1758,7 @@ offset: 30,
         },
     ]);
     assert_eq!(
-        resolved_section_points(&midpoint_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &midpoint_definition)).expect("test section solve"),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
     );
     let mut saved_line_midpoint = midpoint_definition.clone();
@@ -1799,7 +1799,7 @@ offset: 30,
         .entity_id = 99;
     synchronize_skamp_count(&mut saved_line_midpoint);
     assert_eq!(
-        resolved_section_points(&saved_line_midpoint).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_line_midpoint)).expect("test section solve").get(&4),
         Some(&[2.0, 1.0])
     );
     let mut arc_midpoint_definition = midpoint_definition.clone();
@@ -1861,7 +1861,7 @@ offset: 30,
             sense: 0,
         },
     ];
-    assert!(resolved_section_points(&arc_midpoint_definition)
+    assert!(crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &arc_midpoint_definition)).expect("test section solve")
         .get(&8)
         .is_some_and(|[u, v]| {
             let expected = -std::f64::consts::FRAC_1_SQRT_2;
@@ -1911,7 +1911,7 @@ offset: 30,
             };
         }
         assert_eq!(
-            resolved_section_points(&arc_alignment_definition).get(&3),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &arc_alignment_definition)).expect("test section solve").get(&3),
             Some(&[
                 if expected_coordinate == 0 { 1.0 } else { 3.0 },
                 if expected_coordinate == 1 { 2.0 } else { 3.0 },
@@ -1923,7 +1923,7 @@ offset: 30,
             .expect("relations")
             .skamps.as_mut().expect("skamp table").rows_mut()[0]
             .status = 0;
-        let unresolved = resolved_section_points(&arc_alignment_definition);
+        let unresolved = crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &arc_alignment_definition)).expect("test section solve");
         assert!(!unresolved.contains_key(&3));
     }
     midpoint_definition
@@ -1936,7 +1936,7 @@ offset: 30,
         .expect("midpoint point")
         .value = ScalarLane::Value(3.0);
     assert_eq!(
-        resolved_section_coordinates(&midpoint_definition).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &midpoint_definition)).expect("test section solve").get(&4),
         Some(&[Some(3.0), Some(1.0)])
     );
     midpoint_definition
@@ -2025,11 +2025,11 @@ offset: 30,
         ),
     ]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &midpoint_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&midpoint_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Midpoint { .. }
@@ -2042,11 +2042,11 @@ offset: 30,
         }).expect("valid test fixture"),
     )]);
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &midpoint_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&unresolved_midpoint_geometry),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -2096,7 +2096,7 @@ offset: 30,
             },
         ]));
     assert_eq!(
-        resolved_section_radii(&equal_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &equal_radius_definition)).expect("test section solve"),
         BTreeMap::from([(101, 3.0), (102, 3.0)])
     );
     let mut disabled_equal_radius = equal_radius_definition.clone();
@@ -2110,7 +2110,7 @@ offset: 30,
         .expect("equal-radius incidence")
         .status = 34;
     assert_eq!(
-        resolved_section_radii(&disabled_equal_radius),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &disabled_equal_radius)).expect("test section solve"),
         BTreeMap::from([(101, 3.0)])
     );
     equal_radius_definition
@@ -2137,7 +2137,7 @@ offset: 30,
         .as_mut()
         .expect("variables")
         .declared_count += 1;
-    assert!(resolved_section_radii(&equal_radius_definition).is_empty());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &equal_radius_definition)).expect("test section solve").is_empty());
     let mut saved_radius_definition = definition.clone();
     saved_radius_definition
         .segments
@@ -2200,7 +2200,7 @@ offset: 30,
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        resolved_section_radii(&saved_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &saved_radius_definition)).expect("test section solve"),
         BTreeMap::from([(101, 4.0)])
     );
     let constraints =
@@ -2306,7 +2306,7 @@ offset: 30,
             ).expect("valid test fixture")),
         }
     );
-    assert_eq!(resolved_section_points(&point_symmetry)[&3], [4.0, 4.0]);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &point_symmetry)).expect("test section solve")[&3], [4.0, 4.0]);
     point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[1] =
         crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
@@ -2458,7 +2458,7 @@ offset: 30,
     };
     assert_eq!(
         section_point_row_geometry(
-            &resolved_section_points(&opaque_point),
+            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &opaque_point)).expect("test section solve"),
             &opaque_point.segments.as_ref().expect("segments").rows.points().cloned().collect::<Vec<_>>()[0],
         ),
         Some(SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -2805,7 +2805,7 @@ offset: 30,
         solver_only_section_entity_family(&opaque_line, 101),
         Some(SectionEntityIncidenceFamily::Point)
     );
-    assert_eq!(*(section_skamp_constraints_for_geometry(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&BTreeMap::from([
@@ -2823,7 +2823,7 @@ offset: 30,
                     }).expect("valid test fixture"),
                 ),
             ])),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Midpoint {
@@ -2872,7 +2872,7 @@ offset: 30,
     );
     opaque_line.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 1;
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&BTreeMap::from([(
@@ -2881,13 +2881,13 @@ offset: 30,
                     native_kind: cadmpeg_core::text::NonBlankString::new("line").expect("nonempty source identity"),
                 }).expect("valid test fixture"),
             )])),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Vertical { .. }
     ));
     assert!(matches!(
-        section_skamp_constraints_for_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(ctx,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             Some(&BTreeMap::from([
@@ -2905,7 +2905,7 @@ offset: 30,
                     }).expect("valid test fixture"),
                 ),
             ])),
-        )[1]
+        )).expect("test section solve")[1]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3224,7 +3224,7 @@ offset: 30,
         u: Some(8.0),
         v: Some(9.0),
     }]);
-    assert_eq!(resolved_section_points(&center_coincidence)[&1], [8.0, 9.0]);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &center_coincidence)).expect("test section solve")[&1], [8.0, 9.0]);
     assert_eq!(*(constraints[5].0.definition).kind(),
         SketchConstraintDefinitionInput::TangentLoci {
             first: SketchLocus::End(SketchEntityId::mint(
@@ -3375,7 +3375,7 @@ offset: 30,
         .expect("second same-coordinate point")
         .value = ScalarLane::Undefined;
     assert_eq!(
-        resolved_section_points(&propagated_same_coordinate).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &propagated_same_coordinate)).expect("test section solve").get(&5),
         Some(&[3.0, 2.0])
     );
     let mut unsolved_same_coordinate = definition.clone();
@@ -3499,7 +3499,7 @@ offset: 30,
         },
     ];
     assert_eq!(
-        resolved_section_points(&point_coincidence_definition).get(&6),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &point_coincidence_definition)).expect("test section solve").get(&6),
         Some(&[1.0, 2.0])
     );
     let mut distance_definition = definition.clone();
@@ -3540,7 +3540,7 @@ offset: 30,
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
     assert_eq!(
-        resolved_section_points(&unspanned_distance).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &unspanned_distance)).expect("test section solve").get(&5),
         Some(&[3.0, 2.0])
     );
     let mut disabled_distance = distance_definition.clone();
@@ -3582,12 +3582,12 @@ offset: 30,
         offset: 902,
     }],
     });
-    assert!(!resolved_section_points(&disabled_distance).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &disabled_distance)).expect("test section solve").contains_key(&2));
     declared_solver_rows(&mut distance_definition.relations.as_mut().expect("relations").skamps).clear();
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &distance_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::VerticalDistance {
@@ -3607,10 +3607,10 @@ offset: 30,
             v: Some(3.0),
         }]);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &conflicting_spanning_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3645,10 +3645,10 @@ offset: 30,
         offset: 96,
     });
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &conflicting_saved_spanning_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3666,10 +3666,10 @@ offset: 30,
     };
     line.endpoints[1][0] = Some(0.0);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &agreeing_saved_spanning_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::VerticalDistance { .. }
@@ -3715,10 +3715,10 @@ offset: 30,
         offset: 902,
     }],
     });
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &schema_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Vertical {
@@ -3732,10 +3732,10 @@ offset: 30,
         .rows[0]
         .value = crate::feature::definitions::DimensionValue::Resolved(1.0);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &schema_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3752,10 +3752,10 @@ offset: 30,
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &separate_point_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3771,10 +3771,10 @@ offset: 30,
         .expect("point 5")
         .value = ScalarLane::Value(0.0);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &coincident_point_keys,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3786,10 +3786,10 @@ offset: 30,
         .rows.edit_ordinary(|rows| rows.retain(|segment| !segment.point_ids().contains(&5)));
     synchronize_segment_count(&mut separate_point_distance);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &separate_point_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3826,10 +3826,10 @@ offset: 30,
         .and_then(|table| table.header_mut())
         .expect("skamp header")
         .declared_count = 1;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incidence_oriented_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::HorizontalDistance {
@@ -3853,10 +3853,10 @@ offset: 30,
         offset: 82,
     };
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incomplete_skamps,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3887,10 +3887,10 @@ offset: 30,
         .expect("skamp header")
         .declared_count = 2;
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &conflicting_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -3903,7 +3903,7 @@ offset: 30,
         .skamps)
         .clear();
     assert_eq!(
-        resolved_section_points(&solver_definition).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &solver_definition)).expect("test section solve").get(&2),
         Some(&[0.0, 5.0])
     );
     let mut incomplete_relations = solver_definition.clone();
@@ -3912,7 +3912,7 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .declared_count = 4;
-    assert!(!resolved_section_points(&incomplete_relations).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &incomplete_relations)).expect("test section solve").contains_key(&2));
     let mut equivalent_relation = solver_definition.clone();
     let duplicate = equivalent_relation
         .relations
@@ -3932,7 +3932,7 @@ offset: 30,
         .expect("relations")
         .declared_count = 4;
     assert_eq!(
-        resolved_section_points(&equivalent_relation).get(&2),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &equivalent_relation)).expect("test section solve").get(&2),
         Some(&[0.0, 5.0])
     );
     let conflicting_relation = equivalent_relation
@@ -3943,7 +3943,7 @@ offset: 30,
         .last_mut()
         .expect("duplicate relation");
     conflicting_relation.sign = 0xf6;
-    assert!(!resolved_section_points(&equivalent_relation).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &equivalent_relation)).expect("test section solve").contains_key(&2));
     let mut duplicate_identity = solver_definition.clone();
     let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
     duplicate.offset = 500;
@@ -3953,7 +3953,7 @@ offset: 30,
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_identity);
-    assert!(!resolved_section_points(&duplicate_identity).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &duplicate_identity)).expect("test section solve").contains_key(&2));
     let mut duplicate_endpoint_segment = solver_definition;
     let mut duplicate = duplicate_endpoint_segment
         .segments
@@ -3969,7 +3969,7 @@ offset: 30,
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_endpoint_segment);
-    assert!(!resolved_section_points(&duplicate_endpoint_segment).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &duplicate_endpoint_segment)).expect("test section solve").contains_key(&2));
     let mut shared_vertex_definition = distance_definition.clone();
     let mut incident = shared_vertex_definition
         .segments
@@ -3985,10 +3985,10 @@ offset: 30,
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(incident));
     synchronize_segment_count(&mut shared_vertex_definition);
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &shared_vertex_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::VerticalDistance {
@@ -4015,10 +4015,10 @@ offset: 30,
         .expect("relations")
         .rows
         .push(duplicate);
-    let duplicate_constraints = section_dimension_constraints(
+    let duplicate_constraints = crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
         &duplicate_relation_id,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-    );
+    )).expect("test section solve");
     assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
         constraint.definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -4062,10 +4062,10 @@ offset: 30,
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_measured_segment);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &duplicate_measured_segment,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4082,10 +4082,10 @@ offset: 30,
         .expect("duplicate")
         .kind = crate::feature::definitions::FeatureSegmentKind::Line([8, 9]));
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &duplicate_measured_segment,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4101,7 +4101,7 @@ offset: 30,
         .rows[0]
         .dimension_type = 10;
     assert!(matches!(
-        section_dimension_constraints(&angular_distance, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))[0]
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &angular_distance, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4109,7 +4109,7 @@ offset: 30,
             ..
         } if native_kind == "creo:relation:0"
     ));
-    assert!(!resolved_section_points(&angular_distance).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &angular_distance)).expect("test section solve").contains_key(&2));
     let mut duplicate_dimension = distance_definition.clone();
     let duplicate = duplicate_dimension
         .dimensions
@@ -4123,10 +4123,10 @@ offset: 30,
         .expect("dimensions")
         .rows
         .push(duplicate);
-    let duplicate_constraint = section_dimension_constraints(
+    let duplicate_constraint = crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
         &duplicate_dimension,
         &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-    );
+    )).expect("test section solve");
     assert!(matches!(
         duplicate_constraint[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4163,10 +4163,10 @@ offset: 30,
         .expect("dimensions")
         .rows[0]
         .dimension_type = 3;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4175,7 +4175,7 @@ offset: 30,
         }
     );
     assert_eq!(
-        resolved_section_radii(&legacy_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &legacy_radius_definition)).expect("test section solve"),
         BTreeMap::from([(0, 3.0)])
     );
     legacy_radius_definition
@@ -4184,10 +4184,10 @@ offset: 30,
         .expect("dimensions")
         .rows[0]
         .dimension_type = 4;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Diameter {
@@ -4196,7 +4196,7 @@ offset: 30,
         }
     );
     assert_eq!(
-        resolved_section_radii(&legacy_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &legacy_radius_definition)).expect("test section solve"),
         BTreeMap::from([(0, 1.5)])
     );
     for dimension_type in [1, 2, 5] {
@@ -4206,10 +4206,10 @@ offset: 30,
             .expect("dimensions")
             .rows[0]
             .dimension_type = dimension_type;
-        assert_eq!(*(section_dimension_constraints(
+        assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
                 &legacy_radius_definition,
                 &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-            )[0]
+            )).expect("test section solve")[0]
             .0
             .definition).kind(),
             SketchConstraintDefinitionInput::Radius {
@@ -4218,7 +4218,7 @@ offset: 30,
             }
         );
         assert_eq!(
-            resolved_section_radii(&legacy_radius_definition),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &legacy_radius_definition)).expect("test section solve"),
             BTreeMap::from([(0, 3.0)])
         );
     }
@@ -4233,10 +4233,10 @@ offset: 30,
         [Some(16), Some(15), Some(0), Some(1)],
     ]);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &legacy_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4275,10 +4275,10 @@ offset: 30,
         .expect("dimensions")
         .rows[0]
         .dimension_type = 3;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4287,7 +4287,7 @@ offset: 30,
         }
     );
     assert_eq!(
-        resolved_section_radii(&type6_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &type6_radius_definition)).expect("test section solve"),
         BTreeMap::from([(0, 3.0)])
     );
     type6_radius_definition
@@ -4305,10 +4305,10 @@ offset: 30,
             [Some(type6_center), Some(0), Some(0), Some(0)],
             [Some(15), Some(16), Some(15), Some(1)],
         ]);
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4322,10 +4322,10 @@ offset: 30,
         .expect("dimensions")
         .rows[0]
         .dimension_type = 4;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &type6_radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Diameter {
@@ -4334,7 +4334,7 @@ offset: 30,
         }
     );
     assert_eq!(
-        resolved_section_radii(&type6_radius_definition),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &type6_radius_definition)).expect("test section solve"),
         BTreeMap::from([(0, 1.5)])
     );
     let mut incomplete_type6 = type6_radius_definition.clone();
@@ -4354,10 +4354,10 @@ offset: 30,
             [Some(15), Some(16), Some(15), None],
         ]);
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incomplete_type6,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4379,10 +4379,10 @@ offset: 30,
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_type6_arc));
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &ambiguous_type6,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4412,10 +4412,10 @@ offset: 30,
         [Some(0), Some(0), Some(0), Some(0)],
         [Some(15), Some(0), Some(0), Some(0)],
     ]);
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4431,10 +4431,10 @@ offset: 30,
             .expect("dimensions")
             .rows[0]
             .dimension_type = dimension_type;
-        assert_eq!(*(section_dimension_constraints(
+        assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
                 &noncircular_dimension,
                 &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-            )[0]
+            )).expect("test section solve")[0]
             .0
             .definition).kind(),
             SketchConstraintDefinitionInput::Radius {
@@ -4443,7 +4443,7 @@ offset: 30,
             }
         );
         assert_eq!(
-            resolved_section_radii(&noncircular_dimension),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &noncircular_dimension)).expect("test section solve"),
             BTreeMap::from([(101, 3.0)])
         );
     }
@@ -4460,10 +4460,10 @@ offset: 30,
             external_id: arc.external_id,
             offset: arc.offset,
         }));
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &opaque_circle_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4477,10 +4477,10 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .declared_count += 1;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incomplete_radius_segments,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Radius {
@@ -4528,10 +4528,10 @@ offset: 30,
         offset: 94,
     }] });
 
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &relation_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Horizontal {
@@ -4544,10 +4544,10 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .declared_count += 1;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incomplete_relation_orientation,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Horizontal {
@@ -4560,10 +4560,10 @@ offset: 30,
         .expect("dimensions")
         .rows[0]
         .dimension_type = 4;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &radius_definition,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Diameter {
@@ -4585,7 +4585,7 @@ offset: 30,
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut radius_definition);
     assert!(matches!(
-        section_dimension_constraints(&radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))[0]
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4606,7 +4606,7 @@ offset: 30,
         .rows[0]
         .dimension_type = 10;
     assert!(matches!(
-        section_dimension_constraints(&radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))[0]
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &radius_definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")[0]
             .0
             .definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -4614,7 +4614,7 @@ offset: 30,
             ..
         } if native_kind == "creo:relation:14"
     ));
-    assert!(!resolved_section_radii(&radius_definition).contains_key(&101));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &radius_definition)).expect("test section solve").contains_key(&101));
     let mut incidence_distance = distance_definition.clone();
     let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
     incidence_relations.rows[0].operand_vectors = None;
@@ -4651,10 +4651,10 @@ offset: 30,
     }] });
 
 
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::DistanceLoci {
@@ -4668,10 +4668,10 @@ offset: 30,
         }
     );
     assert_eq!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .active,
         Some(true)
@@ -4686,19 +4686,19 @@ offset: 30,
     assert!(joined_relation_incidence(&inactive_incidence, 8).is_some());
     assert!(relation_incidence(&inactive_incidence, 8).is_none());
     assert_eq!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .active,
         Some(false)
     );
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::DistanceLoci { .. }
@@ -4713,10 +4713,10 @@ offset: 30,
             entity_id: 15,
             sense: 2,
         });
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Distance {
@@ -4775,10 +4775,10 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[0]
         .sense = 2;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::DistanceLoci {
@@ -4799,10 +4799,10 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items[1]
         .entity_id = 999;
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &solver_only_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::DistanceLoci {
@@ -4859,10 +4859,10 @@ offset: 30,
         ],
         offset: 89,
     });
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &angular_dimension,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::Angle {
@@ -4878,10 +4878,10 @@ offset: 30,
         .expect("order table")
         .declared_count = 3;
     assert!(matches!(
-        section_dimension_constraints(
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &incomplete_angle_order,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
@@ -4904,14 +4904,14 @@ offset: 30,
         .expect("order table")
         .declared_count = 3;
     assert!(matches!(
-        section_dimension_constraints(&ambiguous_angle, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &ambiguous_angle, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve")
             [0]
         .0
         .definition.kind(),
         SketchConstraintDefinitionInput::Native { .. }
     ));
     let relations =
-        section_dimension_constraints(&definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"));
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve");
     assert_eq!(*(relations[0].0.definition).kind(),
         SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("creo:relation:99").expect("nonempty native kind"),
@@ -4938,7 +4938,7 @@ offset: 30,
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
     let vector_relation =
-        section_dimension_constraints(&vector_native, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"));
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &vector_native, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve");
     let SketchConstraintDefinitionInput::Native {
         native_properties,
         operands,
@@ -5011,10 +5011,10 @@ offset: 30,
         [Some(1), Some(1), Some(0), Some(1)],
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
-    assert_eq!(*(section_dimension_constraints(
+    assert_eq!(*(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx,
             &special_endpoint_dimension,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-        )[0]
+        )).expect("test section solve")[0]
         .0
         .definition).kind(),
         SketchConstraintDefinitionInput::HorizontalDistance {
@@ -5029,7 +5029,7 @@ offset: 30,
     );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
     let stored_state =
-        section_dimension_constraints(&vector_native, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"));
+        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(ctx, &vector_native, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"))).expect("test section solve");
     assert!(matches!(
         stored_state[0].0.definition.kind(),
         SketchConstraintDefinitionInput::Native {
@@ -5216,7 +5216,7 @@ offset: 30,
         section_line_fixed_coordinate(&coincident_definition, related_line),
         Some(crate::decode::sketch::axis::SectionAxis::U)
     );
-    let coincident_points = resolved_section_points(&coincident_definition);
+    let coincident_points = crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &coincident_definition)).expect("test section solve");
     assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
     assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
     assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
@@ -5231,7 +5231,7 @@ offset: 30,
         skamp.status = 34;
     }
     assert_eq!(
-        resolved_section_points(&disabled_incidences),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &disabled_incidences)).expect("test section solve"),
         BTreeMap::from([(2, [3.0, 4.0]), (7, [2.0, 6.0])])
     );
     let mut ambiguous_definition = coincident_definition.clone();
@@ -5242,7 +5242,7 @@ offset: 30,
         .expect("point 5");
     append_points(ambiguous_definition.variables.as_mut().expect("variables"), vec![duplicate]);
     assert_eq!(
-        resolved_section_points(&ambiguous_definition).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &ambiguous_definition)).expect("test section solve").get(&5),
         Some(&[3.0, 4.0])
     );
     let complementary = ambiguous_definition
@@ -5256,7 +5256,7 @@ offset: 30,
         .expect("duplicate point");
     complementary.value = ScalarLane::Value(3.0);
     assert_eq!(
-        resolved_section_points(&ambiguous_definition).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &ambiguous_definition)).expect("test section solve").get(&5),
         Some(&[3.0, 4.0])
     );
     let mut conflicting_definition = coincident_definition.clone();
@@ -5267,7 +5267,7 @@ offset: 30,
         .expect("point 2");
     conflicting.u = Some(30.0);
     append_points(conflicting_definition.variables.as_mut().expect("variables"), vec![conflicting]);
-    assert!(!resolved_section_points(&conflicting_definition).contains_key(&2));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &conflicting_definition)).expect("test section solve").contains_key(&2));
     let conflicting_record = sketch_section_point_records(&conflicting_definition)
         .into_iter()
         .find(|point| point.point_id == 2)
@@ -5334,7 +5334,7 @@ offset: 30,
         Some((1, 7, crate::decode::sketch::axis::SectionAxis::V))
     );
     assert_eq!(
-        resolved_section_coordinates(&point_row_type_nine).get(&7),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &point_row_type_nine)).expect("test section solve").get(&7),
         Some(&[Some(4.0), Some(2.0)])
     );
     let mut saved_definition = definition;
@@ -5491,7 +5491,7 @@ offset: 30,
     }];
     synchronize_skamp_count(&mut saved_definition);
     assert_eq!(
-        resolved_section_points(&saved_definition).get(&4),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_definition)).expect("test section solve").get(&4),
         Some(&[3.0, 1.0])
     );
     let mut saved_point_row_type_nine = saved_definition.clone();
@@ -5536,7 +5536,7 @@ offset: 30,
         Some((7, crate::decode::sketch::axis::SectionAxis::V, 1.0))
     );
     assert_eq!(
-        resolved_section_coordinates(&saved_point_row_type_nine).get(&7),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, &saved_point_row_type_nine)).expect("test section solve").get(&7),
         Some(&[Some(3.0), Some(1.0)])
     );
     let mut saved_coincident = saved_definition.clone();
@@ -5587,12 +5587,12 @@ offset: 30,
     ];
     synchronize_skamp_count(&mut saved_coincident);
     assert_eq!(
-        resolved_section_points(&saved_coincident),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_coincident)).expect("test section solve"),
         BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
     saved_coincident.variables = None;
     assert_eq!(
-        resolved_section_points(&saved_coincident),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_coincident)).expect("test section solve"),
         BTreeMap::from([(4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
     let mut saved_symmetric = saved_definition.clone();
@@ -5626,7 +5626,7 @@ offset: 30,
     }];
     synchronize_skamp_count(&mut saved_symmetric);
     assert_eq!(
-        resolved_section_points(&saved_symmetric).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_symmetric)).expect("test section solve").get(&5),
         Some(&[0.0, 1.0])
     );
     saved_definition
@@ -5665,7 +5665,7 @@ offset: 30,
     }];
     synchronize_skamp_count(&mut saved_definition);
     assert_eq!(
-        resolved_section_points(&saved_definition).get(&5),
+        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &saved_definition)).expect("test section solve").get(&5),
         Some(&[3.0, 0.0])
     );
     let mut saved_same_coordinate = saved_definition.clone();

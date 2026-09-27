@@ -30,7 +30,7 @@ use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point_with_budget, curve_second_derivative_with_budget,
-    curve_tangent_with_budget, model_curve_point_by_id_with_budget,
+    curve_tangent_with_budget, finite_or_refusal, model_curve_point_by_id_with_budget,
     model_surface_partials_by_id_with_budget, nurbs_curve_speed_bound, nurbs_surface_isocurve,
     nurbs_surface_parameter_within_nonnegative_tolerance_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point_with_budget,
@@ -633,7 +633,7 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     range: [f64; 2],
     endpoints: [Point3; 2],
     tolerance: f64,
-) -> Result<Option<PcurveGeometry>, NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_tolerant_intersection_pcurve_with_index_and_budget(
@@ -658,12 +658,21 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     endpoints: [Point3; 2],
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<PcurveGeometry>, NurbsError> {
-    let points = range.map(|parameter| {
-        let uv = pcurve_uv(pcurve, parameter).ok()?;
-        decoded_surface_point_inner_with_budget(index, support, uv.u, uv.v, 0, geometry_budget)
-    });
-    let [Some(first), Some(second)] = points else {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let evaluate = |parameter| -> Result<Option<Point3>, cadmpeg_core::CodecError> {
+        let Some(uv) = finite_or_refusal(pcurve_uv(pcurve, parameter))? else {
+            return Ok(None);
+        };
+        Ok(decoded_surface_point_inner_with_budget(
+            index,
+            support,
+            uv.u,
+            uv.v,
+            0,
+            geometry_budget,
+        )?)
+    };
+    let (Some(first), Some(second)) = (evaluate(range[0])?, evaluate(range[1])?) else {
         return Ok(None);
     };
     let forward = Point3::distance(first, endpoints[0]) <= tolerance
@@ -672,7 +681,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
         && Point3::distance(second, endpoints[0]) <= tolerance;
     match (forward, reversed) {
         (true, false) => Ok(Some(pcurve.clone())),
-        (false, true) => reverse_pcurve_over_range(pcurve, range),
+        (false, true) => reverse_pcurve_over_range(pcurve, range).map_err(Into::into),
         (true, true) => {
             let Some(reversed) = reverse_pcurve_over_range(pcurve, range)? else {
                 return Ok(None);
@@ -680,32 +689,56 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             // The two reflections agree on the endpoints, so the tangent of
             // the owning curve selects between them. A missing tangent, a
             // missing surface chart or a tie states no selection.
-            let selected_forward = (|| {
-                let curve = index.curves(curve.as_str())?;
-                let curve_tangent =
-                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)
-                        .ok()?
-                        .unit_nonzero()?;
-                let alignment = |candidate: &PcurveGeometry| {
-                    let uv = pcurve_uv(candidate, range[0]).ok()?;
-                    let uv_tangent = pcurve_tangent(candidate, range[0]).ok()?;
-                    let partials = model_surface_partials_by_id_with_budget(
-                        index,
-                        support,
-                        uv.u,
-                        uv.v,
-                        geometry_budget,
-                    )
-                    .ok()?;
-                    let tangent = FiniteVector3::new(Vector3::new(
-                        uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
-                        uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
-                        uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
-                    ))
-                    .and_then(FiniteVector3::unit_nonzero)?;
-                    Some(curve_tangent.dot(tangent))
+            let selected_forward = (|| -> Result<Option<bool>, cadmpeg_core::CodecError> {
+                let Some(curve) = index.curves(curve.as_str()) else {
+                    return Ok(None);
                 };
-                match (alignment(pcurve)?, alignment(&reversed)?) {
+                let Some(curve_tangent) = finite_or_refusal(curve_tangent_with_budget(
+                    &curve.geometry,
+                    range[0],
+                    geometry_budget,
+                ))?
+                else {
+                    return Ok(None);
+                };
+                let Some(curve_tangent) = curve_tangent.unit_nonzero() else {
+                    return Ok(None);
+                };
+                let alignment =
+                    |candidate: &PcurveGeometry| -> Result<Option<f64>, cadmpeg_core::CodecError> {
+                        let Some(uv) = finite_or_refusal(pcurve_uv(candidate, range[0]))? else {
+                            return Ok(None);
+                        };
+                        let Some(uv_tangent) =
+                            finite_or_refusal(pcurve_tangent(candidate, range[0]))?
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(partials) =
+                            finite_or_refusal(model_surface_partials_by_id_with_budget(
+                                index,
+                                support,
+                                uv.u,
+                                uv.v,
+                                geometry_budget,
+                            ))?
+                        else {
+                            return Ok(None);
+                        };
+                        let tangent = FiniteVector3::new(Vector3::new(
+                            uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
+                            uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
+                            uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
+                        ))
+                        .and_then(FiniteVector3::unit_nonzero);
+                        Ok(tangent.map(|tangent| curve_tangent.dot(tangent)))
+                    };
+                let (Some(forward_alignment), Some(reversed_alignment)) =
+                    (alignment(pcurve)?, alignment(&reversed)?)
+                else {
+                    return Ok(None);
+                };
+                Ok(match (forward_alignment, reversed_alignment) {
                     (forward_alignment, reversed_alignment)
                         if forward_alignment > 0.0 && reversed_alignment <= 0.0 =>
                     {
@@ -717,8 +750,8 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         Some(false)
                     }
                     _ => None,
-                }
-            })();
+                })
+            })()?;
             Ok(match selected_forward {
                 Some(true) => Some(pcurve.clone()),
                 Some(false) => Some(reversed),
@@ -1150,80 +1183,86 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         let candidate_geometry_budget = geometry_budget.child_slice(
             opposite_chart_geometry_work_limit(candidates_remaining, geometry_budget.remaining()),
         );
-        let replacement = (|| -> Result<Option<OppositeChartReplacement>, NurbsError> {
-            let Some(procedural) = ir.model.procedural_curves.get(procedural_index) else {
-                return Ok(None);
-            };
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
-                return Ok(None);
-            };
-            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-            else {
-                return Ok(None);
-            };
-            if transfer_budget_exhausted(transfer_budget) {
-                return Ok(None);
-            }
-            let missing = context.sides().each_ref().map(|side| {
-                pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
-            });
-            let target = match missing {
-                [true, false] => 0,
-                [false, true] => 1,
-                _ => return Ok(None),
-            };
-            let source = 1 - target;
-            let [Some(source_surface), Some(target_surface)] =
-                [source, target].map(|side| context.sides()[side].surface.as_ref())
-            else {
-                return Ok(None);
-            };
-            let Some(source_pcurve) = context.sides()[source].pcurve.as_ref() else {
-                return Ok(None);
-            };
-            let Some(tolerance) = procedural
-                .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get)
-                .or_else(|| edge_tolerances.get(owner).copied())
-            else {
-                return Ok(None);
-            };
-            let tolerance =
-                blend_spine_cache_fit_tolerance_with_index(&model_index, target_surface, tolerance);
-            let blend_contact = blend_contacts
-                .entry((source_surface.clone(), target_surface.clone()))
-                .or_insert_with(|| {
-                    blend_transfer_contact(&model_index, source_surface, target_surface)
-                })
-                .as_ref()
-                .copied();
-            let Some(pcurve) = transfer_intersection_pcurve_with_contact_and_budget(
-                &model_index,
-                owner,
-                source_surface,
-                &source_pcurve.geometry,
-                target_surface,
-                context.parameter_range().endpoints(),
-                tolerance,
-                blend_contact,
-                transfer_budget,
-                &candidate_geometry_budget,
-                &mut blend_parameter_grids,
-            )?
-            else {
-                return Ok(None);
-            };
-            let Ok(fit_tolerance) = cadmpeg_ir::geometry::FitTolerance::try_new(tolerance) else {
-                return Ok(None);
-            };
-            Ok(Some((
-                procedural_index,
-                target,
-                pcurve,
-                fit_tolerance,
-                curve_is_cache_backed_with_index(&model_index, owner),
-            )))
-        })();
+        let replacement =
+            (|| -> Result<Option<OppositeChartReplacement>, cadmpeg_core::CodecError> {
+                let Some(procedural) = ir.model.procedural_curves.get(procedural_index) else {
+                    return Ok(None);
+                };
+                let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                    return Ok(None);
+                };
+                let ProceduralCurveDefinition::Intersection { context, .. } =
+                    procedural.definition()
+                else {
+                    return Ok(None);
+                };
+                if transfer_budget_exhausted(transfer_budget) {
+                    return Ok(None);
+                }
+                let missing = context.sides().each_ref().map(|side| {
+                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+                });
+                let target = match missing {
+                    [true, false] => 0,
+                    [false, true] => 1,
+                    _ => return Ok(None),
+                };
+                let source = 1 - target;
+                let [Some(source_surface), Some(target_surface)] =
+                    [source, target].map(|side| context.sides()[side].surface.as_ref())
+                else {
+                    return Ok(None);
+                };
+                let Some(source_pcurve) = context.sides()[source].pcurve.as_ref() else {
+                    return Ok(None);
+                };
+                let Some(tolerance) = procedural
+                    .cache_fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    .or_else(|| edge_tolerances.get(owner).copied())
+                else {
+                    return Ok(None);
+                };
+                let tolerance = blend_spine_cache_fit_tolerance_with_index(
+                    &model_index,
+                    target_surface,
+                    tolerance,
+                );
+                let blend_contact = blend_contacts
+                    .entry((source_surface.clone(), target_surface.clone()))
+                    .or_insert_with(|| {
+                        blend_transfer_contact(&model_index, source_surface, target_surface)
+                    })
+                    .as_ref()
+                    .copied();
+                let Some(pcurve) = transfer_intersection_pcurve_with_contact_and_budget(
+                    &model_index,
+                    owner,
+                    source_surface,
+                    &source_pcurve.geometry,
+                    target_surface,
+                    context.parameter_range().endpoints(),
+                    tolerance,
+                    blend_contact,
+                    transfer_budget,
+                    &candidate_geometry_budget,
+                    &mut blend_parameter_grids,
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Ok(fit_tolerance) = cadmpeg_ir::geometry::FitTolerance::try_new(tolerance)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some((
+                    procedural_index,
+                    target,
+                    pcurve,
+                    fit_tolerance,
+                    curve_is_cache_backed_with_index(&model_index, owner),
+                )))
+            })();
         // Charging the shared budget for this candidate's work is how the
         // route reports its own exhaustion: `WorkBudget::charge_by` marks
         // the budget exhausted when the candidate overran the remainder,
@@ -1435,17 +1474,26 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         let tolerance = admitted_tolerance.get();
         let [first_surface, second_surface] = supports;
-        let candidates = [first_surface, second_surface].map(|surface| {
+        let candidates = [
             exact_boundary_pcurve_with_index(
                 &model_index,
                 owner,
-                surface,
+                first_surface,
                 endpoints,
                 range,
                 admitted_tolerance,
                 geometry_budget,
-            )
-        });
+            )?,
+            exact_boundary_pcurve_with_index(
+                &model_index,
+                owner,
+                second_surface,
+                endpoints,
+                range,
+                admitted_tolerance,
+                geometry_budget,
+            )?,
+        ];
         let pcurves = match candidates {
             [Some(first), Some(second)] => {
                 if coincident_pcurve_pair_with_index(
@@ -1455,7 +1503,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     range,
                     admitted_tolerance,
                     geometry_budget,
-                ) {
+                )? {
                     [first, second]
                 } else {
                     let transferred = [
@@ -1618,7 +1666,7 @@ pub(super) fn exact_boundary_pcurve(
     endpoints: [Point3; 2],
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     exact_boundary_pcurve_with_index(
@@ -1674,11 +1722,15 @@ fn exact_boundary_pcurve_with_index(
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<PcurveGeometry> {
-    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
+        return Ok(None);
+    }
     let nonnegative_tolerance = tolerance;
     let tolerance = tolerance.get();
-    let carrier = index.surfaces(surface.as_str())?;
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
+        return Ok(None);
+    };
     if let Some(candidate) = exact_analytic_isocurve_pcurve_with_index_and_budget(
         index,
         curve,
@@ -1686,56 +1738,79 @@ fn exact_boundary_pcurve_with_index(
         range,
         tolerance,
         geometry_budget,
-    ) {
-        return Some(candidate);
+    )? {
+        return Ok(Some(candidate));
     }
-    let curve_carrier = index.curves(curve.as_str())?;
-    let curve_breaks = exact_boundary_curve_breaks(curve_carrier.geometry.solved()?, range)?;
+    let Some(curve_carrier) = index.curves(curve.as_str()) else {
+        return Ok(None);
+    };
+    let Some(solved_curve) = curve_carrier.geometry.solved() else {
+        return Ok(None);
+    };
+    let Some(curve_breaks) = exact_boundary_curve_breaks(solved_curve, range) else {
+        return Ok(None);
+    };
     if matches!(
         carrier.geometry.solved(),
         Some(SolvedSurfaceGeometry::Plane(_))
     ) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
-        let [first, second] = [first?, second?].map(Point2::from);
+        let (Some(first), Some(second)) = (first, second) else {
+            return Ok(None);
+        };
+        let [first, second] = [first, second].map(Point2::from);
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
             if !geometry_budget.charge() {
-                return None;
+                return Ok(None);
             }
-            let mapped = decoded_surface_point_inner_with_budget(
+            let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
                 surface,
                 parameter.u,
                 parameter.v,
                 0,
                 geometry_budget,
-            )?;
+            )?
+            else {
+                return Ok(None);
+            };
             let error = Point3::distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
-                return None;
+                return Ok(None);
             }
         }
-        let (origin_u, direction_u) = affine_pcurve_coordinate(range, [first.u, second.u])?;
-        let (origin_v, direction_v) = affine_pcurve_coordinate(range, [first.v, second.v])?;
+        let Some((origin_u, direction_u)) = affine_pcurve_coordinate(range, [first.u, second.u])
+        else {
+            return Ok(None);
+        };
+        let Some((origin_v, direction_v)) = affine_pcurve_coordinate(range, [first.v, second.v])
+        else {
+            return Ok(None);
+        };
         let direction = Point2::new(direction_u, direction_v);
-        (direction.is_finite() && (direction.u != 0.0 || direction.v != 0.0)).then_some(())?;
+        if !direction.is_finite() || (direction.u == 0.0 && direction.v == 0.0) {
+            return Ok(None);
+        }
         let candidate = match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(origin_u, origin_v),
             direction,
         ) {
             Ok(line) => PcurveGeometry::Line(line),
-            Err(_) => PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
+            Err(_) => {
+                let Ok(nurbs) = PcurveNurbs::from_lanes(
                     1,
                     vec![range[0], range[0], range[1], range[1]],
                     vec![first, second],
                     None,
                     false,
-                )
-                .ok()?,
-            },
+                ) else {
+                    return Ok(None);
+                };
+                PcurveGeometry::Nurbs { nurbs }
+            }
         };
-        return exact_boundary_pcurve_matches_carrier_with_index(
+        return Ok(exact_boundary_pcurve_matches_carrier_with_index(
             index,
             curve,
             surface,
@@ -1744,8 +1819,8 @@ fn exact_boundary_pcurve_with_index(
             range,
             tolerance,
             geometry_budget,
-        )
-        .then_some(candidate);
+        )?
+        .then_some(candidate));
     }
     if matches!(
         carrier.geometry.solved(),
@@ -1758,52 +1833,68 @@ fn exact_boundary_pcurve_with_index(
     ) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
-        let [first, second] = [first?, second?].map(Point2::from);
-        let (varying_origin, varying_scale) = affine_pcurve_coordinate(range, [first.v, second.v])?;
-        (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
+        let (Some(first), Some(second)) = (first, second) else {
+            return Ok(None);
+        };
+        let [first, second] = [first, second].map(Point2::from);
+        let Some((varying_origin, varying_scale)) =
+            affine_pcurve_coordinate(range, [first.v, second.v])
+        else {
+            return Ok(None);
+        };
+        if !varying_scale.is_finite() || varying_scale == 0.0 {
+            return Ok(None);
+        }
         let candidate = match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(first.u, varying_origin),
             Point2::new(0.0, varying_scale),
         ) {
             Ok(line) => PcurveGeometry::Line(line),
             Err(_) => {
-                (first.u == second.u
+                if !(first.u == second.u
                     && matches!(
                         carrier.geometry.solved(),
                         Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
                     ))
-                .then_some(())?;
-                PcurveGeometry::Nurbs {
-                    nurbs: PcurveNurbs::from_lanes(
-                        1,
-                        vec![range[0], range[0], range[1], range[1]],
-                        vec![first, second],
-                        None,
-                        false,
-                    )
-                    .ok()?,
+                {
+                    return Ok(None);
                 }
+                let Ok(nurbs) = PcurveNurbs::from_lanes(
+                    1,
+                    vec![range[0], range[0], range[1], range[1]],
+                    vec![first, second],
+                    None,
+                    false,
+                ) else {
+                    return Ok(None);
+                };
+                PcurveGeometry::Nurbs { nurbs }
             }
         };
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
-            let uv = pcurve_uv(&candidate, parameter).ok()?;
+            let Some(uv) = finite_or_refusal(pcurve_uv(&candidate, parameter))? else {
+                return Ok(None);
+            };
             if !geometry_budget.charge() {
-                return None;
+                return Ok(None);
             }
-            let mapped = decoded_surface_point_inner_with_budget(
+            let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
                 surface,
                 uv.u,
                 uv.v,
                 0,
                 geometry_budget,
-            )?;
+            )?
+            else {
+                return Ok(None);
+            };
             let error = Point3::distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
-                return None;
+                return Ok(None);
             }
         }
-        return exact_boundary_pcurve_matches_carrier_with_index(
+        return Ok(exact_boundary_pcurve_matches_carrier_with_index(
             index,
             curve,
             surface,
@@ -1812,120 +1903,135 @@ fn exact_boundary_pcurve_with_index(
             range,
             tolerance,
             geometry_budget,
-        )
-        .then_some(candidate);
+        )?
+        .then_some(candidate));
     }
     let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
-        return None;
+        return Ok(None);
     };
-    let domain = surface_parameter_domain_with_index(index, surface)?;
+    let Some(domain) = surface_parameter_domain_with_index(index, surface) else {
+        return Ok(None);
+    };
     let axes = [domain.0, domain.1];
-    let has_linear_boundary = axes.iter().enumerate().any(|(axis, boundaries)| {
+    let mut has_linear_boundary = false;
+    for (axis, boundaries) in axes.iter().enumerate() {
         let fixed_axis = if axis == 0 {
             SurfaceParameterAxis::U
         } else {
             SurfaceParameterAxis::V
         };
-        boundaries.iter().copied().any(|boundary| {
-            piecewise_linear_nurbs_surface_isocurve(nurbs, fixed_axis, boundary).is_some()
-        })
-    });
-    if !has_linear_boundary {
-        return None;
+        for boundary in boundaries.iter().copied() {
+            if piecewise_linear_nurbs_surface_isocurve(nurbs, fixed_axis, boundary)?.is_some() {
+                has_linear_boundary = true;
+                break;
+            }
+        }
+        if has_linear_boundary {
+            break;
+        }
     }
-    let parameters = [
-        nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-            nurbs,
-            endpoints[0],
-            None,
-            nonnegative_tolerance,
-            geometry_budget,
-        )?,
-        nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-            nurbs,
-            endpoints[1],
-            None,
-            nonnegative_tolerance,
-            geometry_budget,
-        )?,
-    ];
+    if !has_linear_boundary {
+        return Ok(None);
+    }
+    let first_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+        nurbs,
+        endpoints[0],
+        None,
+        nonnegative_tolerance,
+        geometry_budget,
+    )?;
+    let second_parameters = nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+        nurbs,
+        endpoints[1],
+        None,
+        nonnegative_tolerance,
+        geometry_budget,
+    )?;
+    let (Some(first_parameters), Some(second_parameters)) = (first_parameters, second_parameters)
+    else {
+        return Ok(None);
+    };
+    let parameters = [first_parameters, second_parameters];
     for index in 0..2 {
         if !geometry_budget.charge() {
-            return None;
+            return Ok(None);
         }
-        let point = nurbs_surface_point_with_budget(
+        let Some(point) = finite_or_refusal(nurbs_surface_point_with_budget(
             nurbs,
             parameters[index].u,
             parameters[index].v,
             geometry_budget,
-        )
-        .ok()?;
+        ))?
+        else {
+            return Ok(None);
+        };
         let error = Point3::distance(point.get(), endpoints[index]);
         if !error.is_finite() || error > tolerance {
-            return None;
+            return Ok(None);
         }
     }
-    let candidates = axes
-        .into_iter()
-        .enumerate()
-        .flat_map(|(constant_axis, axis_domain)| {
-            axis_domain.into_iter().filter_map(move |boundary| {
-                let varying = if constant_axis == 0 {
-                    [parameters[0].v, parameters[1].v]
-                } else {
-                    [parameters[0].u, parameters[1].u]
-                };
-                let (varying_origin, delta) = affine_pcurve_coordinate(range, varying)?;
-                if !(delta.is_finite() && delta != 0.0) {
-                    return None;
-                }
-                let (origin, direction, controls) = if constant_axis == 0 {
-                    (
-                        Point2::new(boundary, varying_origin),
-                        Point2::new(0.0, delta),
-                        varying.map(|value| Point2::new(boundary, value)),
-                    )
-                } else {
-                    (
-                        Point2::new(varying_origin, boundary),
-                        Point2::new(delta, 0.0),
-                        varying.map(|value| Point2::new(value, boundary)),
-                    )
-                };
-                Some(
-                    match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) {
-                        Ok(line) => PcurveGeometry::Line(line),
-                        Err(_) => PcurveGeometry::Nurbs {
-                            nurbs: PcurveNurbs::from_lanes(
-                                1,
-                                vec![range[0], range[0], range[1], range[1]],
-                                controls.to_vec(),
-                                None,
-                                false,
-                            )
-                            .ok()?,
-                        },
-                    },
+    let mut matched = None;
+    let mut match_count = 0;
+    for (constant_axis, axis_domain) in axes.into_iter().enumerate() {
+        for boundary in axis_domain {
+            let varying = if constant_axis == 0 {
+                [parameters[0].v, parameters[1].v]
+            } else {
+                [parameters[0].u, parameters[1].u]
+            };
+            let Some((varying_origin, delta)) = affine_pcurve_coordinate(range, varying) else {
+                continue;
+            };
+            if !delta.is_finite() || delta == 0.0 {
+                continue;
+            }
+            let (origin, direction, controls) = if constant_axis == 0 {
+                (
+                    Point2::new(boundary, varying_origin),
+                    Point2::new(0.0, delta),
+                    varying.map(|value| Point2::new(boundary, value)),
                 )
-            })
-        })
-        .filter(|candidate| {
-            exact_boundary_pcurve_matches_carrier_with_index(
+            } else {
+                (
+                    Point2::new(varying_origin, boundary),
+                    Point2::new(delta, 0.0),
+                    varying.map(|value| Point2::new(value, boundary)),
+                )
+            };
+            let candidate =
+                match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) {
+                    Ok(line) => PcurveGeometry::Line(line),
+                    Err(_) => {
+                        let Ok(nurbs) = PcurveNurbs::from_lanes(
+                            1,
+                            vec![range[0], range[0], range[1], range[1]],
+                            controls.to_vec(),
+                            None,
+                            false,
+                        ) else {
+                            continue;
+                        };
+                        PcurveGeometry::Nurbs { nurbs }
+                    }
+                };
+            if exact_boundary_pcurve_matches_carrier_with_index(
                 index,
                 curve,
                 surface,
-                candidate,
+                &candidate,
                 &curve_breaks,
                 range,
                 tolerance,
                 geometry_budget,
-            )
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+            )? {
+                match_count += 1;
+                if match_count == 1 {
+                    matched = Some(candidate);
+                }
+            }
+        }
+    }
+    Ok(if match_count == 1 { matched } else { None })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1938,36 +2044,49 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     range: [f64; 2],
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(surface_breaks) =
-        boundary_curve_affine_breaks_with_index(index, surface, pcurve, range)
+        boundary_curve_affine_breaks_with_index(index, surface, pcurve, range)?
     else {
-        return false;
+        return Ok(false);
     };
     let mut breaks = curve_breaks.to_vec();
     breaks.extend(surface_breaks);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    breaks.into_iter().all(|parameter| {
+    for parameter in breaks {
         if !geometry_budget.charge() {
-            return false;
+            return Ok(false);
         }
-        let Some(uv) = pcurve_uv(pcurve, parameter).ok() else {
-            return false;
+        let Some(uv) = finite_or_refusal(pcurve_uv(pcurve, parameter))? else {
+            return Ok(false);
         };
-        let Some(expected) =
-            decoded_surface_point_inner_with_budget(index, surface, uv.u, uv.v, 0, geometry_budget)
+        let Some(expected) = decoded_surface_point_inner_with_budget(
+            index,
+            surface,
+            uv.u,
+            uv.v,
+            0,
+            geometry_budget,
+        )?
         else {
-            return false;
+            return Ok(false);
         };
-        let Ok(actual) =
-            model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+        let Some(actual) = finite_or_refusal(model_curve_point_by_id_with_budget(
+            index,
+            curve,
+            parameter,
+            geometry_budget,
+        ))?
         else {
-            return false;
+            return Ok(false);
         };
         let error = Point3::distance(expected, actual.get());
-        error.is_finite() && error <= tolerance
-    })
+        if !error.is_finite() || error > tolerance {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn exact_boundary_curve_breaks(
@@ -2021,6 +2140,7 @@ pub(super) fn exact_analytic_isocurve_pcurve(
         tolerance,
         &geometry_budget,
     )
+    .expect("evaluator allocation succeeds")
 }
 
 fn exact_analytic_isocurve_pcurve_with_index_and_budget(
@@ -2030,128 +2150,170 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     range: [f64; 2],
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<PcurveGeometry> {
-    const SAMPLE_INTERVALS: usize = 8;
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<PcurveGeometry, cadmpeg_core::decode::ResourceLimit>> {
+        const SAMPLE_INTERVALS: usize = 8;
 
-    let curve_carrier = index.curves(curve.as_str())?;
-    let curve_speed = match curve_carrier.geometry.solved()? {
-        SolvedCurveGeometry::Circle(circle_curve) => {
-            let radius = circle_curve.radius().get();
-            radius.abs()
-        }
-        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            major_radius.abs().max(minor_radius.abs())
-        }
-        _ => return None,
-    };
-    let surface_carrier = index.surfaces(surface.as_str())?;
-    matches!(
-        surface_carrier.geometry.solved(),
-        Some(
-            SolvedSurfaceGeometry::Cylinder(_)
-                | SolvedSurfaceGeometry::Cone(_)
-                | SolvedSurfaceGeometry::Sphere(_)
-                | SolvedSurfaceGeometry::Torus(_)
-        )
-    )
-    .then_some(())?;
-    let periods = surface_parameter_periods_with_index(index, surface);
-    let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
-    for index in 0..=SAMPLE_INTERVALS {
-        let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
-        let point =
-            curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
-        let mut uv = Point2::from(analytic_surface_parameters(
-            &surface_carrier.geometry,
-            point.get(),
-        )?);
-        if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
-            if let Some(period) = periods[0] {
-                uv.u = lift_periodic_parameter(uv.u, previous.u, period);
+        let curve_carrier = index.curves(curve.as_str())?;
+        let curve_speed = match curve_carrier.geometry.solved()? {
+            SolvedCurveGeometry::Circle(circle_curve) => {
+                let radius = circle_curve.radius().get();
+                radius.abs()
             }
-            if let Some(period) = periods[1] {
-                uv.v = lift_periodic_parameter(uv.v, previous.v, period);
+            SolvedCurveGeometry::Ellipse(ellipse_curve) => {
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
+                major_radius.abs().max(minor_radius.abs())
             }
-        }
-        samples.push((parameter, uv));
-    }
-    let parameter_span = range[1] - range[0];
-    let first = samples.first()?.1;
-    let last = samples.last()?.1;
-    let mut direction = Point2::new(
-        (last.u - first.u) / parameter_span,
-        (last.v - first.v) / parameter_span,
-    );
-    let angular_tolerance = (tolerance / curve_speed.max(tolerance))
-        .max(EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10);
-    let u_constant = samples
-        .iter()
-        .all(|(_, uv)| (uv.u - first.u).abs() <= angular_tolerance);
-    let v_constant = samples
-        .iter()
-        .all(|(_, uv)| (uv.v - first.v).abs() <= angular_tolerance);
-    match (u_constant, v_constant) {
-        (true, false) => direction.u = 0.0,
-        (false, true) => direction.v = 0.0,
-        _ => return None,
-    }
-    let varying_scale = if direction.u == 0.0 {
-        &mut direction.v
-    } else {
-        &mut direction.u
-    };
-    (((*varying_scale).abs() - 1.0).abs() <= angular_tolerance).then_some(())?;
-    *varying_scale = varying_scale.signum();
-    let candidate = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(
-                first.u - direction.u * range[0],
-                first.v - direction.v * range[0],
-            ),
-            direction,
+            _ => return None,
+        };
+        let surface_carrier = index.surfaces(surface.as_str())?;
+        matches!(
+            surface_carrier.geometry.solved(),
+            Some(
+                SolvedSurfaceGeometry::Cylinder(_)
+                    | SolvedSurfaceGeometry::Cone(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+            )
         )
-        .ok()?,
-    );
-    let parameter = range[0];
-    let uv = pcurve_uv(&candidate, parameter).ok()?;
-    geometry_budget.charge().then_some(())?;
-    let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)
-        .ok()?
-        .into_raw();
-    let curve_position =
-        curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
-    let curve_tangent =
-        curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
-    let curve_acceleration =
-        curve_second_derivative_with_budget(&curve_carrier.geometry, parameter, geometry_budget)
-            .ok()?;
-    let surface_tangent = Vector3::new(
-        direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
-        direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
-        direction.u * surface_jet.du.z + direction.v * surface_jet.dv.z,
-    );
-    let surface_acceleration = Vector3::new(
-        direction.u * direction.u * surface_jet.duu.x
-            + 2.0 * direction.u * direction.v * surface_jet.duv.x
-            + direction.v * direction.v * surface_jet.dvv.x,
-        direction.u * direction.u * surface_jet.duu.y
-            + 2.0 * direction.u * direction.v * surface_jet.duv.y
-            + direction.v * direction.v * surface_jet.dvv.y,
-        direction.u * direction.u * surface_jet.duu.z
-            + 2.0 * direction.u * direction.v * surface_jet.duv.z
-            + direction.v * direction.v * surface_jet.dvv.z,
-    );
-    let vector_error = |first: Vector3, second: Vector3| {
-        ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
-            .sqrt()
-    };
-    (Point3::distance(curve_position.get(), surface_jet.point) <= tolerance
-        && vector_error(curve_tangent.get(), surface_tangent) <= tolerance
-        && vector_error(curve_acceleration.get(), surface_acceleration) <= tolerance)
         .then_some(())?;
-    Some(candidate)
+        let periods = surface_parameter_periods_with_index(index, surface);
+        let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
+        for index in 0..=SAMPLE_INTERVALS {
+            let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
+            let point = match finite_or_refusal(curve_point_with_budget(
+                &curve_carrier.geometry,
+                parameter,
+                geometry_budget,
+            )) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit)),
+            };
+            let mut uv = Point2::from(analytic_surface_parameters(
+                &surface_carrier.geometry,
+                point.get(),
+            )?);
+            if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
+                if let Some(period) = periods[0] {
+                    uv.u = lift_periodic_parameter(uv.u, previous.u, period);
+                }
+                if let Some(period) = periods[1] {
+                    uv.v = lift_periodic_parameter(uv.v, previous.v, period);
+                }
+            }
+            samples.push((parameter, uv));
+        }
+        let parameter_span = range[1] - range[0];
+        let first = samples.first()?.1;
+        let last = samples.last()?.1;
+        let mut direction = Point2::new(
+            (last.u - first.u) / parameter_span,
+            (last.v - first.v) / parameter_span,
+        );
+        let angular_tolerance = (tolerance / curve_speed.max(tolerance))
+            .max(EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10);
+        let u_constant = samples
+            .iter()
+            .all(|(_, uv)| (uv.u - first.u).abs() <= angular_tolerance);
+        let v_constant = samples
+            .iter()
+            .all(|(_, uv)| (uv.v - first.v).abs() <= angular_tolerance);
+        match (u_constant, v_constant) {
+            (true, false) => direction.u = 0.0,
+            (false, true) => direction.v = 0.0,
+            _ => return None,
+        }
+        let varying_scale = if direction.u == 0.0 {
+            &mut direction.v
+        } else {
+            &mut direction.u
+        };
+        (((*varying_scale).abs() - 1.0).abs() <= angular_tolerance).then_some(())?;
+        *varying_scale = varying_scale.signum();
+        let candidate = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(
+                    first.u - direction.u * range[0],
+                    first.v - direction.v * range[0],
+                ),
+                direction,
+            )
+            .ok()?,
+        );
+        let parameter = range[0];
+        let uv = match finite_or_refusal(pcurve_uv(&candidate, parameter)) {
+            Ok(Some(uv)) => uv,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        geometry_budget.charge().then_some(())?;
+        let surface_jet = match finite_or_refusal(surface_second_partials(
+            &surface_carrier.geometry,
+            uv.u,
+            uv.v,
+        )) {
+            Ok(Some(jet)) => jet.into_raw(),
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let curve_position = match finite_or_refusal(curve_point_with_budget(
+            &curve_carrier.geometry,
+            parameter,
+            geometry_budget,
+        )) {
+            Ok(Some(point)) => point,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let curve_tangent = match finite_or_refusal(curve_tangent_with_budget(
+            &curve_carrier.geometry,
+            parameter,
+            geometry_budget,
+        )) {
+            Ok(Some(tangent)) => tangent,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let curve_acceleration = match finite_or_refusal(curve_second_derivative_with_budget(
+            &curve_carrier.geometry,
+            parameter,
+            geometry_budget,
+        )) {
+            Ok(Some(acceleration)) => acceleration,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let surface_tangent = Vector3::new(
+            direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
+            direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
+            direction.u * surface_jet.du.z + direction.v * surface_jet.dv.z,
+        );
+        let surface_acceleration = Vector3::new(
+            direction.u * direction.u * surface_jet.duu.x
+                + 2.0 * direction.u * direction.v * surface_jet.duv.x
+                + direction.v * direction.v * surface_jet.dvv.x,
+            direction.u * direction.u * surface_jet.duu.y
+                + 2.0 * direction.u * direction.v * surface_jet.duv.y
+                + direction.v * direction.v * surface_jet.dvv.y,
+            direction.u * direction.u * surface_jet.duu.z
+                + 2.0 * direction.u * direction.v * surface_jet.duv.z
+                + direction.v * direction.v * surface_jet.dvv.z,
+        );
+        let vector_error = |first: Vector3, second: Vector3| {
+            ((first.x - second.x).powi(2)
+                + (first.y - second.y).powi(2)
+                + (first.z - second.z).powi(2))
+            .sqrt()
+        };
+        (Point3::distance(curve_position.get(), surface_jet.point) <= tolerance
+            && vector_error(curve_tangent.get(), surface_tangent) <= tolerance
+            && vector_error(curve_acceleration.get(), surface_acceleration) <= tolerance)
+            .then_some(())?;
+        Some(Ok(candidate))
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
@@ -2161,7 +2323,7 @@ pub(super) fn coincident_pcurve_pair(
     pcurves: [&PcurveGeometry; 2],
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     coincident_pcurve_pair_with_index(
@@ -2182,17 +2344,19 @@ fn coincident_pcurve_pair_with_index(
     range: [f64; 2],
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
-        return false;
+        return Ok(false);
     }
     let tolerance = tolerance.get();
-    let separation = |parameter| {
+    let separation = |parameter| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
         if !geometry_budget.charge() {
-            return None;
+            return Ok(None);
         }
-        let points = [0usize, 1usize].map(|side| {
-            let uv = pcurve_uv(pcurves[side], parameter).ok()?;
+        let evaluate = |side| -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+            let Some(uv) = finite_or_refusal(pcurve_uv(pcurves[side], parameter))? else {
+                return Ok(None);
+            };
             decoded_surface_point_inner_with_budget(
                 index,
                 surfaces[side],
@@ -2201,56 +2365,53 @@ fn coincident_pcurve_pair_with_index(
                 0,
                 geometry_budget,
             )
-        });
-        let [Some(first), Some(second)] = points else {
-            return None;
+        };
+        let (Some(first), Some(second)) = (evaluate(0)?, evaluate(1)?) else {
+            return Ok(None);
         };
         let distance = Point3::distance(first, second);
-        distance.is_finite().then_some(distance)
+        Ok(distance.is_finite().then_some(distance))
     };
-    let affine_breaks = [0usize, 1usize].map(|side| {
-        boundary_curve_affine_breaks_with_index(index, surfaces[side], pcurves[side], range)
-    });
+    let affine_breaks = [
+        boundary_curve_affine_breaks_with_index(index, surfaces[0], pcurves[0], range)?,
+        boundary_curve_affine_breaks_with_index(index, surfaces[1], pcurves[1], range)?,
+    ];
     if let [Some(first), Some(second)] = affine_breaks {
         let mut breaks = first;
         breaks.extend(second);
         breaks.sort_by(f64::total_cmp);
         breaks.dedup();
-        return breaks
-            .into_iter()
-            .all(|parameter| separation(parameter).is_some_and(|value| value <= tolerance));
+        for parameter in breaks {
+            if !separation(parameter)?.is_some_and(|value| value <= tolerance) {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
     }
-    let Some(speed_bound) = [0usize, 1usize]
-        .into_iter()
-        .map(|side| {
-            boundary_curve_speed_bound_with_index(
-                index,
-                surfaces[side],
-                pcurves[side],
-                geometry_budget,
-            )
-        })
-        .sum::<Option<f64>>()
-    else {
-        return false;
+    let first_speed =
+        boundary_curve_speed_bound_with_index(index, surfaces[0], pcurves[0], geometry_budget)?;
+    let second_speed =
+        boundary_curve_speed_bound_with_index(index, surfaces[1], pcurves[1], geometry_budget)?;
+    let (Some(first_speed), Some(second_speed)) = (first_speed, second_speed) else {
+        return Ok(false);
     };
-    if range
-        .into_iter()
-        .any(|parameter| !separation(parameter).is_some_and(|value| value <= tolerance))
-    {
-        return false;
+    let speed_bound = first_speed + second_speed;
+    for parameter in range {
+        if !separation(parameter)?.is_some_and(|value| value <= tolerance) {
+            return Ok(false);
+        }
     }
     let mut intervals = vec![range];
     while let Some([start, end]) = intervals.pop() {
         if !geometry_budget.charge() {
-            return false;
+            return Ok(false);
         }
         let middle = finite_parameter_sample([start, end], 1, 2);
-        let Some(middle_separation) = separation(middle) else {
-            return false;
+        let Some(middle_separation) = separation(middle)? else {
+            return Ok(false);
         };
         if middle_separation > tolerance {
-            return false;
+            return Ok(false);
         }
         let span = end - start;
         let half_span = if span.is_finite() {
@@ -2263,12 +2424,12 @@ fn coincident_pcurve_pair_with_index(
             continue;
         }
         if middle == start || middle == end {
-            return false;
+            return Ok(false);
         }
         intervals.push([middle, end]);
         intervals.push([start, middle]);
     }
-    true
+    Ok(true)
 }
 
 fn boundary_curve_affine_breaks_with_index(
@@ -2276,19 +2437,37 @@ fn boundary_curve_affine_breaks_with_index(
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
-) -> Option<Vec<f64>> {
-    let carrier = index.surfaces(surface.as_str())?;
-    if matches!(
-        carrier.geometry.solved(),
-        Some(SolvedSurfaceGeometry::Plane(_))
-    ) {
-        return Some(range.to_vec());
-    }
-    if matches!(
-        carrier.geometry.solved(),
-        Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
-    ) {
-        if let PcurveGeometry::Nurbs { nurbs } = pcurve {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit>> {
+        let carrier = index.surfaces(surface.as_str())?;
+        if matches!(
+            carrier.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Plane(_))
+        ) {
+            return Some(Ok(range.to_vec()));
+        }
+        if matches!(
+            carrier.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
+        ) {
+            if let PcurveGeometry::Nurbs { nurbs } = pcurve {
+                let points = nurbs.control_points();
+                if nurbs.degree() == 1
+                    && !nurbs.periodic()
+                    && points.len() == 2
+                    && !nurbs
+                        .weights()
+                        .is_some_and(|weights| weights.windows(2).any(|pair| pair[0] != pair[1]))
+                    && points[0].u == points[1].u
+                    && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
+                {
+                    return Some(Ok(range.to_vec()));
+                }
+            }
+        }
+        if let (Some(SolvedSurfaceGeometry::Nurbs(surface)), PcurveGeometry::Nurbs { nurbs }) =
+            (carrier.geometry.solved(), pcurve)
+        {
             let points = nurbs.control_points();
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2296,112 +2475,114 @@ fn boundary_curve_affine_breaks_with_index(
                 && !nurbs
                     .weights()
                     .is_some_and(|weights| weights.windows(2).any(|pair| pair[0] != pair[1]))
-                && points[0].u == points[1].u
                 && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
             {
-                return Some(range.to_vec());
-            }
-        }
-    }
-    if let (Some(SolvedSurfaceGeometry::Nurbs(surface)), PcurveGeometry::Nurbs { nurbs }) =
-        (carrier.geometry.solved(), pcurve)
-    {
-        let points = nurbs.control_points();
-        if nurbs.degree() == 1
-            && !nurbs.periodic()
-            && points.len() == 2
-            && !nurbs
-                .weights()
-                .is_some_and(|weights| weights.windows(2).any(|pair| pair[0] != pair[1]))
-            && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
-        {
-            let (axis, fixed, varying) = if points[0].u == points[1].u {
-                (
-                    SurfaceParameterAxis::U,
-                    points[0].u,
-                    [points[0].v, points[1].v],
-                )
-            } else if points[0].v == points[1].v {
-                (
-                    SurfaceParameterAxis::V,
-                    points[0].v,
-                    [points[0].u, points[1].u],
-                )
-            } else {
-                return None;
-            };
-            let isocurve = piecewise_linear_nurbs_surface_isocurve(surface, axis, fixed)?;
-            let degree = usize::try_from(isocurve.degree()).ok()?;
-            let count = isocurve.control_points().len();
-            let mut breaks = isocurve
-                .knots()
-                .get(degree..=count)?
-                .iter()
-                .filter_map(|parameter| {
-                    let fraction =
-                        cadmpeg_ir::math::parameter_fraction(*parameter, varying[0], varying[1])?;
-                    cadmpeg_ir::math::interpolate(range[0], range[1], fraction.get())
-                        .map(cadmpeg_ir::scalar::FiniteReal::get)
-                })
-                .collect::<Vec<_>>();
-            breaks.extend(range);
-            return Some(breaks);
-        }
-    }
-    let PcurveGeometry::Line(line_pcurve) = pcurve else {
-        return None;
-    };
-    let origin = line_pcurve.origin().as_raw();
-    let direction = line_pcurve.direction().as_raw();
-    match carrier.geometry.solved() {
-        Some(SolvedSurfaceGeometry::Cylinder(_))
-            if { direction.u == 0.0 && direction.v != 0.0 } =>
-        {
-            Some(range.to_vec())
-        }
-        Some(SolvedSurfaceGeometry::Cone(_)) if { direction.u == 0.0 && direction.v != 0.0 } => {
-            Some(range.to_vec())
-        }
-        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
-                if direction.u == 0.0 && direction.v != 0.0 {
-                    (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
-                } else if direction.v == 0.0 && direction.u != 0.0 {
-                    (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
+                let (axis, fixed, varying) = if points[0].u == points[1].u {
+                    (
+                        SurfaceParameterAxis::U,
+                        points[0].u,
+                        [points[0].v, points[1].v],
+                    )
+                } else if points[0].v == points[1].v {
+                    (
+                        SurfaceParameterAxis::V,
+                        points[0].v,
+                        [points[0].u, points[1].u],
+                    )
                 } else {
                     return None;
                 };
-            let isocurve =
-                piecewise_linear_nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
-            let degree = usize::try_from(isocurve.degree()).ok()?;
-            let count = isocurve.control_points().len();
-            let mut breaks = isocurve.knots().get(degree..=count)?.to_vec();
-            for parameter in &mut breaks {
-                *parameter = (*parameter - varying_origin) / varying_scale;
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(surface, axis, fixed) {
+                    Ok(Some(isocurve)) => isocurve,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
+                let degree = usize::try_from(isocurve.degree()).ok()?;
+                let count = isocurve.control_points().len();
+                let mut breaks = isocurve
+                    .knots()
+                    .get(degree..=count)?
+                    .iter()
+                    .filter_map(|parameter| {
+                        let fraction = cadmpeg_ir::math::parameter_fraction(
+                            *parameter, varying[0], varying[1],
+                        )?;
+                        cadmpeg_ir::math::interpolate(range[0], range[1], fraction.get())
+                            .map(cadmpeg_ir::scalar::FiniteReal::get)
+                    })
+                    .collect::<Vec<_>>();
+                breaks.extend(range);
+                return Some(Ok(breaks));
             }
-            breaks.retain(|parameter| {
-                parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
-            });
-            breaks.extend(range);
-            Some(breaks)
         }
-        _ => None,
-    }
+        let PcurveGeometry::Line(line_pcurve) = pcurve else {
+            return None;
+        };
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
+        match carrier.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Cylinder(_))
+                if { direction.u == 0.0 && direction.v != 0.0 } =>
+            {
+                Some(range.to_vec())
+            }
+            Some(SolvedSurfaceGeometry::Cone(_))
+                if { direction.u == 0.0 && direction.v != 0.0 } =>
+            {
+                Some(range.to_vec())
+            }
+            Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
+                    if direction.u == 0.0 && direction.v != 0.0 {
+                        (SurfaceParameterAxis::U, origin.u, origin.v, direction.v)
+                    } else if direction.v == 0.0 && direction.u != 0.0 {
+                        (SurfaceParameterAxis::V, origin.v, origin.u, direction.u)
+                    } else {
+                        return None;
+                    };
+                let isocurve = match piecewise_linear_nurbs_surface_isocurve(
+                    nurbs,
+                    fixed_axis,
+                    fixed_parameter,
+                ) {
+                    Ok(Some(isocurve)) => isocurve,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
+                let degree = usize::try_from(isocurve.degree()).ok()?;
+                let count = isocurve.control_points().len();
+                let mut breaks = isocurve.knots().get(degree..=count)?.to_vec();
+                for parameter in &mut breaks {
+                    *parameter = (*parameter - varying_origin) / varying_scale;
+                }
+                breaks.retain(|parameter| {
+                    parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
+                });
+                breaks.extend(range);
+                Some(breaks)
+            }
+            _ => None,
+        }
+        .map(Ok)
+    })()
+    .transpose()
 }
 
 fn piecewise_linear_nurbs_surface_isocurve(
     surface: &NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
-) -> Option<NurbsCurve> {
-    let isocurve = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)?;
-    (isocurve.degree() == 1
+) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(isocurve) = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)? else {
+        return Ok(None);
+    };
+    Ok((isocurve.degree() == 1
         && !isocurve.weights().is_some_and(|weights| {
             weights
                 .windows(2)
                 .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
         }))
-    .then_some(isocurve)
+    .then_some(isocurve))
 }
 
 fn boundary_curve_speed_bound_with_index(
@@ -2409,32 +2590,40 @@ fn boundary_curve_speed_bound_with_index(
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    let carrier = index.surfaces(surface.as_str())?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
+        return Ok(None);
+    };
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
-        return None;
+        return Ok(None);
     };
     let origin = line_pcurve.origin().as_raw();
     let direction = line_pcurve.direction().as_raw();
-    let affine_speed = || {
-        let first = decoded_surface_point_inner_with_budget(
+    let affine_speed = || -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(first) = decoded_surface_point_inner_with_budget(
             index,
             surface,
             origin.u,
             origin.v,
             0,
             geometry_budget,
-        )?;
-        let second = decoded_surface_point_inner_with_budget(
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(second) = decoded_surface_point_inner_with_budget(
             index,
             surface,
             origin.u + direction.u,
             origin.v + direction.v,
             0,
             geometry_budget,
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         let speed = Point3::distance(first, second);
-        speed.is_finite().then_some(speed)
+        Ok(speed.is_finite().then_some(speed))
     };
     match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(_)) => affine_speed(),
@@ -2451,7 +2640,7 @@ fn boundary_curve_speed_bound_with_index(
         {
             let radius = cylinder_surface.radius().get();
             let speed = radius.abs() * direction.u.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Cone(cone_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
@@ -2461,21 +2650,21 @@ fn boundary_curve_speed_bound_with_index(
             let half_angle = cone_surface.half_angle().get();
             let local_radius = radius + origin.v * half_angle.tan();
             let speed = local_radius.abs() * ratio.abs().max(1.0) * direction.u.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
             let radius = sphere_surface.radius().get();
             let speed = radius.abs() * origin.v.cos().abs() * direction.u.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if { direction.u == 0.0 && direction.v != 0.0 } =>
         {
             let radius = sphere_surface.radius().get();
             let speed = radius.abs() * direction.v.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Torus(torus_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
@@ -2484,14 +2673,14 @@ fn boundary_curve_speed_bound_with_index(
             let minor_radius = torus_surface.minor_radius().get();
             let ring_radius = major_radius + minor_radius * origin.v.cos();
             let speed = ring_radius.abs() * direction.u.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Torus(torus_surface))
             if { direction.u == 0.0 && direction.v != 0.0 } =>
         {
             let minor_radius = torus_surface.minor_radius().get();
             let speed = minor_radius.abs() * direction.v.abs();
-            speed.is_finite().then_some(speed)
+            Ok(speed.is_finite().then_some(speed))
         }
         Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let (fixed_axis, fixed_parameter, varying_scale) =
@@ -2500,13 +2689,18 @@ fn boundary_curve_speed_bound_with_index(
                 } else if direction.v == 0.0 && direction.u != 0.0 {
                     (SurfaceParameterAxis::V, origin.v, direction.u)
                 } else {
-                    return None;
+                    return Ok(None);
                 };
-            let isocurve = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
-            let bound = nurbs_curve_speed_bound(&isocurve)?.get() * varying_scale.abs();
-            bound.is_finite().then_some(bound)
+            let Some(isocurve) = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)? else {
+                return Ok(None);
+            };
+            let Some(bound) = nurbs_curve_speed_bound(&isocurve) else {
+                return Ok(None);
+            };
+            let bound = bound.get() * varying_scale.abs();
+            Ok(bound.is_finite().then_some(bound))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -2611,7 +2805,7 @@ fn transfer_intersection_pcurve(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Result<Option<PcurveGeometry>, NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let blend_contact = blend_transfer_contact(index, source_surface, target_surface);
     transfer_intersection_pcurve_with_contact_and_budget(
         index,
@@ -2641,7 +2835,7 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Result<Option<PcurveGeometry>, NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let source_geometry = index
         .surfaces(source_surface.as_str())
         .and_then(|surface| surface.geometry.solved());
@@ -2680,7 +2874,7 @@ fn transfer_intersection_pcurve_with_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Result<Option<PcurveGeometry>, NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     const GENERAL_CONTINUATION_STEPS: usize = 16;
     // A complete blend boundary is one continuous image even when its
     // serialized contact chart is absent. Its endpoints and one midpoint
@@ -2722,7 +2916,8 @@ fn transfer_intersection_pcurve_with_budget(
         geometry_budget,
         &mut contact_seeds,
         blend_parameter_grids,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let mut coarse = Vec::with_capacity(continuation_steps + 1);
@@ -2745,7 +2940,8 @@ fn transfer_intersection_pcurve_with_budget(
             geometry_budget,
             &mut contact_seeds,
             blend_parameter_grids,
-        ) else {
+        )?
+        else {
             return Ok(None);
         };
         coarse.push(sample);
@@ -2770,7 +2966,8 @@ fn transfer_intersection_pcurve_with_budget(
             geometry_budget,
             &mut contact_seeds,
             blend_parameter_grids,
-        ) else {
+        )?
+        else {
             return Ok(None);
         };
     }
@@ -2803,38 +3000,48 @@ fn transferred_pcurve_sample_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
     contact_seeds: &mut BlendContactSeedCache,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Option<TransferredPcurveSample> {
+) -> Result<Option<TransferredPcurveSample>, cadmpeg_core::CodecError> {
     if !budget.charge() {
-        return None;
+        return Ok(None);
     }
-    let source_uv = pcurve_uv(source_pcurve, parameter).ok()?;
-    let point = source_geometry
-        .and_then(|geometry| {
-            decoded_surface_point_with_geometry_and_budget(
-                index,
-                source_surface,
-                &SurfaceGeometry::Solved(geometry.clone()),
-                source_uv.u,
-                source_uv.v,
-                0,
-                geometry_budget,
-            )
-        })
-        .or_else(|| {
-            decoded_surface_point_inner_with_budget(
-                index,
-                source_surface,
-                source_uv.u,
-                source_uv.v,
-                0,
-                geometry_budget,
-            )
-        })
-        .or_else(|| {
-            model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
-                .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
-        })?;
+    let Some(source_uv) = finite_or_refusal(pcurve_uv(source_pcurve, parameter))? else {
+        return Ok(None);
+    };
+    let mut point = if let Some(geometry) = source_geometry {
+        decoded_surface_point_with_geometry_and_budget(
+            index,
+            source_surface,
+            &SurfaceGeometry::Solved(geometry.clone()),
+            source_uv.u,
+            source_uv.v,
+            0,
+            geometry_budget,
+        )?
+    } else {
+        None
+    };
+    if point.is_none() {
+        point = decoded_surface_point_inner_with_budget(
+            index,
+            source_surface,
+            source_uv.u,
+            source_uv.v,
+            0,
+            geometry_budget,
+        )?;
+    }
+    if point.is_none() {
+        point = finite_or_refusal(model_curve_point_by_id_with_budget(
+            index,
+            curve,
+            parameter,
+            geometry_budget,
+        ))?
+        .map(cadmpeg_ir::features::FinitePoint3::get);
+    }
+    let Some(point) = point else {
+        return Ok(None);
+    };
     let target = BoundaryInverseTarget {
         point,
         seed,
@@ -2843,7 +3050,7 @@ fn transferred_pcurve_sample_with_budget(
     // The contact route certifies the support point against `target` before it
     // returns. Keep its result separate from fallback boundary inversion so a
     // fallback cannot accidentally inherit that certification.
-    let contact_target_uv = blend_contact.and_then(|contact| {
+    let contact_target_uv = if let Some(contact) = blend_contact {
         blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
             index,
             contact.support,
@@ -2854,8 +3061,10 @@ fn transferred_pcurve_sample_with_budget(
             parameter,
             target,
             geometry_budget,
-        )
-    });
+        )?
+    } else {
+        None
+    };
     let reverse_contact_target_uv =
         blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
             index,
@@ -2866,7 +3075,7 @@ fn transferred_pcurve_sample_with_budget(
             target,
             contact_seeds,
             geometry_budget,
-        );
+        )?;
     let (target_uv, target_certified) = if reverse_contact_target_uv.is_some() {
         (reverse_contact_target_uv, true)
     } else if contact_target_uv.is_some() {
@@ -2879,7 +3088,7 @@ fn transferred_pcurve_sample_with_budget(
         parameter,
         target,
         geometry_budget,
-    ) {
+    )? {
         (Some(target_uv), true)
     } else if let Some(target_uv) =
         blend_boundary_parameter_from_support_spine_with_index_and_budget(
@@ -2890,7 +3099,7 @@ fn transferred_pcurve_sample_with_budget(
             seed,
             tolerance,
             geometry_budget,
-        )
+        )?
     {
         (Some(target_uv), true)
     } else {
@@ -2903,44 +3112,50 @@ fn transferred_pcurve_sample_with_budget(
                 tolerance,
                 geometry_budget,
                 blend_parameter_grids,
-            ),
+            )?,
             false,
         )
     };
-    let target_uv = target_uv?;
-    let accepted = target_certified
-        || target_geometry
-            .and_then(|geometry| {
-                decoded_surface_point_with_geometry_and_budget(
-                    index,
-                    target_surface,
-                    &SurfaceGeometry::Solved(geometry.clone()),
-                    target_uv.u,
-                    target_uv.v,
-                    0,
-                    geometry_budget,
-                )
-            })
-            .or_else(|| {
-                decoded_surface_point_inner_with_budget(
-                    index,
-                    target_surface,
-                    target_uv.u,
-                    target_uv.v,
-                    0,
-                    geometry_budget,
-                )
-            })
-            .is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
-        || blend_boundary_spine_geometry_matches_with_index_and_budget(
-            index,
-            target_surface,
-            target_uv,
-            point,
-            tolerance,
-            geometry_budget,
-        );
-    accepted.then_some((parameter, target_uv, point))
+    let Some(target_uv) = target_uv else {
+        return Ok(None);
+    };
+    let accepted = if target_certified {
+        true
+    } else {
+        let mut candidate = if let Some(geometry) = target_geometry {
+            decoded_surface_point_with_geometry_and_budget(
+                index,
+                target_surface,
+                &SurfaceGeometry::Solved(geometry.clone()),
+                target_uv.u,
+                target_uv.v,
+                0,
+                geometry_budget,
+            )?
+        } else {
+            None
+        };
+        if candidate.is_none() {
+            candidate = decoded_surface_point_inner_with_budget(
+                index,
+                target_surface,
+                target_uv.u,
+                target_uv.v,
+                0,
+                geometry_budget,
+            )?;
+        }
+        candidate.is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
+            || blend_boundary_spine_geometry_matches_with_index_and_budget(
+                index,
+                target_surface,
+                target_uv,
+                point,
+                tolerance,
+                geometry_budget,
+            )?
+    };
+    Ok(accepted.then_some((parameter, target_uv, point)))
 }
 
 fn blend_transfer_point_with_index(
@@ -2948,8 +3163,10 @@ fn blend_transfer_point_with_index(
     contact: BlendTransferContact<'_>,
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    let uv = pcurve_uv(contact.pcurve, parameter).ok()?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(uv) = finite_or_refusal(pcurve_uv(contact.pcurve, parameter))? else {
+        return Ok(None);
+    };
     decoded_surface_point_with_geometry_and_budget(
         index,
         contact.support,
@@ -2969,7 +3186,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     blend_boundary_parameter_from_support_spine_with_index(
         &index, blend, support, point, seed, tolerance,
@@ -2984,7 +3201,7 @@ fn blend_boundary_parameter_from_support_spine_with_index(
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     blend_boundary_parameter_from_support_spine_with_index_and_budget(
         index,
@@ -3005,27 +3222,32 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     seed: Option<Point2>,
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
-    let (supports, spine, _, _) = blend_surface_definition_with_index(index, blend)?;
-    let matches = supports
-        .iter()
-        .enumerate()
-        .filter(|(_, candidate)| {
-            parameterization_equivalent_surfaces_with_index(index, candidate, support)
-        })
-        .map(|(boundary, _)| boundary)
-        .collect::<Vec<_>>();
-    let [boundary] = matches.as_slice() else {
-        return None;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some((supports, spine, _, _)) = blend_surface_definition_with_index(index, blend) else {
+        return Ok(None);
     };
-    let parameter = closest_spine_parameter_with_index_and_budget(
+    let mut match_boundary = None;
+    for (boundary, candidate) in supports.iter().enumerate() {
+        if parameterization_equivalent_surfaces_with_index(index, candidate, support)
+            && match_boundary.replace(boundary).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    let Some(boundary) = match_boundary else {
+        return Ok(None);
+    };
+    let Some(parameter) = closest_spine_parameter_with_index_and_budget(
         index,
         &spine,
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
-    )?;
-    let parameters = Point2::new(parameter, *boundary as f64);
+    )?
+    else {
+        return Ok(None);
+    };
+    let parameters = Point2::new(parameter, boundary as f64);
     // The boundary invariants are the complete contact-free certificate. Test
     // them before evaluating the nested blend frame; the latter may recurse
     // through several NURBS supports and is only needed for a non-boundary
@@ -3037,8 +3259,8 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
         point,
         tolerance,
         geometry_budget,
-    ) {
-        return Some(parameters);
+    )? {
+        return Ok(Some(parameters));
     }
     blend_surface_point_inner_with_index_and_budget(
         index,
@@ -3048,8 +3270,10 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
         0,
         geometry_budget,
     )
-    .is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
-    .then_some(parameters)
+    .map(|candidate| {
+        (candidate.is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance))
+            .then_some(parameters)
+    })
 }
 
 fn blend_boundary_spine_geometry_matches_with_index_and_budget(
@@ -3059,44 +3283,50 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     point: Point3,
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if parameters.v.to_bits() != 0.0f64.to_bits() && parameters.v.to_bits() != 1.0f64.to_bits() {
-        return false;
+        return Ok(false);
     }
     let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
-        return false;
+        return Ok(false);
     };
-    let Ok(center) =
-        model_curve_point_by_id_with_budget(index, &spine, parameters.u, geometry_budget)
+    let Some(center) = finite_or_refusal(model_curve_point_by_id_with_budget(
+        index,
+        &spine,
+        parameters.u,
+        geometry_budget,
+    ))?
     else {
-        return false;
+        return Ok(false);
     };
     let Some(radial) = FiniteVector3::new(Vector3::new(
         point.x - center.x,
         point.y - center.y,
         point.z - center.z,
     )) else {
-        return false;
+        return Ok(false);
     };
     let distance = radial.norm();
     if !distance.is_finite() || (distance - radius).abs() > tolerance {
-        return false;
+        return Ok(false);
     }
     let Some(radial) = radial.unit_nonzero() else {
-        return false;
+        return Ok(false);
     };
     let Some(curve) = index.curves(spine.as_str()) else {
-        return false;
+        return Ok(false);
     };
-    let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
-        .ok()
-        .and_then(FiniteVector3::unit_nonzero)
-    else {
-        return false;
+    let Some(tangent) = finite_or_refusal(curve_tangent_with_budget(
+        &curve.geometry,
+        parameters.u,
+        geometry_budget,
+    ))?
+    .and_then(FiniteVector3::unit_nonzero) else {
+        return Ok(false);
     };
     let angular_tolerance =
         (tolerance / radius).max(EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8);
-    radial.dot(tangent).abs() <= angular_tolerance
+    Ok(radial.dot(tangent).abs() <= angular_tolerance)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3118,13 +3348,13 @@ fn append_transferred_pcurve_segment_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
     contact_seeds: &mut BlendContactSeedCache,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Option<()> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let midpoint_parameter = f64::midpoint(first.0, last.0);
     let midpoint_seed = Point2::new(
         f64::midpoint(first.1.u, last.1.u),
         f64::midpoint(first.1.v, last.1.v),
     );
-    let midpoint = transferred_pcurve_sample_with_budget(
+    let Some(midpoint) = transferred_pcurve_sample_with_budget(
         index,
         curve,
         source_surface,
@@ -3140,25 +3370,29 @@ fn append_transferred_pcurve_segment_with_budget(
         geometry_budget,
         contact_seeds,
         blend_parameter_grids,
-    )?;
-    let fits = [0.25, 0.5, 0.75].into_iter().all(|fraction| {
-        let parameter = first.0 + fraction * (last.0 - first.0);
-        let uv = Point2::new(
-            first.1.u + fraction * (last.1.u - first.1.u),
-            first.1.v + fraction * (last.1.v - first.1.v),
-        );
-        let source_point = if fraction == 0.5 {
-            // `midpoint` was already forward-evaluated while constructing the
-            // adaptive witness. Reuse that exact source point; the check below
-            // still evaluates the interpolated target chart at the midpoint,
-            // which is the independent chord-fit condition.
-            midpoint.2
-        } else {
-            let Some(source_uv) = pcurve_uv(source_pcurve, parameter).ok() else {
-                return false;
-            };
-            let Some(source_point) = source_geometry
-                .and_then(|geometry| {
+    )?
+    else {
+        return Ok(None);
+    };
+    let fits = (|| -> Result<bool, cadmpeg_core::CodecError> {
+        for fraction in [0.25, 0.5, 0.75] {
+            let parameter = first.0 + fraction * (last.0 - first.0);
+            let uv = Point2::new(
+                first.1.u + fraction * (last.1.u - first.1.u),
+                first.1.v + fraction * (last.1.v - first.1.v),
+            );
+            let source_point = if fraction == 0.5 {
+                // `midpoint` was already forward-evaluated while constructing the
+                // adaptive witness. Reuse that exact source point; the check below
+                // still evaluates the interpolated target chart at the midpoint,
+                // which is the independent chord-fit condition.
+                midpoint.2
+            } else {
+                let Some(source_uv) = finite_or_refusal(pcurve_uv(source_pcurve, parameter))?
+                else {
+                    return Ok(false);
+                };
+                let mut source_point = if let Some(geometry) = source_geometry {
                     decoded_surface_point_with_geometry_and_budget(
                         index,
                         source_surface,
@@ -3167,43 +3401,55 @@ fn append_transferred_pcurve_segment_with_budget(
                         source_uv.v,
                         0,
                         geometry_budget,
-                    )
-                })
-                .or_else(|| {
-                    decoded_surface_point_inner_with_budget(
+                    )?
+                } else {
+                    None
+                };
+                if source_point.is_none() {
+                    source_point = decoded_surface_point_inner_with_budget(
                         index,
                         source_surface,
                         source_uv.u,
                         source_uv.v,
                         0,
                         geometry_budget,
-                    )
-                })
-                .or_else(|| {
-                    model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
-                        .ok()
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
-                })
-            else {
-                return false;
+                    )?;
+                }
+                if source_point.is_none() {
+                    source_point = finite_or_refusal(model_curve_point_by_id_with_budget(
+                        index,
+                        curve,
+                        parameter,
+                        geometry_budget,
+                    ))?
+                    .map(cadmpeg_ir::features::FinitePoint3::get);
+                }
+                let Some(source_point) = source_point else {
+                    return Ok(false);
+                };
+                source_point
             };
-            source_point
-        };
-        blend_contact.is_some_and(|contact| {
-            uv.v.to_bits() == (contact.boundary as f64).to_bits()
-                && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)
-                    .is_some_and(|target_point| {
-                        Point3::distance(source_point, target_point) <= tolerance
-                    })
-        }) || blend_boundary_spine_geometry_matches_with_index_and_budget(
-            index,
-            target_surface,
-            uv,
-            source_point,
-            tolerance,
-            geometry_budget,
-        ) || target_geometry
-            .and_then(|geometry| {
+            if let Some(contact) = blend_contact {
+                if uv.v.to_bits() == (contact.boundary as f64).to_bits()
+                    && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)?
+                        .is_some_and(|target_point| {
+                            Point3::distance(source_point, target_point) <= tolerance
+                        })
+                {
+                    continue;
+                }
+            }
+            if blend_boundary_spine_geometry_matches_with_index_and_budget(
+                index,
+                target_surface,
+                uv,
+                source_point,
+                tolerance,
+                geometry_budget,
+            )? {
+                continue;
+            }
+            let mut target_point = if let Some(geometry) = target_geometry {
                 decoded_surface_point_with_geometry_and_budget(
                     index,
                     target_surface,
@@ -3212,26 +3458,36 @@ fn append_transferred_pcurve_segment_with_budget(
                     uv.v,
                     0,
                     geometry_budget,
-                )
-            })
-            .or_else(|| {
-                decoded_surface_point_inner_with_budget(
+                )?
+            } else {
+                None
+            };
+            if target_point.is_none() {
+                target_point = decoded_surface_point_inner_with_budget(
                     index,
                     target_surface,
                     uv.u,
                     uv.v,
                     0,
                     geometry_budget,
-                )
-            })
-            .is_some_and(|target_point| Point3::distance(source_point, target_point) <= tolerance)
-    });
+                )?;
+            }
+            if !target_point.is_some_and(|target_point| {
+                Point3::distance(source_point, target_point) <= tolerance
+            }) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })()?;
     if fits {
         samples.push(last);
-        return Some(());
+        return Ok(Some(()));
     }
-    (depth < 16).then_some(())?;
-    append_transferred_pcurve_segment_with_budget(
+    if depth >= 16 {
+        return Ok(None);
+    }
+    let Some(()) = append_transferred_pcurve_segment_with_budget(
         index,
         curve,
         source_surface,
@@ -3249,7 +3505,10 @@ fn append_transferred_pcurve_segment_with_budget(
         geometry_budget,
         contact_seeds,
         blend_parameter_grids,
-    )?;
+    )?
+    else {
+        return Ok(None);
+    };
     append_transferred_pcurve_segment_with_budget(
         index,
         curve,
@@ -3278,7 +3537,7 @@ pub(super) fn surface_parameters_for_fit_with_index_and_budget(
     seed: Option<Point2>,
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point2> {
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
         index,
@@ -3299,8 +3558,10 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
-) -> Option<Point2> {
-    let carrier = index.surfaces(surface.as_str())?;
+) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.surfaces(surface.as_str()) else {
+        return Ok(None);
+    };
     match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs_surface_parameter_within_tolerance_with_budget(
@@ -3310,31 +3571,35 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                 tolerance,
                 geometry_budget,
             )
-            .map(FinitePoint2::get)
+            .map(|parameter| parameter.map(FinitePoint2::get))
         }
         None => {
             let offset = match seed {
                 // Continuation samples start with the previous branch-local
                 // parameter. Retain the established global admission fallback
                 // when that seed cannot be certified locally.
-                Some(seed) => refine_offset_surface_parameters_with_index_and_budget(
-                    index,
-                    surface,
-                    point,
-                    seed,
-                    tolerance,
-                    geometry_budget,
-                )
-                .or_else(|| {
-                    offset_surface_parameters_with_tolerance_with_index_and_budget(
+                Some(seed) => {
+                    let local = refine_offset_surface_parameters_with_index_and_budget(
                         index,
                         surface,
                         point,
-                        Some(seed),
-                        Some(tolerance),
+                        seed,
+                        tolerance,
                         geometry_budget,
-                    )
-                }),
+                    )?;
+                    if local.is_some() {
+                        local
+                    } else {
+                        offset_surface_parameters_with_tolerance_with_index_and_budget(
+                            index,
+                            surface,
+                            point,
+                            Some(seed),
+                            Some(tolerance),
+                            geometry_budget,
+                        )?
+                    }
+                }
                 None => offset_surface_parameters_with_tolerance_with_index_and_budget(
                     index,
                     surface,
@@ -3342,23 +3607,23 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                     None,
                     Some(tolerance),
                     geometry_budget,
-                ),
+                )?,
             };
             if offset.is_some() {
-                return offset;
+                return Ok(offset);
+            }
+            if !blend_parameter_grids.contains_key(surface) {
+                let grid = blend_surface_parameter_grid_with_index_and_budget(
+                    index,
+                    surface,
+                    0,
+                    geometry_budget,
+                )?;
+                blend_parameter_grids.insert(surface.clone(), grid);
             }
             let grid = blend_parameter_grids
-                .entry(surface.clone())
-                .or_insert_with(|| {
-                    blend_surface_parameter_grid_with_index_and_budget(
-                        index,
-                        surface,
-                        0,
-                        geometry_budget,
-                    )
-                });
-            let grid = grid
-                .as_deref()
+                .get(surface)
+                .and_then(Option::as_deref)
                 .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
             blend_surface_parameters_for_fit_with_grid_and_budget(
                 index,
@@ -3370,11 +3635,11 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                 geometry_budget,
             )
         }
-        geometry => geometry
+        geometry => Ok(geometry
             .and_then(|geometry| {
                 cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, point)
             })
-            .map(Point2::from),
+            .map(Point2::from)),
     }
 }
 
@@ -3522,15 +3787,20 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             };
             let endpoints = [start, end];
             let supports = [first_support, second_support];
-            let endpoints_bound_supports = supports.iter().all(|surface| {
-                endpoints.iter().all(|point| {
+            let mut endpoints_bound_supports = true;
+            'supports: for surface in &supports {
+                for point in &endpoints {
                     let key = (
                         (*surface).clone(),
                         [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()],
                         tolerance.to_bits(),
                     );
                     if let Some(fits) = endpoint_surface_fits.get(&key) {
-                        return *fits;
+                        if !fits {
+                            endpoints_bound_supports = false;
+                            break 'supports;
+                        }
+                        continue;
                     }
                     let outside_nurbs_bounds =
                         model_index
@@ -3555,16 +3825,17 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                     let fits = if outside_nurbs_bounds {
                         false
                     } else {
-                        surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
-                            &model_index,
-                            surface,
-                            *point,
-                            None,
-                            tolerance,
-                            geometry_budget,
-                            &mut blend_parameter_grids,
-                        )
-                        .and_then(|uv| {
+                        let parameters =
+                            surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
+                                &model_index,
+                                surface,
+                                *point,
+                                None,
+                                tolerance,
+                                geometry_budget,
+                                &mut blend_parameter_grids,
+                            )?;
+                        let support_point = if let Some(uv) = parameters {
                             decoded_surface_point_inner_with_budget(
                                 &model_index,
                                 surface,
@@ -3572,16 +3843,21 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                                 uv.v,
                                 0,
                                 geometry_budget,
-                            )
-                        })
-                        .is_some_and(|support_point| {
+                            )?
+                        } else {
+                            None
+                        };
+                        support_point.is_some_and(|support_point| {
                             Point3::distance(*point, support_point) <= tolerance
                         })
                     };
                     endpoint_surface_fits.insert(key, fits);
-                    fits
-                })
-            });
+                    if !fits {
+                        endpoints_bound_supports = false;
+                        break 'supports;
+                    }
+                }
+            }
             if !endpoints_bound_supports {
                 continue;
             }
@@ -3682,6 +3958,7 @@ fn pcurve_matches_edge_range(
         fit_tolerance,
         &geometry_budget,
     )
+    .expect("evaluator allocation succeeds")
 }
 
 // Keep the index, edge identity, p-curve, and shared budget explicit: this
@@ -3694,17 +3971,23 @@ pub(super) fn pcurve_matches_edge_range_with_index_and_budget(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(coincident_surface) = pcurve_surface_endpoints_with_index_and_budget(
         index,
         surface_id,
         geometry,
         parameter_range,
         geometry_budget,
-    ) else {
-        return false;
+    )?
+    else {
+        return Ok(false);
     };
-    pcurve_matches_edge_endpoints_with_index(index, edge_id, coincident_surface, fit_tolerance)
+    Ok(pcurve_matches_edge_endpoints_with_index(
+        index,
+        edge_id,
+        coincident_surface,
+        fit_tolerance,
+    ))
 }
 
 /// Evaluate and admit a pcurve endpoint pair, returning the exact points that
@@ -3717,16 +4000,21 @@ pub(super) fn pcurve_endpoint_witness_with_index_and_budget(
     parameter_range: Option<[f64; 2]>,
     fit_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<[Point3; 2]> {
-    let coincident_surface = pcurve_surface_endpoints_with_index_and_budget(
+) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(coincident_surface) = pcurve_surface_endpoints_with_index_and_budget(
         index,
         surface_id,
         geometry,
         parameter_range,
         geometry_budget,
-    )?;
-    pcurve_matches_edge_endpoints_with_index(index, edge_id, coincident_surface, fit_tolerance)
-        .then_some(coincident_surface)
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        pcurve_matches_edge_endpoints_with_index(index, edge_id, coincident_surface, fit_tolerance)
+            .then_some(coincident_surface),
+    )
 }
 
 pub(super) fn pcurve_surface_endpoints_with_index_and_budget(
@@ -3735,27 +4023,39 @@ pub(super) fn pcurve_surface_endpoints_with_index_and_budget(
     geometry: &PcurveGeometry,
     parameter_range: Option<[f64; 2]>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<[Point3; 2]> {
-    let [t0, t1] = parameter_range.or_else(|| pcurve_parameter_range(geometry))?;
-    let [first_uv, second_uv] = [pcurve_uv(geometry, t0).ok()?, pcurve_uv(geometry, t1).ok()?];
-    Some([
-        decoded_surface_point_inner_with_budget(
-            index,
-            surface_id,
-            first_uv.u,
-            first_uv.v,
-            0,
-            geometry_budget,
-        )?,
-        decoded_surface_point_inner_with_budget(
-            index,
-            surface_id,
-            second_uv.u,
-            second_uv.v,
-            0,
-            geometry_budget,
-        )?,
-    ])
+) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some([t0, t1]) = parameter_range.or_else(|| pcurve_parameter_range(geometry)) else {
+        return Ok(None);
+    };
+    let (Some(first_uv), Some(second_uv)) = (
+        finite_or_refusal(pcurve_uv(geometry, t0))?,
+        finite_or_refusal(pcurve_uv(geometry, t1))?,
+    ) else {
+        return Ok(None);
+    };
+    let Some(first) = decoded_surface_point_inner_with_budget(
+        index,
+        surface_id,
+        first_uv.u,
+        first_uv.v,
+        0,
+        geometry_budget,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(second) = decoded_surface_point_inner_with_budget(
+        index,
+        surface_id,
+        second_uv.u,
+        second_uv.v,
+        0,
+        geometry_budget,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some([first, second]))
 }
 
 fn pcurve_matches_edge_endpoints_with_index(

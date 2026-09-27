@@ -125,8 +125,9 @@ impl DesignParameterSource {
 }
 
 /// One indexed Design parameter or expression record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignParameterSerde", into = "DesignParameterSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignParameterSerde")]
 pub(crate) struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -158,6 +159,34 @@ pub(crate) struct DesignParameter {
     evaluated_value: FiniteReal,
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARAMETER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignParameter {
+    fn clone(&self) -> Self {
+        PARAMETER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            source_ordinal: self.source_ordinal,
+            source: self.source.clone(),
+            expression: self.expression.clone(),
+            expression_offset: self.expression_offset,
+            source_kind_offset: self.source_kind_offset,
+            unit: self.unit.clone(),
+            name: self.name.clone(),
+            name_offset: self.name_offset,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset,
+        }
+    }
 }
 
 /// Unchecked Design parameter input.
@@ -269,16 +298,9 @@ impl DesignParameter {
         self.byte_offset
     }
     /// Expression code-unit offset.
+    #[cfg(test)]
     pub(crate) fn expression_offset(&self) -> u64 {
         self.expression_offset
-    }
-    /// Source-family code-unit offset.
-    fn source_kind_offset(&self) -> u64 {
-        self.source_kind_offset
-    }
-    /// Name code-unit offset.
-    fn name_offset(&self) -> u64 {
-        self.name_offset
     }
     /// Evaluated scalar offset.
     pub(crate) fn evaluated_value_offset(&self) -> u64 {
@@ -349,6 +371,61 @@ impl DesignParameter {
             DesignParameterSource::User { .. } => None,
             DesignParameterSource::Owned(source) => Some(source.owner_record_index),
         }
+    }
+}
+
+impl Serialize for DesignParameter {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            family_discriminator: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            family_discriminator_offset: Option<u64>,
+            source_ordinal: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_record_index: Option<u32>,
+            expression: &'a str,
+            expression_offset: u64,
+            source_kind: &'a str,
+            source_kind_offset: u64,
+            kind: DesignParameterKind,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            unit: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            unit_offset: Option<u64>,
+            name: &'a str,
+            name_offset: u64,
+            evaluated_value: f64,
+            evaluated_value_offset: u64,
+        }
+        let family_discriminator = self.family_discriminator();
+        WireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator_offset: family_discriminator.map(|value| value.offset),
+            source_ordinal: self.source_ordinal,
+            owner_record_index: self.owner_record_index(),
+            expression: self.expression.as_str(),
+            expression_offset: self.expression_offset,
+            source_kind: self.source_kind(),
+            source_kind_offset: self.source_kind_offset,
+            kind: self.kind(),
+            unit: self.unit.as_ref().map(|field| field.value.as_str()),
+            unit_offset: self.unit.as_ref().map(|field| field.offset),
+            name: self.name.as_str(),
+            name_offset: self.name_offset,
+            evaluated_value: self.evaluated_value.get(),
+            evaluated_value_offset: self.evaluated_value_offset,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -454,12 +531,13 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
     }
 }
 
+#[cfg(test)]
 impl From<DesignParameter> for DesignParameterSerde {
     fn from(parameter: DesignParameter) -> Self {
         let byte_offset = parameter.byte_offset();
-        let expression_offset = parameter.expression_offset();
-        let source_kind_offset = parameter.source_kind_offset();
-        let name_offset = parameter.name_offset();
+        let expression_offset = parameter.expression_offset;
+        let source_kind_offset = parameter.source_kind_offset;
+        let name_offset = parameter.name_offset;
         let evaluated_value_offset = parameter.evaluated_value_offset();
         let evaluated_value = parameter.evaluated_value().get();
         let kind = parameter.kind();
@@ -494,11 +572,9 @@ impl From<DesignParameter> for DesignParameterSerde {
 }
 
 /// Indexed record that owns one Design parameter.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignParameterOwnerWire",
-    into = "DesignParameterOwnerWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignParameterOwnerWire")]
 pub(crate) struct DesignParameterOwner {
     id: String,
     byte_offset: u64,
@@ -512,6 +588,32 @@ pub(crate) struct DesignParameterOwner {
     variant: Option<u8>,
     base_index: u32,
     order: ParameterFrameOrder,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARAMETER_OWNER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignParameterOwner {
+    fn clone(&self) -> Self {
+        PARAMETER_OWNER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag.clone(),
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value,
+            evaluated_value_offset: self.evaluated_value_offset,
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            base_index: self.base_index,
+            order: self.order,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -580,6 +682,44 @@ impl DesignParameterOwner {
                 ParameterFrameOrder::ParameterOwnerCompanion => 2,
                 ParameterFrameOrder::OwnerCompanionParameter => 1,
             }
+    }
+}
+
+impl Serialize for DesignParameterOwner {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            byte_offset: u64,
+            frame_length: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            scope_record_index: u32,
+            local_ordinal: u32,
+            evaluated_value: f64,
+            evaluated_value_offset: u64,
+            parameter_record_index: u32,
+            owned_ordinal: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            variant: Option<u8>,
+            companion_record_index: u32,
+        }
+        WireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index(),
+            scope_record_index: self.scope_record_index,
+            local_ordinal: self.local_ordinal,
+            evaluated_value: self.evaluated_value.get(),
+            evaluated_value_offset: self.evaluated_value_offset,
+            parameter_record_index: self.parameter_record_index(),
+            owned_ordinal: self.owned_ordinal,
+            variant: self.variant,
+            companion_record_index: self.companion_record_index(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -681,6 +821,7 @@ impl DesignParameterOwner {
     }
 }
 
+#[cfg(test)]
 impl From<DesignParameterOwner> for DesignParameterOwnerWire {
     fn from(owner: DesignParameterOwner) -> Self {
         Self {
@@ -777,11 +918,9 @@ impl DesignCompanionPayload {
 }
 
 /// Fixed prefix of the indexed record paired with a Design parameter owner.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignParameterCompanionWire",
-    into = "DesignParameterCompanionWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignParameterCompanionWire")]
 pub(crate) struct DesignParameterCompanion {
     id: String,
     byte_offset: u64,
@@ -791,6 +930,28 @@ pub(crate) struct DesignParameterCompanion {
     timestamp_micros: NonZeroU64,
     timestamp_micros_offset: u64,
     payload: Option<DesignCompanionPayload>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARAMETER_COMPANION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignParameterCompanion {
+    fn clone(&self) -> Self {
+        PARAMETER_COMPANION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            owner_record_index: self.owner_record_index,
+            timestamp_micros: self.timestamp_micros,
+            timestamp_micros_offset: self.timestamp_micros_offset,
+            payload: self.payload.clone(),
+        }
+    }
 }
 
 impl DesignParameterCompanion {
@@ -860,6 +1021,43 @@ impl DesignParameterCompanion {
     #[must_use]
     pub(crate) fn payload(&self) -> Option<&DesignCompanionPayload> {
         self.payload.as_ref()
+    }
+}
+
+impl Serialize for DesignParameterCompanion {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            owner_record_index: u32,
+            timestamp_micros: NonZeroU64,
+            timestamp_micros_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            payload_byte_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            payload_byte_length: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owned_recipe_ids: Option<&'a [String]>,
+        }
+        let payload = self.payload.as_ref();
+        WireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            owner_record_index: self.owner_record_index,
+            timestamp_micros: self.timestamp_micros,
+            timestamp_micros_offset: self.timestamp_micros_offset,
+            payload_byte_offset: payload.map(|payload| payload.byte_offset),
+            payload_byte_length: payload.map(|payload| payload.byte_length),
+            owned_recipe_ids: payload
+                .map(|payload| payload.owned_recipe_ids.as_slice())
+                .filter(|recipes| !recipes.is_empty()),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -935,6 +1133,7 @@ impl TryFrom<DesignParameterCompanionWire> for DesignParameterCompanion {
     }
 }
 
+#[cfg(test)]
 impl From<DesignParameterCompanion> for DesignParameterCompanionWire {
     fn from(record: DesignParameterCompanion) -> Self {
         let (payload_byte_offset, payload_byte_length, owned_recipe_ids) = match record.payload {
@@ -966,3 +1165,6 @@ fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(
     NonZeroU64::new(u64::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("timestamp_micros must be nonzero"))
 }
+
+#[cfg(test)]
+mod tests;

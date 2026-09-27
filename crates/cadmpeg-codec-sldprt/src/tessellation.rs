@@ -918,22 +918,23 @@ pub(crate) fn assign_unique_surface_owners(
         let quantization_tolerance =
             coordinate_scale * f64::from(f32::EPSILON) * DISPLAY_QUANTIZATION_ULPS
                 + EPS_DISPLAY_QUANTIZATION;
-        let mut owners = candidates
-            .iter()
-            .filter(|candidate| {
-                let tolerance = candidate.tolerance.max(quantization_tolerance);
-                let Some(surface) = candidate.surface.solved() else {
-                    return false;
-                };
-                mesh.vertices().iter().all(|point| {
-                    candidate
-                        .inverse
-                        .apply_point(point.get())
-                        .and_then(|point| surface_measure(surface, point.get(), Some(tolerance)))
-                        .is_some_and(|measure| measure.residual <= tolerance)
-                })
-            })
-            .collect::<Vec<_>>();
+        let mut owners = Vec::new();
+        for candidate in &candidates {
+            let tolerance = candidate.tolerance.max(quantization_tolerance);
+            let Some(surface) = candidate.surface.solved() else { continue; };
+            let mut fits = true;
+            for point in mesh.vertices() {
+                let Some(local) = candidate.inverse.apply_point(point.get()) else { fits = false; break; };
+                let Some(measure) = surface_measure(surface, local.get(), Some(tolerance))? else { fits = false; break; };
+                if measure.residual > tolerance {
+                    fits = false;
+                    break;
+                }
+            }
+            if fits {
+                owners.push(candidate);
+            }
+        }
         if owners.len() > 1 {
             owners.retain(|candidate| {
                 candidate.trim.as_ref().is_none_or(|trim| {
@@ -957,7 +958,7 @@ pub(crate) fn assign_unique_surface_owners(
                     continue;
                 }
                 let Some((index, deflection)) =
-                    approximate_surface_owner(mesh, &candidates, quantization_tolerance)
+                    approximate_surface_owner(mesh, &candidates, quantization_tolerance)?
                 else {
                     continue;
                 };
@@ -984,9 +985,9 @@ fn approximate_surface_owner(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Option<(usize, f64)> {
+) -> Result<Option<(usize, f64)>, cadmpeg_core::decode::ResourceLimit> {
     if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut fits = candidates
         .iter()
@@ -995,7 +996,11 @@ fn approximate_surface_owner(
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
                 let local_point = candidate.inverse.apply_point(point.get())?.get();
-                let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
+                let measure = match surface_measure(candidate.surface.solved()?, local_point, None) {
+                    Ok(Some(measure)) => measure,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
                 let mesh_normal = candidate.inverse.apply_vector(normal.get())?.unit()?;
@@ -1009,9 +1014,9 @@ fn approximate_surface_owner(
             {
                 return None;
             }
-            Some((index, max_residual))
+            Some(Ok((index, max_residual)))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     if fits.is_empty() {
         return approximate_trimmed_surface_owner(mesh, candidates, quantization_tolerance);
     }
@@ -1024,15 +1029,15 @@ fn approximate_surface_owner(
         })
     });
     let [(index, deflection), rest @ ..] = fits.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if rest
         .first()
         .is_some_and(|(_, next, ..)| *next <= *deflection + quantization_tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    Some((*index, *deflection))
+    Ok(Some((*index, *deflection)))
 }
 
 /// Use a unique analytic trim as an ownership witness when stored display
@@ -1043,7 +1048,7 @@ fn approximate_trimmed_surface_owner(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Option<(usize, f64)> {
+) -> Result<Option<(usize, f64)>, cadmpeg_core::decode::ResourceLimit> {
     let mut fits = candidates
         .iter()
         .enumerate()
@@ -1051,11 +1056,15 @@ fn approximate_trimmed_surface_owner(
             let trim = candidate.trim.as_ref()?;
             let mut max_residual = 0.0_f64;
             for point in mesh.vertices() {
-                let measure = surface_measure(
+                let measure = match surface_measure(
                     candidate.surface.solved()?,
                     candidate.inverse.apply_point(point.get())?.get(),
                     None,
-                )?;
+                ) {
+                    Ok(Some(measure)) => measure,
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
                 max_residual = max_residual.max(measure.residual);
             }
             if is_planar_surface(candidate.surface.solved()?)
@@ -1064,16 +1073,17 @@ fn approximate_trimmed_surface_owner(
                 return None;
             }
             trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
-                .then_some((index, max_residual))
+                .then_some(Ok((index, max_residual)))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
-    let best_deflection = fits.first()?.1;
+    let Some(first) = fits.first() else { return Ok(None); };
+    let best_deflection = first.1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     let [(index, deflection)] = fits.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some((*index, *deflection))
+    Ok(Some((*index, *deflection)))
 }
 
 fn is_planar_surface(surface: &SolvedSurfaceGeometry) -> bool {
@@ -2843,44 +2853,44 @@ fn surface_measure(
     surface: &SolvedSurfaceGeometry,
     point: Point3,
     fit_tolerance: Option<f64>,
-) -> Option<SurfaceMeasure> {
+) -> Result<Option<SurfaceMeasure>, cadmpeg_core::decode::ResourceLimit> {
     if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
-        let tolerance = fit_tolerance?;
-        let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
-        let partials =
-            cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v).ok()?;
+        let Some(tolerance) = fit_tolerance else { return Ok(None); };
+        let Some(parameters) = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)? else { return Ok(None); };
+        let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
+            cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v),
+        )? else { return Ok(None); };
         let residual = point.distance(partials.point.get());
         if residual > tolerance {
-            return None;
+            return Ok(None);
         }
-        return Some(SurfaceMeasure {
+        return Ok(Some(SurfaceMeasure {
             residual,
             normal: partials.du.cross(partials.dv.get()).unit(),
         })
-        .filter(|measure| measure.residual.is_finite());
+        .filter(|measure| measure.residual.is_finite()));
     }
     if let SolvedSurfaceGeometry::Transformed(placed) = surface {
         let transform = placed.transform();
         if transform.is_proper_rigid() {
-            let mut measure = surface_measure(
+            let Some(inverse) = transform.try_inverse_affine().ok() else { return Ok(None); };
+            let Some(local_point) = inverse.apply_point(point) else { return Ok(None); };
+            let Some(mut measure) = surface_measure(
                 placed.basis(),
-                transform
-                    .try_inverse_affine()
-                    .ok()?
-                    .apply_point(point)?
-                    .get(),
+                local_point.get(),
                 fit_tolerance,
-            )?;
+            )? else { return Ok(None); };
             measure.normal = measure
                 .normal
                 .and_then(|normal| transform.apply_vector(normal)?.unit());
-            return Some(measure);
+            return Ok(Some(measure));
         }
     }
-    Some(SurfaceMeasure {
-        residual: analytic_surface_residual(surface, point)?,
+    let Some(residual) = analytic_surface_residual(surface, point) else { return Ok(None); };
+    Ok(Some(SurfaceMeasure {
+        residual,
         normal: analytic_surface_normal(surface, point),
-    })
+    }))
 }
 
 #[cfg(test)]

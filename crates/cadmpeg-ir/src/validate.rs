@@ -17,6 +17,7 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
+use cadmpeg_core::decode::ResourceLimit;
 
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
@@ -127,7 +128,7 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
-fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+fn validate_model(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
     let index = crate::index::ModelIndex::new(ir);
     validate_model_with_index(ir, losses, &index)
 }
@@ -136,7 +137,7 @@ fn validate_model_with_index(
     ir: &CadIr,
     losses: Vec<LossNote>,
     ids: &crate::index::ModelIndex<'_>,
-) -> ValidationReport {
+) -> Result<ValidationReport, ResourceLimit> {
     let mut findings = Vec::new();
 
     // The identity walk enumerates every entity id in the product document;
@@ -152,9 +153,9 @@ fn validate_model_with_index(
     check_carrier_reachability(ir, &mut findings);
     check_native_links(ir, ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
-    check_edge_endpoint_consistency(ir, &mut findings);
-    check_pcurve_surface_consistency(ir, &mut findings);
-    check_procedural_support_consistency(ir, &mut findings);
+    check_edge_endpoint_consistency(ir, &mut findings)?;
+    check_pcurve_surface_consistency(ir, &mut findings)?;
+    check_procedural_support_consistency(ir, &mut findings)?;
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ir, &mut findings);
@@ -165,11 +166,11 @@ fn validate_model_with_index(
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ir, ids, &mut findings);
 
-    ValidationReport {
+    Ok(ValidationReport {
         entity_counts: entity_census(ir),
         findings,
         losses,
-    }
+    })
 }
 
 /// Validates a model while treating staged retained-record identities as native entities.
@@ -177,13 +178,13 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     ir: &'a CadIr,
     additional: impl IntoIterator<Item = &'a str>,
     losses: Vec<LossNote>,
-) -> ValidationReport {
+) -> Result<ValidationReport, ResourceLimit> {
     let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
     validate_model_with_index(ir, losses, &index)
 }
 
 /// Validate one neutral product model.
-pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
+pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, ResourceLimit> {
     validate_model(ir, losses)
 }
 
@@ -192,14 +193,14 @@ pub fn validate_neutral_with_annotations(
     ir: &CadIr,
     annotations: &crate::annotations::Annotations,
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    let mut report = validate_model(ir, losses);
+) -> Result<ValidationReport, ResourceLimit> {
+    let mut report = validate_model(ir, losses)?;
     let all_ids = crate::index::ModelIndex::new(ir)
         .identities()
         .map(str::to_owned)
         .collect::<HashSet<_>>();
     check_annotations(ir, annotations, &all_ids, &mut report.findings);
-    report
+    Ok(report)
 }
 
 /// Validate a neutral product model together with its decode-time source sidecar.
@@ -207,8 +208,8 @@ pub fn validate_neutral_with_source_fidelity(
     ir: &CadIr,
     source_fidelity: &SourceFidelity,
     losses: Vec<LossNote>,
-) -> ValidationReport {
-    let mut report = validate_model(ir, losses);
+) -> Result<ValidationReport, ResourceLimit> {
+    let mut report = validate_model(ir, losses)?;
     let index = crate::index::ModelIndex::new(ir);
     let mut all_ids = index
         .identities()
@@ -226,7 +227,7 @@ pub fn validate_neutral_with_source_fidelity(
         &all_ids,
         &mut report.findings,
     );
-    report
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -347,7 +348,7 @@ mod tests {
             native_ref: None,
         });
 
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
@@ -405,7 +406,7 @@ mod tests {
             ),
         ];
 
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
     }
 }

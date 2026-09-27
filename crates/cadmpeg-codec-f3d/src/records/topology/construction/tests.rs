@@ -30,6 +30,36 @@ fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
 }
 
 #[test]
+fn construction_transform_borrowed_wire_matches_owned_wire_bytes() {
+    let transform = frame_wire().trailing_transforms.into_iter().next().unwrap();
+    let owned = super::DesignConstructionOperandTransformDraft::from(transform.clone());
+    assert_eq!(
+        serde_json::to_vec(&transform).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn construction_transform_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionOperandTransform,
+    }
+    let transform = frame_wire().trailing_transforms.into_iter().next().unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:construction-transform#0",
+        value: &transform,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_TRANSFORM_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
     for value in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut wire = frame_wire();
@@ -84,6 +114,91 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
     check_collection!(auxiliary_paths, try_set_auxiliary_paths);
     let wire = serde_json::to_value(frame_wire()).unwrap();
     assert_eq!(serde_json::to_value(frame).unwrap(), wire);
+}
+
+#[test]
+fn construction_frame_borrowed_wire_matches_owned_wire_bytes() {
+    for wire in [
+        serde_json::json!({
+            "member_count_offset": 20,
+            "opaque_index": 1, "opaque_index_offset": 80,
+            "opaque_scalar": 0.0, "opaque_scalar_offset": 84, "variant": false
+        }),
+        serde_json::to_value(frame_wire()).unwrap(),
+    ] {
+        let frame: DesignConstructionOperandGroupFrame = serde_json::from_value(wire).unwrap();
+        let owned = DesignConstructionOperandGroupFrameWire::from(frame.clone());
+        assert_eq!(
+            serde_json::to_vec(&frame).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_frame_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionOperandGroupFrame,
+    }
+    let frame = DesignConstructionOperandGroupFrame::try_from(frame_wire()).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:construction-frame#0",
+        value: &frame,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_construction_operand_groups",
+        || super::CONSTRUCTION_FRAME_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_FRAME_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
+fn construction_group_borrowed_wire_matches_owned_wire_bytes() {
+    let wire = json!({
+        "id":"f3d:native:construction-group#0", "scope_record_index":7,
+        "scope_reference_ordinal":0, "record_index":9,"byte_offset":0,
+        "class_tag":"277", "members":[10,11],"member_offsets":[26,37],
+        "lost_edge_references":["edge#1"], "frame":frame_wire(),
+        "role":0,"role_offset":100,"paired_class_tag":"278","paired_byte_offset":200
+    });
+    let mut group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    for role in [
+        super::DesignConstructionOperandRole::Other(super::DesignOperandRole::from_raw(0)),
+        super::DesignConstructionOperandRole::ExtrudeBodiesA,
+        super::DesignConstructionOperandRole::ExtrudeProfile,
+        super::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: super::DesignExtrudeFaceEncoding::SelectedStart,
+            usage: super::DesignExtrudeFaceRole::Start,
+        },
+    ] {
+        group.operand_role = role;
+        let owned = super::DesignConstructionOperandGroupSerde::from(group.clone());
+        assert_eq!(
+            serde_json::to_vec(&group).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_group_native_retained_limit_refuses_before_clone() {
+    let wire = json!({
+        "id":"f3d:native:construction-group#0", "scope_record_index":7,
+        "scope_reference_ordinal":0, "record_index":9,"byte_offset":0,
+        "class_tag":"277", "members":[10,11],"member_offsets":[26,37],
+        "frame":frame_wire(), "role":0,"role_offset":100,
+        "paired_class_tag":"278","paired_byte_offset":200
+    });
+    let group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &group,
+        "design_construction_operand_groups",
+        || super::CONSTRUCTION_GROUP_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_GROUP_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }
 
 #[test]
@@ -147,6 +262,41 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 }
 
 #[test]
+fn construction_tracking_path_borrowed_wire_matches_owned_wire_bytes() {
+    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94"#;
+    for (fields, end) in [
+        ("", 114),
+        (",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122", 130),
+    ] {
+        let wire = format!("{prefix}{fields},\"following_record_index\":302,\"following_byte_offset\":{end},\"following_class_tag\":\"363\"}}");
+        let path: DesignConstructionTrackingPath = serde_json::from_str(&wire).unwrap();
+        let owned = super::DesignConstructionTrackingPathWire::from(path.clone());
+        assert_eq!(serde_json::to_vec(&path).unwrap(), serde_json::to_vec(&owned).unwrap());
+    }
+}
+
+#[test]
+fn construction_tracking_path_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionTrackingPath,
+    }
+    let wire = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94,"following_record_index":302,"following_byte_offset":114,"following_class_tag":"363"}"#;
+    let path: DesignConstructionTrackingPath = serde_json::from_str(wire).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:tracking-path#0",
+        value: &path,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 // Fixture fields are appended from the bounded table of explicit test cases.
 #[allow(clippy::format_push_string)]
 fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
@@ -193,6 +343,43 @@ fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
 }
 
 #[test]
+fn construction_path_borrowed_wire_matches_owned_wire_bytes() {
+    for wire in [
+        r#"{"record_index":100,"byte_offset":0,"class_tag":"304","entity_ref":174,"entity_ref_offset":22,"compact_variant":false,"scope_record_index":90,"scope_record_index_offset":35,"nested_record_index":102,"nested_record_index_offset":46,"following_record_index":101,"following_byte_offset":62,"following_class_tag":"390"}"#,
+        r#"{"record_index":100,"byte_offset":0,"class_tag":"304","entity_ref":174,"entity_ref_offset":22,"transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],"transform_offset":33,"scope_record_index":90,"scope_record_index_offset":163,"nested_record_index":102,"nested_record_index_offset":174,"following_record_index":101,"following_byte_offset":190,"following_class_tag":"390"}"#,
+    ] {
+        let path: super::DesignConstructionOperandPath = serde_json::from_str(wire).unwrap();
+        let owned = super::DesignConstructionOperandPathWire::from(path.clone());
+        assert_eq!(
+            serde_json::to_vec(&path).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_path_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignConstructionOperandPath,
+    }
+    let path: super::DesignConstructionOperandPath = serde_json::from_str(
+        r#"{"record_index":100,"byte_offset":0,"class_tag":"304","entity_ref":174,"entity_ref_offset":22,"compact_variant":false,"scope_record_index":90,"scope_record_index_offset":35,"nested_record_index":102,"nested_record_index_offset":46,"following_record_index":101,"following_byte_offset":62,"following_class_tag":"390"}"#
+    ).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:construction-path#0",
+        value: &path,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_construction_operand_identities",
+        || super::CONSTRUCTION_PATH_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_PATH_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
     for count in 0..=2 {
         for offsets in 0..=2 {
@@ -221,6 +408,39 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
             }
         }
     }
+}
+
+#[test]
+fn construction_identity_borrowed_wire_matches_owned_wire_bytes() {
+    for count in 0..=2 {
+        let indices = ["[]", "[300]", "[300,305]"][count];
+        let offsets = ["[]", "[0]", "[0,24]"][count];
+        let tags = ["[]", "[\"384\"]", "[\"384\",\"289\"]"][count];
+        let following_byte_offset = count * 24;
+        let wire = format!(
+            r#"{{"id":"f3d:native:construction-identity#0","group_record_index":200,"wrapper_record_indices":{indices},"wrapper_byte_offsets":{offsets},"wrapper_class_tags":{tags},"following_record_index":310,"following_byte_offset":{following_byte_offset},"following_class_tag":"304"}}"#
+        );
+        let identity: super::DesignConstructionOperandIdentity =
+            serde_json::from_str(&wire).unwrap();
+        let owned = super::DesignConstructionOperandIdentityWire::from(identity.clone());
+        assert_eq!(
+            serde_json::to_vec(&identity).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn construction_identity_native_retained_limit_refuses_before_clone() {
+    let identity: super::DesignConstructionOperandIdentity = serde_json::from_str(
+        r#"{"id":"f3d:native:construction-identity#0","group_record_index":200,"wrapper_record_indices":[300,305],"wrapper_byte_offsets":[0,24],"wrapper_class_tags":["384","289"],"following_record_index":310,"following_byte_offset":48,"following_class_tag":"304"}"#
+    ).unwrap();
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &identity,
+        "design_construction_operand_identities",
+        || super::CONSTRUCTION_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }
 
 #[test]
@@ -467,6 +687,52 @@ fn persistent_identity_admits_both_tail_extents_and_rejects_displaced_offsets() 
             &["local_id_offset", "asset_id_offset", "next_byte_offset"],
         );
     }
+}
+
+#[test]
+fn persistent_identity_borrowed_wire_matches_owned_wire_bytes() {
+    for (tail, next) in [(0, 190), (185, 200)] {
+        let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+            "local_id": 1, "local_id_offset": 21,
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
+            "tail_slot_present": false, "tail_slot_offset": tail,
+            "next_record_index": 0, "next_byte_offset": next
+        }))
+        .unwrap();
+        let owned = super::DesignConstructionPersistentIdentityDraft::from(value.clone());
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn persistent_identity_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionPersistentIdentity,
+    }
+    let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+        "local_id": 1, "local_id_offset": 21,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
+        "tail_slot_present": false, "tail_slot_offset": 0,
+        "next_record_index": 0, "next_byte_offset": 190
+    }))
+    .unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:persistent-identity#0",
+        value: &value,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::PERSISTENT_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+        || super::PERSISTENT_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }
 
 /// A top-level optional key on a topology record names itself in its refusal.

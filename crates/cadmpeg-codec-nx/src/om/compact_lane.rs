@@ -47,7 +47,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> CountedLane<T, O> {
             offset: self.offset + O::from(COUNTED_PREFIX),
         }
     }
-    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> {
+    pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> + Clone {
         let mut offset = self.anchor().offset + O::from(self.anchor.atom.raw().len() as u16);
         self.members.as_slice().iter().map(move |index| {
             let position = PositionedIndex {

@@ -21,6 +21,10 @@ struct CompactMatrixWire {
 }
 
 impl CompactMatrix {
+    pub(crate) fn masks(&self) -> (u16, u16) {
+        (self.value_mask, self.zero_mask)
+    }
+
     /// Constructs the matrix from masks and row-major explicit values.
     pub(crate) fn try_new(
         value_mask: u16,

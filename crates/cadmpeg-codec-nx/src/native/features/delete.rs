@@ -8,14 +8,12 @@ use super::{
 use crate::container::Container;
 use crate::om::delete_references::DeleteReferences;
 use crate::om::reference_index::PayloadIndexToken;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DeleteReferenceFieldWire",
-    into = "DeleteReferenceFieldWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DeleteReferenceFieldWire")]
 pub(in crate::native) struct FeatureDeleteReferenceField {
     /// Globally unique field identity.
     pub(in crate::native) id: String,
@@ -50,6 +48,42 @@ struct DeleteReferenceFieldWire {
     object_index_source_offsets: [u64; 5],
 }
 
+impl Serialize for FeatureDeleteReferenceField {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        const NULL_TOKEN: &[u8] = &[0xff];
+        let slots = self.references.slots();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry("control", &self.references.control())?;
+        wire.serialize_entry(
+            "object_indices",
+            &slots
+                .each_ref()
+                .map(|slot| slot.as_ref().map(|target| target.0.value())),
+        )?;
+        wire.serialize_entry(
+            "raw_object_indices",
+            &slots
+                .each_ref()
+                .map(|slot| slot.as_ref().map_or(NULL_TOKEN, |target| target.0.raw())),
+        )?;
+        wire.serialize_entry(
+            "data_blocks",
+            &slots
+                .each_ref()
+                .map(|slot| slot.as_ref().and_then(|target| target.1.as_deref())),
+        )?;
+        wire.serialize_entry("source_offset", &self.references.offset())?;
+        wire.serialize_entry(
+            "object_index_source_offsets",
+            &self.references.reference_offsets(),
+        )?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureDeleteReferenceField> for DeleteReferenceFieldWire {
     fn from(value: FeatureDeleteReferenceField) -> Self {
         Self {
@@ -196,7 +230,22 @@ pub(in crate::native) fn feature_delete_construction_payloads(
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureDeleteReferenceField;
+    use super::{DeleteReferenceFieldWire, FeatureDeleteReferenceField};
+
+    #[test]
+    fn delete_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:delete-reference#0","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":[[240,32],[255],[241,2,8],[241,2,9],[255]],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
+        let record: FeatureDeleteReferenceField = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&DeleteReferenceFieldWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn delete_wire_derives_mixed_width_and_null_positions() -> Result<(), Box<dyn std::error::Error>>

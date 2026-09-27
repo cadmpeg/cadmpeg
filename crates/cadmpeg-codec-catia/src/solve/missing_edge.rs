@@ -12,32 +12,53 @@ use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTo
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+
+fn charge_collection_items(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
+}
 
 /// Return the counted physical edge rows in their serialized table order.
 ///
 /// Each row retains its table-kind byte, native handle width semantics, and
 /// complete handle sequence even when full topology reconstruction is not yet
 /// possible.
-#[must_use]
-pub(crate) fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
-    let face_run = selected_standard_run(bytes)?;
+pub(crate) fn standard_edge_rows(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<EdgeRow>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
+    Ok(parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows))
 }
 
 fn standard_edge_port_identities_with_namespace(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     global: bool,
-) -> Option<Vec<[u32; 2]>> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
+    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
     let mut identity_by_handle = HashMap::new();
     let mut next_identity = 0u32;
-    edge_rows
+    Ok(edge_rows
         .iter()
         .zip(scopes)
         .map(|(row, scope)| {
@@ -65,7 +86,7 @@ fn standard_edge_port_identities_with_namespace(
             }
             Some(pair)
         })
-        .collect()
+        .collect())
 }
 
 fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
@@ -258,16 +279,22 @@ fn compressed_visualization_point_bindings(
     (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
 }
 
-fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities_with_namespace(bytes, false)
+fn standard_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    standard_edge_port_identities_with_namespace(ctx, bytes, false)
 }
 
 fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     fbb_edge_port_identities_with_namespace(bytes, false)
 }
 
-fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities_with_namespace(bytes, true)
+fn standard_global_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    standard_edge_port_identities_with_namespace(ctx, bytes, true)
 }
 
 pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
@@ -275,21 +302,32 @@ pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 
 }
 
 /// Select conservative endpoint identities for the bounded topology solver.
-pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+pub(crate) fn edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    Ok(standard_edge_port_identities(ctx, bytes)?.or_else(|| fbb_edge_port_identities(bytes)))
 }
 
 /// Select endpoint identities from every row's terminal handles in the
 /// file-global trim-handle namespace.
-fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    standard_global_edge_port_identities(bytes).or_else(|| fbb_global_edge_port_identities(bytes))
+fn global_edge_port_identities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    Ok(standard_global_edge_port_identities(ctx, bytes)?
+        .or_else(|| fbb_global_edge_port_identities(bytes)))
 }
 
-pub(super) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+pub(super) fn solver_ports(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    global: bool,
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
     if global {
-        global_edge_port_identities(bytes)
+        global_edge_port_identities(ctx, bytes)
     } else {
-        edge_port_identities(bytes)
+        edge_port_identities(ctx, bytes)
     }
 }
 
@@ -331,11 +369,17 @@ pub(crate) fn expand_deferred_edge_port_components(
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
-#[must_use]
-pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = global_edge_port_identities(bytes)?;
-    mesh_edge_ports(&analysis, &local_ports)
+pub(crate) fn standard_mesh_edge_ports(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+        return Ok(None);
+    };
+    let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
+        return Ok(None);
+    };
+    Ok(mesh_edge_ports(&analysis, &local_ports))
 }
 
 fn mesh_edge_ports(
@@ -499,30 +543,45 @@ struct StandardMeshAnalysis {
     fixed_complete_row_spans: bool,
 }
 
-fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
-    let face_run = selected_standard_run(bytes)?;
+fn standard_mesh_analysis(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<StandardMeshAnalysis>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, handle_width, fixed_complete_row_spans) =
+    let Some((edge_rows, handle_width, fixed_complete_row_spans)) =
         parse_standard_edge_tables_with_width(bytes, after_faces)
             .map(|(rows, _, width)| (rows, width, false))
             .or_else(|| {
                 parse_fbb_edge_tables(bytes, after_faces)
                     .map(|(rows, _, _, width)| (rows, width, true))
-            })?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    let cycles = trims
+            })
+    else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    let Some(cycles) = trims
         .iter()
         .map(|trim| boundary_cycles(trim.packet.triangles()))
-        .collect::<Option<Vec<_>>>()?;
-    let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
-    Some(StandardMeshAnalysis {
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
+        return Ok(None);
+    };
+    Ok(Some(StandardMeshAnalysis {
         edge_rows,
         cycles,
         occurrences,
         fixed_complete_row_spans,
-    })
+    }))
 }
 
 /// Recover every exact physical-edge occurrence on the trim mesh.
@@ -531,10 +590,11 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
 /// flanking boundary segments. FBB `u24be` rows match their complete handle
 /// sequence and cover one fewer segment than handles. A result exists only
 /// when exactly one trim-handle width parses the complete face chain.
-#[must_use]
-pub(crate) fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    Some(mesh_edge_runs(&analysis))
+pub(crate) fn standard_mesh_edge_runs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
+    Ok(standard_mesh_analysis(ctx, bytes)?.map(|analysis| mesh_edge_runs(&analysis)))
 }
 
 fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
@@ -551,29 +611,35 @@ fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
 /// Complete repeated standard edge-face slots from exact trim-boundary
 /// occurrences. Rows without two distinct matched face occurrences retain
 /// their serialized slots for incidence closure.
-#[must_use]
 pub(crate) fn resolve_standard_edge_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
-) -> Option<Vec<[usize; 2]>> {
-    let Some(runs) = standard_mesh_edge_runs(bytes) else {
-        return Some(serialized.to_vec());
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
+        charge_collection_items(
+            ctx,
+            serialized.len(),
+            "catia standard serialized edge faces",
+        )?;
+        return Ok(Some(serialized.to_vec()));
     };
-    resolve_edge_faces_from_runs(serialized, &runs)
+    resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
 
 fn repeated_edge_face_handle_candidates_from_sets(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     face_handles: &[HashSet<u32>],
     serialized: &[[usize; 2]],
-) -> Option<Vec<Vec<usize>>> {
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     if edge_rows.len() != serialized.len()
         || serialized
             .iter()
             .flatten()
             .any(|face| *face >= face_handles.len())
     {
-        return None;
+        return Ok(None);
     }
     for (row, faces) in edge_rows.iter().zip(serialized) {
         if !row
@@ -581,62 +647,85 @@ fn repeated_edge_face_handle_candidates_from_sets(
             .iter()
             .all(|handle| face_handles[faces[0]].contains(handle))
         {
-            return None;
+            return Ok(None);
         }
     }
-    let mut candidates = alloc_filled(
+    let mut candidates = ctx.alloc_filled(
         edge_rows.len(),
         Vec::new(),
         "catia_repeated_edge_handle_face_candidates",
-    )
-    .ok()?;
+    )?;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
         if faces[0] != faces[1] || row.handles.len() < 2 {
             continue;
         }
+        let handle_count = u64::try_from(row.handles.len()).map_err(|_| {
+            ctx.refuse_codec_limit("catia repeated edge unique handles", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_collection_items(handle_count, "catia repeated edge unique handles")?;
         let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
-        let mut matching = face_handles
-            .iter()
-            .enumerate()
-            .filter(|(face, _)| *face != faces[0])
-            .filter_map(|(face, handles)| {
-                let shared = unique_handles
-                    .iter()
-                    .filter(|handle| handles.contains(handle))
-                    .count();
-                let qualifies = if unique_handles.len() >= 4 {
-                    shared >= 3 && shared >= unique_handles.len().div_ceil(2)
-                } else {
-                    shared == unique_handles.len()
-                };
-                qualifies.then_some(face)
-            })
-            .collect::<Vec<_>>();
+        let mut matching = Vec::new();
+        for (face, handles) in face_handles.iter().enumerate() {
+            if face == faces[0] {
+                continue;
+            }
+            let shared = unique_handles
+                .iter()
+                .filter(|handle| handles.contains(handle))
+                .count();
+            let qualifies = if unique_handles.len() >= 4 {
+                shared >= 3 && shared >= unique_handles.len().div_ceil(2)
+            } else {
+                shared == unique_handles.len()
+            };
+            if qualifies {
+                charge_collection_items(ctx, 1, "catia repeated edge matching faces")?;
+                matching.push(face);
+            }
+        }
         if unique_handles.len() >= 4 && matching.len() != 1 {
             matching.clear();
         }
         candidates[edge] = matching;
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 /// Return positive second-face candidates from the global trim-handle
 /// namespace. The relation abstains for the complete file unless every edge
 /// row is contained by its first serialized face packet.
 pub(crate) fn standard_repeated_edge_face_handle_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
-) -> Option<Vec<Vec<usize>>> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
+    let Some((edge_rows, handle_width)) = parse_standard_edge_tables_with_width(bytes, after_faces)
         .map(|(rows, _, width)| (rows, width))
         .or_else(|| {
             parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
+        })
+    else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    let trim_count = u64::try_from(trims.len()).map_err(|_| {
+        ctx.refuse_codec_limit("catia repeated edge face handles", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
+    for trim in &trims {
+        let handle_count = u64::try_from(trim.packet.handles().len()).map_err(|_| {
+            ctx.refuse_codec_limit("catia repeated edge face handle set", u64::MAX, u64::MAX)
         })?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+        ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
+    }
     let face_handles = trims
         .into_iter()
         .map(|trim| {
@@ -647,7 +736,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
-    repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
+    repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
 
 /// Refine unresolved repeated-face domains with positive trim-handle evidence.
@@ -697,11 +786,12 @@ pub(crate) fn refine_repeated_edge_face_candidates(
 /// Return every assignment found by the bounded search that gives degree two
 /// at every used face vertex.
 pub(crate) fn repeated_face_endpoint_closures(
+    ctx: &DecodeContext<'_>,
     edge_faces: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     endpoint_pairs: &[[usize; 2]],
     face_count: usize,
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     const MAX_STATES: usize = 65_536;
     const MAX_SOLUTIONS: usize = 4_096;
 
@@ -710,37 +800,51 @@ pub(crate) fn repeated_face_endpoint_closures(
         end: Option<(usize, Option<u8>)>,
     }
 
-    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<PairDegreeUndo> {
+    fn add_pair(
+        ctx: &DecodeContext<'_>,
+        degrees: &mut BTreeMap<usize, u8>,
+        pair: [usize; 2],
+    ) -> Result<Option<PairDegreeUndo>, CodecError> {
         let start_add = 1 + u8::from(pair[0] == pair[1]);
-        if degrees
+        let Some(start_degree) = degrees
             .get(&pair[0])
             .copied()
             .unwrap_or_default()
-            .checked_add(start_add)?
-            > 2
-            || (pair[0] != pair[1]
-                && degrees
-                    .get(&pair[1])
-                    .copied()
-                    .unwrap_or_default()
-                    .checked_add(1)?
-                    > 2)
-        {
-            return None;
+            .checked_add(start_add)
+        else {
+            return Ok(None);
+        };
+        let end_degree = if pair[0] == pair[1] {
+            Some(0)
+        } else {
+            degrees
+                .get(&pair[1])
+                .copied()
+                .unwrap_or_default()
+                .checked_add(1)
+        };
+        if start_degree > 2 || end_degree.is_none_or(|degree| degree > 2) {
+            return Ok(None);
         }
         let start_previous = degrees.get(&pair[0]).copied();
+        if start_previous.is_none() {
+            charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+        }
         *degrees.entry(pair[0]).or_default() += start_add;
         let end_previous = if pair[0] == pair[1] {
             None
         } else {
             let previous = degrees.get(&pair[1]).copied();
+            if previous.is_none() {
+                charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+            }
             *degrees.entry(pair[1]).or_default() += 1;
             Some((pair[1], previous))
         };
-        Some(PairDegreeUndo {
+        Ok(Some(PairDegreeUndo {
             start: (pair[0], start_previous),
             end: end_previous,
-        })
+        }))
     }
 
     fn remove_pair(degrees: &mut BTreeMap<usize, u8>, undo: &PairDegreeUndo) {
@@ -765,7 +869,8 @@ pub(crate) fn repeated_face_endpoint_closures(
         }
     }
 
-    struct Search<'a> {
+    struct Search<'a, 'b> {
+        ctx: &'a DecodeContext<'b>,
         branches: &'a [(usize, Vec<usize>)],
         owners: &'a [usize],
         endpoint_pairs: &'a [[usize; 2]],
@@ -774,15 +879,18 @@ pub(crate) fn repeated_face_endpoint_closures(
         solutions: Vec<Vec<usize>>,
     }
 
-    impl Search<'_> {
+    impl Search<'_, '_> {
         fn visit(
             &mut self,
             degrees: &mut [BTreeMap<usize, u8>],
             assignment: &mut [usize],
             used: &mut [bool],
-        ) {
+        ) -> Result<(), CodecError> {
+            let _depth = self
+                .ctx
+                .enter_nested("catia missing-edge endpoint closure")?;
             if self.exhausted {
-                return;
+                return Ok(());
             }
             let Some(unassigned_branch) = used.iter().position(|used| !*used) else {
                 if degrees
@@ -792,10 +900,16 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if self.solutions.len() == MAX_SOLUTIONS {
                         self.exhausted = true;
                     } else {
+                        charge_collection_items(
+                            self.ctx,
+                            assignment.len(),
+                            "catia missing-edge solution assignment",
+                        )?;
+                        charge_collection_items(self.ctx, 1, "catia missing-edge solution list")?;
                         self.solutions.push(assignment.to_vec());
                     }
                 }
-                return;
+                return Ok(());
             };
             let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
                 points
@@ -808,15 +922,17 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
                         continue;
                     }
-                    choices.extend(
-                        faces
-                            .iter()
-                            .copied()
-                            .filter(|candidate| *candidate == face)
-                            .map(|candidate| (branch, candidate)),
-                    );
+                    for &candidate in faces.iter().filter(|candidate| **candidate == face) {
+                        charge_collection_items(self.ctx, 1, "catia missing-edge search choices")?;
+                        choices.push((branch, candidate));
+                    }
                 }
             } else {
+                charge_collection_items(
+                    self.ctx,
+                    self.branches[unassigned_branch].1.len(),
+                    "catia missing-edge search choices",
+                )?;
                 choices.extend(
                     self.branches[unassigned_branch]
                         .1
@@ -826,16 +942,19 @@ pub(crate) fn repeated_face_endpoint_closures(
                 );
             }
             for (branch, face) in choices {
+                self.ctx
+                    .charge_work(1, "catia missing-edge endpoint closure")?;
                 if self.states >= MAX_STATES {
                     self.exhausted = true;
-                    return;
+                    return Ok(());
                 }
                 self.states += 1;
                 let (edge, _) = &self.branches[branch];
                 let owner = self.owners[branch];
                 let adds_incidence = face != owner;
                 let undo = if adds_incidence {
-                    let Some(undo) = add_pair(&mut degrees[face], self.endpoint_pairs[*edge])
+                    let Some(undo) =
+                        add_pair(self.ctx, &mut degrees[face], self.endpoint_pairs[*edge])?
                     else {
                         continue;
                     };
@@ -845,15 +964,16 @@ pub(crate) fn repeated_face_endpoint_closures(
                 };
                 assignment[branch] = face;
                 used[branch] = true;
-                self.visit(degrees, assignment, used);
+                self.visit(degrees, assignment, used)?;
                 used[branch] = false;
                 if let Some(undo) = undo {
                     remove_pair(&mut degrees[face], &undo);
                 }
                 if self.exhausted {
-                    return;
+                    return Ok(());
                 }
             }
+            Ok(())
         }
     }
 
@@ -865,18 +985,21 @@ pub(crate) fn repeated_face_endpoint_closures(
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
-    let mut degrees = alloc_filled(
+    let mut degrees = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u8>::new(),
         "catia missing-edge face degrees",
-    )
-    .ok()?;
+    )?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?;
-        if faces[1] != faces[0] {
-            add_pair(&mut degrees[faces[1]], endpoint_pairs[edge])?;
+        if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
+            return Ok(None);
+        }
+        if faces[1] != faces[0]
+            && add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+        {
+            return Ok(None);
         }
     }
     let mut branches = Vec::new();
@@ -884,7 +1007,16 @@ pub(crate) fn repeated_face_endpoint_closures(
         if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
             continue;
         }
+        charge_collection_items(ctx, 1, "catia missing-edge branch choices")?;
         let mut choices = vec![faces[0]];
+        charge_collection_items(
+            ctx,
+            allowed_faces[edge]
+                .iter()
+                .filter(|face| **face != faces[0])
+                .count(),
+            "catia missing-edge branch choices",
+        )?;
         choices.extend(
             allowed_faces[edge]
                 .iter()
@@ -893,23 +1025,28 @@ pub(crate) fn repeated_face_endpoint_closures(
         );
         choices.sort_unstable();
         choices.dedup();
+        charge_collection_items(ctx, 1, "catia missing-edge branches")?;
         branches.push((edge, choices));
     }
     if branches.is_empty() {
-        return Some(
-            degrees
-                .iter()
-                .all(|face| face.values().all(|degree| *degree == 2))
-                .then(|| edge_faces.to_vec())
-                .into_iter()
-                .collect(),
-        );
+        let closed = degrees
+            .iter()
+            .all(|face| face.values().all(|degree| *degree == 2));
+        if closed {
+            charge_collection_items(ctx, edge_faces.len(), "catia missing-edge closed faces")?;
+            charge_collection_items(ctx, 1, "catia missing-edge closed solutions")?;
+        }
+        return Ok(Some(
+            closed.then(|| edge_faces.to_vec()).into_iter().collect(),
+        ));
     }
+    charge_collection_items(ctx, branches.len(), "catia missing-edge branch owners")?;
     let owners = branches
         .iter()
         .map(|(edge, _)| edge_faces[*edge][0])
         .collect::<Vec<_>>();
     let mut search = Search {
+        ctx,
         branches: &branches,
         owners: &owners,
         endpoint_pairs,
@@ -918,13 +1055,21 @@ pub(crate) fn repeated_face_endpoint_closures(
         solutions: Vec::new(),
     };
     let mut assignment =
-        alloc_filled(branches.len(), 0, "catia missing-edge branch assignment").ok()?;
-    let mut used = alloc_filled(branches.len(), false, "catia missing-edge used branches").ok()?;
-    search.visit(&mut degrees, &mut assignment, &mut used);
+        ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
+    let mut used = ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
+    search.visit(&mut degrees, &mut assignment, &mut used)?;
     if search.exhausted {
-        return None;
+        return Ok(None);
     }
-    Some(
+    charge_collection_items(
+        ctx,
+        search.solutions.len(),
+        "catia missing-edge completed solutions",
+    )?;
+    for _ in &search.solutions {
+        charge_collection_items(ctx, edge_faces.len(), "catia missing-edge completed faces")?;
+    }
+    Ok(Some(
         search
             .solutions
             .into_iter()
@@ -936,7 +1081,7 @@ pub(crate) fn repeated_face_endpoint_closures(
                 completed
             })
             .collect(),
-    )
+    ))
 }
 
 /// The admitted second faces for one repeated edge incidence slot.
@@ -997,9 +1142,9 @@ pub(super) fn unique_duplicate_face_assignment<F>(
     allowed_faces: &[Vec<usize>],
     face_count: usize,
     mut valid: F,
-) -> Option<Vec<[usize; 2]>>
+) -> Result<Option<Vec<[usize; 2]>>, CodecError>
 where
-    F: FnMut(&[[usize; 2]]) -> bool,
+    F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
 {
     const MAX_STATES: usize = 4_096;
 
@@ -1011,21 +1156,22 @@ where
         exhausted: &mut bool,
         solutions: &mut Vec<Vec<[usize; 2]>>,
         valid: &mut F,
-    ) where
-        F: FnMut(&[[usize; 2]]) -> bool,
+    ) -> Result<(), CodecError>
+    where
+        F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
     {
         if *exhausted || solutions.len() > 1 {
-            return;
+            return Ok(());
         }
         if at == branches.len() {
-            if valid(assignment) && !solutions.iter().any(|solution| solution == assignment) {
+            if valid(assignment)? && !solutions.iter().any(|solution| solution == assignment) {
                 solutions.push(assignment.to_vec());
             }
-            return;
+            return Ok(());
         }
         if *states >= MAX_STATES {
             *exhausted = true;
-            return;
+            return Ok(());
         }
         *states += 1;
         let (edge, options) = &branches[at];
@@ -1039,11 +1185,12 @@ where
                 exhausted,
                 solutions,
                 valid,
-            );
+            )?;
             if *exhausted || solutions.len() > 1 {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     if serialized.len() != allowed_faces.len()
@@ -1053,7 +1200,7 @@ where
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
     let unresolved = serialized
         .iter()
@@ -1061,7 +1208,7 @@ where
         .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
         .collect::<Vec<_>>();
     if unresolved.is_empty() {
-        return Some(serialized.to_vec());
+        return Ok(Some(serialized.to_vec()));
     }
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::new();
@@ -1086,11 +1233,11 @@ where
         &mut exhausted,
         &mut solutions,
         &mut valid,
-    );
-    (!exhausted)
+    )?;
+    Ok((!exhausted)
         .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
         .flatten()
-        .map(|[solution]| solution)
+        .map(|[solution]| solution))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1111,9 +1258,9 @@ pub(super) fn visit_duplicate_face_assignments<F>(
     face_count: usize,
     max_assignments: usize,
     mut visitor: F,
-) -> Option<DuplicateFaceAssignmentVisit>
+) -> Result<Option<DuplicateFaceAssignmentVisit>, cadmpeg_core::CodecError>
 where
-    F: FnMut(&[[usize; 2]]) -> bool,
+    F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
 {
     fn visit<F>(
         branches: &[(usize, Vec<usize>)],
@@ -1122,20 +1269,20 @@ where
         max_assignments: usize,
         visited: &mut usize,
         visitor: &mut F,
-    ) -> DuplicateFaceAssignmentVisit
+    ) -> Result<DuplicateFaceAssignmentVisit, cadmpeg_core::CodecError>
     where
-        F: FnMut(&[[usize; 2]]) -> bool,
+        F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
     {
         if at == branches.len() {
             if *visited >= max_assignments {
-                return DuplicateFaceAssignmentVisit::Exhausted;
+                return Ok(DuplicateFaceAssignmentVisit::Exhausted);
             }
             *visited += 1;
-            return if visitor(assignment) {
+            return Ok(if visitor(assignment)? {
                 DuplicateFaceAssignmentVisit::Complete
             } else {
                 DuplicateFaceAssignmentVisit::Stopped
-            };
+            });
         }
         let (edge, choices) = &branches[at];
         for &face in choices {
@@ -1147,12 +1294,12 @@ where
                 max_assignments,
                 visited,
                 visitor,
-            ) {
+            )? {
                 DuplicateFaceAssignmentVisit::Complete => {}
-                terminal => return terminal,
+                terminal => return Ok(terminal),
             }
         }
-        DuplicateFaceAssignmentVisit::Complete
+        Ok(DuplicateFaceAssignmentVisit::Complete)
     }
 
     if serialized.len() != allowed_faces.len()
@@ -1162,7 +1309,7 @@ where
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::<(usize, Vec<usize>)>::new();
@@ -1170,7 +1317,7 @@ where
         let allowed = &allowed_faces[edge];
         if faces[0] != faces[1] {
             if !allowed.is_empty() {
-                return None;
+                return Ok(None);
             }
             continue;
         }
@@ -1185,51 +1332,58 @@ where
     branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
 
     let mut visited = 0;
-    Some(visit(
+    Ok(Some(visit(
         &branches,
         0,
         &mut assignment,
         max_assignments,
         &mut visited,
         &mut visitor,
-    ))
+    )?))
 }
 
 /// Complete repeated standard edge-face slots when carrier incidence and a
 /// complete trim-boundary partition select one common assignment.
 pub(crate) fn resolve_standard_duplicate_edge_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
-) -> Option<Vec<[usize; 2]>> {
-    let face_count = selected_standard_run(bytes)?.face_count();
-    let context = StandardMeshBoundaryContext::parse(bytes, serialized);
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
+    let face_count = face_run.face_count();
+    let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
-        context.as_ref().map_or_else(
-            || standard_mesh_boundary_assignments(bytes, assignment, None).is_some(),
-            |base| {
-                base.with_edge_faces(assignment)
-                    .and_then(|context| {
-                        standard_mesh_boundary_assignments_from_context(&context, None)
-                    })
-                    .is_some()
-            },
-        )
+        if let Some(base) = context.as_ref() {
+            let Some(context) = base.with_edge_faces(ctx, assignment)? else {
+                return Ok(false);
+            };
+            Ok(standard_mesh_boundary_assignments_from_context(ctx, &context, None)?.is_some())
+        } else {
+            Ok(standard_mesh_boundary_assignments(ctx, bytes, assignment, None)?.is_some())
+        }
     })
 }
 
 pub(super) fn resolve_edge_faces_from_runs(
+    ctx: &DecodeContext<'_>,
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let mut occurrence_faces =
-        alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces").ok()?;
+        ctx.alloc_filled(serialized.len(), Vec::new(), "catia_edge_run_faces")?;
     for run in runs {
-        let faces = occurrence_faces.get_mut(run.edge)?;
+        let Some(faces) = occurrence_faces.get_mut(run.edge) else {
+            return Ok(None);
+        };
         if !faces.contains(&run.face) {
+            charge_collection_items(ctx, 1, "catia edge run occurrence faces")?;
             faces.push(run.face);
         }
     }
+    charge_collection_items(ctx, serialized.len(), "catia resolved edge faces")?;
     let mut resolved = serialized.to_vec();
     for (faces, occurrences) in resolved.iter_mut().zip(occurrence_faces) {
         if faces[0] != faces[1] || occurrences.len() < 2 {
@@ -1242,11 +1396,14 @@ pub(super) fn resolve_edge_faces_from_runs(
             continue;
         }
         if !occurrences.contains(&faces[0]) {
-            return None;
+            return Ok(None);
         }
-        faces[1] = *occurrences.iter().find(|face| **face != faces[0])?;
+        let Some(face) = occurrences.iter().find(|face| **face != faces[0]) else {
+            return Ok(None);
+        };
+        faces[1] = *face;
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 /// One uncovered run in a trim-mesh boundary cycle.
@@ -1288,46 +1445,66 @@ pub(super) struct StandardMeshBoundaryContext {
 }
 
 impl StandardMeshBoundaryContext {
-    fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
-        Self::parse_ports(bytes, edge_faces, false)
+    fn parse(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        edge_faces: &[[usize; 2]],
+    ) -> Result<Option<Self>, CodecError> {
+        Self::parse_ports(ctx, bytes, edge_faces, false)
     }
 
     pub(super) fn parse_ports(
+        ctx: &DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
-    ) -> Option<Self> {
-        let analysis = Arc::new(standard_mesh_analysis(bytes)?);
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+            return Ok(None);
+        };
+        let analysis = Arc::new(analysis);
         if analysis.edge_rows.len() != edge_faces.len() {
-            return None;
+            return Ok(None);
         }
-        let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = solver_ports(bytes, global_handle_ports)?;
-        let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
+        let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
+            return Ok(None);
+        };
+        let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
+            return Ok(None);
+        };
+        let Some(edge_ports) = mesh_edge_ports(&analysis, &local_ports) else {
+            return Ok(None);
+        };
         let edge_runs = mesh_edge_runs(&analysis);
         let cycle_lengths = analysis
             .cycles
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
-        Some(Self {
+        Ok(Some(Self {
             analysis,
             coverage,
             edge_ports,
             edge_runs,
             cycle_lengths,
-        })
+        }))
     }
 
-    fn with_edge_faces(&self, edge_faces: &[[usize; 2]]) -> Option<Self> {
-        let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
-        Some(Self {
+    fn with_edge_faces(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_faces: &[[usize; 2]],
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
             analysis: Arc::clone(&self.analysis),
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
             cycle_lengths: self.cycle_lengths.clone(),
-        })
+        }))
     }
 }
 
@@ -1408,64 +1585,69 @@ pub(crate) struct MeshFaceBoundaryAssignment {
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
-#[must_use]
 #[cfg(test)]
 fn standard_mesh_face_coverage(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<MeshFaceCoverage>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    mesh_face_coverage(&analysis, edge_faces)
+) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
+    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+        return Ok(None);
+    };
+    mesh_face_coverage(ctx, &analysis, edge_faces)
 }
 
 fn mesh_face_coverage(
+    ctx: &DecodeContext<'_>,
     analysis: &StandardMeshAnalysis,
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<MeshFaceCoverage>> {
+) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
     let edge_rows = &analysis.edge_rows;
     let cycles = &analysis.cycles;
     let occurrences = &analysis.occurrences;
     if edge_rows.len() != edge_faces.len() {
-        return None;
+        return Ok(None);
     }
     if occurrences.iter().enumerate().any(|(edge, values)| {
         values
             .iter()
             .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
     }) {
-        return None;
+        return Ok(None);
     }
     let mut occurrences_by_cycle = cycles
         .iter()
         .map(|face_cycles| {
-            alloc_filled(
+            ctx.alloc_filled(
                 face_cycles.len(),
                 Vec::<MeshEdgeRun>::new(),
                 "catia_mesh_cycle_occurrences",
             )
-            .ok()
         })
-        .collect::<Option<Vec<_>>>()?;
-    let mut present_edges_by_face = alloc_filled(
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut present_edges_by_face = ctx.alloc_filled(
         cycles.len(),
         HashSet::<usize>::new(),
         "catia_mesh_face_edges",
-    )
-    .ok()?;
+    )?;
     for values in occurrences {
         for &occurrence in values {
-            let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
-            let cycle_occurrences = face_cycles.get_mut(occurrence.cycle)?;
+            let Some(face_cycles) = occurrences_by_cycle.get_mut(occurrence.face) else {
+                return Ok(None);
+            };
+            let Some(cycle_occurrences) = face_cycles.get_mut(occurrence.cycle) else {
+                return Ok(None);
+            };
             cycle_occurrences.push(occurrence);
             present_edges_by_face[occurrence.face].insert(occurrence.edge);
         }
     }
     let mut edges_by_face =
-        alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face").ok()?;
+        ctx.alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face")?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in faces {
             if face >= cycles.len() {
-                return None;
+                return Ok(None);
             }
         }
         edges_by_face[faces[0]].push(edge);
@@ -1477,14 +1659,14 @@ fn mesh_face_coverage(
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-            let mut covered = alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage").ok()?;
+            let mut covered = ctx.alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage")?;
             for occurrence in &occurrences_by_cycle[face][cycle_index] {
                 let start = occurrence.start;
                 let segment_count = occurrence.segment_count;
                 for offset in 0..segment_count {
                     let slot = &mut covered[(start + offset) % cycle.len()];
                     if *slot {
-                        return None;
+                        return Ok(None);
                     }
                     *slot = true;
                 }
@@ -1521,7 +1703,7 @@ fn mesh_face_coverage(
             missing_edges,
         });
     }
-    Some(coverage)
+    Ok(Some(coverage))
 }
 
 pub(crate) fn bounded_oriented_trail_orders(
@@ -2410,26 +2592,32 @@ fn standard_mesh_missing_edge_assignment_domains(
 }
 
 fn standard_mesh_missing_edge_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
-    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
-    standard_mesh_missing_edge_assignment_domains(
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+        return Ok(None);
+    };
+    Ok(standard_mesh_missing_edge_assignment_domains(
         &context,
         edge_candidates,
         canonicalize_spans,
         false,
-    )?
-    .0
-    .into_iter()
-    .map(|domain| match domain {
-        MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
-        MeshFaceAssignmentDomain::UnorderedFullCycle(_)
-        | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
-    })
-    .collect()
+    )
+    .map(|(domains, _)| domains)
+    .and_then(|domains| {
+        domains
+            .into_iter()
+            .map(|domain| match domain {
+                MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
+                MeshFaceAssignmentDomain::UnorderedFullCycle(_)
+                | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
+            })
+            .collect()
+    }))
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
@@ -2437,200 +2625,244 @@ fn standard_mesh_missing_edge_assignments(
 /// pair. Standard interior rows remain open-span until their sample chain is
 /// matched to the boundary.
 #[cfg(test)]
-#[must_use]
 fn standard_mesh_missing_edge_placements(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
-    standard_mesh_missing_edge_assignments(bytes, edge_faces, None, false).map(|faces| {
-        faces
-            .into_iter()
-            .map(|assignments| {
-                let mut placements = assignments
-                    .into_iter()
-                    .flatten()
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                placements.sort_unstable();
-                placements
-            })
-            .collect()
-    })
+) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+    Ok(
+        standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, false)?.map(|faces| {
+            faces
+                .into_iter()
+                .map(|assignments| {
+                    let mut placements = assignments
+                        .into_iter()
+                        .flatten()
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    placements.sort_unstable();
+                    placements
+                })
+                .collect()
+        }),
+    )
 }
 
 pub(crate) fn standard_mesh_boundary_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
-) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
-    standard_mesh_boundary_assignments_from_context(&context, edge_candidates)
+) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+        return Ok(None);
+    };
+    standard_mesh_boundary_assignments_from_context(ctx, &context, edge_candidates)
 }
 
 fn standard_mesh_boundary_assignments_from_context(
+    ctx: &DecodeContext<'_>,
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
-) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    standard_mesh_boundary_domains_from_context(context, edge_candidates, false)?
+) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
+    let Some(domains) =
+        standard_mesh_boundary_domains_from_context(ctx, context, edge_candidates, false)?
+    else {
+        return Ok(None);
+    };
+    Ok(domains
         .into_iter()
         .map(|domain| match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
             MeshFaceBoundaryDomain::UnorderedFullCycle(_)
             | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
         })
-        .collect()
+        .collect())
 }
 
 pub(super) fn standard_mesh_boundary_domains_from_context(
+    ctx: &DecodeContext<'_>,
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     defer_validation: bool,
-) -> Option<Vec<MeshFaceBoundaryDomain>> {
-    let (domains, runs) = standard_mesh_missing_edge_assignment_domains(
+) -> Result<Option<Vec<MeshFaceBoundaryDomain>>, CodecError> {
+    let Some((domains, runs)) = standard_mesh_missing_edge_assignment_domains(
         context,
         edge_candidates,
         true,
         defer_validation,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let cycle_lengths = &context.cycle_lengths;
-    domains
-        .into_iter()
-        .enumerate()
-        .map(|(face, domain)| match domain {
-            MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
-                Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges))
-            }
-            MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
-                let mut cycles = cycle_lengths[face]
-                    .iter()
-                    .copied()
-                    .map(|length| MeshDeferredBoundaryCycle {
-                        length,
-                        exact_uses: Vec::new(),
-                    })
-                    .collect::<Vec<_>>();
-                for run in runs.iter().filter(|run| run.face == face) {
-                    let length = cycles[run.cycle].length;
-                    let fixed_direction = edge_candidates.is_none()
-                        || context.analysis.edge_rows[run.edge].boundary_layout
-                            == EdgeBoundaryLayout::CompleteBoundaryRun;
-                    cycles[run.cycle].exact_uses.push((
-                        MeshBoundaryEdgeCandidate {
-                            edge: run.edge,
-                            start: run.start,
-                            end: run.end(length),
-                            reversed: fixed_direction.then_some(run.reversed),
-                        },
-                        run.segment_count,
-                    ));
+    let mut resolved = Vec::new();
+    for (face, domain) in domains.into_iter().enumerate() {
+        let Some(domain) = (|| -> Result<Option<MeshFaceBoundaryDomain>, CodecError> {
+            match domain {
+                MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
+                    Ok(Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges)))
                 }
-                for cycle in &mut cycles {
-                    cycle
-                        .exact_uses
-                        .sort_unstable_by_key(|(use_, _)| use_.start);
-                }
-                Some(MeshFaceBoundaryDomain::DeferredValidation(
-                    MeshDeferredFaceBoundary {
-                        cycles,
-                        missing_edges: coverage.missing_edges,
-                    },
-                ))
-            }
-            MeshFaceAssignmentDomain::Ordered(assignments) => assignments
-                .into_iter()
-                .map(|assignment| {
-                    let mut boundaries = alloc_filled(
-                        cycle_lengths[face].len(),
-                        Vec::new(),
-                        "catia_mesh_ordered_boundaries",
-                    )
-                    .ok()?;
+                MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
+                    let mut cycles = cycle_lengths[face]
+                        .iter()
+                        .copied()
+                        .map(|length| MeshDeferredBoundaryCycle {
+                            length,
+                            exact_uses: Vec::new(),
+                        })
+                        .collect::<Vec<_>>();
                     for run in runs.iter().filter(|run| run.face == face) {
+                        let length = cycles[run.cycle].length;
                         let fixed_direction = edge_candidates.is_none()
                             || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
-                        boundaries[run.cycle].push((
+                        cycles[run.cycle].exact_uses.push((
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
-                                end: run.end(cycle_lengths[face][run.cycle]),
+                                end: run.end(length),
                                 reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
                         ));
                     }
-                    for placement in assignment {
-                        boundaries[placement.cycle].push((
-                            MeshBoundaryEdgeCandidate {
-                                edge: placement.edge,
-                                start: placement.start,
-                                end: placement.end(cycle_lengths[face][placement.cycle]),
-                                reversed: None,
-                            },
-                            placement.segment_count,
-                        ));
+                    for cycle in &mut cycles {
+                        cycle
+                            .exact_uses
+                            .sort_unstable_by_key(|(use_, _)| use_.start);
                     }
-                    let boundaries = boundaries
-                        .into_iter()
-                        .enumerate()
-                        .map(|(cycle, mut uses)| {
+                    Ok(Some(MeshFaceBoundaryDomain::DeferredValidation(
+                        MeshDeferredFaceBoundary {
+                            cycles,
+                            missing_edges: coverage.missing_edges,
+                        },
+                    )))
+                }
+                MeshFaceAssignmentDomain::Ordered(assignments) => {
+                    let mut ordered = Vec::new();
+                    for assignment in assignments {
+                        let mut boundaries = ctx.alloc_filled(
+                            cycle_lengths[face].len(),
+                            Vec::new(),
+                            "catia_mesh_ordered_boundaries",
+                        )?;
+                        for run in runs.iter().filter(|run| run.face == face) {
+                            let fixed_direction = edge_candidates.is_none()
+                                || context.analysis.edge_rows[run.edge].boundary_layout
+                                    == EdgeBoundaryLayout::CompleteBoundaryRun;
+                            boundaries[run.cycle].push((
+                                MeshBoundaryEdgeCandidate {
+                                    edge: run.edge,
+                                    start: run.start,
+                                    end: run.end(cycle_lengths[face][run.cycle]),
+                                    reversed: fixed_direction.then_some(run.reversed),
+                                },
+                                run.segment_count,
+                            ));
+                        }
+                        for placement in assignment {
+                            boundaries[placement.cycle].push((
+                                MeshBoundaryEdgeCandidate {
+                                    edge: placement.edge,
+                                    start: placement.start,
+                                    end: placement.end(cycle_lengths[face][placement.cycle]),
+                                    reversed: None,
+                                },
+                                placement.segment_count,
+                            ));
+                        }
+                        let mut completed = Vec::new();
+                        for (cycle, mut uses) in boundaries.into_iter().enumerate() {
                             uses.sort_unstable_by_key(|(edge, _)| edge.start);
                             let length = cycle_lengths[face][cycle];
                             let mut coverage =
-                                alloc_filled(length, 0u8, "catia_mesh_boundary_coverage").ok()?;
+                                ctx.alloc_filled(length, 0u8, "catia_mesh_boundary_coverage")?;
                             for (edge, segment_count) in &uses {
                                 for offset in 0..*segment_count {
                                     let covered = &mut coverage[(edge.start + offset) % length];
-                                    *covered = covered.checked_add(1)?;
+                                    let Some(count) = covered.checked_add(1) else {
+                                        return Ok(None);
+                                    };
+                                    *covered = count;
                                 }
                             }
-                            coverage
-                                .iter()
-                                .all(|count| *count == 1)
-                                .then(|| uses.into_iter().map(|(edge, _)| edge).collect::<Vec<_>>())
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some(MeshFaceBoundaryAssignment { boundaries })
-                })
-                .collect::<Option<Vec<_>>>()
-                .map(MeshFaceBoundaryDomain::Ordered),
-        })
-        .collect()
+                            if coverage.iter().any(|count| *count != 1) {
+                                return Ok(None);
+                            }
+                            completed.push(uses.into_iter().map(|(edge, _)| edge).collect());
+                        }
+                        ordered.push(MeshFaceBoundaryAssignment {
+                            boundaries: completed,
+                        });
+                    }
+                    Ok(Some(MeshFaceBoundaryDomain::Ordered(ordered)))
+                }
+            }
+        })()?
+        else {
+            return Ok(None);
+        };
+        resolved.push(domain);
+    }
+    Ok(Some(resolved))
 }
 
 /// Materialize one complete face-assignment selection and one direction for
 /// each ordered edge use into its abstract logical-corner quotient.
 #[cfg(test)]
-#[must_use]
 fn parse_standard_mesh_selection(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let assignments = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(assignments) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)?
+    else {
+        return Ok(None);
+    };
     if selected_assignments.len() != face_count || edge_directions.len() != face_count {
-        return None;
+        return Ok(None);
     }
     let selected = assignments
         .iter()
         .zip(selected_assignments)
         .map(|(face, &assignment)| face.get(assignment).cloned())
-        .collect::<Option<Vec<_>>>()?;
-    reconstruct_mesh_selection(edge_rows, vertex_points, &selected, edge_directions)
+        .collect::<Option<Vec<_>>>();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    Ok(reconstruct_mesh_selection(
+        edge_rows,
+        vertex_points,
+        &selected,
+        edge_directions,
+    ))
+}
+
+#[derive(Debug)]
+struct BoundaryEndpointSupport {
+    by_edge: HashMap<usize, HashSet<[usize; 2]>>,
 }
 
 fn boundary_endpoint_support(
+    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
+) -> Result<Option<BoundaryEndpointSupport>, CodecError> {
     #[derive(Clone, Copy)]
     struct State {
         pair: [usize; 2],
@@ -2665,33 +2897,44 @@ fn boundary_endpoint_support(
                 })
             })
         })
-        .collect::<Option<Vec<_>>>()?;
-    let first_layer = layers.first()?;
-    let layer_states = layers
+        .collect::<Option<Vec<_>>>();
+    let Some(layers) = layers else {
+        return Ok(None);
+    };
+    let Some(first_layer) = layers.first() else {
+        return Ok(None);
+    };
+    let Some(layer_states) = layers
         .iter()
-        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))?;
+        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))
+    else {
+        return Ok(None);
+    };
     let first_points = first_layer
         .iter()
         .map(|state| state.start)
         .collect::<HashSet<_>>();
     let mut supported = layers
         .iter()
-        .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_layer_marks").ok())
-        .collect::<Option<Vec<_>>>()?;
+        .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_layer_marks"))
+        .collect::<Result<Vec<_>, _>>()?;
     for first_point in first_points {
-        if !budget.charge_by(layer_states.checked_mul(3)?) {
-            return None;
+        let Some(work) = layer_states.checked_mul(3) else {
+            return Ok(None);
+        };
+        if !budget.charge_by(work) {
+            return Ok(None);
         }
         let mut forward = layers
             .iter()
-            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_forward_marks").ok())
-            .collect::<Option<Vec<_>>>()?;
+            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_forward_marks"))
+            .collect::<Result<Vec<_>, _>>()?;
         for (state, reachable) in first_layer.iter().zip(&mut forward[0]) {
             *reachable = state.start == first_point;
         }
         for layer in 1..layers.len() {
             if !budget.charge_by(layers[layer - 1].len() + layers[layer].len()) {
-                return None;
+                return Ok(None);
             }
             let reachable_points = layers[layer - 1]
                 .iter()
@@ -2704,8 +2947,8 @@ fn boundary_endpoint_support(
         }
         let mut backward = layers
             .iter()
-            .map(|layer| alloc_filled(layer.len(), false, "catia_boundary_backward_marks").ok())
-            .collect::<Option<Vec<_>>>()?;
+            .map(|layer| ctx.alloc_filled(layer.len(), false, "catia_boundary_backward_marks"))
+            .collect::<Result<Vec<_>, _>>()?;
         let last = layers.len() - 1;
         for (state, (reachable, value)) in layers[last]
             .iter()
@@ -2739,35 +2982,42 @@ fn boundary_endpoint_support(
             .filter_map(|(state, supported)| supported.then_some(state.pair))
             .collect::<HashSet<_>>();
         if values.is_empty() {
-            return None;
+            return Ok(None);
         }
         by_edge
             .entry(use_.edge)
             .and_modify(|stored| stored.retain(|pair| values.contains(pair)))
             .or_insert(values);
     }
-    by_edge
+    Ok(by_edge
         .values()
         .all(|domain| !domain.is_empty())
-        .then_some(by_edge)
+        .then_some(BoundaryEndpointSupport { by_edge }))
 }
 
 /// Prune endpoint-pair domains through every ordered trim-boundary candidate.
 /// A pair survives only when each incident face retains a complete assignment
 /// whose ordered cycles admit a closed head-to-tail traversal using that pair.
-#[must_use]
 pub(crate) fn standard_mesh_prune_endpoint_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     if edge_faces.len() != edge_candidates.len() {
-        return None;
+        return Ok(None);
     }
-    let face_run = selected_standard_run(bytes)?;
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-    let point_count = parse_vertex_table(bytes, vertex_header)?.len();
+    let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let point_count = vertex_points.len();
     let complete_domain = (0..point_count)
         .flat_map(|left| ((left + 1)..point_count).map(move |right| [left, right]))
         .collect::<Vec<_>>();
@@ -2781,7 +3031,9 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             }
         })
         .collect::<Vec<_>>();
-    let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
+    let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
+        return Ok(None);
+    };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
         let before = (
@@ -2790,29 +3042,28 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         );
         let mut face_supports = Vec::with_capacity(faces.len());
         for assignments in &mut faces {
-            let evaluated = assignments
-                .iter()
-                .enumerate()
-                .filter_map(|(index, assignment)| {
-                    let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
-                    for boundary in &assignment.boundaries {
-                        for (edge, domain) in
-                            boundary_endpoint_support(boundary, &candidates, &budget)?
-                        {
-                            support
-                                .entry(edge)
-                                .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
-                                .or_insert(domain);
-                        }
+            let mut evaluated = Vec::new();
+            'assignment: for (index, assignment) in assignments.iter().enumerate() {
+                let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+                for boundary in &assignment.boundaries {
+                    let Some(boundary_support) =
+                        boundary_endpoint_support(ctx, boundary, &candidates, &budget)?
+                    else {
+                        continue 'assignment;
+                    };
+                    for (edge, domain) in boundary_support.by_edge {
+                        support
+                            .entry(edge)
+                            .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
+                            .or_insert(domain);
                     }
-                    support
-                        .values()
-                        .all(|domain| !domain.is_empty())
-                        .then_some((index, support))
-                })
-                .collect::<Vec<_>>();
+                }
+                if support.values().all(|domain| !domain.is_empty()) {
+                    evaluated.push((index, support));
+                }
+            }
             if evaluated.is_empty() {
-                return None;
+                return Ok(None);
             }
             *assignments = evaluated
                 .iter()
@@ -2838,7 +3089,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     .copied()
                     .collect::<HashSet<_>>();
                 if support.is_empty() {
-                    return None;
+                    return Ok(None);
                 }
                 if let Some(allowed) = &mut allowed {
                     allowed.retain(|pair| support.contains(pair));
@@ -2846,14 +3097,16 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
                     allowed = Some(support);
                 }
             }
-            let allowed = allowed?;
+            let Some(allowed) = allowed else {
+                return Ok(None);
+            };
             domain.retain(|pair| {
                 let mut pair = *pair;
                 pair.sort_unstable();
                 allowed.contains(&pair)
             });
             if domain.is_empty() {
-                return None;
+                return Ok(None);
             }
         }
         let after = (
@@ -2864,7 +3117,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             break;
         }
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 type MeshCorner = (usize, usize, usize);
@@ -2873,108 +3126,127 @@ type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
 // The tuple carries one coupled result; a separate alias would add no invariant.
 #[allow(clippy::type_complexity)]
 fn standard_mesh_assignment_corner_points(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<(
-    Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
-    MeshCornerPoints,
-    Vec<Vec<usize>>,
-)> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    let edge_rows = &analysis.edge_rows;
-    if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
-        return None;
-    }
-    let runs = mesh_edge_runs(&analysis);
-    let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let cycle_lengths = analysis
-        .cycles
-        .iter()
-        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let mut corner_points = MeshCornerPoints::new();
-    let mut run_constraints = Vec::new();
-    for run in runs {
-        let Some(pair) = edge_points[run.edge] else {
-            continue;
+) -> Result<
+    Option<(
+        Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
+        MeshCornerPoints,
+        Vec<Vec<usize>>,
+    )>,
+    CodecError,
+> {
+    (|| -> Option<Result<_, CodecError>> {
+        let analysis = match standard_mesh_analysis(ctx, bytes) {
+            Ok(Some(analysis)) => analysis,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
         };
-        let candidates = HashSet::from(pair);
-        let positions = [
-            (run.face, run.cycle, run.start),
-            (
-                run.face,
-                run.cycle,
-                run.end(cycle_lengths[run.face][run.cycle]),
-            ),
-        ];
-        for position in positions {
-            if let Some(stored) = corner_points.get_mut(&position) {
-                stored.retain(|point| candidates.contains(point));
-                if stored.is_empty() {
+        let edge_rows = &analysis.edge_rows;
+        if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
+            return None;
+        }
+        let runs = mesh_edge_runs(&analysis);
+        let assignments =
+            match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
+                Ok(Some(assignments)) => assignments,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let cycle_lengths = analysis
+            .cycles
+            .iter()
+            .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let mut corner_points = MeshCornerPoints::new();
+        let mut run_constraints = Vec::new();
+        for run in runs {
+            let Some(pair) = edge_points[run.edge] else {
+                continue;
+            };
+            let candidates = HashSet::from(pair);
+            let positions = [
+                (run.face, run.cycle, run.start),
+                (
+                    run.face,
+                    run.cycle,
+                    run.end(cycle_lengths[run.face][run.cycle]),
+                ),
+            ];
+            for position in positions {
+                if let Some(stored) = corner_points.get_mut(&position) {
+                    stored.retain(|point| candidates.contains(point));
+                    if stored.is_empty() {
+                        return None;
+                    }
+                } else {
+                    corner_points.insert(position, candidates.clone());
+                }
+            }
+            run_constraints.push((positions[0], positions[1], pair));
+        }
+        loop {
+            let before = corner_points.values().map(HashSet::len).sum::<usize>();
+            for &(left, right, pair) in &run_constraints {
+                let left_single = <[usize; 1]>::try_from(
+                    corner_points
+                        .get(&left)?
+                        .iter()
+                        .copied()
+                        .collect::<Vec<_>>(),
+                )
+                .ok()
+                .map(|[point]| point);
+                let right_single = <[usize; 1]>::try_from(
+                    corner_points
+                        .get(&right)?
+                        .iter()
+                        .copied()
+                        .collect::<Vec<_>>(),
+                )
+                .ok()
+                .map(|[point]| point);
+                if let Some(point) = left_single {
+                    corner_points
+                        .get_mut(&right)?
+                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                }
+                if let Some(point) = right_single {
+                    corner_points
+                        .get_mut(&left)?
+                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                }
+                if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
                     return None;
                 }
-            } else {
-                corner_points.insert(position, candidates.clone());
+            }
+            let after = corner_points.values().map(HashSet::len).sum::<usize>();
+            if after == before {
+                break;
             }
         }
-        run_constraints.push((positions[0], positions[1], pair));
-    }
-    loop {
-        let before = corner_points.values().map(HashSet::len).sum::<usize>();
-        for &(left, right, pair) in &run_constraints {
-            let left_single = <[usize; 1]>::try_from(
-                corner_points
-                    .get(&left)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>(),
-            )
-            .ok()
-            .map(|[point]| point);
-            let right_single = <[usize; 1]>::try_from(
-                corner_points
-                    .get(&right)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>(),
-            )
-            .ok()
-            .map(|[point]| point);
-            if let Some(point) = left_single {
-                corner_points
-                    .get_mut(&right)?
-                    .retain(|candidate| *candidate != point && pair.contains(candidate));
-            }
-            if let Some(point) = right_single {
-                corner_points
-                    .get_mut(&left)?
-                    .retain(|candidate| *candidate != point && pair.contains(candidate));
-            }
-            if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
-                return None;
-            }
-        }
-        let after = corner_points.values().map(HashSet::len).sum::<usize>();
-        if after == before {
-            break;
-        }
-    }
-    Some((assignments, corner_points, cycle_lengths))
+        Some(Ok((assignments, corner_points, cycle_lengths)))
+    })()
+    .transpose()
 }
 
 /// Retain endpoint constraints on each placement inside each complete face
 /// assignment. Assignment and placement order are unchanged from the serialized
 /// face and edge order.
-#[must_use]
 fn standard_mesh_missing_edge_endpoint_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
-    let (assignments, corner_points, cycle_lengths) =
-        standard_mesh_assignment_corner_points(bytes, edge_faces, edge_points)?;
-    Some(
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    let Some((assignments, corner_points, cycle_lengths)) =
+        standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
         assignments
             .into_iter()
             .map(|face| {
@@ -3020,20 +3292,23 @@ fn standard_mesh_missing_edge_endpoint_assignments(
                     .collect()
             })
             .collect(),
-    )
+    ))
 }
 
 /// Enforce resolved edge endpoint pairs and complete opposite-face placement
 /// domains across correlated face assignments. A face assignment is removed as
 /// a unit when any of its placements has no compatible endpoint pair.
-#[must_use]
 fn standard_mesh_pruned_missing_edge_endpoint_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
-    let mut faces =
-        standard_mesh_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    let Some(mut faces) =
+        standard_mesh_missing_edge_endpoint_assignments(ctx, bytes, edge_faces, edge_points)?
+    else {
+        return Ok(None);
+    };
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
@@ -3105,7 +3380,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                 })
             });
             if assignments.is_empty() {
-                return None;
+                return Ok(None);
             }
         }
         let after = (
@@ -3121,35 +3396,43 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
             break;
         }
     }
-    Some(faces)
+    Ok(Some(faces))
 }
 
 /// Derive endpoint-pair domains for unmatched rows whose candidate placement
 /// corners are both bound by exact matched edge runs. Input pairs are physical
 /// edge-row ordered; pair orientation is ignored in the returned domains
 /// because a missing placement has not yet selected its traversal direction.
-#[must_use]
 pub(crate) fn standard_mesh_placement_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
-    let edge_rows = standard_edge_rows(bytes)?;
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    let Some(edge_rows) = standard_edge_rows(ctx, bytes)? else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
-        return None;
+        return Ok(None);
     }
-    let assignments =
-        standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
-    let mut domains = alloc_filled(
+    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+    )?
+    else {
+        return Ok(None);
+    };
+    let mut domains = ctx.alloc_filled(
         edge_rows.len(),
         Vec::new(),
         "catia_placement_endpoint_domains",
-    )
-    .ok()?;
+    )?;
     let mut placement_counts =
-        alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts").ok()?;
+        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_counts")?;
     let mut bound_counts =
-        alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts").ok()?;
+        ctx.alloc_filled(edge_rows.len(), 0usize, "catia_placement_bound_counts")?;
     for face in assignments {
         let mut placements = face.into_iter().flatten().collect::<Vec<_>>();
         placements.sort_unstable_by_key(|candidate| candidate.placement);
@@ -3174,7 +3457,7 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
             domain.clear();
         }
     }
-    Some(domains)
+    Ok(Some(domains))
 }
 
 fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
@@ -3190,12 +3473,12 @@ fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usiz
 /// Propagate byte-level endpoint ports through independently resolved physical
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
-#[must_use]
 pub(super) fn propagate_edge_port_points(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    propagate_edge_port_points_with_ordered_seeds(edge_ports, endpoint_pairs, &[])
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    propagate_edge_port_points_with_ordered_seeds(ctx, edge_ports, endpoint_pairs, &[])
 }
 
 /// Propagate endpoint points through physical edge ports, retaining an
@@ -3206,151 +3489,171 @@ pub(super) fn propagate_edge_port_points(
 /// agree with an existing candidate when that candidate is present. Such a
 /// seed is the only valid way to orient a port component whose resolved rows
 /// all carry the same unordered pair.
-#[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    if edge_ports.len() != endpoint_pairs.len() {
-        return None;
-    }
-    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
-        return None;
-    }
-    let mut resolved = endpoint_pairs.to_vec();
-    let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
-    for (edge, ports) in edge_ports.iter().enumerate() {
-        edges_by_port.entry(ports[0]).or_default().push(edge);
-        if ports[1] != ports[0] {
-            edges_by_port.entry(ports[1]).or_default().push(edge);
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    (|| -> Option<Result<Vec<Option<[usize; 2]>>, CodecError>> {
+        if edge_ports.len() != endpoint_pairs.len() {
+            return None;
         }
-    }
-    let mut port_points = HashMap::<u32, usize>::new();
+        if !ordered_endpoint_pairs.is_empty()
+            && ordered_endpoint_pairs.len() != endpoint_pairs.len()
+        {
+            return None;
+        }
+        let mut resolved = endpoint_pairs.to_vec();
+        let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
+        for (edge, ports) in edge_ports.iter().enumerate() {
+            edges_by_port.entry(ports[0]).or_default().push(edge);
+            if ports[1] != ports[0] {
+                edges_by_port.entry(ports[1]).or_default().push(edge);
+            }
+        }
+        let mut port_points = HashMap::<u32, usize>::new();
 
-    if !ordered_endpoint_pairs.is_empty() {
-        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
-            let Some(ordered) = ordered else { continue };
-            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                return None;
-            }
-            let ports = edge_ports[edge];
-            if ports[0] == ports[1] && ordered[0] != ordered[1] {
-                return None;
-            }
-            if !bind_port_point(&mut port_points, ports[0], ordered[0])
-                || !bind_port_point(&mut port_points, ports[1], ordered[1])
-            {
-                return None;
-            }
-            resolved[edge] = Some(*ordered);
-        }
-    }
-
-    for (&port, edges) in &edges_by_port {
-        let mut intersection: Option<HashSet<usize>> = None;
-        for &edge in edges {
-            let Some(pair) = resolved[edge] else { continue };
-            let points = HashSet::from(pair);
-            intersection = Some(match intersection {
-                Some(current) => current.intersection(&points).copied().collect(),
-                None => points,
-            });
-        }
-        if let Some(points) = intersection {
-            if points.len() == 1 && !bind_port_point(&mut port_points, port, *points.iter().next()?)
-            {
-                return None;
-            }
-        }
-    }
-
-    let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
-    let mut queued = alloc_filled(edge_ports.len(), true, "catia_edge_port_queue").ok()?;
-    while let Some(edge) = queue.pop_front() {
-        queued[edge] = false;
-        let ports = edge_ports[edge];
-        let mut inserted = Vec::new();
-        if let Some([left, right]) = resolved[edge] {
-            match (
-                port_points.get(&ports[0]).copied(),
-                port_points.get(&ports[1]).copied(),
-            ) {
-                (Some(point), None) if point == left => {
-                    port_points.insert(ports[1], right);
-                    inserted.push(ports[1]);
+        if !ordered_endpoint_pairs.is_empty() {
+            for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+                let Some(ordered) = ordered else { continue };
+                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                    return None;
                 }
-                (Some(point), None) if point == right => {
-                    port_points.insert(ports[1], left);
-                    inserted.push(ports[1]);
+                let ports = edge_ports[edge];
+                if ports[0] == ports[1] && ordered[0] != ordered[1] {
+                    return None;
                 }
-                (None, Some(point)) if point == left => {
-                    port_points.insert(ports[0], right);
-                    inserted.push(ports[0]);
-                }
-                (None, Some(point)) if point == right => {
-                    port_points.insert(ports[0], left);
-                    inserted.push(ports[0]);
-                }
-                (Some(_), None) | (None, Some(_)) => return None,
-                (Some(left_point), Some(right_point))
-                    if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                if !bind_port_point(&mut port_points, ports[0], ordered[0])
+                    || !bind_port_point(&mut port_points, ports[1], ordered[1])
                 {
                     return None;
                 }
-                _ => {}
+                resolved[edge] = Some(*ordered);
             }
         }
-        if let (Some(&left), Some(&right)) =
-            (port_points.get(&ports[0]), port_points.get(&ports[1]))
-        {
-            if ports[0] == ports[1] || left != right {
-                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+
+        for (&port, edges) in &edges_by_port {
+            let mut intersection: Option<HashSet<usize>> = None;
+            for &edge in edges {
+                let Some(pair) = resolved[edge] else { continue };
+                let points = HashSet::from(pair);
+                intersection = Some(match intersection {
+                    Some(current) => current.intersection(&points).copied().collect(),
+                    None => points,
+                });
+            }
+            if let Some(points) = intersection {
+                if points.len() == 1
+                    && !bind_port_point(&mut port_points, port, *points.iter().next()?)
+                {
                     return None;
                 }
-                resolved[edge] = Some([left, right]);
             }
         }
-        for port in inserted {
-            for &neighbor in edges_by_port.get(&port)? {
-                if !queued[neighbor] {
-                    queued[neighbor] = true;
-                    queue.push_back(neighbor);
+
+        let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
+        let mut queued = match ctx.alloc_filled(edge_ports.len(), true, "catia_edge_port_queue") {
+            Ok(queued) => queued,
+            Err(error) => return Some(Err(error)),
+        };
+        while let Some(edge) = queue.pop_front() {
+            queued[edge] = false;
+            let ports = edge_ports[edge];
+            let mut inserted = Vec::new();
+            if let Some([left, right]) = resolved[edge] {
+                match (
+                    port_points.get(&ports[0]).copied(),
+                    port_points.get(&ports[1]).copied(),
+                ) {
+                    (Some(point), None) if point == left => {
+                        port_points.insert(ports[1], right);
+                        inserted.push(ports[1]);
+                    }
+                    (Some(point), None) if point == right => {
+                        port_points.insert(ports[1], left);
+                        inserted.push(ports[1]);
+                    }
+                    (None, Some(point)) if point == left => {
+                        port_points.insert(ports[0], right);
+                        inserted.push(ports[0]);
+                    }
+                    (None, Some(point)) if point == right => {
+                        port_points.insert(ports[0], left);
+                        inserted.push(ports[0]);
+                    }
+                    (Some(_), None) | (None, Some(_)) => return None,
+                    (Some(left_point), Some(right_point))
+                        if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                    {
+                        return None;
+                    }
+                    _ => {}
+                }
+            }
+            if let (Some(&left), Some(&right)) =
+                (port_points.get(&ports[0]), port_points.get(&ports[1]))
+            {
+                if ports[0] == ports[1] || left != right {
+                    if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right]))
+                    {
+                        return None;
+                    }
+                    resolved[edge] = Some([left, right]);
+                }
+            }
+            for port in inserted {
+                for &neighbor in edges_by_port.get(&port)? {
+                    if !queued[neighbor] {
+                        queued[neighbor] = true;
+                        queue.push_back(neighbor);
+                    }
                 }
             }
         }
-    }
-    let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
-        .iter()
-        .copied()
-        .zip(resolved.iter().copied())
-        .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
-        .unzip();
-    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false, true)?;
-    Some(resolved)
+        let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
+            .iter()
+            .copied()
+            .zip(resolved.iter().copied())
+            .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
+            .unzip();
+        match edge_port_candidate_assignment(
+            ctx,
+            &resolved_ports,
+            &resolved_candidates,
+            false,
+            true,
+        ) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
+        Some(Ok(resolved))
+    })()
+    .transpose()
 }
 
 /// Propagate endpoint points while leaving every port component that touches
 /// an unresolved row to the joint topology solver. Independently ordered
 /// seeds remain usable, but unordered candidate rows in that component do not
 /// orient or constrain one another prematurely.
-#[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
     deferred_edges: &[bool],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if edge_ports.len() != endpoint_pairs.len()
         || deferred_edges.len() != endpoint_pairs.len()
         || (!ordered_endpoint_pairs.is_empty()
             && ordered_endpoint_pairs.len() != endpoint_pairs.len())
     {
-        return None;
+        return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
     if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
-        return None;
+        return Ok(None);
     }
     let mut masked_pairs = endpoint_pairs.to_vec();
     for (edge, deferred) in effective_deferred.into_iter().enumerate() {
@@ -3364,30 +3667,35 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
             masked_pairs[edge] = None;
         }
     }
-    propagate_edge_port_points_with_ordered_seeds(edge_ports, &masked_pairs, ordered_endpoint_pairs)
+    propagate_edge_port_points_with_ordered_seeds(
+        ctx,
+        edge_ports,
+        &masked_pairs,
+        ordered_endpoint_pairs,
+    )
 }
 
 /// Propagate ordered endpoint seeds through the subset of rows with native
 /// port identities. Rows without a port pair retain their independent seed or
 /// candidate, but cannot participate in port propagation.
-#[must_use]
 pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[Option<[u32; 2]>],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if edge_ports.len() != endpoint_pairs.len() {
-        return None;
+        return Ok(None);
     }
     if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
-        return None;
+        return Ok(None);
     }
     let mut resolved = endpoint_pairs.to_vec();
     if !ordered_endpoint_pairs.is_empty() {
         for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
             let Some(ordered) = ordered else { continue };
             if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                return None;
+                return Ok(None);
             }
             resolved[edge] = Some(*ordered);
         }
@@ -3398,7 +3706,7 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
         .collect::<Vec<_>>();
     if known.is_empty() {
-        return Some(resolved);
+        return Ok(Some(resolved));
     }
     let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
     let pairs = known
@@ -3409,11 +3717,15 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         .iter()
         .map(|(edge, _)| ordered_endpoint_pairs.get(*edge).copied().flatten())
         .collect::<Vec<_>>();
-    let propagated = propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered)?;
+    let Some(propagated) =
+        propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)?
+    else {
+        return Ok(None);
+    };
     for ((edge, _), pair) in known.into_iter().zip(propagated) {
         resolved[edge] = pair;
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 #[derive(Clone, Copy)]
@@ -3589,12 +3901,12 @@ impl PortCandidateSearch<'_> {
 
 /// Bind native edge endpoint identities to coordinate rows while respecting
 /// every edge's geometrically admissible unordered endpoint pairs.
-#[must_use]
 pub(crate) fn bind_edge_port_candidates(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<[usize; 2]>> {
-    edge_port_candidate_assignment(ports, candidates, true, true)
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    edge_port_candidate_assignment(ctx, ports, candidates, true, true)
 }
 
 /// Resolve mesh-port endpoint candidates without imposing a point-to-port
@@ -3602,33 +3914,36 @@ pub(crate) fn bind_edge_port_candidates(
 /// may terminate at one coordinate row. The result is canonicalized as
 /// unordered endpoint pairs and is returned only when port equality admits
 /// exactly one such assignment.
-#[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<[usize; 2]>> {
-    let mut pairs = edge_port_candidate_assignment(ports, candidates, true, false)?;
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let Some(mut pairs) = edge_port_candidate_assignment(ctx, ports, candidates, true, false)?
+    else {
+        return Ok(None);
+    };
     for pair in &mut pairs {
         pair.sort_unstable();
     }
-    Some(pairs)
+    Ok(Some(pairs))
 }
 
 /// Resolve only settled mesh-port rows when repeated-face rows still carry
 /// an open face domain. Deferred rows contribute neither candidate support nor
 /// connectivity to this search and remain unresolved in the result.
-#[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     deferred_edges: &[bool],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
-        return None;
+        return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
     if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
-        return None;
+        return Ok(None);
     }
     let settled = (0..ports.len())
         .filter(|edge| !effective_deferred[*edge])
@@ -3638,84 +3953,98 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
         .iter()
         .map(|edge| candidates[*edge].clone())
         .collect::<Vec<_>>();
-    let settled_pairs = unique_mesh_edge_port_candidate_pairs(&settled_ports, &settled_candidates)?;
+    let Some(settled_pairs) =
+        unique_mesh_edge_port_candidate_pairs(ctx, &settled_ports, &settled_candidates)?
+    else {
+        return Ok(None);
+    };
     let mut resolved = candidates.iter().map(|_| None).collect::<Vec<_>>();
     for (edge, pair) in settled.into_iter().zip(settled_pairs) {
         resolved[edge] = Some(pair);
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 fn edge_port_candidate_assignment(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     require_unique: bool,
     enforce_point_bijection: bool,
-) -> Option<Vec<[usize; 2]>> {
-    if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
-        return None;
-    }
-    let mut dependencies = UnionFind::new(ports.len());
-    let mut edge_by_port = HashMap::new();
-    let mut edge_by_point = HashMap::new();
-    for edge in 0..ports.len() {
-        for port in ports[edge] {
-            if let Some(previous) = edge_by_port.insert(port, edge) {
-                dependencies.union(previous, edge);
-            }
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    (|| -> Option<Result<Vec<[usize; 2]>, CodecError>> {
+        if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
+            return None;
         }
-        if enforce_point_bijection {
-            for point in candidates[edge].iter().flatten() {
-                if let Some(previous) = edge_by_point.insert(*point, edge) {
+        let mut dependencies = UnionFind::new(ports.len());
+        let mut edge_by_port = HashMap::new();
+        let mut edge_by_point = HashMap::new();
+        for edge in 0..ports.len() {
+            for port in ports[edge] {
+                if let Some(previous) = edge_by_port.insert(port, edge) {
                     dependencies.union(previous, edge);
                 }
             }
+            if enforce_point_bijection {
+                for point in candidates[edge].iter().flatten() {
+                    if let Some(previous) = edge_by_point.insert(*point, edge) {
+                        dependencies.union(previous, edge);
+                    }
+                }
+            }
         }
-    }
-    let mut components = HashMap::<usize, Vec<usize>>::new();
-    for edge in 0..ports.len() {
-        components
-            .entry(dependencies.find(edge))
-            .or_default()
-            .push(edge);
-    }
-    let mut components = components.into_values().collect::<Vec<_>>();
-    components.sort_by_key(|component| component[0]);
-    let mut solution = alloc_filled(ports.len(), None, "catia_edge_port_solution").ok()?;
-    for component in components {
-        let component_ports = component
-            .iter()
-            .map(|edge| ports[*edge])
-            .collect::<Vec<_>>();
-        let component_candidates = component
-            .iter()
-            .map(|edge| candidates[*edge].clone())
-            .collect::<Vec<_>>();
-        let mode = match (require_unique, enforce_point_bijection) {
-            (false, true) => PortCandidateSearchMode::FirstNative,
-            (true, true) => PortCandidateSearchMode::UniqueNative,
-            (true, false) => PortCandidateSearchMode::UniqueMesh,
-            (false, false) => return None,
-        };
-        let mut search = PortCandidateSearch {
-            ports: &component_ports,
-            candidates: &component_candidates,
-            port_points: HashMap::new(),
-            point_ports: HashMap::new(),
-            edge_pairs: alloc_filled(component.len(), None, "catia_edge_port_pairs").ok()?,
-            outcome: SearchOutcome::Open,
-            states: 0,
-            mode,
-        };
-        search.search();
-        let SearchOutcome::Solved(component_solution) = search.outcome else {
-            return None;
-        };
-        for (&edge, pair) in component.iter().zip(component_solution) {
-            solution[edge] = Some(pair);
+        let mut components = HashMap::<usize, Vec<usize>>::new();
+        for edge in 0..ports.len() {
+            components
+                .entry(dependencies.find(edge))
+                .or_default()
+                .push(edge);
         }
-    }
-    solution.into_iter().collect()
+        let mut components = components.into_values().collect::<Vec<_>>();
+        components.sort_by_key(|component| component[0]);
+        let mut solution = match ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution") {
+            Ok(solution) => solution,
+            Err(error) => return Some(Err(error)),
+        };
+        for component in components {
+            let component_ports = component
+                .iter()
+                .map(|edge| ports[*edge])
+                .collect::<Vec<_>>();
+            let component_candidates = component
+                .iter()
+                .map(|edge| candidates[*edge].clone())
+                .collect::<Vec<_>>();
+            let mode = match (require_unique, enforce_point_bijection) {
+                (false, true) => PortCandidateSearchMode::FirstNative,
+                (true, true) => PortCandidateSearchMode::UniqueNative,
+                (true, false) => PortCandidateSearchMode::UniqueMesh,
+                (false, false) => return None,
+            };
+            let mut search = PortCandidateSearch {
+                ports: &component_ports,
+                candidates: &component_candidates,
+                port_points: HashMap::new(),
+                point_ports: HashMap::new(),
+                edge_pairs: match ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs") {
+                    Ok(pairs) => pairs,
+                    Err(error) => return Some(Err(error)),
+                },
+                outcome: SearchOutcome::Open,
+                states: 0,
+                mode,
+            };
+            search.search();
+            let SearchOutcome::Solved(component_solution) = search.outcome else {
+                return None;
+            };
+            for (&edge, pair) in component.iter().zip(component_solution) {
+                solution[edge] = Some(pair);
+            }
+        }
+        Some(Ok(solution.into_iter().collect::<Option<Vec<_>>>()?))
+    })()
+    .transpose()
 }
 
 pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {

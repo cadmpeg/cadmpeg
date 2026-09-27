@@ -1123,7 +1123,10 @@ fn reevaluates_expression_records_after_external_symbols_are_decoded() {
     );
     let mut external_symbols = ExternalRelationSymbols::default();
     external_symbols.observe("d42", None);
-    reevaluate_expression_records(&mut records, None, &external_symbols);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        reevaluate_expression_records(ctx, &mut records, None, &external_symbols)
+    })
+    .expect("test curve expression reevaluation");
     assert_eq!(
         records[0].assignments[0].activation,
         CurveExpressionActivation::Active
@@ -1261,7 +1264,10 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
         .all(|assignment| assignment.value.is_none()));
     let mut symbols = ExternalRelationSymbols::default();
     symbols.observe("external", Some(CurveExpressionValue::Number(5.0)));
-    reevaluate_expression_records(&mut records, None, &symbols);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        reevaluate_expression_records(ctx, &mut records, None, &symbols)
+    })
+    .expect("test curve expression reevaluation");
     assert!(records[0]
         .assignments
         .iter()

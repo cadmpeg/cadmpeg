@@ -78,7 +78,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
 #[test]
 fn arena_registry_drives_counts_and_diff_dispatch() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     let diff_kinds = diff(&ir, &ir)
         .per_arena
         .into_iter()

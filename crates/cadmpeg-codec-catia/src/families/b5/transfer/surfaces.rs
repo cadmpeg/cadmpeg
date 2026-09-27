@@ -4,7 +4,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -125,28 +126,29 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
 }
 
 pub(super) fn neutral_surface(
+    ctx: &DecodeContext<'_>,
     surface: &B5Surface,
     graph: &B5Graph,
     surface_id: u32,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> SurfacePlan {
+) -> Result<SurfacePlan, CodecError> {
     let carrier = match surface_carrier(surface) {
         B5SurfaceCarrier::Analytic(geometry) => {
-            return SurfacePlan {
+            return Ok(SurfacePlan {
                 geometry,
                 procedure: None,
-            }
+            })
         }
         B5SurfaceCarrier::Procedural(carrier) => carrier,
     };
-    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id, refusal) {
-        return SurfacePlan {
+    if let Some(extrusion) = super::resolved_extrusion_surface(ctx, graph, surface_id, refusal)? {
+        return Ok(SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
             }),
             procedure: Some(SurfaceProcedure::Extrusion(Box::new(extrusion))),
-        };
+        });
     }
     let mut procedure = None;
     let geometry = match carrier {
@@ -174,14 +176,14 @@ pub(super) fn neutral_surface(
             angular_scale,
             bounds,
         } => revolution_surface(
+            ctx,
             graph.profiles.get(&profile_curve),
-            axis_origin,
-            axis_direction,
+            (axis_origin, axis_direction),
             angular_scale,
             bounds,
             &format_args!("b5 revolution surface record #{surface_id}"),
             refusal,
-        )
+        )?
         .map_or_else(
             || {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -195,38 +197,46 @@ pub(super) fn neutral_surface(
         ),
     };
 
-    SurfacePlan {
+    Ok(SurfacePlan {
         geometry,
         procedure,
-    }
+    })
 }
 
 pub(super) fn revolution_surface(
+    ctx: &DecodeContext<'_>,
     profile: Option<&B5Profile>,
-    axis_origin: FinitePoint3,
-    axis_direction: UnitVector3,
+    axis: (FinitePoint3, UnitVector3),
     angular_scale: PositiveReal,
     bounds: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(NurbsSurface, RevolutionPlan)> {
-    let profile = profile?;
+) -> Result<Option<(NurbsSurface, RevolutionPlan)>, CodecError> {
+    let (axis_origin, axis_direction) = axis;
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
     let [parameter_interval, native_angular_interval] = bounds;
-    let directrix = profile_nurbs(profile, parameter_interval, record, refusal)?;
+    let Some(directrix) = profile_nurbs(profile, parameter_interval, record, refusal) else {
+        return Ok(None);
+    };
     let angular_interval = [
         native_angular_interval[0] / angular_scale.get(),
         native_angular_interval[1] / angular_scale.get(),
     ];
     let surface = revolve_nurbs(
+        ctx,
         &directrix,
         coordinates(axis_origin),
         components(&axis_direction),
-        angular_interval,
-        native_angular_interval,
+        [angular_interval, native_angular_interval],
         record,
         refusal,
     )?;
-    Some((
+    let Some(surface) = surface else {
+        return Ok(None);
+    };
+    Ok(Some((
         surface,
         RevolutionPlan {
             directrix,
@@ -236,7 +246,7 @@ pub(super) fn revolution_surface(
             angular_parameter_interval: native_angular_interval,
             parameter_interval,
         },
-    ))
+    )))
 }
 
 fn profile_nurbs(
@@ -356,97 +366,145 @@ pub(super) fn rational_arc(
 }
 
 pub(super) fn revolve_nurbs(
+    ctx: &DecodeContext<'_>,
     profile: &NurbsCurve,
     axis_origin: [f64; 3],
     axis_direction: [f64; 3],
-    angular_interval: [f64; 2],
-    native_interval: [f64; 2],
+    intervals: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<NurbsSurface> {
-    let span_count =
-        ((angular_interval[1] - angular_interval[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
-    }
-    // `ceil` answers zero only for an angular span of exactly zero: an arc that
-    // sweeps no angle states no span, which this route refuses as it refuses
-    // every other degeneracy.
-    let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
-    let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
-    let control_count =
-        crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
-    let mut angles = Vec::with_capacity(angular_count);
-    let mut angular_weights = Vec::with_capacity(angular_count);
-    let mut v_knots = Vec::with_capacity(angular_count + 3);
-    for span in 0..span_count {
-        let fraction0 = span as f64 / span_count as f64;
-        let fraction1 = (span + 1) as f64 / span_count as f64;
-        let angle0 = angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction0;
-        let angle1 = angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction1;
-        let middle = (angle0 + angle1) * 0.5;
-        let middle_weight = ((angle1 - angle0) * 0.5).cos();
-        if middle_weight <= f64::EPSILON {
+) -> Result<Option<NurbsSurface>, CodecError> {
+    let [angular_interval, native_interval] = intervals;
+    let admit_items = |count: usize, operation: &'static str| -> Result<(), CodecError> {
+        let items = u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(items, operation)
+    };
+    (|| -> Option<Result<NurbsSurface, CodecError>> {
+        let span_count = ((angular_interval[1] - angular_interval[0]).abs()
+            / std::f64::consts::FRAC_PI_2)
+            .ceil();
+        if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
             return None;
         }
-        if span == 0 {
-            angles.push((angle0, 1.0));
+        // `ceil` answers zero only for an angular span of exactly zero: an arc that
+        // sweeps no angle states no span, which this route refuses as it refuses
+        // every other degeneracy.
+        let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
+        let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
+        let control_count =
+            crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
+        if let Err(error) = admit_items(angular_count, "catia b5 revolution angles") {
+            return Some(Err(error));
+        }
+        let mut angles = Vec::with_capacity(angular_count);
+        if let Err(error) = admit_items(angular_count, "catia b5 revolution angular weights") {
+            return Some(Err(error));
+        }
+        let mut angular_weights = Vec::with_capacity(angular_count);
+        if let Err(error) = admit_items(angular_count + 3, "catia b5 revolution angular knots") {
+            return Some(Err(error));
+        }
+        let mut v_knots = Vec::with_capacity(angular_count + 3);
+        for span in 0..span_count {
+            let fraction0 = span as f64 / span_count as f64;
+            let fraction1 = (span + 1) as f64 / span_count as f64;
+            let angle0 =
+                angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction0;
+            let angle1 =
+                angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction1;
+            let middle = (angle0 + angle1) * 0.5;
+            let middle_weight = ((angle1 - angle0) * 0.5).cos();
+            if middle_weight <= f64::EPSILON {
+                return None;
+            }
+            if span == 0 {
+                angles.push((angle0, 1.0));
+                angular_weights.push(1.0);
+            }
+            angles.push((middle, 1.0 / middle_weight));
+            angular_weights.push(middle_weight);
+            angles.push((angle1, 1.0));
             angular_weights.push(1.0);
+            append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)?;
         }
-        angles.push((middle, 1.0 / middle_weight));
-        angular_weights.push(middle_weight);
-        angles.push((angle1, 1.0));
-        angular_weights.push(1.0);
-        append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)?;
-    }
-    let profile_weights = match profile.pole_rows().weights() {
-        Some(weights) => weights,
-        None => alloc_filled(
-            profile.control_points().len(),
-            1.0,
-            "catia b5 revolution profile weights",
-        )
-        .ok()?,
-    };
-    let mut control_points = Vec::with_capacity(control_count);
-    let mut weights = Vec::with_capacity(control_points.capacity());
-    for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights) {
-        let relative = [
-            profile_point.x - axis_origin[0],
-            profile_point.y - axis_origin[1],
-            profile_point.z - axis_origin[2],
-        ];
-        let axial = scale(axis_direction, dot(relative, axis_direction));
-        let radial = subtract(relative, axial);
-        for ((angle, radial_scale), angular_weight) in
-            angles.iter().copied().zip(angular_weights.iter().copied())
+        let profile_weights = match profile.pole_rows().weights() {
+            Some(weights) => weights,
+            None => match ctx.alloc_filled(
+                profile.control_points().len(),
+                1.0,
+                "catia b5 revolution profile weights",
+            ) {
+                Ok(weights) => weights,
+                Err(error) => return Some(Err(error)),
+            },
+        };
+        if let Err(error) = admit_items(control_count, "catia b5 revolution control net") {
+            return Some(Err(error));
+        }
+        let mut control_points = Vec::with_capacity(control_count);
+        if let Err(error) = admit_items(control_count, "catia b5 revolution net weights") {
+            return Some(Err(error));
+        }
+        let mut weights = Vec::with_capacity(control_points.capacity());
+        for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights)
         {
-            let rotated = rotate_vector(radial, axis_direction, angle);
-            control_points.push(point3(add(
-                axis_origin,
-                add(axial, scale(rotated, radial_scale)),
-            )));
-            weights.push(profile_weight * angular_weight);
+            let relative = [
+                profile_point.x - axis_origin[0],
+                profile_point.y - axis_origin[1],
+                profile_point.z - axis_origin[2],
+            ];
+            let axial = scale(axis_direction, dot(relative, axis_direction));
+            let radial = subtract(relative, axial);
+            for ((angle, radial_scale), angular_weight) in
+                angles.iter().copied().zip(angular_weights.iter().copied())
+            {
+                let rotated = rotate_vector(radial, axis_direction, angle);
+                control_points.push(point3(add(
+                    axis_origin,
+                    add(axial, scale(rotated, radial_scale)),
+                )));
+                weights.push(profile_weight * angular_weight);
+            }
         }
-    }
-    let row_len = angular_count;
-    crate::nurbs::note_refusal(
-        NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                profile.degree(),
-                profile.knots().to_vec(),
+        let row_len = angular_count;
+        let row_count = profile.control_points().len();
+        if let Err(error) = admit_items(profile.knots().len(), "catia b5 revolution profile knots")
+        {
+            return Some(Err(error));
+        }
+        if let Err(error) = admit_items(row_count, "catia b5 revolution point rows") {
+            return Some(Err(error));
+        }
+        if let Err(error) = admit_items(control_count, "catia b5 revolution point row values") {
+            return Some(Err(error));
+        }
+        if let Err(error) = admit_items(row_count, "catia b5 revolution weight rows") {
+            return Some(Err(error));
+        }
+        if let Err(error) = admit_items(control_count, "catia b5 revolution weight row values") {
+            return Some(Err(error));
+        }
+        let surface = crate::nurbs::note_refusal(
+            NurbsSurface::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    profile.degree(),
+                    profile.knots().to_vec(),
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                    control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                    Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-                Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-            ),
-            false,
-        ),
-        refusal,
-        format_args!("b5 revolution surface built from its profile: {record}"),
-    )
+            refusal,
+            format_args!("b5 revolution surface built from its profile: {record}"),
+        )?;
+        Some(Ok(surface))
+    })()
+    .transpose()
 }
 
 fn append_quadratic_span_knots(
@@ -914,7 +972,7 @@ fn emit_extrusion_procedure(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_quadratic_span_knots, emit_extrusion_procedure};
+    use super::{append_quadratic_span_knots, emit_extrusion_procedure, revolve_nurbs};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
@@ -933,6 +991,42 @@ mod tests {
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
     };
+
+    #[test]
+    fn revolution_profile_weights_propagate_collection_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        use cadmpeg_ir::math::Point3;
+
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+            None,
+            false,
+        )
+        .expect("valid revolution profile");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three angular points, three weights, and six knots precede the profile weights.
+        policy.limits.max_collection_items = 12;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let error = revolve_nurbs(
+            &ctx,
+            &profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect_err("profile weights exceed the collection limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia b5 revolution profile weights"));
+    }
 
     #[test]
     fn quadratic_span_knots_remain_finite_across_a_wide_native_interval() {
