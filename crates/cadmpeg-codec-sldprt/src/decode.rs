@@ -2227,7 +2227,7 @@ fn build_geometry_ir(
         mut brep,
         configuration_bodies,
     } = decoded;
-    let appearance_definitions = crate::appearance::definitions(scan);
+    let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let mut display_sections = Vec::new();
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
