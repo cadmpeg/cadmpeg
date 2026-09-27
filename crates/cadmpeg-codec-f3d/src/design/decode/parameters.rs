@@ -1128,13 +1128,14 @@ fn companion_payload<S: std::hash::BuildHasher>(
         return Ok(None);
     };
     let Some((start, mut end)) = companion_owned_interval(
+        ctx,
         companion,
         parameters.iter(),
         owners,
         scopes,
         headers,
         stream_length,
-    ) else {
+    )? else {
         return Ok(None);
     };
     // Entity headers precede their owning scope record. A parameter companion
