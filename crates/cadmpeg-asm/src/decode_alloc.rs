@@ -49,6 +49,15 @@ pub(crate) fn append_vec<T>(
     Ok(())
 }
 
+pub(crate) fn extend_vec<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    mut source: Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    append_vec(ctx, target, &mut source, operation)
+}
+
 pub(crate) fn reserve_vec_slot<T>(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
