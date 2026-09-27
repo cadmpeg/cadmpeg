@@ -138,6 +138,33 @@ fn claim_drawing_typed(
     Ok(())
 }
 
+fn ensure_drawing_relationship_group(
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
+    role: NonBlankString,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !relationships.contains_key(&role) {
+        ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
+        relationships.insert(role, Vec::new());
+    }
+    Ok(())
+}
+
+fn push_drawing_relationship(
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
+    role: NonBlankString,
+    target: ReferenceSelection,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    ensure_drawing_relationship_group(relationships, role.clone(), ctx)?;
+    let targets = relationships.get_mut(&role).ok_or_else(|| {
+        ctx.refuse_codec_limit("step_drawing_relationship_groups", 0, 1)
+    })?;
+    reserve_drawing_items(targets, 1, ctx, "step_drawing_relationship_members")?;
+    targets.push(target);
+    Ok(())
+}
+
 fn visit_drawing_references(
     value: &Value,
     ctx: &DecodeContext<'_>,
@@ -663,12 +690,15 @@ fn add_reference_fields(
             continue;
         };
         let role = parameter_key(name, index);
-        let mut references = Vec::new();
-        collect_references(value, &mut references);
-        for target_id in references {
+        visit_drawing_references(value, target_context.ctx, &mut |target_id| {
             match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
-                    relationships.entry(role.clone()).or_default().push(target);
+                    push_drawing_relationship(
+                        relationships,
+                        role.clone(),
+                        target,
+                        target_context.ctx,
+                    )?;
                 }
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
@@ -684,7 +714,8 @@ fn add_reference_fields(
                     )));
                 }
             }
-        }
+            Ok(())
+        })?;
     }
     Ok(())
 }
@@ -732,11 +763,12 @@ fn add_sheet_revision_usages(
         let revision_target = target_context.resolve(sheet_id)?;
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
             match sheet_target {
-                TargetResolution::Resolved(target) => sheet
-                    .relationships
-                    .entry(cadmpeg_core::nonblank_literal!("drawing_revision"))
-                    .or_default()
-                    .push(target),
+                TargetResolution::Resolved(target) => push_drawing_relationship(
+                    &mut sheet.relationships,
+                    cadmpeg_core::nonblank_literal!("drawing_revision"),
+                    target,
+                    target_context.ctx,
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
@@ -761,19 +793,27 @@ fn add_sheet_revision_usages(
                     ctx,
                 )
             }).transpose()?.flatten() {
+                let key = cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence");
+                charge_drawing_map_key(
+                    &sheet.parameters,
+                    &key,
+                    target_context.ctx,
+                    "step_drawing_usage_sequences",
+                )?;
                 sheet.parameters.insert(
-                    cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence"),
+                    key,
                     sequence,
                 );
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
             match revision_target {
-                TargetResolution::Resolved(target) => revision
-                    .relationships
-                    .entry(cadmpeg_core::nonblank_literal!("sheet_revision"))
-                    .or_default()
-                    .push(target),
+                TargetResolution::Resolved(target) => push_drawing_relationship(
+                    &mut revision.relationships,
+                    cadmpeg_core::nonblank_literal!("sheet_revision"),
+                    target,
+                    target_context.ctx,
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
@@ -850,42 +890,47 @@ fn add_draughting_model_associations(
             complete = false;
         }
 
-        let item_ids = parameters
-            .get(4)
-            .into_iter()
-            .flat_map(|items| {
-                let mut references = Vec::new();
-                collect_references(items, &mut references);
-                references
-            })
-            .collect::<Vec<_>>();
-        if item_ids.is_empty() {
-            complete = false;
-        }
-        let mut item_targets = Vec::new();
-        for item_id in item_ids {
-            match target_context.resolve(item_id)? {
-                TargetResolution::Resolved(item) => item_targets.push(item),
-                TargetResolution::Ambiguous(identities) => {
-                    note_ambiguous_target(
-                        losses,
-                        &format!("draughting model #{model_id} association #{association_id}"),
-                        "associated_items",
-                        item_id,
-                        &identities,
+        ensure_drawing_relationship_group(
+            &mut model.relationships,
+            cadmpeg_core::nonblank_literal!("associated_items"),
+            target_context.ctx,
+        )?;
+        let mut has_items = false;
+        if let Some(items) = parameters.get(4) {
+            visit_drawing_references(items, target_context.ctx, &mut |item_id| {
+                has_items = true;
+                match target_context.resolve(item_id)? {
+                    TargetResolution::Resolved(item) => push_drawing_relationship(
+                        &mut model.relationships,
+                        cadmpeg_core::nonblank_literal!("associated_items"),
+                        item,
                         target_context.ctx,
-                    )?;
-                    complete = false;
+                    )?,
+                    TargetResolution::Ambiguous(identities) => {
+                        note_ambiguous_target(
+                            losses,
+                            &format!("draughting model #{model_id} association #{association_id}"),
+                            "associated_items",
+                            item_id,
+                            &identities,
+                            target_context.ctx,
+                        )?;
+                        complete = false;
+                    }
+                    TargetResolution::Unresolved => {
+                        losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
+                            format!(
+                                "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
+                            ),
+                        ));
+                        complete = false;
+                    }
                 }
-                TargetResolution::Unresolved => {
-                    losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
-                        format!(
-                            "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
-                        ),
-                    ));
-                    complete = false;
-                }
-            }
+                Ok(())
+            })?;
+        }
+        if !has_items {
+            complete = false;
         }
 
         let placeholder_target = if record
@@ -926,26 +971,23 @@ fn add_draughting_model_associations(
         };
 
         if let Some(definition) = definition_target {
-            model
-                .relationships
-                .entry(cadmpeg_core::nonblank_literal!("semantic_definition"))
-                .or_default()
-                .push(definition);
+            push_drawing_relationship(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("semantic_definition"),
+                definition,
+                target_context.ctx,
+            )?;
         }
-        model
-            .relationships
-            .entry(cadmpeg_core::nonblank_literal!("associated_items"))
-            .or_default()
-            .extend(item_targets);
         if let Some(placeholder) = placeholder_target {
-            model
-                .relationships
-                .entry(cadmpeg_core::nonblank_literal!("annotation_placeholder"))
-                .or_default()
-                .push(placeholder);
+            push_drawing_relationship(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("annotation_placeholder"),
+                placeholder,
+                target_context.ctx,
+            )?;
         }
         if complete {
-            typed.insert(association_id);
+            claim_drawing_typed(typed, association_id, target_context.ctx)?;
         }
     }
     Ok(())
@@ -1108,17 +1150,6 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
         })
         .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
-}
-
-fn collect_references(value: &Value, output: &mut Vec<u64>) {
-    match value {
-        Value::Reference(id) => output.push(*id),
-        Value::List(values) => values
-            .iter()
-            .for_each(|value| collect_references(value, output)),
-        Value::Typed(_, value) => collect_references(value, output),
-        _ => {}
-    }
 }
 
 fn value_text(
