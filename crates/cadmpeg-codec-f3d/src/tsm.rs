@@ -706,7 +706,7 @@ fn build_secondary_layouts(
 
         let offset = direction_offset(direction);
         let mut cursor = 0usize;
-        let mut wedges = Vec::with_capacity(connectivity.spoke_lengths.len());
+        let mut wedges = Vec::new();
         for (wedge, &spoke_count) in connectivity.spoke_lengths.iter().enumerate() {
             let sector_count = spoke_count
                 .checked_mul(
@@ -721,7 +721,7 @@ fn build_secondary_layouts(
                         "phantom wedge carries a nonzero spoke length",
                     ));
                 }
-                wedges.push(SubdGripWedge::Phantom {});
+                push_charged(ctx, &mut wedges, SubdGripWedge::Phantom {}, "project T-spline grip wedges")?;
                 continue;
             };
             let edge = Some(
@@ -758,12 +758,12 @@ fn build_secondary_layouts(
                 &mut cursor,
                 sector_count,
             )?;
-            wedges.push(SubdGripWedge::Slot {
+            push_charged(ctx, &mut wedges, SubdGripWedge::Slot {
                 edge,
                 sector_face,
                 spokes,
                 sectors,
-            });
+            }, "project T-spline grip wedges")?;
         }
         if cursor != connectivity.grip_indices.len() {
             return Err(malformed(name, "derived-grip run has trailing entries"));
@@ -1445,11 +1445,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 .map_err(|error| malformed(name, error))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    let edge_knot_intervals_ir = edge_knot_intervals
-        .iter()
-        .copied()
-        .flatten()
-        .collect::<Vec<_>>();
+    let edge_knot_intervals_ir = collect_charged(
+        ctx,
+        edge_knot_intervals.iter().copied().flatten(),
+        "project T-spline edge knot intervals",
+    )?;
     let vertex_of = |slot: usize| {
         vertex_ir
             .get(slot)
@@ -1465,7 +1465,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         }
         for (slot, point) in grip_points.iter().enumerate() {
             if let (true, Some(point)) = (vertex_live[slot], point) {
-                vertex_points.insert(vertex_of(slot)?, point.point);
+                let vertex = vertex_of(slot)?;
+                if !vertex_points.contains_key(&vertex) {
+                    ctx.charge_collection_items(1, "index T-spline vertex points")?;
+                }
+                vertex_points.insert(vertex, point.point);
             }
         }
     } else {
@@ -1473,12 +1477,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             let (GripVertexMarker::Primary(slot), Some(point)) = (marker, point) else {
                 continue;
             };
-            if vertex_points
-                .insert(vertex_of(*slot)?, point.point)
-                .is_some()
-            {
+            let vertex = vertex_of(*slot)?;
+            if vertex_points.contains_key(&vertex) {
                 return Err(malformed(name, "primary grip vertex map is inconsistent"));
             }
+            ctx.charge_collection_items(1, "index T-spline vertex points")?;
+            vertex_points.insert(vertex, point.point);
         }
     }
     if vertex_points.len() != live_vertices {
@@ -1487,7 +1491,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 
     let mut edge_by_half =
         ctx.alloc_filled(half_edges.len(), None, "f3d subd half-edge ownership")?;
-    let mut edge_vertices = Vec::with_capacity(live_vertices);
+    let mut edge_vertices = Vec::new();
     for (edge, root) in (0_u32..).zip(edge_roots.iter().copied().flatten()) {
         let half = &half_edges[root];
         if edge_by_half[root].replace((edge, false)).is_some()
@@ -1498,7 +1502,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "edge roots reuse a half-edge"));
         }
         let mate = &half_edges[half.mate.index()];
-        edge_vertices.push([vertex_of(mate.vertex)?, vertex_of(half.vertex)?]);
+        push_charged(ctx, &mut edge_vertices, [vertex_of(mate.vertex)?, vertex_of(half.vertex)?], "project T-spline edge vertices")?;
     }
     if edge_by_half.iter().any(Option::is_none) {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
@@ -1507,7 +1511,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         return Err(malformed(name, "edge knot interval map is incomplete"));
     }
 
-    let secondary_layouts = build_secondary_layouts(
+    let mut secondary_layouts = build_secondary_layouts(
         ctx,
         &SecondaryLayoutContext {
             name,
@@ -1537,7 +1541,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             }
             let (edge, reversed) = edge_by_half[current.index()]
                 .ok_or_else(|| malformed(name, "face half-edge has no edge"))?;
-            ring.push(SubdEdgeUse { edge, reversed });
+            push_charged(ctx, &mut ring, SubdEdgeUse { edge, reversed }, "project T-spline face ring")?;
             current = half.next;
             if current == start_id {
                 break;
@@ -1546,7 +1550,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 return Err(malformed(name, "face ring does not close"));
             }
         }
-        faces.push(SubdFace::new(ring).map_err(|error| malformed(name, error))?);
+        push_charged(ctx, &mut faces, SubdFace::new(ring).map_err(|error| malformed(name, error))?, "project T-spline faces")?;
     }
 
     let mut crease_incidence =
@@ -1561,32 +1565,36 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         crease_incidence[vertices[0] as usize] += 1;
         crease_incidence[vertices[1] as usize] += 1;
     }
-    let vertices = (0..live_vertices)
-        .map(|index| {
-            SubdVertex::new(
-                vertex_points[&(index as u32)],
+    let mut vertices = Vec::new();
+    for index in 0..live_vertices {
+        let vertex_index = u32::try_from(index)
+            .map_err(|_| malformed(name, "T-spline vertex index exceeds u32"))?;
+        let vertex = SubdVertex::new(
+                vertex_points[&vertex_index],
                 match crease_incidence[index] {
                     0 => SubdVertexTag::Smooth,
                     1 => SubdVertexTag::Dart,
                     2 => SubdVertexTag::Crease,
                     _ => SubdVertexTag::Corner,
                 },
-                secondary_layouts[index].clone(),
+                secondary_layouts[index].take(),
             )
-            .map_err(|error| malformed(name, error))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let creased_edges = crease_edges
-        .iter()
-        .filter_map(|slot| edge_ir.get(*slot).copied().flatten())
-        .collect::<BTreeSet<_>>();
-    let edges = edge_vertices
-        .into_iter()
-        .enumerate()
-        .map(|(index, vertices)| {
-            let crease = creased_edges.contains(&(index as u32));
+            .map_err(|error| malformed(name, error))?;
+        push_charged(ctx, &mut vertices, vertex, "project T-spline vertices")?;
+    }
+    let mut creased_edges = BTreeSet::new();
+    for slot in &crease_edges {
+        if let Some(edge) = edge_ir.get(*slot).copied().flatten() {
+            insert_set_charged(ctx, &mut creased_edges, edge, "index T-spline creased edges")?;
+        }
+    }
+    let mut edges = Vec::new();
+    for (index, vertices) in edge_vertices.into_iter().enumerate() {
+            let edge_index = u32::try_from(index)
+                .map_err(|_| malformed(name, "T-spline edge index exceeds u32"))?;
+            let crease = creased_edges.contains(&edge_index);
             let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-            SubdEdge::from_parts(
+            let edge = SubdEdge::from_parts(
                 vertices,
                 [sharpness; 2],
                 if crease {
@@ -1597,9 +1605,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 Some(edge_knot_intervals_ir[index]),
                 [0.0, 0.0],
             )
-            .map_err(|error| malformed(name, error))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            .map_err(|error| malformed(name, error))?;
+            push_charged(ctx, &mut edges, edge, "project T-spline edges")?;
+    }
     let source_key = name
         .rsplit_once('/')
         .map_or(name, |(_, base)| base)
@@ -1735,6 +1743,57 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
         super::parse(&ctx, "synthetic.tsm", source.as_bytes()).unwrap_err()
     }
+
+    fn quad_source() -> String {
+        format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        )
+    }
+
+    fn derived_quad_source() -> String {
+        format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gv 0\n\
+             0m cg 0 4 1 0 0 0 4\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g 0.5 0 0 1\n"
+        )
+    }
+
+    fn refusal_at_operation(source: &str, operation: &str) -> cadmpeg_core::CodecError {
+        for limit in 0..512 {
+            let error = parse_small_limit(source, limit, u64::MAX);
+            if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == operation)
+            {
+                return error;
+            }
+        }
+        panic!("operation {operation} did not refuse a collection limit");
+    }
+
+    macro_rules! tsm_quad_projection_limit_test {
+        ($name:ident, $source:expr, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let source = $source;
+                let error = refusal_at_operation(&source, $operation);
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == $operation));
+            }
+        };
+    }
+
+    tsm_quad_projection_limit_test!(tsm_edge_knot_projection_refuses_collection_limit, quad_source(), "project T-spline edge knot intervals");
+    tsm_quad_projection_limit_test!(tsm_vertex_point_index_refuses_collection_limit, quad_source(), "index T-spline vertex points");
+    tsm_quad_projection_limit_test!(tsm_edge_vertex_projection_refuses_collection_limit, quad_source(), "project T-spline edge vertices");
+    tsm_quad_projection_limit_test!(tsm_face_ring_refuses_collection_limit, quad_source(), "project T-spline face ring");
+    tsm_quad_projection_limit_test!(tsm_face_projection_refuses_collection_limit, quad_source(), "project T-spline faces");
+    tsm_quad_projection_limit_test!(tsm_vertex_projection_refuses_collection_limit, quad_source(), "project T-spline vertices");
+    tsm_quad_projection_limit_test!(tsm_creased_edge_index_refuses_collection_limit, quad_source(), "index T-spline creased edges");
+    tsm_quad_projection_limit_test!(tsm_edge_projection_refuses_collection_limit, quad_source(), "project T-spline edges");
+    tsm_quad_projection_limit_test!(tsm_derived_wedges_refuse_collection_limit, derived_quad_source(), "project T-spline grip wedges");
 
     fn fan_limit(items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();
