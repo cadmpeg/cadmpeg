@@ -55,6 +55,22 @@ fn collect_pmi_set<T: Ord>(
     Ok(values)
 }
 
+fn insert_pmi_map<K: Ord, V>(
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    values.insert(key, value);
+    Ok(())
+}
+
 fn claim_pmi_typed(
     typed: &mut HashSet<u64>,
     id: u64,
@@ -728,7 +744,7 @@ pub(super) fn decode(
         let mut placement_candidates = BTreeMap::new();
         let mut placement_visited = BTreeMap::new();
         for parameter in record_values(record) {
-            visit_references(parameter, &mut |reference| {
+            for reference in references(parameter) {
                 collect_placement_candidates(
                     reference,
                     exchange,
@@ -736,9 +752,9 @@ pub(super) fn decode(
                     &mut placement_visited,
                     &mut placement_candidates,
                     0,
-                );
-                false
-            });
+                    ctx,
+                )?;
+            }
         }
         let placement = match placement_candidates.len() {
             0 => None,
@@ -1458,7 +1474,8 @@ fn collect_typed_placement_candidates(
     record: &RawRecord,
     geometry: &GeometryData,
     candidates: &mut BTreeMap<u64, Transform>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     let has_annotation_text = record.partials.iter().any(|partial| {
         partial.name == "ANNOTATION_TEXT"
             || partial.name == "ANNOTATION_TEXT_CHARACTER"
@@ -1483,11 +1500,18 @@ fn collect_typed_placement_candidates(
                 if let Some(transform) =
                     super::geometry::placement_transform((origin, z_axis, x_axis))
                 {
-                    candidates.insert(reference, transform);
+                    insert_pmi_map(
+                        candidates,
+                        reference,
+                        transform,
+                        ctx,
+                        "step_pmi_placement_candidates",
+                    )?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn find_annotation_text(
@@ -1574,7 +1598,8 @@ fn collect_placement_candidates(
     visited: &mut BTreeMap<u64, usize>,
     candidates: &mut BTreeMap<u64, Transform>,
     depth: usize,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     // Retain the shortest depth so the bounded traversal is independent of
     // aggregate member order when a graph has alternate paths.
     if depth >= 256
@@ -1582,14 +1607,23 @@ fn collect_placement_candidates(
             .get(&id)
             .is_some_and(|visited_depth| *visited_depth <= depth)
     {
-        return;
+        return Ok(());
     }
-    visited.insert(id, depth);
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_placement_walk"))
+        .transpose()?;
+    insert_pmi_map(
+        visited,
+        id,
+        depth,
+        ctx,
+        "step_pmi_placement_visited",
+    )?;
     if let Some(record) = exchange.records().get(&id) {
-        collect_typed_placement_candidates(record, geometry, candidates);
+        collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
     }
     let Some(record) = exchange.records().get(&id) else {
-        return;
+        return Ok(());
     };
     for reference in record_values(record).flat_map(references) {
         collect_placement_candidates(
@@ -1599,8 +1633,10 @@ fn collect_placement_candidates(
             visited,
             candidates,
             depth + 1,
-        );
+            ctx,
+        )?;
     }
+    Ok(())
 }
 
 fn targets(

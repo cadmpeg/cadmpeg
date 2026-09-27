@@ -414,3 +414,81 @@ fn pmi_datum_system_references_refuse_collection_limit() {
         "step_pmi_datum_system_references",
     );
 }
+
+fn placement_refuses(operation: &str) {
+    let source = format!(
+        "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);{TAIL}"
+    );
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid placement exchange");
+    let arena = DecodeArena::new();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
+            .expect("setup root fits policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx)
+        .expect("geometry setup");
+    let refused = (0..=32).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+            .expect("empty root fits collection policy");
+        matches!(
+            super::super::collect_placement_candidates(
+                5,
+                &exchange,
+                &geometry.value,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+                0,
+                Some(&ctx),
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "placement walk did not refuse {operation}");
+}
+
+#[test]
+fn pmi_placement_visited_refuses_collection_limit() {
+    placement_refuses("step_pmi_placement_visited");
+}
+
+#[test]
+fn pmi_placement_candidates_refuse_collection_limit() {
+    placement_refuses("step_pmi_placement_candidates");
+}
+
+#[test]
+fn pmi_placement_walk_refuses_depth_limit() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
+            .expect("setup root fits policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx)
+        .expect("geometry setup");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits depth policy");
+    assert!(matches!(
+        super::super::collect_placement_candidates(
+            1,
+            &exchange,
+            &geometry.value,
+            &mut BTreeMap::new(),
+            &mut BTreeMap::new(),
+            0,
+            Some(&ctx),
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_pmi_placement_walk"
+    ));
+}
