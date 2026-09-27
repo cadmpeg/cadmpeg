@@ -3,6 +3,7 @@
 
 use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt;
 use std::ops::Range;
 
 use crate::chunks::{
@@ -13,7 +14,7 @@ use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
-use crate::wire::{comma_list, uuid, Uuid};
+use crate::wire::{uuid, Uuid};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -108,6 +109,41 @@ struct InstanceEvaluation {
     parameter: EvaluationParameter,
 }
 
+struct UuidText<'a>(&'a Uuid);
+
+impl serde::Serialize for UuidText<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self.0)
+    }
+}
+
+struct UuidList<'a>(&'a [Uuid]);
+
+impl serde::Serialize for UuidList<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for id in self.0 {
+            sequence.serialize_element(&UuidText(id))?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct NativeHistoryRecord<'a> {
+    id: &'a str,
+    source_offset: u64,
+    source_uuid: Option<UuidText<'a>>,
+    command_uuid: UuidText<'a>,
+    record_version: i32,
+    record_type: &'static str,
+    copy_on_replace: bool,
+    antecedent_object_uuids: UuidList<'a>,
+    descendant_object_uuids: UuidList<'a>,
+    value_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,
@@ -128,11 +164,6 @@ pub(crate) struct HistoryScan {
     pub(crate) records: Vec<HistoryRecord>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
-}
-
-/// Stable source-fidelity identity for a complete history record boundary.
-fn source_id(source_offset: usize) -> String {
-    format!("rhino:history:source#{source_offset:012}")
 }
 
 fn anonymous(
@@ -492,10 +523,11 @@ fn subd_edge_chain(
         }
     }
     let edges = if edge_ids.len() != count || orientations.len() != count {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
-            "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
-        );
+            format_args!("redundant history SubD edge-chain count mismatch; both arrays dropped"),
+        )?;
         Vec::new()
     } else {
         let mut edges = admitted_vec(ctx, count, "Rhino history SubD edges")?;
@@ -701,10 +733,10 @@ pub(crate) fn parse_records(
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                warnings.push(format!(
-                    "history record at {} degraded: {error}",
-                    record.range.start
-                ));
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("history record at {} degraded: {error}", record.range.start),
+                )?;
                 reserve_admitted_vec(
                     ctx,
                     &mut result.opaque_records,
@@ -729,127 +761,305 @@ fn history_resource_error(error: FramingError) -> CodecError {
     }
 }
 
-fn value_text(value: &Value) -> Option<String> {
-    Some(match value {
-        Value::None => String::new(),
-        Value::Booleans(values) => comma_list(values),
-        Value::Integers(values) => comma_list(values),
-        Value::Doubles(values) => comma_list(values),
-        Value::Colors(values) => values
-            .iter()
-            .map(|value| {
-                value
-                    .iter()
-                    .map(u8::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            })
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Points(values) => values
-            .iter()
-            .map(|value| comma_list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Vectors(values) => values
-            .iter()
-            .map(|value| comma_list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Transforms(values) => values
-            .iter()
-            .map(|value| comma_list(value.0))
-            .collect::<Vec<_>>()
-            .join(";"),
-        Value::Strings(values) => values.join("\u{1f}"),
-        Value::ObjectReferences(values) => values
-            .iter()
-            .map(|value| {
-                format!(
-                    "{}@{}:{}",
-                    value.object_id, value.component[0], value.component[1]
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Geometries(values) => values
-            .iter()
-            .map(|value| value.class_id.to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Uuids(values) => comma_list(values),
-        Value::PolyEdges(_) | Value::SubdEdgeChains(_) => return None,
-        Value::Opaque { .. } => return None,
-    })
+struct Joined<I>(I, &'static str);
+
+impl<I> fmt::Display for Joined<I>
+where
+    I: Clone + Iterator,
+    I::Item: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.clone().enumerate() {
+            if index != 0 {
+                f.write_str(self.1)?;
+            }
+            write!(f, "{value}")?;
+        }
+        Ok(())
+    }
+}
+
+struct ReferenceList<'a>(&'a [ObjectReference]);
+
+impl fmt::Display for ReferenceList<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, value) in self.0.iter().enumerate() {
+            if index != 0 {
+                f.write_str(",")?;
+            }
+            write!(
+                f,
+                "{}@{}:{}",
+                value.object_id, value.component[0], value.component[1]
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn insert_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: impl fmt::Display,
+    value: impl fmt::Display,
+) -> Result<(), CodecError> {
+    let key =
+        crate::wire::admitted_format(ctx, format_args!("{key}"), "Rhino history property key")?;
+    let value =
+        crate::wire::admitted_format(ctx, format_args!("{value}"), "Rhino history property value")?;
+    ctx.charge_collection_items(1, "Rhino history property entries")?;
+    properties.insert(key, value);
+    Ok(())
+}
+
+fn admitted_named_properties(
+    ctx: &DecodeContext<'_>,
+    record: &str,
+    entries: BTreeMap<String, String>,
+    warnings: &mut Diagnostics,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    use std::collections::btree_map::Entry;
+
+    let mut kept = BTreeMap::new();
+    for (name, value) in entries {
+        match cadmpeg_core::text::NonBlankString::new(name) {
+            Some(key) => match kept.entry(key) {
+                Entry::Vacant(slot) => {
+                    ctx.charge_collection_items(1, "Rhino history named property entries")?;
+                    slot.insert(value);
+                }
+                Entry::Occupied(slot) => warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                    format_args!("{record} states the property {} a second time; the property is not transferred", slot.key()),
+                )?,
+            },
+            None => warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                format_args!("{record} states a property with a blank key; the property is not transferred"),
+            )?,
+        }
+    }
+    Ok(kept)
+}
+
+fn value_text(ctx: &DecodeContext<'_>, value: &Value) -> Result<Option<String>, CodecError> {
+    let text = match value {
+        Value::None => {
+            crate::wire::admitted_format(ctx, format_args!(""), "Rhino history value text")?
+        }
+        Value::Booleans(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Integers(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Doubles(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Colors(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Points(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Vectors(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Transforms(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!(
+                "{}",
+                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
+            ),
+            "Rhino history value text",
+        )?,
+        Value::Strings(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter(), "\u{1f}")),
+            "Rhino history value text",
+        )?,
+        Value::ObjectReferences(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", ReferenceList(values)),
+            "Rhino history value text",
+        )?,
+        Value::Geometries(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter().map(|value| value.class_id), ",")),
+            "Rhino history value text",
+        )?,
+        Value::Uuids(values) => crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", Joined(values.iter(), ",")),
+            "Rhino history value text",
+        )?,
+        Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. } => return Ok(None),
+    };
+    Ok(Some(text))
 }
 
 fn evaluation_properties(
+    ctx: &DecodeContext<'_>,
     prefix: &str,
     value: &EvaluationParameter,
     properties: &mut BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}.type"), value.parameter_type.to_string());
-    properties.insert(format!("{prefix}.component"), comma_list(value.component));
-    properties.insert(format!("{prefix}.parameters"), comma_list(value.parameters));
+) -> Result<(), CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.type"),
+        value.parameter_type,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.component"),
+        Joined(value.component.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.parameters"),
+        Joined(value.parameters.iter(), ","),
+    )?;
     for (index, interval) in value.intervals.iter().enumerate() {
         if let Some(interval) = interval {
-            properties.insert(format!("{prefix}.interval_{index}"), comma_list(interval));
+            insert_property(
+                ctx,
+                properties,
+                format_args!("{prefix}.interval_{index}"),
+                Joined(interval.iter(), ","),
+            )?;
         }
     }
+    Ok(())
 }
 
 fn object_reference_properties(
+    ctx: &DecodeContext<'_>,
     prefix: &str,
     value: &ObjectReference,
     properties: &mut BTreeMap<String, String>,
-) {
-    properties.insert(format!("{prefix}.object_id"), value.object_id.to_string());
-    properties.insert(format!("{prefix}.component"), comma_list(value.component));
-    properties.insert(
-        format!("{prefix}.geometry_type"),
-        value.geometry_type.to_string(),
-    );
-    properties.insert(format!("{prefix}.point"), comma_list(value.point.0));
-    properties.insert(format!("{prefix}.osnap_mode"), value.osnap_mode.to_string());
+) -> Result<(), CodecError> {
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.object_id"),
+        value.object_id,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.component"),
+        Joined(value.component.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.geometry_type"),
+        value.geometry_type,
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.point"),
+        Joined(value.point.0.iter(), ","),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.osnap_mode"),
+        value.osnap_mode,
+    )?;
     evaluation_properties(
-        &format!("{prefix}.evaluation"),
+        ctx,
+        &crate::wire::admitted_format(
+            ctx,
+            format_args!("{prefix}.evaluation"),
+            "Rhino history evaluation prefix",
+        )?,
         &value.evaluation,
         properties,
-    );
-    properties.insert(
-        format!("{prefix}.instance_count"),
-        value.instance_path.len().to_string(),
-    );
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}.instance_count"),
+        value.instance_path.len(),
+    )?;
     for (index, instance) in value.instance_path.iter().enumerate() {
-        let path = format!("{prefix}.instance_{index}");
-        properties.insert(
-            format!("{path}.reference_id"),
-            instance.reference_id.to_string(),
-        );
-        properties.insert(
-            format!("{path}.transform"),
-            comma_list(instance.transform.0),
-        );
-        properties.insert(
-            format!("{path}.definition_id"),
-            instance.definition_id.to_string(),
-        );
-        properties.insert(
-            format!("{path}.geometry_index"),
-            instance.geometry_index.to_string(),
-        );
+        let path = crate::wire::admitted_format(
+            ctx,
+            format_args!("{prefix}.instance_{index}"),
+            "Rhino history instance prefix",
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.reference_id"),
+            instance.reference_id,
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.transform"),
+            Joined(instance.transform.0.iter(), ","),
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.definition_id"),
+            instance.definition_id,
+        )?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{path}.geometry_index"),
+            instance.geometry_index,
+        )?;
         if let Some(evaluation) = &instance.evaluation {
-            properties.insert(
-                format!("{path}.component"),
-                comma_list(evaluation.component),
-            );
+            insert_property(
+                ctx,
+                properties,
+                format_args!("{path}.component"),
+                Joined(evaluation.component.iter(), ","),
+            )?;
             evaluation_properties(
-                &format!("{path}.evaluation"),
+                ctx,
+                &crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{path}.evaluation"),
+                    "Rhino history evaluation prefix",
+                )?,
                 &evaluation.parameter,
                 properties,
-            );
+            )?;
         }
     }
+    Ok(())
 }
 
 fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
@@ -1068,10 +1278,15 @@ fn extended_geometry_json(
             crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch)
         {
             for error in errors {
-                warnings.push(format!(
-                    "embedded history hatch userdata at offset {}: {error}",
-                    value.class_data_range.start
-                ));
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history hatch userdata at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
             }
         }
         let plane = hatch.plane;
@@ -1097,10 +1312,15 @@ fn extended_geometry_json(
         let (origin, equation_constant) = match scaled {
             Ok(scaled) => scaled,
             Err(error) => {
-                warnings.push(format!(
-                    "embedded history hatch at offset {}: {error}",
-                    value.class_data_range.start
-                ));
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history hatch at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
                 return None;
             }
         };
@@ -1175,30 +1395,48 @@ fn extended_geometry_json(
                 return None;
             }
             Err(error) => {
-                warnings.push(format!(
-                    "embedded history dimension at offset {}: {error}",
-                    value.class_data_range.start
-                ));
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history dimension at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
                 return None;
             }
         };
         let mut dimension = dimension;
-        crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
-            .map_err(|error| {
-                warnings.push(format!(
+        if let Err(error) =
+            crate::dimensions::apply_userdata(data, &value.userdata, archive, scale, &mut dimension)
+        {
+            optional_warning(
+                expand.ctx(),
+                warnings,
+                refusal,
+                format_args!(
                     "embedded history dimension userdata at offset {}: {error}",
                     value.class_data_range.start
-                ));
-            })
-            .ok()?;
-        return crate::dimensions::semantic_json(&dimension)
-            .map_err(|error| {
-                warnings.push(format!(
-                    "embedded history dimension at offset {}: {error}",
-                    value.class_data_range.start
-                ));
-            })
-            .ok();
+                ),
+            )?;
+            return None;
+        }
+        return match crate::dimensions::semantic_json(&dimension) {
+            Ok(semantic) => Some(semantic),
+            Err(error) => {
+                optional_warning(
+                    expand.ctx(),
+                    warnings,
+                    refusal,
+                    format_args!(
+                        "embedded history dimension at offset {}: {error}",
+                        value.class_data_range.start
+                    ),
+                )?;
+                None
+            }
+        };
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
             match crate::polyedge::decode(expand, value.class_data_range.clone(), archive) {
@@ -1208,10 +1446,15 @@ fn extended_geometry_json(
                     return None;
                 }
                 Err(error) => {
-                    warnings.push(format!(
-                        "embedded history polyedge at offset {}: {error}",
-                        value.class_data_range.start
-                    ));
+                    optional_warning(
+                        expand.ctx(),
+                        warnings,
+                        refusal,
+                        format_args!(
+                            "embedded history polyedge at offset {}: {error}",
+                            value.class_data_range.start
+                        ),
+                    )?;
                     return None;
                 }
             };
@@ -1225,7 +1468,18 @@ fn extended_geometry_json(
     } else {
         return None;
     };
-    serde_json::to_string(&semantic).ok()
+    match crate::wire::admitted_json(
+        expand.ctx(),
+        &semantic,
+        "Rhino embedded history geometry JSON",
+    ) {
+        Ok(text) => Some(text),
+        Err(error @ CodecError::ResourceLimit(_)) => {
+            *refusal = Some(error);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 /// Accounting for geometry decoded out of a history record's values.
@@ -1272,7 +1526,23 @@ fn optional_geometry<T>(
     }
 }
 
+fn optional_warning(
+    ctx: &DecodeContext<'_>,
+    warnings: &mut Diagnostics,
+    refusal: &mut Option<CodecError>,
+    message: fmt::Arguments<'_>,
+) -> Option<()> {
+    match warnings.push_admitted(ctx, message) {
+        Ok(()) => Some(()),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
+}
+
 fn structured_value_properties(
+    ctx: &DecodeContext<'_>,
     key: &str,
     value: &Value,
     geometry_context: Option<(
@@ -1283,21 +1553,28 @@ fn structured_value_properties(
     )>,
     properties: &mut BTreeMap<String, String>,
     sink: &mut GeometrySink<'_>,
-) {
+) -> Result<(), CodecError> {
     match value {
         Value::ObjectReferences(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in values.iter().enumerate() {
-                object_reference_properties(&format!("{key}.{index}"), value, properties);
+                let prefix = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{key}.{index}"),
+                    "Rhino history reference prefix",
+                )?;
+                object_reference_properties(ctx, &prefix, value, properties)?;
             }
         }
         Value::Geometries(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in values.iter().enumerate() {
-                properties.insert(
-                    format!("{key}.{index}.class_id"),
-                    value.class_id.to_string(),
-                );
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{key}.{index}.class_id"),
+                    value.class_id,
+                )?;
                 if let Some((expand, archive, writer_version, scale)) = geometry_context {
                     let data = expand.data();
                     let decoded = optional_geometry(
@@ -1312,32 +1589,62 @@ fn structured_value_properties(
                         &mut sink.refusal,
                     );
                     if sink.refusal.is_some() {
-                        return;
+                        return Ok(());
                     }
                     if let Some(decoded) = decoded {
                         sink.untyped += 1;
                         let semantic = match decoded {
                             crate::curves::DecodedGeometry::Point { position, .. } => {
-                                serde_json::to_string(&position)
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &position,
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::PointCloud(cloud) => {
                                 sink.redundant_repairs += cloud.warnings.len();
-                                serde_json::to_string(&cloud.points)
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &cloud.points,
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::Curve { curve } => {
-                                serde_json::to_string(&curve.reported_geometry())
+                                crate::wire::admitted_json(
+                                    ctx,
+                                    &curve.reported_geometry(),
+                                    "Rhino history geometry JSON",
+                                )
                             }
                             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                                 crate::surfaces::DecodedSurface::Typed { geometry, .. } => {
-                                    serde_json::to_string(&geometry.into_geometry())
+                                    crate::wire::admitted_json(
+                                        ctx,
+                                        &geometry.into_geometry(),
+                                        "Rhino history geometry JSON",
+                                    )
                                 }
                                 crate::surfaces::DecodedSurface::Procedural {
                                     geometry, ..
-                                } => serde_json::to_string(&geometry),
+                                } => crate::wire::admitted_json(
+                                    ctx,
+                                    &geometry,
+                                    "Rhino history geometry JSON",
+                                ),
                             },
                         };
-                        if let Ok(semantic) = semantic {
-                            properties.insert(format!("{key}.{index}.geometry"), semantic);
+                        match semantic {
+                            Ok(semantic) => {
+                                ctx.charge_collection_items(1, "Rhino history property entries")?;
+                                let property_key = crate::wire::admitted_format(
+                                    ctx,
+                                    format_args!("{key}.{index}.geometry"),
+                                    "Rhino history property key",
+                                )?;
+                                properties.insert(property_key, semantic);
+                            }
+                            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                            Err(_) => {}
                         }
                     } else {
                         let semantic = extended_geometry_json(
@@ -1350,108 +1657,164 @@ fn structured_value_properties(
                             &mut sink.refusal,
                         );
                         if sink.refusal.is_some() {
-                            return;
+                            return Ok(());
                         }
                         if let Some(semantic) = semantic {
                             sink.untyped += 1;
-                            properties.insert(format!("{key}.{index}.geometry"), semantic);
+                            ctx.charge_collection_items(1, "Rhino history property entries")?;
+                            let property_key = crate::wire::admitted_format(
+                                ctx,
+                                format_args!("{key}.{index}.geometry"),
+                                "Rhino history property key",
+                            )?;
+                            properties.insert(property_key, semantic);
                         } else {
                             sink.failed += 1;
                         }
                     }
                 } else {
                     sink.untyped += 1;
-                    sink.warnings.push_coded(
+                    sink.warnings.push_coded_admitted(ctx,
                         crate::loss::RhinoLossCode::HistoryGeometryNotTransferred,
-                        format!(
+                        format_args!(
                             "history geometry value {key}.{index} at source range {}..{} has no coordinate-unit binding",
                             value.class_data_range.start,
                             value.class_data_range.end
                         ),
-                    );
-                    properties.insert(
-                        format!("{key}.{index}.geometry_status"),
-                        "unavailable_unit_binding".to_string(),
-                    );
-                    properties.insert(
-                        format!("{key}.{index}.source_range"),
-                        format!(
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{key}.{index}.geometry_status"),
+                        "unavailable_unit_binding",
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{key}.{index}.source_range"),
+                        format_args!(
                             "{}..{}",
                             value.class_data_range.start, value.class_data_range.end
                         ),
-                    );
+                    )?;
                 }
             }
         }
         Value::PolyEdges(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (edge_index, edge) in values.iter().enumerate() {
-                let edge_key = format!("{key}.{edge_index}");
-                properties.insert(
-                    format!("{edge_key}.parameters"),
-                    comma_list(&edge.polyedge.parameters),
-                );
-                properties.insert(
-                    format!("{edge_key}.evaluation_mode"),
-                    edge.evaluation_mode.to_string(),
-                );
-                properties.insert(
-                    format!("{edge_key}.segment_count"),
-                    edge.polyedge.segments.len().to_string(),
-                );
+                let edge_key = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{key}.{edge_index}"),
+                    "Rhino history edge prefix",
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.parameters"),
+                    Joined(edge.polyedge.parameters.iter(), ","),
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.evaluation_mode"),
+                    edge.evaluation_mode,
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{edge_key}.segment_count"),
+                    edge.polyedge.segments.len(),
+                )?;
                 for (segment_index, segment) in edge.polyedge.segments.iter().enumerate() {
-                    let segment_key = format!("{edge_key}.segment_{segment_index}");
+                    let segment_key = crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{edge_key}.segment_{segment_index}"),
+                        "Rhino history segment prefix",
+                    )?;
+                    let curve_key = crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{segment_key}.curve"),
+                        "Rhino history curve prefix",
+                    )?;
                     object_reference_properties(
-                        &format!("{segment_key}.curve"),
+                        ctx,
+                        &curve_key,
                         &segment.reference.curve,
                         properties,
-                    );
-                    properties.insert(
-                        format!("{segment_key}.reversed"),
-                        segment.reversed.to_string(),
-                    );
-                    properties.insert(
-                        format!("{segment_key}.full_domain"),
-                        comma_list(segment.domain),
-                    );
-                    properties.insert(
-                        format!("{segment_key}.sub_domain"),
-                        comma_list(segment.reference.sub_domain),
-                    );
-                    properties.insert(
-                        format!("{segment_key}.proxy_domain"),
-                        comma_list(segment.proxy_domain),
-                    );
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.reversed"),
+                        segment.reversed,
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.full_domain"),
+                        Joined(segment.domain.iter(), ","),
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.sub_domain"),
+                        Joined(segment.reference.sub_domain.iter(), ","),
+                    )?;
+                    insert_property(
+                        ctx,
+                        properties,
+                        format_args!("{segment_key}.proxy_domain"),
+                        Joined(segment.proxy_domain.iter(), ","),
+                    )?;
                     if let Some(domains) = &segment.reference.domains {
-                        properties.insert(
-                            format!("{segment_key}.edge_domain"),
-                            comma_list(domains.edge),
-                        );
-                        properties.insert(
-                            format!("{segment_key}.trim_domain"),
-                            comma_list(domains.trim),
-                        );
+                        insert_property(
+                            ctx,
+                            properties,
+                            format_args!("{segment_key}.edge_domain"),
+                            Joined(domains.edge.iter(), ","),
+                        )?;
+                        insert_property(
+                            ctx,
+                            properties,
+                            format_args!("{segment_key}.trim_domain"),
+                            Joined(domains.trim.iter(), ","),
+                        )?;
                     }
                 }
             }
         }
         Value::SubdEdgeChains(values) => {
-            properties.insert(format!("{key}.count"), values.len().to_string());
+            insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, chain) in values.iter().enumerate() {
-                let chain_key = format!("{key}.{index}");
-                properties.insert(format!("{chain_key}.subd_id"), chain.subd_id.to_string());
-                properties.insert(
-                    format!("{chain_key}.edge_ids"),
-                    comma_list(chain.edges.iter().map(|edge| edge.id)),
-                );
-                properties.insert(
-                    format!("{chain_key}.orientations"),
-                    comma_list(chain.edges.iter().map(|edge| u8::from(edge.reversed))),
-                );
+                let chain_key = crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{key}.{index}"),
+                    "Rhino history chain prefix",
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.subd_id"),
+                    chain.subd_id,
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.edge_ids"),
+                    Joined(chain.edges.iter().map(|edge| edge.id), ","),
+                )?;
+                insert_property(
+                    ctx,
+                    properties,
+                    format_args!("{chain_key}.orientations"),
+                    Joined(chain.edges.iter().map(|edge| u8::from(edge.reversed)), ","),
+                )?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 /// Projects source history into ordered neutral native operations.
@@ -1472,21 +1835,6 @@ pub(crate) fn project(
     warnings: &mut Diagnostics,
 ) -> Result<(usize, usize, usize, usize), ProjectionError> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-    use cadmpeg_ir::ids::{Identity, IdentityKey};
-
-    #[derive(serde::Serialize)]
-    struct NativeHistoryRecord {
-        id: String,
-        source_offset: u64,
-        source_uuid: Option<String>,
-        command_uuid: String,
-        record_version: i32,
-        record_type: &'static str,
-        copy_on_replace: bool,
-        antecedent_object_uuids: Vec<String>,
-        descendant_object_uuids: Vec<String>,
-        value_count: usize,
-    }
 
     let mut sink = GeometrySink {
         warnings,
@@ -1500,41 +1848,74 @@ pub(crate) fn project(
     let mut native_ids = admitted_vec(ctx, records.len(), "Rhino history native ids")
         .map_err(history_resource_error)?;
     let mut seen_record_ids = HashSet::new();
+    crate::wire::reserve_hash_set(
+        ctx,
+        &mut seen_record_ids,
+        records.len(),
+        "Rhino history record identities",
+    )
+    .map_err(ProjectionError::Codec)?;
     for record in records {
         let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
         let key = if unique {
-            record.id.to_string()
-        } else {
-            format!("offset-{}", record.source_range.start)
-        };
-        let key = IdentityKey::try_new(key).map_err(|error| error.to_string())?;
-        ids.push(FeatureId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "history", "feature"),
-            key.clone(),
-        ));
-        native_ids.push(
-            Identity::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "history", "record"),
-                key,
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{}", record.id),
+                "Rhino history identity key",
             )
-            .to_string(),
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("offset-{}", record.source_range.start),
+                "Rhino history identity key",
+            )
+        }
+        .map_err(ProjectionError::Codec)?;
+        let feature_id = crate::wire::admitted_format(
+            ctx,
+            format_args!("rhino:history:feature#{key}"),
+            "Rhino history feature identity",
+        )
+        .map_err(ProjectionError::Codec)?;
+        ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
+        native_ids.push(
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:history:record#{key}"),
+                "Rhino history native identity",
+            )
+            .map_err(ProjectionError::Codec)?,
         );
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
         let mut record_descendants = HashSet::new();
-        for descendant in record
-            .descendants
-            .iter()
-            .filter(|descendant| record_descendants.insert(**descendant))
-        {
+        crate::wire::reserve_hash_set(
+            ctx,
+            &mut record_descendants,
+            record.descendants.len(),
+            "Rhino history unique descendants",
+        )
+        .map_err(ProjectionError::Codec)?;
+        for descendant in &record.descendants {
+            if !record_descendants.insert(*descendant) {
+                continue;
+            }
             if descendant.is_nil() {
                 continue;
             }
-            producers
-                .entry(*descendant)
-                .and_modify(|producer| *producer = None)
-                .or_insert_with(|| Some((index, ids[index].clone())));
+            if let Some(producer) = producers.get_mut(descendant) {
+                *producer = None;
+            } else {
+                crate::wire::reserve_hash_map(ctx, &mut producers, 1, "Rhino history producers")
+                    .map_err(ProjectionError::Codec)?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(ids[index].as_str().len()),
+                    "Rhino history producer identity",
+                )
+                .map_err(ProjectionError::Codec)?;
+                producers.insert(*descendant, Some((index, ids[index].clone())));
+            }
         }
     }
     let mut dropped_dependencies = 0;
@@ -1549,103 +1930,202 @@ pub(crate) fn project(
             }
         }
         let mut dependency_seen = HashSet::new();
-        let dependencies = record
-            .antecedents
-            .iter()
-            .filter_map(|antecedent| producers.get(antecedent).and_then(Option::as_ref))
-            .filter(|(producer_index, _)| *producer_index < index)
-            .filter(|(_, id)| dependency_seen.insert((*id).clone()))
-            .map(|(_, id)| id.clone())
-            .collect();
+        crate::wire::reserve_hash_set(
+            ctx,
+            &mut dependency_seen,
+            record.antecedents.len(),
+            "Rhino history seen dependencies",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let mut dependencies =
+            admitted_vec(ctx, record.antecedents.len(), "Rhino history dependencies")
+                .map_err(history_resource_error)?;
+        for antecedent in &record.antecedents {
+            let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
+            else {
+                continue;
+            };
+            if *producer_index >= index || dependency_seen.contains(id) {
+                continue;
+            }
+            let id_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
+            ctx.charge_retained(id_bytes, "Rhino history seen dependency identity")
+                .map_err(ProjectionError::Codec)?;
+            dependency_seen.insert(id.clone());
+            ctx.charge_retained(id_bytes, "Rhino history dependency identity")
+                .map_err(ProjectionError::Codec)?;
+            dependencies.push(id.clone());
+        }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
         let mut value_occurrences = HashMap::<i32, usize>::new();
+        crate::wire::reserve_hash_map(
+            ctx,
+            &mut value_occurrences,
+            record.values.len(),
+            "Rhino history value occurrences",
+        )
+        .map_err(ProjectionError::Codec)?;
         for value in &record.values {
             let occurrence = value_occurrences.entry(value.id).or_default();
             let key = if *occurrence == 0 {
-                format!("value_{}", value.id)
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("value_{}", value.id),
+                    "Rhino history value key",
+                )
             } else {
-                format!("value_{}_{}", value.id, occurrence)
-            };
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("value_{}_{}", value.id, occurrence),
+                    "Rhino history value key",
+                )
+            }
+            .map_err(ProjectionError::Codec)?;
             *occurrence += 1;
             structured_value_properties(
+                ctx,
                 &key,
                 &value.value,
                 geometry_context,
                 &mut properties,
                 &mut sink,
-            );
+            )
+            .map_err(ProjectionError::Codec)?;
             if let Some(error) = sink.refusal.take() {
                 return Err(ProjectionError::Codec(error));
             }
             if geometry_context.is_none()
                 && matches!(&value.value, Value::Geometries(values) if !values.is_empty())
             {
-                properties.insert(
-                    format!("{key}.source_fidelity_id"),
-                    source_id(record.source_range.start),
-                );
+                insert_property(
+                    ctx,
+                    &mut properties,
+                    format_args!("{key}.source_fidelity_id"),
+                    format_args!("rhino:history:source#{:012}", record.source_range.start),
+                )
+                .map_err(ProjectionError::Codec)?;
             }
-            if let Some(text) = value_text(&value.value) {
+            if let Some(text) = value_text(ctx, &value.value).map_err(ProjectionError::Codec)? {
+                ctx.charge_collection_items(1, "Rhino history parameter entries")
+                    .map_err(ProjectionError::Codec)?;
                 parameters.insert(key, text);
             } else if let Value::Opaque { type_code, range } = &value.value {
-                properties.insert(format!("{key}.type"), type_code.to_string());
-                properties.insert(
-                    format!("{key}.source_range"),
-                    format!("{}..{}", range.start, range.end),
-                );
+                insert_property(ctx, &mut properties, format_args!("{key}.type"), type_code)
+                    .map_err(ProjectionError::Codec)?;
+                insert_property(
+                    ctx,
+                    &mut properties,
+                    format_args!("{key}.source_range"),
+                    format_args!("{}..{}", range.start, range.end),
+                )
+                .map_err(ProjectionError::Codec)?;
             }
         }
-        properties.insert("record_version".to_string(), record.version.to_string());
-        properties.insert(
-            "record_type".to_string(),
+        insert_property(ctx, &mut properties, "record_version", record.version)
+            .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "record_type",
             match record.record_type {
                 RecordType::HistoryParameters => "history_parameters",
                 RecordType::FeatureParameters => "feature_parameters",
-            }
-            .to_string(),
-        );
-        properties.insert(
-            "copy_on_replace".to_string(),
-            record.copy_on_replace.to_string(),
-        );
-        properties.insert(
-            "antecedent_objects".to_string(),
-            comma_list(&record.antecedents),
-        );
-        properties.insert(
-            "descendant_objects".to_string(),
-            comma_list(&record.descendants),
-        );
-        let (properties, refused) =
-            cadmpeg_core::text::named_entries_reporting(&native_ids[index], properties);
-        let (parameters, refused_parameters) =
-            cadmpeg_core::text::named_entries_reporting(&native_ids[index], parameters);
-        for key in refused.into_iter().chain(refused_parameters) {
-            sink.warnings.push_coded(
-                crate::loss::RhinoLossCode::ObjectAttributesDegraded,
-                format!("{key}; the property is not transferred"),
-            );
-        }
+            },
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "copy_on_replace",
+            record.copy_on_replace,
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "antecedent_objects",
+            Joined(record.antecedents.iter(), ","),
+        )
+        .map_err(ProjectionError::Codec)?;
+        insert_property(
+            ctx,
+            &mut properties,
+            "descendant_objects",
+            Joined(record.descendants.iter(), ","),
+        )
+        .map_err(ProjectionError::Codec)?;
+        let properties =
+            admitted_named_properties(ctx, &native_ids[index], properties, sink.warnings)
+                .map_err(ProjectionError::Codec)?;
+        let parameters =
+            admitted_named_properties(ctx, &native_ids[index], parameters, sink.warnings)
+                .map_err(ProjectionError::Codec)?;
+        let dependency_count = cadmpeg_core::decode::u64_from_index(dependencies.len());
+        let comparison_work = dependency_count
+            .checked_mul(dependency_count)
+            .ok_or_else(|| {
+                ProjectionError::Codec(ctx.refuse_codec_limit(
+                    "Rhino history dependency distinctness",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ))
+            })?;
+        ctx.charge_work(comparison_work, "Rhino history dependency distinctness")
+            .map_err(ProjectionError::Codec)?;
+        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(dependencies)
+            .map_err(|error| error.to_string())?;
+        crate::wire::reserve_collection(
+            ctx,
+            &mut ir.model.features,
+            1,
+            "Rhino history projected features",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let feature_id_text = crate::wire::copy_retained_string(
+            ctx,
+            ids[index].as_str(),
+            "Rhino history projected feature identity",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
+        let source_tag = crate::wire::copy_retained_string(
+            ctx,
+            "HistoryRecord",
+            "Rhino history feature source tag",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let kind = crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", record.command_id),
+            "Rhino history feature kind",
+        )
+        .map_err(ProjectionError::Codec)?;
+        let native_ref = crate::wire::copy_retained_string(
+            ctx,
+            &native_ids[index],
+            "Rhino history feature native reference",
+        )
+        .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
-            id: ids[index].clone(),
+            id: feature_id,
             ordinal: u64::try_from(index)
                 .map_err(|_| "history source order exceeds u64".to_string())?,
             name: None,
             suppressed: Some(false),
             dependencies,
             source_properties: properties,
-            source_tag: Some("HistoryRecord".to_string()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: record.command_id.to_string().into(),
+                    kind: kind.into(),
                     parameters,
                 }),
             ),
-            native_ref: Some(native_ids[index].clone()),
+            native_ref: Some(native_ref),
         });
     }
     for record in records {
@@ -1656,18 +2136,18 @@ pub(crate) fn project(
         .iter()
         .enumerate()
         .map(|(index, record)| NativeHistoryRecord {
-            id: native_ids[index].clone(),
+            id: &native_ids[index],
             source_offset: cadmpeg_core::decode::u64_from_index(record.source_range.start),
-            source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
-            command_uuid: record.command_id.to_string(),
+            source_uuid: (!record.id.is_nil()).then_some(UuidText(&record.id)),
+            command_uuid: UuidText(&record.command_id),
             record_version: record.version,
             record_type: match record.record_type {
                 RecordType::HistoryParameters => "history_parameters",
                 RecordType::FeatureParameters => "feature_parameters",
             },
             copy_on_replace: record.copy_on_replace,
-            antecedent_object_uuids: record.antecedents.iter().map(ToString::to_string).collect(),
-            descendant_object_uuids: record.descendants.iter().map(ToString::to_string).collect(),
+            antecedent_object_uuids: UuidList(&record.antecedents),
+            descendant_object_uuids: UuidList(&record.descendants),
             value_count: record.values.len(),
         });
     ir.native

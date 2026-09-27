@@ -174,7 +174,10 @@ pub(crate) fn admitted_json(
 
     impl std::io::Write for ByteCount {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0 = self.0.checked_add(bytes.len()).ok_or(std::io::ErrorKind::OutOfMemory)?;
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or(std::io::ErrorKind::OutOfMemory)?;
             Ok(bytes.len())
         }
 
@@ -329,15 +332,6 @@ impl fmt::Display for Uuid {
         let leading = HEX_DIGITS[usize::from(self.bytes[0] >> 4)];
         write!(formatter, "{leading}{}", UuidTail(self.bytes))
     }
-}
-
-/// Render comma-separated native property values in their stored order.
-pub(crate) fn comma_list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 /// Reads one mixed-endian UUID from the bounded reader.

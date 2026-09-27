@@ -126,7 +126,23 @@ fn history_record_slot_refuses_collection_limit() {
 #[test]
 fn opaque_history_record_slot_refuses_collection_limit() {
     let record = crate::container::Record::short(HISTORY_RECORD, 0..0, 0);
-    let refusal = with_collection_limit(&[], 0, |ctx| {
+    let warning_refusal = with_collection_limit(&[], 0, |ctx| {
+        parse_records(
+            ctx,
+            &[],
+            &[record.clone()],
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+            0x1000_0026,
+        )
+    })
+    .expect_err("one diagnostic exceeds zero collection items");
+    assert!(matches!(
+        warning_refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let refusal = with_collection_limit(&[], 1, |ctx| {
         parse_records(
             ctx,
             &[],
@@ -136,7 +152,7 @@ fn opaque_history_record_slot_refuses_collection_limit() {
             0x1000_0026,
         )
     })
-    .expect_err("one opaque history record exceeds zero collection items");
+    .expect_err("the diagnostic and opaque record exceed one collection item");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -416,8 +432,33 @@ fn unstored_evaluation_intervals_remain_absent() {
     let value = evaluation(&mut reader, 0).expect("evaluation");
     assert_eq!(value.intervals, [None, None, None]);
     let mut properties = BTreeMap::new();
-    evaluation_properties("evaluation", &value, &mut properties);
+    evaluation_properties(
+        &cadmpeg_test_support::service_decode_context(),
+        "evaluation",
+        &value,
+        &mut properties,
+    )
+    .expect("evaluation properties");
     assert!(!properties.contains_key("evaluation.interval_0"));
+}
+
+#[test]
+fn history_evaluation_property_refuses_collection_limit() {
+    let value = super::EvaluationParameter {
+        parameter_type: 0,
+        component: [0, 0],
+        parameters: [0.0; 4],
+        intervals: [None; 3],
+    };
+    let refusal = with_collection_limit(&[], 0, |ctx| {
+        evaluation_properties(ctx, "evaluation", &value, &mut BTreeMap::new())
+            .expect_err("one property exceeds zero collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino history property entries"
+    ));
 }
 
 #[test]
@@ -661,6 +702,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
+                expand.ctx(),
                 "value_7",
                 &parsed.value,
                 Some((
@@ -671,7 +713,8 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
                 )),
                 &mut properties,
                 &mut sink,
-            );
+            )
+            .expect("geometry properties");
         });
         assert_eq!(sink.untyped, 1);
         assert!(properties.contains_key("value_7.0.geometry"));
@@ -759,7 +802,15 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
             redundant_repairs: 0,
             refusal: None,
         };
-        structured_value_properties("value_7", &parsed.value, None, &mut properties, &mut sink);
+        structured_value_properties(
+            &cadmpeg_test_support::service_decode_context(),
+            "value_7",
+            &parsed.value,
+            None,
+            &mut properties,
+            &mut sink,
+        )
+        .expect("unbound geometry properties");
         (sink.untyped, sink.failed)
     };
     assert_eq!(untyped, 1);
@@ -810,6 +861,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
+            expand.ctx(),
             "value_7",
             &parsed.value,
             Some((
@@ -820,7 +872,8 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
             )),
             &mut properties,
             &mut sink,
-        );
+        )
+        .expect("geometry properties");
     });
     // A point has no neutral carrier, so it stays a stringified coordinate
     // and is counted as untyped.
@@ -1374,12 +1427,14 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
             refusal: None,
         };
         structured_value_properties(
+            &cadmpeg_test_support::service_decode_context(),
             "value_7",
             &Value::PolyEdges(vec![edge]),
             None,
             &mut properties,
             &mut sink,
-        );
+        )
+        .expect("polyedge properties");
         assert_eq!(properties["value_7.0.evaluation_mode"], "3");
         assert_eq!(
             properties["value_7.0.segment_0.curve.object_id"],
