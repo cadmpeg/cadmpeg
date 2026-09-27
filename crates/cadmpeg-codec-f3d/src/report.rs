@@ -49,6 +49,7 @@ pub(crate) fn build_decode_report(
 /// and dialect losses ahead of route losses. An archive member uses the outer
 /// archive layers already classified by the F3Z session.
 pub(crate) fn classify_document(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     scope: ReportScope,
     attributes: BTreeMap<String, String>,
@@ -56,7 +57,7 @@ pub(crate) fn classify_document(
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let dialects = match scope {
         ReportScope::Standalone => {
-            let (dialects, mut losses) = crate::dialect::classify_layers(scan);
+            let (dialects, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
             losses.extend(crate::dialect::dialect_losses(&dialects));
             body.losses.splice(0..0, losses);
             dialects
@@ -71,15 +72,18 @@ pub(crate) fn classify_document(
 
 /// Build a single-document inspection summary with the same dialect facts that
 /// decode projects into losses.
-pub(crate) fn build_inspection_summary(scan: &ContainerScan<'_>) -> ContainerSummary {
-    let (layers, classification_losses) = crate::dialect::classify_layers(scan);
+pub(crate) fn build_inspection_summary(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<ContainerSummary, cadmpeg_core::CodecError> {
+    let (layers, classification_losses) = crate::dialect::classify_layers(ctx, scan)?;
     let losses = classification_losses
         .into_iter()
         .chain(crate::dialect::dialect_losses(&layers))
         .collect::<Vec<_>>();
     let mut summary = crate::container::summarize(scan, layers);
     summary.losses = losses;
-    summary
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -105,7 +109,7 @@ mod tests {
             Vec::new(),
         );
         let source =
-            classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
+            classify_document(&ctx, &scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
                 .unwrap();
         assert!(source.dialects().is_some());
         assert!(report
