@@ -2743,7 +2743,9 @@ pub(crate) fn scan_bytes<'a>(
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii
             .as_ref()
-            .and_then(|framing| framing.persistence.model_name())
+            .map(|framing| framing.persistence.model_name(ctx))
+            .transpose()?
+            .flatten()
         {
             model_name = Some(ModelName { name, offset });
         }
@@ -2751,7 +2753,9 @@ pub(crate) fn scan_bytes<'a>(
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii
             .as_ref()
-            .and_then(|framing| framing.persistence.first_source_model_name())
+            .map(|framing| framing.persistence.first_source_model_name(ctx))
+            .transpose()?
+            .flatten()
         {
             model_name = Some(ModelName { name, offset });
         }
