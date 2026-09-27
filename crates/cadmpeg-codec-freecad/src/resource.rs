@@ -98,6 +98,18 @@ pub(crate) fn retained_string(
         .map_err(|_| CodecError::Malformed("retained text lost UTF-8 encoding".into()))
 }
 
+pub(crate) fn retained_strings(
+    ctx: &DecodeContext<'_>,
+    values: &[String],
+    operation: &'static str,
+) -> Result<Vec<String>, CodecError> {
+    let mut copies = collection_vec(ctx, values.len(), operation)?;
+    for value in values {
+        copies.push(retained_string(ctx, value, operation)?);
+    }
+    Ok(copies)
+}
+
 pub(crate) fn retained_suffix(
     ctx: &DecodeContext<'_>,
     value: &str,
