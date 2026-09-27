@@ -539,31 +539,37 @@ pub(in super::super) fn reconcile_feature_links(
             &emitted,
         )?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
-            .map(|parent| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, parent))
-            .filter(|parent| *parent != feature.id && emitted.contains(parent));
-        if let Some(parent) = parent {
-            regeneration_edges.push((feature.id.clone(), parent));
+        if let Some(parent_id) = current_feature_recipe_parent(&scan.features.operations, feature_id) {
+            let text = ctx.format_retained(
+                format_args!("creo:model:feature#{parent_id}"),
+                "creo regeneration parent IDs",
+            )?;
+            let parent = IrFeatureId::mint(text)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            if parent != feature.id && emitted.contains(&parent) {
+                let child = IrFeatureId::mint(ctx.copy_retained_text(
+                    feature.id.as_str(),
+                    "creo regeneration child IDs",
+                )?)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+                ctx.try_reserve_items(&mut regeneration_edges, 1, "creo regeneration edges")?;
+                regeneration_edges.push((child, parent));
+            }
         }
     }
     for (child, parent) in regeneration_edges {
+        if ir.model.feature_regeneration_parent(&child).is_none() {
+            ctx.charge_collection_items(1, "creo regeneration parent nodes")?;
+        }
         ir.model
             .set_feature_regeneration_parent(child, parent)
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
-    let parent_by_child = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            Some((
-                feature.id.clone(),
-                ir.model.feature_parent(&feature.id)?.clone(),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut remaining = (0..ir.model.features.len()).collect::<Vec<_>>();
-    let mut ordered = Vec::with_capacity(remaining.len());
+    let mut remaining = Vec::new();
+    ctx.try_reserve_items(&mut remaining, ir.model.features.len(), "creo remaining feature order")?;
+    remaining.extend(0..ir.model.features.len());
+    let mut ordered = Vec::new();
+    ctx.try_reserve_items(&mut ordered, remaining.len(), "creo ordered feature indices")?;
     let mut preceding = BTreeSet::new();
     while !remaining.is_empty() {
         let Some(position) = remaining.iter().position(|index| {
@@ -571,13 +577,16 @@ pub(in super::super) fn reconcile_feature_links(
             feature
                 .dependencies
                 .iter()
-                .chain(parent_by_child.get(&feature.id))
+                .chain(ir.model.feature_parent(&feature.id))
                 .all(|required| !emitted.contains(required) || preceding.contains(required))
         }) else {
             break;
         };
         let index = remaining.remove(position);
-        preceding.insert(ir.model.features[index].id.clone());
+        if !preceding.contains(&ir.model.features[index].id) {
+            ctx.charge_collection_items(1, "creo preceding feature identity nodes")?;
+            preceding.insert(&ir.model.features[index].id);
+        }
         ordered.push(index);
     }
     ordered.extend(remaining);

@@ -457,6 +457,152 @@ fn reconciliation_ir_with_emitted_parent() -> CadIr {
     ir
 }
 
+fn reconciliation_ir_for_ordering() -> CadIr {
+    let mut ir = reconciliation_ir_with_emitted_parent();
+    for feature in &mut ir.model.features {
+        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            }),
+        );
+    }
+    ir
+}
+
+fn feature_order_collection_error(limit: u64, operation: &'static str) {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_for_ordering();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
+        .expect_err("two feature indices exceed the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn remaining_feature_order_refuses_collection_limit() {
+    feature_order_collection_error(6, "creo remaining feature order");
+}
+
+#[test]
+fn ordered_feature_indices_refuse_collection_limit() {
+    feature_order_collection_error(8, "creo ordered feature indices");
+}
+
+#[test]
+fn preceding_feature_identity_nodes_refuse_collection_limit() {
+    feature_order_collection_error(10, "creo preceding feature identity nodes");
+}
+
+#[test]
+fn feature_order_fixture_preserves_parent_before_child() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_for_ordering();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+    })
+    .expect("service profile admits feature ordering");
+    assert_eq!(ir.model.features[0].ordinal, 0);
+    assert_eq!(ir.model.features[1].ordinal, 1);
+}
+
+fn regeneration_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.operations.push(crate::feature::operations::FeatureOperation {
+        feature_id: 10,
+        kind: crate::feature::operations::OperationKind::Stored("Sweep".to_string()),
+        name: crate::feature::operations::OperationName::Derived,
+        recipe: crate::feature::operations::RecipeResolution::Resolved(
+            crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        ),
+        display_state_conflict: false,
+        depdb: Some(crate::feature::operations::DepdbPrefix {
+            schema: crate::feature::schema::SchemaClass::Protrusion,
+            parent: 3,
+        }),
+        offset: 100,
+        state_offset: 100,
+    });
+    scan
+}
+
+fn regeneration_edge_limit_error(
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+) {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
+        .expect_err("one regeneration edge exceeds the resource limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn regeneration_parent_id_refuses_retained_limit() {
+    let parent = "creo:model:feature#3".len();
+    let child = "creo:model:feature#10".len();
+    regeneration_edge_limit_error(
+        None,
+        Some((parent * 2 + child) as u64),
+        "creo regeneration parent IDs",
+    );
+}
+
+#[test]
+fn regeneration_child_id_refuses_retained_limit() {
+    let parent = "creo:model:feature#3".len();
+    let child = "creo:model:feature#10".len();
+    regeneration_edge_limit_error(
+        None,
+        Some((parent * 3 + child) as u64),
+        "creo regeneration child IDs",
+    );
+}
+
+#[test]
+fn regeneration_edges_refuse_collection_limit() {
+    regeneration_edge_limit_error(Some(9), None, "creo regeneration edges");
+}
+
+#[test]
+fn regeneration_parent_nodes_refuse_collection_limit() {
+    regeneration_edge_limit_error(Some(10), None, "creo regeneration parent nodes");
+}
+
+#[test]
+fn regeneration_fixture_preserves_parent_relation_under_service_policy() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+    })
+    .expect("service profile admits the regeneration parent");
+    let child = IrFeatureId::mint("creo:model:feature#10")
+        .expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture parent ID");
+    assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
+}
+
 fn reconciled_native_dependency_error(
     collection: Option<u64>,
     retained: Option<u64>,
