@@ -87,6 +87,107 @@ fn design_operation_scalar_expression_refuses_at_retained_limit() {
 }
 
 #[test]
+fn design_string_property_value_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "maker-property".into(),
+        owner: "feature".into(),
+        name: "FaceMakerClass".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><String value=\"Part::FaceMakerBullseye\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd string property value",
+        |ctx| super::string_property_value(ctx, &property),
+    );
+}
+
+#[test]
+fn design_numeric_list_refuses_at_collection_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "numeric-list".into(),
+        owner: "pattern".into(),
+        name: "Spacings".into(),
+        type_name: "App::PropertyFloatList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["numbers.bin".into()],
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><FloatList file=\"numbers.bin\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    let mut data = 1_u32.to_le_bytes().to_vec();
+    data.extend(2.5_f64.to_le_bytes());
+    let entry = crate::native::EntryRecord {
+        id: "entry".into(),
+        name: "numbers.bin".into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::numeric_list(&ctx, &property, &[entry]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd numeric-list values"));
+}
+
+#[test]
+fn design_vector_list_refuses_at_collection_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "vector-list".into(),
+        owner: "polygon".into(),
+        name: "Nodes".into(),
+        type_name: "App::PropertyVectorList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["vectors.bin".into()],
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><VectorList file=\"vectors.bin\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    let mut data = 1_u32.to_le_bytes().to_vec();
+    for component in [1.0_f64, 2.0, 3.0] {
+        data.extend(component.to_le_bytes());
+    }
+    let entry = crate::native::EntryRecord {
+        id: "entry".into(),
+        name: "vectors.bin".into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::vector_list_property(&ctx, &[&property], "Nodes", &[entry]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd vector-list points"));
+}
+
+#[test]
 fn design_body_output_prefix_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Body".into(),

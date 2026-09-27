@@ -162,9 +162,9 @@ pub(crate) fn transfer(
         } else if object.type_name == "PartDesign::FeatureBase" {
             feature_base_definition(&owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
-            imported_geometry_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            imported_geometry_definition(ctx, &object.type_name, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(&object.type_name, &owned, entries)
+            part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
@@ -248,6 +248,7 @@ pub(crate) fn transfer(
                 })
                 .transpose()?;
             extrusion_definition(
+                ctx,
                 &object.type_name,
                 &owned,
                 profile,
@@ -256,7 +257,7 @@ pub(crate) fn transfer(
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_revolution(&object.type_name) {
-            revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
+            revolution_definition(ctx, &object.type_name, &object.id, &owned, &sketch_ids)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
@@ -1880,8 +1881,7 @@ fn enumeration_selector(
     if property.type_name != "App::PropertyEnumeration" {
         return None;
     }
-    let attributes = direct_root_attributes(property, "Integer")?;
-    let value = attributes.get("value")?.parse::<i64>().ok()?;
+    let value = direct_root_value(property, "Integer", "value", str::parse::<i64>)?.ok()?;
     u64::try_from(value).ok()
 }
 
@@ -1907,10 +1907,7 @@ fn finite_float_selector(
     if property.type_name != runtime_type {
         return None;
     }
-    let value = direct_root_attributes(property, "Float")?
-        .get("value")?
-        .parse::<f64>()
-        .ok()?;
+    let value = direct_root_value(property, "Float", "value", str::parse::<f64>)?.ok()?;
     FiniteReal::new(value)
 }
 
@@ -1918,21 +1915,18 @@ fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
     if property.type_name != "App::PropertyBool" {
         return None;
     }
-    let value = direct_root_attributes(property, "Bool")?.remove("value")?;
-    match value.as_str() {
+    direct_root_value(property, "Bool", "value", |value| match value {
         "true" => Some(true),
         "false" => Some(false),
         _ => None,
-    }
+    })?
 }
 
 fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
     if property.type_name != "App::PropertyFloatConstraint" {
         return None;
     }
-    let value = direct_root_attributes(property, "Float")?
-        .remove("value")?
-        .parse::<f64>()
+    let value = direct_root_value(property, "Float", "value", str::parse::<f64>)?
         .ok()
         .and_then(FiniteReal::new)?;
     Some(
@@ -3383,11 +3377,21 @@ fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
 }
 
 fn revolution_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let face_maker_class = if kind == "Part::Revolution" {
+        match property(properties, "FaceMakerClass") {
+            Some(property) => string_property_value(ctx, property)?,
+            None => None,
+        }
+    } else {
+        None
+    };
+    Ok((|| {
     let profile = match profile_ref(owner, properties, sketches) {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
@@ -3485,10 +3489,7 @@ fn revolution_definition(
     };
     let face_maker =
         if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
-            Some(FaceMaker::new(string_property_value(property(
-                properties,
-                "FaceMakerClass",
-            )?)?)?)
+            Some(FaceMaker::new(face_maker_class?)?)
         } else {
             None
         };
@@ -3544,6 +3545,7 @@ fn revolution_definition(
             BooleanOp::Join
         },
     }))
+    })())
 }
 
 fn vector_property(
@@ -3554,65 +3556,75 @@ fn vector_property(
     if !is_vector_property_type(&property.type_name) {
         return None;
     }
-    let attributes = direct_root_attributes(property, "PropertyVector")?;
-    let component = |name: &str| {
-        attributes
-            .get(name)
-            .and_then(|value| value.parse::<f64>().ok())
-            .and_then(FiniteReal::new)
-    };
-    Some(cadmpeg_ir::features::FiniteVector3::from_components(
-        component("valueX")?,
-        component("valueY")?,
-        component("valueZ")?,
-    ))
+    direct_root(property, "PropertyVector", |root| {
+        let component = |name: &str| root.attribute(name)?.parse::<f64>().ok().and_then(FiniteReal::new);
+        Some(cadmpeg_ir::features::FiniteVector3::from_components(
+            component("valueX")?,
+            component("valueY")?,
+            component("valueZ")?,
+        ))
+    })?
 }
 
 fn vector_list_property(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
     entries: &[EntryRecord],
-) -> Option<Vec<cadmpeg_ir::features::FinitePoint3>> {
-    let property = property(properties, name)?;
+) -> Result<Option<Vec<cadmpeg_ir::features::FinitePoint3>>, CodecError> {
+    let Some(property) = property(properties, name) else { return Ok(None) };
     if property.type_name != "App::PropertyVectorList" {
-        return None;
+        return Ok(None);
     }
-    let file = direct_root_attributes(property, "VectorList")?
-        .get("file")
-        .cloned()?;
-    if file.is_empty() {
-        return property.side_entries().is_empty().then(Vec::new);
-    }
-    if property.side_entries() != [file.as_str()] {
-        return None;
-    }
-    let data = entries
-        .iter()
-        .find(|entry| entry.name == file)?
-        .data
-        .as_slice();
-    let mut view = View::over_retained(data);
-    let count = view.u32_le()? as usize;
-    if count > MAX_SKETCH_RECORDS {
-        return None;
-    }
-    let values = view.read_counted(count as u64, 24, |view| {
-        Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
-    })?;
-    if !view.is_empty() {
-        return None;
-    }
-    values
-        .into_iter()
-        .map(cadmpeg_ir::features::FinitePoint3::new)
-        .collect()
+    direct_root(property, "VectorList", |root| {
+        let Some(file) = root.attribute("file") else { return Ok(None) };
+        if file.is_empty() {
+            return Ok(property.side_entries().is_empty().then(Vec::new));
+        }
+        if property.side_entries() != [file] {
+            return Ok(None);
+        }
+        let Some(data) = entries.iter().find(|entry| entry.name == file).map(|entry| entry.data.as_slice()) else {
+            return Ok(None);
+        };
+        let mut view = View::over_retained(data);
+        let Some(count) = view.u32_le().map(|count| count as usize) else { return Ok(None) };
+        if count > MAX_SKETCH_RECORDS || view.counted(count as u64, 24).is_none() {
+            return Ok(None);
+        }
+        let mut points = collection_vec(ctx, count, "fcstd vector-list points")?;
+        for _ in 0..count {
+            let Some(point) = (|| {
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    view.f64_le()?, view.f64_le()?, view.f64_le()?,
+                ))
+            })() else { return Ok(None) };
+            points.push(point);
+        }
+        Ok(view.is_empty().then_some(points))
+    }).unwrap_or(Ok(None))
 }
 
 fn part_construction_geometry_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let polygon_points = if kind == "Part::Polygon" {
+        vector_list_property(ctx, properties, "Nodes", entries)?
+    } else {
+        None
+    };
+    let face_maker_class = if kind == "Part::Face" {
+        match property(properties, "FaceMakerClass") {
+            Some(property) => string_property_value(ctx, property)?,
+            None => None,
+        }
+    } else {
+        None
+    };
+    Ok((|| {
     let point = |x: &str, y: &str, z: &str| {
         Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
             scalar_named(properties, x)?,
@@ -3682,7 +3694,7 @@ fn part_construction_geometry_definition(
             },
         )),
         "Part::Polygon" => {
-            let points = vector_list_property(properties, "Nodes", entries)?;
+            let points = polygon_points?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
             Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
                 chain: cadmpeg_ir::features::FeaturePolyline::from_parts(points, closed)?,
@@ -3716,15 +3728,13 @@ fn part_construction_geometry_definition(
             Some(FeatureDefinition::Operation(
                 FeatureOperation::FaceFromShapes {
                     sources: BodySelection::Native(sources.id.clone()),
-                    face_maker: FaceMaker::new(string_property_value(property(
-                        properties,
-                        "FaceMakerClass",
-                    )?)?)?,
+                    face_maker: FaceMaker::new(face_maker_class?)?,
                 },
             ))
         }
         _ => None,
     }
+    })())
 }
 
 fn parametric_helix_definition(
@@ -3874,12 +3884,21 @@ fn extrude_side_type(properties: &[&PropertyRecord]) -> Option<u64> {
 }
 
 fn extrusion_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     profile: ProfileRef,
     profile_normal: Option<Vector3>,
     sketches: &[Sketch],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
+    let face_maker_class = if kind == "Part::Extrusion" {
+        match property(properties, "FaceMakerClass") {
+            Some(property) => string_property_value(ctx, property)?,
+            None => None,
+        }
+    } else {
+        None
+    };
     // `TaperAngle2` states the draft of a second, independent side. The
     // property set an extrude record means depends on its extent kind, so the
     // reader decides the kind first and reads the second side's draft only
@@ -3903,6 +3922,7 @@ fn extrusion_definition(
         profile_normal,
         sketches,
         &drafts,
+        face_maker_class,
     ))
 }
 
@@ -3913,6 +3933,7 @@ fn extrusion_shape(
     profile_normal: Option<Vector3>,
     sketches: &[Sketch],
     drafts: &ExtrudeDrafts,
+    face_maker_class: Option<String>,
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
         let raw_direction = vector_property(properties, "Dir");
@@ -4042,8 +4063,8 @@ fn extrusion_shape(
         if reverse_direction ^ bool_selector(properties, "Reversed", false)? {
             direction = direction.reversed();
         }
-        let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
-            let maker = FaceMaker::new(string_property_value(class_property)?)?;
+        let face_maker = if property(properties, "FaceMakerClass").is_some() {
+            let maker = FaceMaker::new(face_maker_class?)?;
             if property(properties, "FaceMakerMode").is_some()
                 && u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?
                     != maker.mode()
@@ -4692,33 +4713,6 @@ fn singular_operand<'a>(
     link.object().map(|_| property)
 }
 
-fn direct_root_attributes(
-    property: &PropertyRecord,
-    expected_tag: &str,
-) -> Option<BTreeMap<String, String>> {
-    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
-    let roots = document
-        .root_element()
-        .children()
-        .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
-        .collect::<Vec<_>>();
-    if roots.len() != 1
-        || document
-            .descendants()
-            .filter(|node| node.has_tag_name(expected_tag))
-            .count()
-            != 1
-    {
-        return None;
-    }
-    Some(
-        roots[0]
-            .attributes()
-            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-            .collect(),
-    )
-}
-
 fn is_vector_property_type(type_name: &str) -> bool {
     matches!(
         type_name,
@@ -4838,6 +4832,16 @@ fn direct_root_value<T>(
     attribute: &str,
     use_value: impl FnOnce(&str) -> T,
 ) -> Option<T> {
+    direct_root(property, expected_tag, |root| {
+        root.attribute(attribute).map(use_value)
+    })?
+}
+
+fn direct_root<T>(
+    property: &PropertyRecord,
+    expected_tag: &str,
+    use_root: impl FnOnce(roxmltree::Node<'_, '_>) -> T,
+) -> Option<T> {
     let document = roxmltree::Document::parse(property.xml.text()).ok()?;
     let mut roots = document.root_element().children()
         .filter(|node| node.is_element() && node.has_tag_name(expected_tag));
@@ -4846,7 +4850,7 @@ fn direct_root_value<T>(
         || document.descendants().filter(|node| node.has_tag_name(expected_tag)).count() != 1 {
         return None;
     }
-    root.attribute(attribute).map(use_value)
+    Some(use_root(root))
 }
 
 fn native_parameters(
@@ -6184,17 +6188,17 @@ fn pattern_locations(
             let Some(fallback) = scalar_named(properties, &name(offset_base)) else {
                 return Ok(None);
             };
-            let spacings = property(properties, &name("Spacings")).map_or_else(
-                || Some(Vec::new()),
-                |property| numeric_list(property, entries),
-            );
+            let spacings = match property(properties, &name("Spacings")) {
+                Some(property) => numeric_list(ctx, property, entries)?,
+                None => Some(Vec::new()),
+            };
             let Some(spacings) = spacings else {
                 return Ok(None);
             };
-            let pattern = property(properties, &name("SpacingPattern")).map_or_else(
-                || Some(Vec::new()),
-                |property| numeric_list(property, entries),
-            );
+            let pattern = match property(properties, &name("SpacingPattern")) {
+                Some(property) => numeric_list(ctx, property, entries)?,
+                None => Some(Vec::new()),
+            };
             let Some(pattern) = pattern else {
                 return Ok(None);
             };
@@ -6392,9 +6396,16 @@ fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<FiniteReal
     property(properties, name).and_then(scalar_value)
 }
 
-fn string_property_value(property: &PropertyRecord) -> Option<String> {
-    (property.type_name == "App::PropertyString").then_some(())?;
-    direct_root_attributes(property, "String")?.remove("value")
+fn string_property_value(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<String>, CodecError> {
+    if property.type_name != "App::PropertyString" {
+        return Ok(None);
+    }
+    direct_root_value(property, "String", "value", |value| {
+        retained_string(ctx, value, "fcstd string property value")
+    }).transpose()
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
@@ -6421,10 +6432,7 @@ fn integer_selector(
     if property.type_name != "App::PropertyInteger" {
         return None;
     }
-    let value = direct_root_attributes(property, "Integer")?
-        .get("value")?
-        .parse::<i64>()
-        .ok()?;
+    let value = direct_root_value(property, "Integer", "value", str::parse::<i64>)?.ok()?;
     u64::try_from(value).ok()
 }
 
@@ -6442,41 +6450,41 @@ fn integer_constraint_selector(
     {
         return None;
     }
-    let value = direct_root_attributes(property, "Integer")?
-        .get("value")?
-        .parse::<i64>()
-        .ok()?;
+    let value = direct_root_value(property, "Integer", "value", str::parse::<i64>)?.ok()?;
     u64::try_from(value).ok()
 }
 
-fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<FiniteReal>> {
+fn numeric_list(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+    entries: &[EntryRecord],
+) -> Result<Option<Vec<FiniteReal>>, CodecError> {
     if property.type_name != "App::PropertyFloatList" {
-        return None;
+        return Ok(None);
     }
-    let file = direct_root_attributes(property, "FloatList")?
-        .get("file")
-        .cloned()?;
-    if file.is_empty() {
-        return property.side_entries().is_empty().then(Vec::new);
-    }
-    if property.side_entries().len() != 1 || property.side_entries()[0] != file {
-        return None;
-    }
-    let data = entries
-        .iter()
-        .find(|entry| entry.name == file)?
-        .data
-        .as_slice();
-    let mut view = View::over_retained(data);
-    let count = view.u32_le()? as usize;
-    if count > MAX_SKETCH_RECORDS {
-        return None;
-    }
-    let values = view.read_counted(count as u64, 8, View::f64_le)?;
-    if !view.is_empty() {
-        return None;
-    }
-    values.into_iter().map(FiniteReal::new).collect()
+    direct_root(property, "FloatList", |root| {
+        let Some(file) = root.attribute("file") else { return Ok(None) };
+        if file.is_empty() {
+            return Ok(property.side_entries().is_empty().then(Vec::new));
+        }
+        if property.side_entries() != [file] {
+            return Ok(None);
+        }
+        let Some(data) = entries.iter().find(|entry| entry.name == file).map(|entry| entry.data.as_slice()) else {
+            return Ok(None);
+        };
+        let mut view = View::over_retained(data);
+        let Some(count) = view.u32_le().map(|count| count as usize) else { return Ok(None) };
+        if count > MAX_SKETCH_RECORDS || view.counted(count as u64, 8).is_none() {
+            return Ok(None);
+        }
+        let mut values = collection_vec(ctx, count, "fcstd numeric-list values")?;
+        for _ in 0..count {
+            let Some(value) = view.f64_le().and_then(FiniteReal::new) else { return Ok(None) };
+            values.push(value);
+        }
+        Ok(view.is_empty().then_some(values))
+    }).unwrap_or(Ok(None))
 }
 
 fn operation_boolean(kind: &str) -> BooleanOp {
@@ -6524,25 +6532,31 @@ fn feature_base_definition(
 }
 
 fn imported_geometry_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-) -> Option<FeatureDefinition> {
-    let path = property(properties, "FileName").and_then(string_property_value)?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let path = match property(properties, "FileName") {
+        Some(property) => string_property_value(ctx, property)?,
+        None => None,
+    };
+    let Some(path) = path else { return Ok(None) };
     if path.is_empty() {
-        return None;
+        return Ok(None);
     }
     let format = match kind {
         "Part::ImportStep" => GeometryImportFormat::Step,
         "Part::ImportIges" => GeometryImportFormat::Iges,
         "Part::ImportBrep" | "Part::CurveNet" => GeometryImportFormat::Brep,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(FeatureDefinition::Operation(
+    let Some(path) = path.try_into().ok() else { return Ok(None) };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ImportedGeometry {
-            path: path.try_into().ok()?,
+            path,
             format,
         },
-    ))
+    )))
 }
 
 fn is_sketch(kind: &str) -> bool {
