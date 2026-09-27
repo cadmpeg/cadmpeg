@@ -507,12 +507,12 @@ pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
         let Some(face) = face_edges.get_mut(left) else {
             return Ok(None);
         };
-        face.push(edge);
+        crate::resource::push(ctx, face, edge, "catia_standard_face_edge_entries")?;
         if right != left {
             let Some(face) = face_edges.get_mut(right) else {
                 return Ok(None);
             };
-            face.push(edge);
+            crate::resource::push(ctx, face, edge, "catia_standard_face_edge_entries")?;
         }
     }
     let mut faces = Vec::with_capacity(face_count);

@@ -606,11 +606,17 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
             .collect()],
     };
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment.clone()])];
+    catia_test_context!(service_ctx);
+    let initial_quotient = initial_mesh_quotient(
+        &service_ctx,
+        &edge_candidates,
+        3,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
     let run = |ctx: &DecodeContext<'_>| {
-        let mut quotient =
-            initial_mesh_quotient(&ctx, &edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
-                .expect("service resource budget")
-                .expect("initial quotient");
+        let mut quotient = initial_quotient.clone();
         let budget = WorkBudget::new(1_000);
         let equations = crate::solve::mesh_quotient::common_supported_corner_equations(
             ctx,
@@ -620,7 +626,6 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         )?;
         Ok::<_, CodecError>(equations)
     };
-    catia_test_context!(service_ctx);
     assert!(run(&service_ctx)
         .expect("service resource budget")
         .is_some());
@@ -657,10 +662,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let budget = WorkBudget::new(1_000);
-    let mut quotient =
-        initial_mesh_quotient(&ctx, &edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
-            .expect("service resource budget")
-            .expect("initial quotient");
+    let mut quotient = initial_quotient.clone();
     let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
