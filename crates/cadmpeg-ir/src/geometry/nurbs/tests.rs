@@ -38,6 +38,28 @@ fn in_place_curve_pole_map_reuses_storage_and_keeps_admitted_weights() {
 }
 
 #[test]
+fn consumed_nurbs_parts_keep_knot_and_pole_storage() {
+    use crate::geometry::nurbs::NurbsPoles3;
+
+    let curve = curve();
+    let knot_storage = curve.knots().as_slice().as_ptr();
+    let NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        panic!("fixture must be rational");
+    };
+    let pole_storage = points.as_ptr();
+    let (degree, knots, poles, periodic) = curve.into_parts();
+    assert_eq!(degree, 1);
+    assert!(periodic);
+    assert_eq!(knots.as_slice().as_ptr(), knot_storage);
+    let knot_values = knots.into_values();
+    assert_eq!(knot_values.as_ptr(), knot_storage);
+    let NurbsPoles3::Rational { points } = poles else {
+        panic!("consumed poles must remain rational");
+    };
+    assert_eq!(points.as_ptr(), pole_storage);
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;

@@ -599,9 +599,10 @@ fn reverse_nurbs(
     if start > end {
         return Err(CompositeCurveError::ReversedChildInterval { start, end });
     }
-    let knots = curve.knots().finite_knots().collect::<Vec<_>>();
-    let (lower, upper) = (knots[degree], knots[control_count]);
-    let (domain_start, domain_end) = (lower.get(), upper.get());
+    let (domain_start, domain_end) = (curve.knots()[degree], curve.knots()[control_count]);
+    let (Some(lower), Some(upper)) = (FiniteReal::new(domain_start), FiniteReal::new(domain_end)) else {
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite { domain_start, domain_end });
+    };
     if domain_start >= domain_end {
         return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
             domain_start,
@@ -625,14 +626,15 @@ fn reverse_nurbs(
             })
     };
     let reversed_range = [reflect(finite_end)?, reflect(finite_start)?];
-    let knots = knots
-        .into_iter()
-        .rev()
-        .map(reflect)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut poles = curve.pole_rows().clone();
+    let (source_degree, admitted_knots, mut poles, periodic) = curve.into_parts();
+    let mut knots = admitted_knots.into_values();
+    knots.reverse();
+    for knot in &mut knots {
+        let finite = FiniteReal::new(*knot).ok_or(CompositeCurveError::ReversedChildReflectionNonFinite { domain_start, domain_end })?;
+        *knot = reflect(finite)?;
+    }
     poles.reverse();
-    let reversed = NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())?;
+    let reversed = NurbsCurve::new(source_degree, knots, poles, periodic)?;
     Ok((reversed, reversed_range))
 }
 
@@ -1305,20 +1307,11 @@ fn elevate_nurbs_to_degree(
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
         return Err(DegreeElevationError::SpansDoNotJoin.into());
     };
-    let elevated_degree = concatenated.nurbs.degree();
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            concatenated.nurbs.knots().len() as u64,
-            "iges composite translated elevated knots",
-        )
-        .map_err(DegreeElevationError::Allocation)?;
+    let (elevated_degree, admitted_knots, poles, _) = concatenated.nurbs.into_parts();
+    let mut elevated_knots = admitted_knots.into_values();
+    for knot in &mut elevated_knots {
+        *knot += interval[0];
     }
-    let mut elevated_knots: Vec<f64> = concatenated
-        .nurbs
-        .knots()
-        .iter()
-        .map(|knot| knot + interval[0])
-        .collect();
     // Translation must preserve every copy of each clamped source endpoint.
     // Adding the origin back can round past the declared endpoint.
     elevated_knots[..=target_degree].fill(interval[0]);
@@ -1327,7 +1320,7 @@ fn elevate_nurbs_to_degree(
     let elevated = NurbsCurve::new(
         elevated_degree,
         elevated_knots,
-        concatenated.nurbs.pole_rows().clone(),
+        poles,
         false,
     )?;
     *curve = elevated;
