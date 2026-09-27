@@ -4,7 +4,7 @@
 use super::geometry::{
     resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome,
 };
-use crate::decode_resource::{collect_optional_vec, reserve_vec};
+use crate::decode_resource::{collect_optional_vec, reserve_vec, reserve_vec_growth};
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -189,10 +189,12 @@ fn add_edge(
     let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
+    reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges spline neutral point slots")?;
     ir.model.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
+    reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges spline neutral vertex slots")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
@@ -206,6 +208,7 @@ fn add_edge(
         },
     ]);
     sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
+    reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges spline neutral curve slots")?;
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -217,6 +220,7 @@ fn add_edge(
             }
         }),
     });
+    reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges spline neutral edge slots")?;
     ir.model.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
@@ -581,7 +585,8 @@ pub(super) fn project(
         }) {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "terminal derivative block disagrees with the last polynomial"))?;
         }
-        let mut knots = vec![breakpoints[0]; 4];
+        let mut knots = reserve_vec(ctx, segment_count * 3 + 5, "iges spline curve knots")?;
+        knots.extend([breakpoints[0]; 4]);
         for breakpoint in &breakpoints[1..segment_count] {
             knots.extend([*breakpoint; 3]);
         }
@@ -608,14 +613,10 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "converted spline endpoints cannot be evaluated"))?;
             continue;
         };
+        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges spline wire edge slots")?;
         wire_edges.push(edge);
-        losses.push(
-            IgesLossCode::SplineHeaderNotTransferred
-                .note(
-                    "Type 112 curve type, continuity, and dimensionality are retained only in native parameters",
-                )
-                .with_provenance(entry.loss_provenance()),
-        );
+        super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
+            format_args!("Type 112 curve type, continuity, and dimensionality are retained only in native parameters"))?;
         crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
     }
 
@@ -849,29 +850,31 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "spline-surface patch grid is incomplete"))?;
             continue;
         };
-        let mut u_knots = vec![u_breakpoints[0]; 4];
+        let mut u_knots = reserve_vec(ctx, u_segments * 3 + 5, "iges spline surface u knots")?;
+        u_knots.extend([u_breakpoints[0]; 4]);
         for breakpoint in &u_breakpoints[1..u_segments] {
             u_knots.extend([*breakpoint; 3]);
         }
         u_knots.extend([u_breakpoints[u_segments]; 4]);
-        let mut v_knots = vec![v_breakpoints[0]; 4];
+        let mut v_knots = reserve_vec(ctx, v_segments * 3 + 5, "iges spline surface v knots")?;
+        v_knots.extend([v_breakpoints[0]; 4]);
         for breakpoint in &v_breakpoints[1..v_segments] {
             v_knots.extend([*breakpoint; 3]);
         }
         v_knots.extend([v_breakpoints[v_segments]; 4]);
-        let (Ok(_u_count), Ok(v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
+        let (Ok(_u_count), Ok(_v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "spline-surface pole dimensions exceed u32"))?;
             continue;
         };
+        let mut rows = reserve_vec(ctx, u_count, "iges spline surface pole rows")?;
+        for points in control_points.chunks(v_count) {
+            let mut row = reserve_vec(ctx, points.len(), "iges spline surface pole row controls")?;
+            row.extend_from_slice(points);
+            rows.push(row);
+        }
         let nurbs = match KnotVector::from_finite_lanes(u_knots).and_then(|u_knots| {
             KnotVector::from_finite_lanes(v_knots).and_then(|v_knots| {
-                NurbsPoleGrid::from_checked_lanes(
-                    control_points
-                        .chunks(v_count as usize)
-                        .map(<[_]>::to_vec)
-                        .collect(),
-                    None,
-                )
+                NurbsPoleGrid::from_checked_lanes(rows, None)
                 .and_then(|poles| {
                     NurbsSurface::new(
                         NurbsSurfaceAxis::new(3, u_knots, false),
@@ -891,16 +894,14 @@ pub(super) fn project(
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence, Some(ctx))?;
+        reserve_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges spline neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
-        losses.push(
-            IgesLossCode::SplineHeaderNotTransferred
-                .note("Type 114 curve and patch types are retained only in native parameters")
-                .with_provenance(entry.loss_provenance()),
-        );
+        super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::SplineHeaderNotTransferred,
+            format_args!("Type 114 curve and patch types are retained only in native parameters"))?;
         crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
     }
 

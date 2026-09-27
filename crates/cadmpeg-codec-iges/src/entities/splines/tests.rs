@@ -3,9 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
@@ -17,6 +17,49 @@ use crate::test_support::test_curves_and_surfaces::{
 };
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
+
+fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation { return; }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected spline collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("spline collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
+    let curve = parametric_spline_curve_file();
+    for operation in [
+        "iges spline curve knots",
+        "iges spline neutral point slots",
+        "iges spline neutral vertex slots",
+        "iges spline neutral curve slots",
+        "iges spline neutral edge slots",
+        "iges spline wire edge slots",
+        "iges entity loss slots",
+    ] {
+        assert_spline_collection_refusal(&curve, operation);
+    }
+    let surface = parametric_spline_surface_file();
+    for operation in [
+        "iges spline surface u knots",
+        "iges spline surface v knots",
+        "iges spline surface pole rows",
+        "iges spline surface pole row controls",
+        "iges spline neutral surface slots",
+    ] {
+        assert_spline_collection_refusal(&surface, operation);
+    }
+}
 
 fn type_112_parameters(
     continuity: i64,
