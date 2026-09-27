@@ -113,21 +113,21 @@ fn clipping_plane_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bo
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum DrawingPropertyValue {
-    Name(Vec<u8>),
+pub(crate) enum DrawingPropertyValue<'a> {
+    Name(&'a [u8]),
     Size(FiniteVector<2>),
-    Units(i64, Vec<u8>),
+    Units(i64, &'a [u8]),
 }
 
-pub(crate) fn drawing_property_value(
+pub(crate) fn drawing_property_value<'a>(
     form: i64,
-    record: &ParameterRecord,
-) -> Option<DrawingPropertyValue> {
+    record: &'a ParameterRecord,
+) -> Option<DrawingPropertyValue<'a>> {
     match form {
         15 => (record.integer(1) == Some(1))
             .then(|| record.string(2).filter(|value| !value.is_empty()))
             .flatten()
-            .map(|value| DrawingPropertyValue::Name(value.to_vec())),
+            .map(DrawingPropertyValue::Name),
         16 => {
             if record.integer(1) != Some(2) {
                 return None;
@@ -139,7 +139,7 @@ pub(crate) fn drawing_property_value(
             let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
             let name = record.string(3).filter(|value| !value.is_empty())?;
             (record.integer(1) == Some(2))
-                .then_some(DrawingPropertyValue::Units(units, name.to_vec()))
+                .then_some(DrawingPropertyValue::Units(units, name))
         }
         _ => None,
     }

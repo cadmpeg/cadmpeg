@@ -1850,43 +1850,36 @@ struct NativeDrawing {
     ambiguous_property_forms: Vec<i64>,
 }
 
-fn drawing_property_candidates(
+fn choose_drawing_property(
     trailing: Option<&crate::parameter::ResolvedGroups>,
     form: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> Vec<u32> {
-    trailing
-        .into_iter()
-        .flat_map(|groups| groups.properties().iter().copied())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .filter(|sequence| {
-            entries
-                .get(sequence)
-                .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
-        })
-        .collect()
-}
-
-fn choose_drawing_property(
-    candidates: &[u32],
-    form: i64,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> (Option<u32>, bool) {
-    let valid = candidates
-        .iter()
-        .filter_map(|sequence| {
-            records
-                .get(sequence)
-                .and_then(|record| drawing_property_value(form, record))
-                .map(|value| (*sequence, value))
-        })
-        .collect::<Vec<_>>();
-    let conflicting = valid.len() > 1 && valid.windows(2).any(|pair| pair[0].1 != pair[1].1);
-    let selected = (!conflicting)
-        .then(|| valid.first().map(|(sequence, _)| *sequence))
-        .flatten();
-    (selected, conflicting)
+    let mut selected = None;
+    let mut first_value = None;
+    let mut conflicting = false;
+    for sequence in trailing.into_iter().flat_map(|groups| groups.properties()) {
+        if !entries
+            .get(sequence)
+            .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
+        {
+            continue;
+        }
+        let Some(value) = records
+            .get(sequence)
+            .and_then(|record| drawing_property_value(form, record))
+        else {
+            continue;
+        };
+        if first_value.as_ref().is_some_and(|first| *first != value) {
+            conflicting = true;
+        } else if first_value.is_none() {
+            first_value = Some(value);
+        }
+        selected = Some(selected.map_or(*sequence, |current: u32| current.min(*sequence)));
+    }
+    ((!conflicting).then_some(selected).flatten(), conflicting)
 }
 
 #[derive(Clone)]
@@ -5839,11 +5832,11 @@ pub(crate) fn store(
             })
         },
     )?;
-    let views = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
-        .map(|entry| {
-            Ok::<_, CodecError>({
+    let views = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1)),
+        "iges native view slots",
+        |entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let vector = |start| {
                     [
@@ -5852,19 +5845,18 @@ pub(crate) fn store(
                         record.and_then(|record| record.number(start + 2)),
                     ]
                 };
-                NativeView {
-                    id: format!("iges:presentation:view#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                Ok(NativeView {
+                    id: format_retained(ctx, format_args!("iges:presentation:view#D{}", entry.sequence), "iges native view id")?,
+                    source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native view source")?,
                     view_number: record.and_then(|record| record.integer(1)),
                     scale: record.and_then(|record| record.number(2)),
                     geometry: if entry.form == 0 {
                         ViewGeometry::Orthographic {
                             model_to_view: (entry.transform > 0).then(|| {
-                                format!("iges:native:transformation#D{}", entry.transform)
-                            }),
-                            clipping_planes: (3..=8)
-                                .map(|index| {
-                                    Ok::<_, CodecError>({
+                                format_retained(ctx, format_args!("iges:native:transformation#D{}", entry.transform), "iges native view transformation")
+                            }).transpose()?,
+                            clipping_planes: collect_result_vec(ctx, 6, "iges native view clipping plane slots", |offset| {
+                                        let index = offset + 3;
                                         record
                                             .and_then(|record| record.integer(index))
                                             .filter(|sequence| *sequence != 0)
@@ -5879,14 +5871,12 @@ pub(crate) fn store(
                                             })
                                             .transpose()?
                                             .flatten()
-                                            .map(|sequence| {
-                                                format!("iges:entity:directory#{sequence}")
-                                            })
-                                    })
-                                })
-                                .collect::<Result<Vec<_>, CodecError>>()?,
+                                            .map(|sequence| format_retained(ctx, format_args!("iges:entity:directory#{sequence}"), "iges native view clipping plane"))
+                                            .transpose()
+                                })?,
                         }
                     } else {
+                        ctx.charge_collection_items(1, "iges native perspective view geometry")?;
                         ViewGeometry::Perspective(Box::new(PerspectiveViewGeometry {
                             view_plane_normal: vector(3),
                             view_reference_point: vector(6),
@@ -5902,15 +5892,14 @@ pub(crate) fn store(
                             }),
                         }))
                     },
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let view_visibility = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
-        .map(|entry| {
-            Ok::<_, CodecError>({
+                })
+        },
+    )?;
+    let view_visibility = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4)),
+        "iges native view visibility slots",
+        |entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let width = if entry.form == 3 { 1 } else { 5 };
                 let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
@@ -5929,17 +5918,15 @@ pub(crate) fn store(
                     })
                     .unwrap_or_default();
                 let (view_count, entity_count) = view_count;
-                NativeViewVisibility {
-                    id: format!("iges:presentation:view-visibility#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                Ok(NativeViewVisibility {
+                    id: format_retained(ctx, format_args!("iges:presentation:view-visibility#D{}", entry.sequence), "iges native view visibility id")?,
+                    source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native view visibility source")?,
                     form: entry.form,
                     // Both counts sit at fixed Parameter indices 1 and 2 for every
                     // form, so retention is unconditional; only the entity list's
                     // start moves with the view count.
                     declared_view_count: record.and_then(|record| record.integer(1)),
-                    displays: (0..view_count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
+                    displays: collect_result_vec(ctx, view_count, "iges native view display slots", |index| {
                                 let start = 3 + index * width;
                                 if let Some(color) = (entry.form == 4)
                                     .then(|| record.and_then(|record| record.integer(start + 3)))
@@ -5955,7 +5942,7 @@ pub(crate) fn store(
                                             &[0],
                                         )?;
                                 }
-                                NativeViewDisplay {
+                                Ok(NativeViewDisplay {
                                     view: record
                                         .and_then(|record| record.integer(start))
                                         .map(|sequence| {
@@ -5969,9 +5956,8 @@ pub(crate) fn store(
                                         })
                                         .transpose()?
                                         .flatten()
-                                        .map(|sequence| {
-                                            format!("iges:presentation:view#D{sequence}")
-                                        }),
+                                        .map(|sequence| format_retained(ctx, format_args!("iges:presentation:view#D{sequence}"), "iges native view display view"))
+                                        .transpose()?,
                                     style: if entry.form == 4 {
                                         ViewDisplayStyle::Overrides {
                                             line_font: record
@@ -5990,11 +5976,8 @@ pub(crate) fn store(
                                                 })
                                                 .transpose()?
                                                 .flatten()
-                                                .map(|sequence| {
-                                                    format!(
-                                                        "iges:presentation:line-font#D{sequence}"
-                                                    )
-                                                }),
+                                                .map(|sequence| format_retained(ctx, format_args!("iges:presentation:line-font#D{sequence}"), "iges native view display line font"))
+                                                .transpose()?,
                                             color: record
                                                 .and_then(|record| record.integer(start + 3)),
                                             line_weight: record
@@ -6003,14 +5986,10 @@ pub(crate) fn store(
                                     } else {
                                         ViewDisplayStyle::Inherited
                                     },
-                                }
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                                })
+                        })?,
                     declared_entity_count: record.and_then(|record| record.integer(2)),
-                    entities: (0..entity_count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
+                    entities: collect_result_vec(ctx, entity_count, "iges native visible entity slots", |index| {
                                 record
                                     .and_then(|record| {
                                         record.integer(3 + view_count * width + index)
@@ -6024,35 +6003,30 @@ pub(crate) fn store(
                                     })
                                     .transpose()?
                                     .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let segmented_visibility = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 402 && entry.form == 19)
-        .map(|entry| {
-            Ok::<_, CodecError>({
+                                    .map(|sequence| format_retained(ctx, format_args!("iges:entity:directory#{sequence}"), "iges native visible entity"))
+                                    .transpose()
+                        })?,
+                })
+        },
+    )?;
+    let segmented_visibility = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 402 && entry.form == 19),
+        "iges native segmented visibility slots",
+        |entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
                 let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 6);
-                let value = |index| {
+                let value = |index| -> Result<TokenValue, CodecError> {
                     record
                         .and_then(|record| record.token(index))
-                        .cloned()
-                        .map_or(TokenValue::Omitted, |token| token.value)
+                        .map_or(Ok(TokenValue::Omitted), |token| copy_native_token_value(ctx, &token.value))
                 };
-                NativeSegmentedVisibility {
-                    id: format!("iges:presentation:segmented-visibility#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                Ok(NativeSegmentedVisibility {
+                    id: format_retained(ctx, format_args!("iges:presentation:segmented-visibility#D{}", entry.sequence), "iges native segmented visibility id")?,
+                    source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native segmented visibility source")?,
                     declared_block_count: record.and_then(|record| record.integer(1)),
-                    blocks: (0..count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
+                    blocks: collect_result_vec(ctx, count, "iges native segment display slots", |index| {
                                 let start = 2 + index * 6;
                                 if let Some(color) = record
                                     .and_then(|record| record.integer(start + 3))
@@ -6080,7 +6054,7 @@ pub(crate) fn store(
                                             &[1, 2],
                                         )?;
                                 }
-                                NativeSegmentDisplay {
+                                Ok(NativeSegmentDisplay {
                                     view: record
                                         .and_then(|record| record.integer(start))
                                         .map(|sequence| {
@@ -6094,28 +6068,24 @@ pub(crate) fn store(
                                         })
                                         .transpose()?
                                         .flatten()
-                                        .map(|sequence| {
-                                            format!("iges:presentation:view#D{sequence}")
-                                        }),
+                                        .map(|sequence| format_retained(ctx, format_args!("iges:presentation:view#D{sequence}"), "iges native segment display view"))
+                                        .transpose()?,
                                     breakpoint: record.and_then(|record| record.number(start + 1)),
                                     display_flag: record
                                         .and_then(|record| record.integer(start + 2)),
-                                    color: value(start + 3),
-                                    line_font: value(start + 4),
-                                    line_weight: value(start + 5),
-                                }
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let drawings = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
-        .map(|entry| {
-            Ok::<_, CodecError>({
+                                    color: value(start + 3)?,
+                                    line_font: value(start + 4)?,
+                                    line_weight: value(start + 5)?,
+                                })
+                        })?,
+                })
+        },
+    )?;
+    let drawings = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1)),
+        "iges native drawing slots",
+        |entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let width = if entry.form == 0 { 3 } else { 4 };
                 let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
@@ -6154,31 +6124,27 @@ pub(crate) fn store(
                             TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
                             _ => None,
                         });
-                let candidates = |form| drawing_property_candidates(trailing, form, &entries);
                 let (name_property, name_ambiguous) =
-                    choose_drawing_property(&candidates(15), 15, &by_directory);
+                    choose_drawing_property(trailing, 15, &entries, &by_directory);
                 let (size_property, size_ambiguous) =
-                    choose_drawing_property(&candidates(16), 16, &by_directory);
+                    choose_drawing_property(trailing, 16, &entries, &by_directory);
                 let (units_property, units_ambiguous) =
-                    choose_drawing_property(&candidates(17), 17, &by_directory);
-                let ambiguous_property_forms = [
+                    choose_drawing_property(trailing, 17, &entries, &by_directory);
+                let ambiguous_property_forms = collect_native_items(ctx, [
                     (15, name_ambiguous),
                     (16, size_ambiguous),
                     (17, units_ambiguous),
                 ]
                 .into_iter()
-                .filter_map(|(form, ambiguous)| ambiguous.then_some(form))
-                .collect();
-                NativeDrawing {
-                    id: format!("iges:presentation:drawing#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                .filter_map(|(form, ambiguous)| ambiguous.then_some(form)), "iges native drawing ambiguous property slots", Ok)?;
+                Ok(NativeDrawing {
+                    id: format_retained(ctx, format_args!("iges:presentation:drawing#D{}", entry.sequence), "iges native drawing id")?,
+                    source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native drawing source")?,
                     form: entry.form,
                     declared_view_count,
-                    views: (0..view_count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
+                    views: collect_result_vec(ctx, view_count, "iges native drawing view slots", |index| {
                                 let start = 2 + index * width;
-                                NativeDrawingView {
+                                Ok(NativeDrawingView {
                                     view: record
                                         .and_then(|record| record.integer(start))
                                         .map(|sequence| {
@@ -6192,9 +6158,8 @@ pub(crate) fn store(
                                         })
                                         .transpose()?
                                         .flatten()
-                                        .map(|sequence| {
-                                            format!("iges:presentation:view#D{sequence}")
-                                        }),
+                                        .map(|sequence| format_retained(ctx, format_args!("iges:presentation:view#D{sequence}"), "iges native drawing view"))
+                                        .transpose()?,
                                     origin: [
                                         record.and_then(|record| record.number(start + 1)),
                                         record.and_then(|record| record.number(start + 2)),
@@ -6202,14 +6167,10 @@ pub(crate) fn store(
                                     rotation: (entry.form == 1)
                                         .then(|| record.and_then(|record| record.number(start + 3)))
                                         .flatten(),
-                                }
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                                })
+                        })?,
                     declared_annotation_count,
-                    annotations: (0..annotation_count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
+                    annotations: collect_result_vec(ctx, annotation_count, "iges native drawing annotation slots", |index| {
                                 record
                                     .and_then(|record| {
                                         record.integer(annotation_count_index + 1 + index)
@@ -6231,16 +6192,15 @@ pub(crate) fn store(
                                     })
                                     .transpose()?
                                     .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                                    .map(|sequence| format_retained(ctx, format_args!("iges:entity:directory#{sequence}"), "iges native drawing annotation"))
+                                    .transpose()
+                        })?,
                     name_property: name_property
-                        .map(|sequence| format!("iges:product:property#D{sequence}")),
-                    name: name_property
+                        .map(|sequence| format_retained(ctx, format_args!("iges:product:property#D{sequence}"), "iges native drawing name property"))
+                        .transpose()?,
+                    name: copy_native_string(ctx, name_property
                         .and_then(|sequence| by_directory.get(&sequence))
-                        .and_then(|record| record.string(2))
-                        .map(<[u8]>::to_vec),
+                        .and_then(|record| record.string(2)), "iges native drawing name")?,
                     size: size_property.and_then(|sequence| {
                         let record = by_directory.get(&sequence)?;
                         Some([record.number(2), record.number(3)])
@@ -6248,15 +6208,13 @@ pub(crate) fn store(
                     units_flag: units_property
                         .and_then(|sequence| by_directory.get(&sequence))
                         .and_then(|record| record.integer(2)),
-                    units_name: units_property
+                    units_name: copy_native_string(ctx, units_property
                         .and_then(|sequence| by_directory.get(&sequence))
-                        .and_then(|record| record.string(3))
-                        .map(<[u8]>::to_vec),
+                        .and_then(|record| record.string(3)), "iges native drawing units name")?,
                     ambiguous_property_forms,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+                })
+        },
+    )?;
     let annotations = annotations::build(
         directory,
         &by_directory,

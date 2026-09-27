@@ -13,6 +13,10 @@ use crate::test_support::test_drawing_and_trimming::{
     flow_associativity_forms_file, legacy_associativity_forms_file,
     recalculable_dimension_associativity_file,
 };
+use crate::test_support::test_solids_and_structure::{
+    drawing_with_conflicting_size_properties_file, drawing_with_properties_file,
+    segmented_view_visibility_file, view_forms_file, view_visibility_forms_file,
+};
 use crate::IgesCodec;
 
 fn native_entity(entity_type: i64, form: i64, parameters: &str) -> OwnedTestEntity {
@@ -833,4 +837,88 @@ fn native_units_data_nested_definitions_and_copied_bytes_refuse_limits() {
     ] {
         assert_retained_refusal_at(&bytes, operation);
     }
+}
+
+#[test]
+fn native_view_records_clipping_slots_and_perspective_box_refuse_limits() {
+    let bytes = view_forms_file();
+    for operation in [
+        "iges native view slots",
+        "iges native view clipping plane slots",
+        "iges native perspective view geometry",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in ["iges native view id", "iges native view source"] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+    let clipping = owned_test_file(&[
+        native_entity(108, 0, "108,0,0,1,0,0,0,0,0,0,0;"),
+        native_entity(410, 0, "410,1,1,1,0,0,0,0,0;"),
+    ]);
+    assert_retained_refusal_at(&clipping, "iges native view clipping plane");
+}
+
+#[test]
+fn native_visibility_display_and_segment_slots_refuse_limits() {
+    let visible = view_visibility_forms_file();
+    for operation in [
+        "iges native view visibility slots",
+        "iges native view display slots",
+    ] {
+        assert_collection_refusal_at(&visible, operation);
+    }
+    for operation in [
+        "iges native view visibility id",
+        "iges native view visibility source",
+        "iges native view display view",
+    ] {
+        assert_retained_refusal_at(&visible, operation);
+    }
+    let segments = segmented_view_visibility_file();
+    for operation in [
+        "iges native segmented visibility slots",
+        "iges native segment display slots",
+    ] {
+        assert_collection_refusal_at(&segments, operation);
+    }
+    assert_retained_refusal_at(&segments, "iges native segment display view");
+    let visible_entity = owned_test_file(&[
+        native_entity(116, 0, "116,1,2,3,0;"),
+        native_entity(410, 0, "410,1,1,0,0,0,0,0,0;"),
+        native_entity(402, 3, "402,1,1,3,1;"),
+    ]);
+    assert_collection_refusal_at(&visible_entity, "iges native visible entity slots");
+    assert_retained_refusal_at(&visible_entity, "iges native visible entity");
+    let line_font = owned_test_file(&[
+        native_entity(304, 1, "304,1,1,1,1;"),
+        native_entity(410, 0, "410,1,1,0,0,0,0,0,0;"),
+        native_entity(402, 4, "402,1,0,3,1,1,0,0;"),
+    ]);
+    assert_retained_refusal_at(&line_font, "iges native view display line font");
+}
+
+#[test]
+fn native_drawing_view_annotation_and_property_bytes_refuse_limits() {
+    let bytes = drawing_with_properties_file();
+    for operation in [
+        "iges native drawing slots",
+        "iges native drawing view slots",
+        "iges native drawing annotation slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native drawing id",
+        "iges native drawing source",
+        "iges native drawing view",
+        "iges native drawing annotation",
+        "iges native drawing name property",
+        "iges native drawing name",
+        "iges native drawing units name",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+    let conflicting = drawing_with_conflicting_size_properties_file();
+    assert_collection_refusal_at(&conflicting, "iges native drawing ambiguous property slots");
 }
