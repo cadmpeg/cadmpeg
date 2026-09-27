@@ -20,7 +20,24 @@ use crate::test_support::test_owned::{
 };
 use crate::IgesCodec;
 
-use super::{has_forbidden_form_63_duplicate, has_form_63_self_intersection, presentation_use_flag_valid};
+use super::{has_forbidden_form_63_duplicate, has_form_63_self_intersection, presentation_use_flag_valid, CopiousProjectionOutcome};
+
+#[test]
+fn copious_merge_refuses_free_vertex_growth() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let vertex = crate::ids::vertex(&crate::ids::Stem::directory(1_u32));
+    let outcome = CopiousProjectionOutcome {
+        decoded: Default::default(),
+        losses: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: vec![vertex],
+    };
+    let result = outcome.merge_into(&mut Default::default(), &mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &ctx);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged free vertex slots"));
+}
 
 fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
     let mut cap = 0_u64;

@@ -17,7 +17,37 @@ use super::{
     plane_coordinates,
     source_object,
     validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
+    ProjectionOutcome, WireProjectionOutcome,
 };
+
+#[test]
+fn projector_merges_refuse_decoded_loss_and_wire_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::loss::IgesLossCode;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut decoded = BTreeSet::new();
+    let mut losses = Vec::new();
+    let result = ProjectionOutcome { decoded: BTreeSet::from([1]), losses: Vec::new() }
+        .merge_into(&mut decoded, &mut losses, &ctx);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged decoded sequences"));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = ProjectionOutcome { decoded: BTreeSet::new(), losses: vec![IgesLossCode::EntityNotProjected.note("test")] }
+        .merge_into(&mut decoded, &mut losses, &ctx);
+    assert!(matches!(&result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged loss slots"), "{result:?}");
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut wire_edges = Vec::new();
+    let edge = crate::ids::edge(&crate::ids::Stem::directory(1_u32));
+    let result = WireProjectionOutcome { decoded: BTreeSet::new(), losses: Vec::new(), wire_edges: vec![edge] }
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges, &ctx);
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges merged wire edge slots"));
+}
 
 #[test]
 fn analytic_location_vertex_index_refuses_collection_limit() {
