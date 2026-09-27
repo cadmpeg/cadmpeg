@@ -64,7 +64,11 @@ impl PatternPayloadTransformLane {
 #[test]
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
-    let strings = surface_payload_strings(bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .unwrap();
+    let strings = surface_payload_strings(&ctx, bytes).unwrap();
     assert_eq!(strings.len(), 2);
     assert_eq!(strings[0].offset, 0);
     assert_eq!(strings[0].value.as_str(), "Steel");
@@ -72,11 +76,50 @@ fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     assert_eq!(strings[1].value.as_str(), "×");
 
     let truncated = b"\x66\x1b\x03\x05Steel";
-    assert!(surface_payload_strings(truncated).is_empty());
+    assert!(surface_payload_strings(&ctx, truncated).unwrap().is_empty());
     let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
-    assert!(surface_payload_strings(invalid_utf8).is_empty());
+    assert!(surface_payload_strings(&ctx, invalid_utf8).unwrap().is_empty());
     let control = b"\x66\x1b\x03\x01\n\0";
-    assert!(surface_payload_strings(control).is_empty());
+    assert!(surface_payload_strings(&ctx, control).unwrap().is_empty());
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_collection_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_retained_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_work_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
