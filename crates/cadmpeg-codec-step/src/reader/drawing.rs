@@ -76,6 +76,34 @@ fn insert_drawing_set<T: Ord>(
     Ok(())
 }
 
+fn charge_drawing_map_key<K: Ord, V>(
+    values: &BTreeMap<K, V>,
+    key: &K,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    Ok(())
+}
+
+fn claim_drawing_typed(
+    values: &mut HashSet<u64>,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "step_drawing_typed_claims";
+    if !values.contains(&id) {
+        ctx.charge_collection_items(1, OPERATION)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+        values.insert(id);
+    }
+    Ok(())
+}
+
 fn visit_drawing_references(
     value: &Value,
     ctx: &DecodeContext<'_>,
@@ -174,19 +202,37 @@ pub(super) fn decode(
 
     let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
     for candidate in &candidates {
-        target_identities
-            .entry(candidate.id)
-            .or_default()
-            .insert(candidate.identity.as_str().to_owned());
+        charge_drawing_map_key(
+            &target_identities,
+            &candidate.id,
+            ctx,
+            "step_drawing_target_groups",
+        )?;
+        let targets = target_identities.entry(candidate.id).or_default();
+        insert_drawing_set(
+            targets,
+            candidate.identity.as_str().to_owned(),
+            ctx,
+            "step_drawing_target_members",
+        )?;
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
     for (&shape_id, product_definition_id) in product_definition_ids_by_shape {
-        target_identities
-            .entry(shape_id)
-            .or_default()
-            .insert(product_definition_id.as_str().to_owned());
+        charge_drawing_map_key(
+            &target_identities,
+            &shape_id,
+            ctx,
+            "step_drawing_target_groups",
+        )?;
+        let targets = target_identities.entry(shape_id).or_default();
+        insert_drawing_set(
+            targets,
+            product_definition_id.as_str().to_owned(),
+            ctx,
+            "step_drawing_target_members",
+        )?;
     }
     let drawing_target_ids = referenced_target_ids(exchange, &candidates);
     add_source_typed_targets(
@@ -197,14 +243,18 @@ pub(super) fn decode(
         &mut target_identities,
         ctx,
     )?;
-    let external_documents = exchange
-        .references()
-        .iter()
-        .filter_map(|entry| match entry.name {
-            ReferenceName::Entity(id) => Some((id, entry.uri.as_str())),
-            ReferenceName::Value(_) => None,
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut external_documents = BTreeMap::new();
+    for entry in exchange.references() {
+        if let ReferenceName::Entity(id) = entry.name {
+            charge_drawing_map_key(
+                &external_documents,
+                &id,
+                ctx,
+                "step_drawing_external_documents",
+            )?;
+            external_documents.insert(id, entry.uri.as_str());
+        }
+    }
     let target_context = TargetContext {
         target_identities: &target_identities,
         known_typed,
@@ -223,10 +273,12 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
+        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
         stored_parameters.insert(
             cadmpeg_core::nonblank_literal!("source_id"),
             format!("#{id}"),
         );
+        ctx.charge_collection_items(1, "step_drawing_stored_parameters")?;
         stored_parameters.insert(cadmpeg_core::nonblank_literal!("source_type"), name.into());
         for (index, value) in parameters.iter().enumerate() {
             if let Some(value) = value_text(
@@ -237,7 +289,14 @@ pub(super) fn decode(
                 &format!("drawing parameter {index}"),
                 Some(ctx),
             )? {
-                stored_parameters.insert(parameter_key(name, index), value);
+                let key = parameter_key(name, index);
+                charge_drawing_map_key(
+                    &stored_parameters,
+                    &key,
+                    ctx,
+                    "step_drawing_stored_parameters",
+                )?;
+                stored_parameters.insert(key, value);
             }
         }
 
@@ -257,6 +316,7 @@ pub(super) fn decode(
             &target_context,
             &mut losses,
         )?;
+        charge_drawing_map_key(&drawings, &id, ctx, "step_drawing_entries")?;
         drawings.insert(
             id,
             Drawing {
@@ -289,8 +349,19 @@ pub(super) fn decode(
         &mut association_ids,
     )?;
 
-    let mut typed_records = drawings.keys().copied().collect::<HashSet<_>>();
-    typed_records.extend(association_ids);
+    let mut typed_records = HashSet::new();
+    for &id in drawings.keys() {
+        claim_drawing_typed(&mut typed_records, id, ctx)?;
+    }
+    for id in association_ids {
+        claim_drawing_typed(&mut typed_records, id, ctx)?;
+    }
+    reserve_drawing_items(
+        &mut ir.model.drawings,
+        drawings.len(),
+        ctx,
+        "step_drawing_ir_items",
+    )?;
     ir.model.drawings.extend(drawings.into_values());
     Ok(StageOutcome {
         value: (),

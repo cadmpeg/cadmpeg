@@ -11,12 +11,16 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 fn drawing_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid drawing exchange");
+    drawing_refuses_source(source.as_bytes(), operation);
+}
+
+fn drawing_refuses_source(source: &[u8], operation: &str) {
+    let (exchange, _) = crate::parse::parse(source).expect("valid drawing exchange");
     let refused = (0..=256).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits collection policy");
         matches!(
             super::super::decode(
@@ -68,4 +72,40 @@ fn drawing_reference_walk_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_drawing_reference_walk"
     ));
+}
+
+#[test]
+fn drawing_target_groups_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_target_groups");
+}
+
+#[test]
+fn drawing_target_members_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_target_members");
+}
+
+#[test]
+fn drawing_external_documents_refuse_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=DRAWING_DEFINITION('Main','detail');ENDSEC;END-ISO-10303-21;";
+    drawing_refuses_source(source, "step_drawing_external_documents");
+}
+
+#[test]
+fn drawing_stored_parameters_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_stored_parameters");
+}
+
+#[test]
+fn drawing_entries_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_entries");
+}
+
+#[test]
+fn drawing_typed_claims_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_typed_claims");
+}
+
+#[test]
+fn drawing_ir_items_refuse_collection_limit() {
+    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_ir_items");
 }
