@@ -947,24 +947,24 @@ impl DesignWorkPointRule {
         reference_type: u32,
         inputs: Vec<DesignWorkPointInput>,
     ) -> Result<Self, String> {
-        let form = match (reference_type, inputs.as_slice()) {
-            (5, [input]) => DesignWorkPointRuleForm::CircleCenter {
-                input: input.clone(),
+        let form = match (reference_type, inputs.len()) {
+            (5, 1) => DesignWorkPointRuleForm::CircleCenter {
+                input: take_one_work_point_input(inputs)?,
             },
-            (7, [first, second]) => DesignWorkPointRuleForm::TwoEdgeIntersection {
-                inputs: [first.clone(), second.clone()],
+            (7, 2) => DesignWorkPointRuleForm::TwoEdgeIntersection {
+                inputs: take_work_point_inputs(inputs)?,
             },
-            (8, [first, second, third]) => DesignWorkPointRuleForm::ThreePlaneIntersection {
-                inputs: [first.clone(), second.clone(), third.clone()],
+            (8, 3) => DesignWorkPointRuleForm::ThreePlaneIntersection {
+                inputs: take_work_point_inputs(inputs)?,
             },
-            (10, [input]) => DesignWorkPointRuleForm::Vertex {
-                input: input.clone(),
+            (10, 1) => DesignWorkPointRuleForm::Vertex {
+                input: take_one_work_point_input(inputs)?,
             },
-            (14, [first, second]) => DesignWorkPointRuleForm::EdgePlaneIntersection {
-                inputs: [first.clone(), second.clone()],
+            (14, 2) => DesignWorkPointRuleForm::EdgePlaneIntersection {
+                inputs: take_work_point_inputs(inputs)?,
             },
-            (20, [input]) => DesignWorkPointRuleForm::DistanceOnEdge {
-                input: input.clone(),
+            (20, 1) => DesignWorkPointRuleForm::DistanceOnEdge {
+                input: take_one_work_point_input(inputs)?,
             },
             _ => DesignWorkPointRuleForm::Native {
                 reference_type,
@@ -1031,6 +1031,19 @@ impl DesignWorkPointRule {
             }
         })
     }
+}
+
+fn take_work_point_inputs<const N: usize>(
+    inputs: Vec<DesignWorkPointInput>,
+) -> Result<[DesignWorkPointInput; N], String> {
+    inputs
+        .try_into()
+        .map_err(|_| "WorkPoint input arity changed during admission".into())
+}
+
+fn take_one_work_point_input(inputs: Vec<DesignWorkPointInput>) -> Result<DesignWorkPointInput, String> {
+    let [input] = take_work_point_inputs(inputs)?;
+    Ok(input)
 }
 
 impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
