@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveReal;
 
 const ROUND_SCHEMA_CLASS: i32 = 913;
@@ -57,12 +59,12 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn build(persistence: &'a Persistence) -> Option<Self> {
+    fn build(ctx: &DecodeContext<'_>, persistence: &'a Persistence) -> Result<Option<Self>, CodecError> {
         let mut objects = BTreeMap::new();
         let mut children = BTreeMap::new();
         for object in &persistence.objects {
             if objects.insert(object.id(), object).is_some() {
-                return None;
+                return Ok(None);
             }
             if let Some(parent) = object.parent {
                 children
@@ -71,12 +73,12 @@ impl<'a> Index<'a> {
                     .push(object);
             }
         }
-        Some(Self {
+        Ok(Some(Self {
             objects,
             children,
-            integers: value_index(&persistence.integer_values.rows),
-            reals: value_index(&persistence.real_values.rows),
-        })
+            integers: value_index(ctx, &persistence.integer_values.rows)?,
+            reals: value_index(ctx, &persistence.real_values.rows)?,
+        }))
     }
 
     fn children(&self, parent: usize, name: &str) -> Vec<&'a ObjectRecord> {
@@ -119,14 +121,15 @@ impl<'a> Index<'a> {
 
 /// Decode feature-owned round records from one legacy persistence graph.
 pub(crate) fn scan(
+    ctx: &DecodeContext<'_>,
     persistence: &Persistence,
     topology_rows: &[CurveTopologyRow],
-) -> LegacyFeatureScan {
-    let Some(index) = Index::build(persistence) else {
-        return LegacyFeatureScan::default();
+) -> Result<LegacyFeatureScan, CodecError> {
+    let Some(index) = Index::build(ctx, persistence)? else {
+        return Ok(LegacyFeatureScan::default());
     };
     let Some(features_root) = unique_root(&index, "Sld_Features") else {
-        return LegacyFeatureScan::default();
+        return Ok(LegacyFeatureScan::default());
     };
     let radius_rows = full_data_dimension_rows(&index);
     let mut rounds = BTreeMap::new();
@@ -164,14 +167,14 @@ pub(crate) fn scan(
             ambiguous_feature_ids.insert(feature_id);
         }
     }
-    LegacyFeatureScan {
+    Ok(LegacyFeatureScan {
         rounds: rounds
             .into_iter()
             .filter_map(|(feature_id, round)| {
                 (!ambiguous_feature_ids.contains(&feature_id)).then_some(round)
             })
             .collect(),
-    }
+    })
 }
 
 fn unique_root<'a>(index: &'a Index<'a>, name: &str) -> Option<&'a ObjectRecord> {
@@ -274,12 +277,24 @@ fn unique_feature_edge_ids(rows: &[CurveTopologyRow], feature_id: u32) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, LegacyRoundRadius};
+    use super::{scan as scan_checked, LegacyRoundRadius};
     use crate::curve::CurveTopologyRow;
     use crate::legacy::{
         IntegerPayload, ObjectPayload, Persistence, Real, RealPayload, ValueRecord,
     };
     use crate::test_support::{fixture_offset, object};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    fn scan(
+        persistence: &Persistence,
+        topology_rows: &[crate::curve::CurveTopologyRow],
+    ) -> super::LegacyFeatureScan {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence, topology_rows).expect("service admits legacy features")
+    }
 
     fn integer(
         parent: &str,
