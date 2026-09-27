@@ -416,7 +416,8 @@ pub(crate) enum HistoryContent {
 }
 
 /// The full parametric construction-history timeline for a part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(crate) struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -441,8 +442,29 @@ pub(crate) struct FeatureHistory {
     pub(crate) features: Vec<Feature>,
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FEATURE_HISTORY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for FeatureHistory {
+    fn clone(&self) -> Self {
+        FEATURE_HISTORY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            part_name: self.part_name.clone(),
+            properties: self.properties.clone(),
+            content: self.content.clone(),
+            configurations: self.configurations.clone(),
+            features: self.features.clone(),
+        }
+    }
+}
+
 /// Native feature-input stream retained for parametric replay and rewrite.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "FeatureInputLaneWire")]
 pub(crate) struct FeatureInputLane {
     /// Stable source-derived identifier for this feature-input record.
@@ -488,6 +510,34 @@ pub(crate) struct FeatureInputLane {
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub(crate) sketch_entities: Vec<SketchInputEntity>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static FEATURE_INPUT_LANE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for FeatureInputLane {
+    fn clone(&self) -> Self {
+        FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            configuration: self.configuration.clone(),
+            native_payload: self.native_payload.clone(),
+            classes: self.classes.clone(),
+            names: self.names.clone(),
+            scalars: self.scalars.clone(),
+            relation_bindings: self.relation_bindings.clone(),
+            relation_instances: self.relation_instances.clone(),
+            body_selections: self.body_selections.clone(),
+            edge_selections: self.edge_selections.clone(),
+            surface_selections: self.surface_selections.clone(),
+            generated_surface_identities: self.generated_surface_identities.clone(),
+            references: self.references.clone(),
+            sketch_entities: self.sketch_entities.clone(),
+        }
+    }
 }
 
 /// Deserialization mirror admitting every sketch-entity marker against this lane's payload.
