@@ -492,9 +492,10 @@ pub(crate) fn histories(
 }
 
 pub(crate) fn enrich_scene_classes(
+    ctx: &DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     scene_classes: &HashMap<u32, String>,
-) {
+) -> Result<(), CodecError> {
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -503,9 +504,13 @@ pub(crate) fn enrich_scene_classes(
             continue;
         };
         if feature.input_class.is_none() && classless_builtin_node(feature) {
-            feature.input_class = scene_classes.get(&source).cloned();
+            feature.input_class = scene_classes
+                .get(&source)
+                .map(|name| copy_history_text(ctx, name, "retain SLDPRT scene feature class"))
+                .transpose()?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

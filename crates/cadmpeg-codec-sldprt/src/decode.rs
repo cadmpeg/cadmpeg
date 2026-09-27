@@ -3882,9 +3882,10 @@ fn project_design_history(
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(ctx, scan)?;
     crate::history::enrich_scene_classes(
+        ctx,
         &mut semantic_projection,
         &scene_feature_classes,
-    );
+    )?;
     crate::history::configuration::enrich_history_semantic(
         &mut semantic_projection,
         lanes,
