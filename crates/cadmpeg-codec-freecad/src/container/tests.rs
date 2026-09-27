@@ -33,6 +33,36 @@ fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
 }
 
 #[test]
+fn archive_span_identity_refuses_at_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive(document);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    for _ in 0..256 {
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive root");
+        let error = super::scan(&ctx, root).err().expect("retained limit must refuse");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected retained refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        if limit.operation == "FreeCAD native identity" {
+            policy.limits.max_retained_bytes = threshold - 1;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("archive root");
+            assert!(matches!(super::scan(&ctx, root),
+                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.operation == "FreeCAD native identity"));
+            return;
+        }
+        policy.limits.max_retained_bytes = threshold;
+    }
+    panic!("archive span identity was not reached");
+}
+
+#[test]
 fn source_domain_list_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         scan.document.domains.push("Part".into());

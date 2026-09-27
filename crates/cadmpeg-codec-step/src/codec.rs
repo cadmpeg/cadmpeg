@@ -323,7 +323,7 @@ fn inspect_zip(
         .map(|entry| entry.name.as_str())
         .collect::<Vec<_>>()
         .join(",");
-    let mut entries = archive.container_entries(archive::classify_entry);
+    let mut entries = archive.container_entries(ctx, archive::classify_entry)?;
     if let Some(root_entry) = entries
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
