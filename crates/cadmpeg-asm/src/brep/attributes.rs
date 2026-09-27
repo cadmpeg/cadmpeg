@@ -158,34 +158,45 @@ pub fn source_attribute(
     // rather than carrying an attribute value.
     let mut values = Vec::new();
     for token in record.chunks() {
-        let value = attribute_value(token, format).ok_or_else(|| {
+        crate::decode_alloc::reserve_vec_slot(ctx, &mut values, "ASM attribute values")?;
+        let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "attribute record {} ({}) holds a non-finite number",
                     record.index, record.name
                 ))
             })?;
-        crate::decode_alloc::push_vec(ctx, &mut values, value, "ASM attribute values")?;
+        values.push(value);
     }
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
-        name: record.name.clone(),
+        name: crate::decode_alloc::copy_string(ctx, &record.name, "ASM attribute record name")?,
         values,
     })
 }
 
 /// The attribute value one token carries, or `None` for a number that is not
 /// finite.
-fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
-    Some(match token {
+fn attribute_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    token: &Token,
+    format: IdFormat,
+) -> Result<Option<AttributeValue>, cadmpeg_core::CodecError> {
+    Ok(Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Long(value) | Token::Enum(value) | Token::Int64(value) => {
             AttributeValue::Integer(*value)
         }
-        Token::Float(value) => AttributeValue::float(f64::from(*value))?,
-        Token::Double(value) => AttributeValue::float(*value)?,
-        Token::Str(value) => AttributeValue::String(value.clone()),
+        Token::Float(value) => match AttributeValue::float(f64::from(*value)) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Double(value) => match AttributeValue::float(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Str(value) => AttributeValue::String(crate::decode_alloc::copy_string(ctx, value, "ASM attribute string")?),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -193,10 +204,16 @@ fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
         }
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
-        Token::Position(value) | Token::Vector3(value) => AttributeValue::vector(*value)?,
-        Token::Vector2(value) => AttributeValue::vector(*value)?,
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
-    })
+        Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Vector2(value) => match AttributeValue::vector(*value) {
+            Some(value) => value,
+            None => return Ok(None),
+        },
+        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(crate::decode_alloc::copy_string(ctx, value, "ASM attribute identifier")?),
+    }))
 }
 
 /// Decode a native transform record into an IR affine transform, scaling the
@@ -423,10 +440,12 @@ pub fn attribute_chain_name(
 /// `UnknownRecord` and any `SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)` that links to it, so the
 /// reference resolves under validation.
 pub fn unknown_record_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let kind = IdentityComponent::try_new(rec.head().to_owned()).map_err(|error| {
+    let name = crate::decode_alloc::copy_string(ctx, rec.head(), "ASM unknown record kind")?;
+    let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"
         ))

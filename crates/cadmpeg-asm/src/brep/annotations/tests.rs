@@ -40,6 +40,44 @@ fn annotation_curve_index_refuses_collection_limit() {
 }
 
 #[test]
+fn annotation_stream_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+
+    let records = [Record {
+        index: 1,
+        name: "straight".into(),
+        tokens: Vec::new().into(),
+        offset: 0,
+        len: 0,
+    }];
+    let mut out = AsmBrep {
+        curves: vec![Curve {
+            id: CurveId::mint("f3d:brep:entity#1").unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        }],
+        ..AsmBrep::default()
+    };
+    let by_index = std::collections::HashMap::from([(1, &records[0])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = emit_annotation_records(
+        &ctx, &mut out, &records, &by_index, &Carriers::default(), "source",
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("one stream label exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected retained refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "ASM annotation stream");
+}
+
+#[test]
 fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     let records = [Record {
         index: 37,

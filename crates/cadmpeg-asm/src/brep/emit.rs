@@ -551,7 +551,7 @@ fn emit_carrier_surface(
             ProceduralSurface::new(
                 brep_id!(format, ProceduralSurfaceId, "procedural_surface", i),
                 ProceduralSurfaceDefinition::Unknown {
-                    record: Some(unknown_record_id(r, format)?),
+                    record: Some(unknown_record_id(ctx, r, format)?),
                     cache: None,
                 },
                 None,
@@ -3937,7 +3937,7 @@ pub(super) fn emit_carrier_records(
                 charged_push!(ctx, out.surfaces, Surface {
                     id: SurfaceId::from(id(format, i)),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(unknown_record_id(r, format)?),
+                        record: Some(unknown_record_id(ctx, r, format)?),
                     }),
                     source_object: None,
                 });
@@ -4878,7 +4878,7 @@ pub(super) fn emit_passthrough_unknowns(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("retain ASM unknown record", 0, 1))?;
             out.unknowns.push(UnknownRecord::retained(
-                unknown_record_id(r, format)?,
+                unknown_record_id(ctx, r, format)?,
                 r.offset as u64,
                 retained,
                 Vec::new(),
