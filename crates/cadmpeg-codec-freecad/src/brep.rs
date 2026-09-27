@@ -3733,7 +3733,7 @@ fn parse_binary_curve(
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
-            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
+            append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
                 NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?,
@@ -3845,7 +3845,7 @@ fn parse_binary_curve2d(
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
             let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
-            append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
+            append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
             TextCurve2d::Nurbs(NurbsCurve2d {
                 degree,
                 knots,
@@ -4269,7 +4269,7 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurv
     }
     let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
     let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
-    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
+    append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve2d {
         degree: degree as u32,
         knots,
@@ -5258,27 +5258,18 @@ fn normalize_periodic_knots(
     let mut normalized = collection_vec(ctx, normalized_count, "FreeCAD periodic B-rep knots")?;
     let overflow =
         || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
-    normalized.extend(
-        knots[before_last - padding..before_last]
-            .iter()
-            .map(|knot| {
-                FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
+    for knot in &knots[before_last - padding..before_last] {
+        normalized.push(FiniteReal::new(first.get() - (last.get() - knot.get())).ok_or_else(overflow)?);
+    }
     normalized.extend_from_slice(&knots);
-    normalized.extend(
-        knots[first_multiplicity..first_multiplicity + padding]
-            .iter()
-            .map(|knot| {
-                FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
+    for knot in &knots[first_multiplicity..first_multiplicity + padding] {
+        normalized.push(FiniteReal::new(last.get() + (knot.get() - first.get())).ok_or_else(overflow)?);
+    }
     Ok((normalized, padding))
 }
 
 fn append_periodic_curve_poles<T: Clone>(
+    ctx: &DecodeContext<'_>,
     control_points: &mut Vec<T>,
     weights: Option<&mut Vec<FiniteReal>>,
     padding: usize,
@@ -5291,6 +5282,7 @@ fn append_periodic_curve_poles<T: Clone>(
             "periodic B-spline has insufficient poles".into(),
         ));
     }
+    reserve_vec_items(ctx, control_points, padding, "FreeCAD periodic B-rep curve poles")?;
     control_points.extend_from_within(..padding);
     if let Some(weights) = weights {
         if weights.len() < padding {
@@ -5298,6 +5290,7 @@ fn append_periodic_curve_poles<T: Clone>(
                 "periodic B-spline has insufficient weights".into(),
             ));
         }
+        reserve_vec_items(ctx, weights, padding, "FreeCAD periodic B-rep curve weights")?;
         weights.extend_from_within(..padding);
     }
     Ok(())
@@ -5501,7 +5494,7 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve,
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
     let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
-    append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
+    append_periodic_curve_poles(cursor.ctx, &mut control_points, weights.as_mut(), padding)?;
     NurbsCurve::from_finite_lanes(degree as u32, knots, control_points, weights, periodic)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
@@ -6324,6 +6317,16 @@ pub(crate) mod tests {
         let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, vec![1_u8, 2, 3, 4], 2));
         assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD B-rep surface row values"));
+    }
+
+    #[test]
+    fn periodic_curve_pole_padding_refuses_at_caller_limit() {
+        let result = with_collection_limit(&[], 0, |ctx| {
+            let mut poles = vec![1_u8];
+            super::append_periodic_curve_poles(ctx, &mut poles, None, 1)
+        });
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD periodic B-rep curve poles"));
     }
 
     #[test]
