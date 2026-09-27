@@ -52,6 +52,42 @@ fn retained_refusal_at(
 }
 
 #[test]
+fn decode_body_stream_selection_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_collection_items = 0;
+    for _ in 0..256 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect_err("collection limit must refuse the decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
+        else {
+            panic!("expected a collection-item refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        if limit.operation == "collect SLDPRT body streams" {
+            options.policy.limits.max_collection_items = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(&source), &options)
+                .expect_err("one item below body stream selection must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == "collect SLDPRT body streams"
+            ));
+            return;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_collection_items);
+        options.policy.limits.max_collection_items = next;
+    }
+    panic!("body stream selection charge was not reached");
+}
+
+#[test]
 fn native_loss_validation_propagates_typed_load_retained_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -251,7 +287,14 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
         + scan.compound_streams.len()
         + scan.directory.len()
         + scan.cache_cells.len();
-    let stream_entities = crate::decode::active_body_streams(&scan).len();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &fixture,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let stream_entities = crate::decode::active_body_streams(&ctx, &scan).unwrap().len();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");

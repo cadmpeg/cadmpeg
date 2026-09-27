@@ -101,7 +101,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         return decode_result(ir, report, annotations, unknowns);
     }
 
-    let streams = active_body_streams(&scan);
+    let streams = active_body_streams(ctx, &scan)?;
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
@@ -1937,35 +1937,44 @@ fn multiply_projected_sketch_relation_records(
 }
 
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
-fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSite<'a>> {
-    let mut streams = scan
-        .sections()
-        .flat_map(|section| {
-            section.ps_streams().iter().filter_map(move |stream| {
-                let name = section.name().unwrap_or("").to_ascii_lowercase();
-                (crate::parasolid::is_body_stream(&stream.header)
-                    && !name.contains("ghost")
-                    && !name.contains("resolvedfeatures"))
-                .then_some(ActiveParasolidSite {
-                    section,
-                    payload: &stream.payload,
-                    header: &stream.header,
-                })
-            })
-        })
-        .collect::<Vec<_>>();
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
+fn active_body_streams<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<ActiveParasolidSite<'a>>, CodecError> {
+    let mut streams = Vec::new();
+    for section in scan.sections() {
+        let name = section.name().unwrap_or("");
+        if contains_ascii_case_insensitive(name, "ghost")
+            || contains_ascii_case_insensitive(name, "resolvedfeatures")
+        {
+            continue;
+        }
+        for stream in section.ps_streams() {
+            if !crate::parasolid::is_body_stream(&stream.header) {
+                continue;
+            }
+            ctx.reserve_collection_vec(&mut streams, 1, "collect SLDPRT body streams")?;
+            streams.push(ActiveParasolidSite {
+                section,
+                payload: &stream.payload,
+                header: &stream.header,
+            });
+        }
+    }
     streams.sort_by_key(|stream| {
-        let section = stream.name().to_ascii_lowercase();
         (
-            !section.contains("partition"),
-            !stream
-                .header
-                .description
-                .to_ascii_lowercase()
-                .contains("partition"),
+            !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
+            !contains_ascii_case_insensitive(&stream.header.description, "partition"),
         )
     });
-    streams
+    Ok(streams)
 }
 
 /// Decode the available Parasolid body streams into one B-rep. Returns
