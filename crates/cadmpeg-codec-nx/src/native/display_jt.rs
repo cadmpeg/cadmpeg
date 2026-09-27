@@ -3276,7 +3276,7 @@ fn decimal_digits(mut value: usize) -> u64 {
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
 pub(super) fn display_jt_indices(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DisplayJtIndex>, CodecError> {
     const JT_HEADER: &[u8] = b"Version ";
@@ -3319,31 +3319,20 @@ pub(super) fn display_jt_indices(
             if row_count == 0 {
                 return Ok(None);
             }
-            if let Some(ctx) = ctx {
-                let row_size =
-                    u64::try_from(std::mem::size_of::<DisplayJtIndexRow>()).map_err(|_| {
+            let row_size = u64::try_from(std::mem::size_of::<DisplayJtIndexRow>())
+                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX))?;
+            ctx.charge_collection_items(u64::from(declared_count), "admit DisplayJT index rows")?;
+            ctx.charge_retained(
+                u64::from(declared_count)
+                    .checked_mul(row_size)
+                    .ok_or_else(|| {
                         ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
-                    })?;
-                ctx.charge_collection_items(
-                    u64::from(declared_count),
-                    "admit DisplayJT index rows",
-                )?;
-                ctx.charge_retained(
-                    u64::from(declared_count)
-                        .checked_mul(row_size)
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
-                        })?,
-                    "retain DisplayJT index rows",
-                )?;
-            }
+                    })?,
+                "retain DisplayJT index rows",
+            )?;
             let mut rows = Vec::new();
-            if rows.try_reserve_exact(row_count).is_err() {
-                return match ctx {
-                    Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT index rows", 0, 1)),
-                    None => Ok(None),
-                };
-            }
+            rows.try_reserve_exact(row_count)
+                .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT index rows", 0, 1))?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
@@ -3375,23 +3364,17 @@ pub(super) fn display_jt_indices(
                     return Ok(None);
                 }
                 previous_header_offset = Some(header_offset);
-                if let Some(ctx) = ctx {
-                    ctx.charge_entities(1, "admit DisplayJT index row")?;
-                    let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
-                        .checked_add(decimal_digits(index_ordinal))
-                        .and_then(|len| {
-                            len.checked_add(cadmpeg_core::decode::u64_from_index("-row-".len()))
-                        })
-                        .and_then(|len| len.checked_add(decimal_digits(ordinal)))
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "retain DisplayJT index row identity",
-                                0,
-                                u64::MAX,
-                            )
-                        })?;
-                    ctx.charge_retained(id_len, "retain DisplayJT index row identity")?;
-                }
+                ctx.charge_entities(1, "admit DisplayJT index row")?;
+                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                    .checked_add(decimal_digits(index_ordinal))
+                    .and_then(|len| {
+                        len.checked_add(cadmpeg_core::decode::u64_from_index("-row-".len()))
+                    })
+                    .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT index row identity", 0, u64::MAX)
+                    })?;
+                ctx.charge_retained(id_len, "retain DisplayJT index row identity")?;
                 rows.push(DisplayJtIndexRow {
                     id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
                     ordinal: ordinal as u32,
@@ -3400,15 +3383,13 @@ pub(super) fn display_jt_indices(
                     source_offset: source_offset + row_offset as u64,
                 });
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_entities(1, "admit DisplayJT index entity")?;
-                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
-                    .checked_add(decimal_digits(index_ordinal))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain DisplayJT index identity", 0, u64::MAX)
-                    })?;
-                ctx.charge_retained(id_len, "retain DisplayJT index identity")?;
-            }
+            ctx.charge_entities(1, "admit DisplayJT index entity")?;
+            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                .checked_add(decimal_digits(index_ordinal))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT index identity", 0, u64::MAX)
+                })?;
+            ctx.charge_retained(id_len, "retain DisplayJT index identity")?;
             Ok(DisplayJtIndex::new(
                 format!("nx:display-jt:index#{index_ordinal}"),
                 version,
@@ -3418,18 +3399,12 @@ pub(super) fn display_jt_indices(
             .ok())
         })()?;
         if let Some(index) = parsed {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "admit DisplayJT index")?;
-                let index_size = u64::try_from(std::mem::size_of::<DisplayJtIndex>())
-                    .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index", 0, u64::MAX))?;
-                ctx.charge_retained(index_size, "retain DisplayJT index")?;
-            }
-            if indices.try_reserve_exact(1).is_err() {
-                return match ctx {
-                    Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT indices", 0, 1)),
-                    None => Ok(Vec::new()),
-                };
-            }
+            ctx.charge_collection_items(1, "admit DisplayJT index")?;
+            let index_size = u64::try_from(std::mem::size_of::<DisplayJtIndex>())
+                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index", 0, u64::MAX))?;
+            ctx.charge_retained(index_size, "retain DisplayJT index")?;
+            indices.try_reserve_exact(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT indices", 0, 1))?;
             indices.push(index);
         }
     }
@@ -7108,6 +7083,11 @@ mod tests {
     fn display_jt_index_requires_every_declared_header() {
         use crate::container::{Container, DirEntry, Region};
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+
         let mut inflated = Vec::new();
         inflated.extend_from_slice(&24_u32.to_le_bytes());
         inflated.extend_from_slice(&[3; 16]);
@@ -7166,7 +7146,7 @@ mod tests {
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
-        let indices = super::display_jt_indices(None, &container).unwrap();
+        let indices = super::display_jt_indices(&ctx, &container).unwrap();
         assert_eq!(indices[0].version, 9);
         assert_eq!(indices[0].declared_count(), 1);
         assert_eq!(indices[0].rows.first().header_offset, 28);
@@ -7251,7 +7231,7 @@ mod tests {
 
         let mut malformed = container;
         malformed.data.to_mut()[28] = b'X';
-        assert!(super::display_jt_indices(None, &malformed)
+        assert!(super::display_jt_indices(&ctx, &malformed)
             .unwrap()
             .is_empty());
     }

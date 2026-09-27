@@ -923,7 +923,7 @@ impl NativeModel {
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
-        let display_jt_indices = display_jt_indices(Some(ctx), container)?;
+        let display_jt_indices = display_jt_indices(ctx, container)?;
         let display_jt_documents = display_jt_documents(Some(ctx), container, &display_jt_indices)?;
         let budget = Some((ctx, root));
         let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
