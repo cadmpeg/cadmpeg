@@ -3,8 +3,60 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
+use std::io::Write;
 
 use crate::container::{Container, DirEntry, DirEntryBody, Region};
+
+fn compressed_member() -> Vec<u8> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(b"DisplayJT payload").unwrap();
+    encoder.finish().unwrap()
+}
+
+#[test]
+fn display_jt_inflate_propagates_expansion_limit() {
+    let member = compressed_member();
+    let source = View::over_retained(&member);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 16;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::inflate_display_jt(Some((&ctx, source)), &member).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::DecompressedBytes));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::inflate_display_jt(Some((&service, source)), &member)
+            .unwrap()
+            .as_deref(),
+        Some(b"DisplayJT payload".as_slice())
+    );
+}
+
+#[test]
+fn display_jt_inflate_propagates_retained_copy_limit() {
+    let member = compressed_member();
+    let source = View::over_retained(&member);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 16;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::inflate_display_jt(Some((&ctx, source)), &member).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain inflated DisplayJT payload"));
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::inflate_display_jt(Some((&service, source)), &member)
+            .unwrap()
+            .as_deref(),
+        Some(b"DisplayJT payload".as_slice())
+    );
+}
 
 #[test]
 fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
