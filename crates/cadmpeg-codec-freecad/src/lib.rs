@@ -956,8 +956,8 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
             let joint_records = joint::transfer(&graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
-            let drawings = drawing::transfer(&graph.objects, &graph.properties)?;
-            drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties)?;
+            let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
+            drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
             annotation::transfer_neutral(
