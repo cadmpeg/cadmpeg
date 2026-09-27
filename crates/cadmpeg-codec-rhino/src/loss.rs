@@ -91,11 +91,6 @@ impl Diagnostics {
         self.0.splice(0..0, earlier.0);
     }
 
-    /// Records an already-classified diagnostic.
-    pub(crate) fn push_diagnostic(&mut self, diagnostic: RhinoDiagnostic) {
-        self.0.push(diagnostic);
-    }
-
     pub(crate) fn truncate(&mut self, len: usize) {
         self.0.truncate(len);
     }

@@ -869,12 +869,12 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let Some(scale) = self.neutral_scale() else {
-                self.scan_unbound_unit_warning(source_order, "simple geometry");
+                self.scan_unbound_unit_warning(source_order, "simple geometry")?;
                 continue;
             };
             if crate::mesh::supported_class(object.class_uuid) {
                 let identity = &object.identity;
-                let Some(key) = self.checked_object_key(identity, source_order) else {
+                let Some(key) = self.checked_object_key(identity, source_order)? else {
                     continue;
                 };
                 let decoded = crate::mesh::decode(
@@ -926,23 +926,14 @@ impl<'a> DecodeContext<'a> {
                                     if proxy_transferred {
                                         self.mark_decoded(source_order);
                                     } else {
-                                        self.scan_warning(
-                                            source_order,
-                                            "valid SubD mesh proxy rejected by IR validation; parent mesh retained",
-                                        );
+                                        self.scan_warning(source_order, format_args!("valid SubD mesh proxy rejected by IR validation; parent mesh retained"))?;
                                     }
                                 }
-                                Ok(None) => self.scan_warning(
-                                    source_order,
-                                    "SubD mesh proxy failed its validity or parent-mesh identity checks; parent mesh retained",
-                                ),
+                                Ok(None) => self.scan_warning(source_order, format_args!("SubD mesh proxy failed its validity or parent-mesh identity checks; parent mesh retained"))?,
                                 Err(crate::subd::SubdError::Resource(limit)) => {
                                     return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
                                 }
-                                Err(error) => self.scan_warning(
-                                    source_order,
-                                    &format!("SubD mesh proxy dropped: {error}; parent mesh retained"),
-                                ),
+                                Err(error) => self.scan_warning(source_order, format_args!("SubD mesh proxy dropped: {error}; parent mesh retained"))?,
                             }
                         }
                         if !proxy_transferred && self.commit_mesh(source_order, mesh)? {
@@ -957,13 +948,10 @@ impl<'a> DecodeContext<'a> {
                             error,
                             crate::curves::GeometryError::UnsupportedVersion { .. }
                         );
-                        self.scan_warning(
-                            source_order,
-                            &format!(
+                        self.scan_warning(source_order, format_args!(
                                 "mesh {}: {error}",
                                 if future { "retained" } else { "failed" }
-                            ),
-                        );
+                            ))?;
                         if !future {
                             self.mark_failed(source_order);
                         }
@@ -985,10 +973,7 @@ impl<'a> DecodeContext<'a> {
                     if self.commit_geometry(source_order, value)? {
                         self.mark_decoded(source_order);
                     } else if procedural_surface {
-                        self.scan_warning(
-                            source_order,
-                            "procedural surface candidate rejected by IR validation",
-                        );
+                        self.scan_warning(source_order, format_args!("procedural surface candidate rejected by IR validation"))?;
                         self.commit_unknown_surface(source_order)?;
                     } else {
                         self.mark_failed(source_order);
@@ -1000,9 +985,7 @@ impl<'a> DecodeContext<'a> {
                         error,
                         crate::curves::GeometryError::UnsupportedVersion { .. }
                     );
-                    self.scan_warning(
-                        source_order,
-                        &format!(
+                    self.scan_warning(source_order, format_args!(
                             "simple geometry {}: {error}",
                             if procedural_surface {
                                 "degraded and retained"
@@ -1011,8 +994,7 @@ impl<'a> DecodeContext<'a> {
                             } else {
                                 "failed"
                             }
-                        ),
-                    );
+                        ))?;
                     if procedural_surface {
                         self.commit_unknown_surface(source_order)?;
                     } else if !future {
@@ -1037,18 +1019,15 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             if self.is_definition_member(object) {
-                self.scan_warning(
-                    source_order,
-                    "definition-member dimension retained because annotation instance expansion is unsupported",
-                );
+                self.scan_warning(source_order, format_args!("definition-member dimension retained because annotation instance expansion is unsupported"))?;
                 continue;
             }
             let Some(scale) = self.neutral_scale() else {
-                self.scan_unbound_unit_warning(source_order, "dimension");
+                self.scan_unbound_unit_warning(source_order, "dimension")?;
                 continue;
             };
             let identity = &object.identity;
-            let Some(key) = self.checked_object_key(identity, source_order) else {
+            let Some(key) = self.checked_object_key(identity, source_order)? else {
                 continue;
             };
             match crate::dimensions::decode(
@@ -1088,10 +1067,7 @@ impl<'a> DecodeContext<'a> {
                             scale,
                             &mut dimension,
                         ) {
-                            self.scan_warning(
-                                source_order,
-                                &format!("dimension extension retained: {error}"),
-                            );
+                            self.scan_warning(source_order, format_args!("dimension extension retained: {error}"))?;
                             continue;
                         }
                     }
@@ -1099,10 +1075,7 @@ impl<'a> DecodeContext<'a> {
                     // is a `u32`. The arena length is the dense next index and
                     // rolls back with the arena, unlike a standalone counter.
                     let Ok(order) = u32::try_from(self.ir.model.semantic_annotations.len()) else {
-                        self.scan_warning(
-                            source_order,
-                            "dimension retained because the annotation arena exceeds u32 ordinals",
-                        );
+                        self.scan_warning(source_order, format_args!("dimension retained because the annotation arena exceeds u32 ordinals"))?;
                         continue;
                     };
                     let object = Self::mint_unknown_id(source_order).to_string();
@@ -1115,7 +1088,7 @@ impl<'a> DecodeContext<'a> {
                     ) {
                         Ok(value) => value,
                         Err(error) => {
-                            self.scan_warning(source_order, &error.to_string());
+                            self.scan_warning(source_order, format_args!("{error}"))?;
                             continue;
                         }
                     };
@@ -1143,17 +1116,14 @@ impl<'a> DecodeContext<'a> {
                             }
                         }
                         Err(CandidateError::Codec(error)) => return Err(error),
-                        Err(error) => self.scan_warning(
-                            source_order,
-                            &format!("dimension candidate rejected: {error}"),
-                        ),
+                        Err(error) => self.scan_warning(source_order, format_args!("dimension candidate rejected: {error}"))?,
                     }
                 }
                 Err(crate::chunks::FramingError::Resource(limit)) => {
                     return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
                 }
                 Err(error) => {
-                    self.scan_warning(source_order, &format!("dimension retained: {error}"));
+                    self.scan_warning(source_order, format_args!("dimension retained: {error}"))?;
                     self.mark_failed(source_order);
                 }
             }
@@ -1169,7 +1139,7 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "hatch");
+            self.scan_unbound_unit_warning(source_order, "hatch")?;
             return Ok(());
         };
         let identity = &object.identity;
@@ -1186,13 +1156,10 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "hatch {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -1224,7 +1191,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
         }
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let association = self.source_association(identity)?;
@@ -1237,7 +1204,7 @@ impl<'a> DecodeContext<'a> {
             {
                 Ok(transform) => transform,
                 Err(error) => {
-                    self.scan_warning(source_order, &format!("hatch placement failed: {error}"));
+                    self.scan_warning(source_order, format_args!("hatch placement failed: {error}"))?;
                     self.mark_failed(source_order);
                     return Ok(());
                 }
@@ -1247,10 +1214,7 @@ impl<'a> DecodeContext<'a> {
                 Ok(()) => {}
                 Err(ReferenceFailure::Codec(error)) => return Err(error),
                 Err(ReferenceFailure::Semantic(error)) => {
-                    self.scan_warning(
-                        source_order,
-                        &format!("hatch loop placement failed: {error}"),
-                    );
+                    self.scan_warning(source_order, format_args!("hatch loop placement failed: {error}"))?;
                     self.mark_failed(source_order);
                     return Ok(());
                 }
@@ -1326,7 +1290,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 for warning in hatch.warnings {
-                    self.scan_diagnostic(source_order, &warning);
+                    self.scan_diagnostic(source_order, &warning)?;
                 }
                 let links = hatch_source_links(self.expand.ctx(), loop_ids, &feature_id)?;
                 self.append_links(source_order, &links)?;
@@ -1335,7 +1299,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
+                self.scan_warning(source_order, format_args!("hatch candidate rejected: {error}"))?;
                 self.mark_failed(source_order);
             }
         }
@@ -1360,17 +1324,17 @@ impl<'a> DecodeContext<'a> {
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
             Err(error) => {
-                self.scan_warning(source_order, &format!("polyedge retained: {error}"));
+                self.scan_warning(source_order, format_args!("polyedge retained: {error}"))?;
                 self.mark_failed(source_order);
                 return Ok(());
             }
         };
         let Some(construction) = crate::polyedge::semantic_json(self.expand.ctx(), &polyedge)?
         else {
-            self.scan_warning(source_order, "polyedge semantic serialization failed");
+            self.scan_warning(source_order, format_args!("polyedge semantic serialization failed"))?;
             return Ok(());
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let id = FeatureId::compose(
@@ -1430,10 +1394,7 @@ impl<'a> DecodeContext<'a> {
                 );
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(error) => self.scan_warning(
-                source_order,
-                &format!("polyedge candidate rejected: {error}"),
-            ),
+            Err(error) => self.scan_warning(source_order, format_args!("polyedge candidate rejected: {error}"))?,
         }
         Ok(())
     }
@@ -1459,20 +1420,17 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "detail {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
                 return Ok(());
             }
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let association = self.source_association(identity)?;
@@ -1532,7 +1490,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
+                self.scan_warning(source_order, format_args!("detail candidate rejected: {error}"))?;
                 self.mark_failed(source_order);
             }
         }
@@ -1547,7 +1505,7 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "NURBS cage");
+            self.scan_unbound_unit_warning(source_order, "NURBS cage")?;
             return Ok(());
         };
         let identity = &object.identity;
@@ -1564,20 +1522,17 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "NURBS cage {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
                 return Ok(());
             }
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let feature_id = FeatureId::compose(
@@ -1641,10 +1596,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("NURBS cage candidate rejected: {error}"),
-                );
+                self.scan_warning(source_order, format_args!("NURBS cage candidate rejected: {error}"))?;
                 self.mark_failed(source_order);
             }
         }
@@ -1657,7 +1609,7 @@ impl<'a> DecodeContext<'a> {
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "morph control");
+            self.scan_unbound_unit_warning(source_order, "morph control")?;
             return Ok(());
         };
         let identity = &object.identity;
@@ -1674,20 +1626,17 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "morph control {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
                 return Ok(());
             }
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let feature = match crate::morph::project(
@@ -1701,7 +1650,7 @@ impl<'a> DecodeContext<'a> {
             Ok(feature) => feature,
             Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, &format!("morph control failed: {error}"));
+                self.scan_warning(source_order, format_args!("morph control failed: {error}"))?;
                 self.mark_failed(source_order);
                 return Ok(());
             }
@@ -1717,7 +1666,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
+                self.scan_warning(source_order, format_args!("morph candidate rejected: {error}"))?;
                 self.mark_failed(source_order);
             }
         }
@@ -1732,7 +1681,7 @@ impl<'a> DecodeContext<'a> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "curve-on-surface");
+            self.scan_unbound_unit_warning(source_order, "curve-on-surface")?;
             return Ok(());
         };
         let identity = &object.identity;
@@ -1751,20 +1700,17 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "curve-on-surface {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
                 return Ok(());
             }
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let association = self.source_association(identity)?;
@@ -1867,7 +1813,7 @@ impl<'a> DecodeContext<'a> {
         match result {
             Ok(()) => {
                 for warning in construction.warnings {
-                    self.scan_diagnostic(source_order, &warning);
+                    self.scan_diagnostic(source_order, &warning)?;
                 }
                 let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
                 if let Some(model_id) = model_id {
@@ -1882,10 +1828,7 @@ impl<'a> DecodeContext<'a> {
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("curve-on-surface candidate rejected: {error}"),
-                );
+                self.scan_warning(source_order, format_args!("curve-on-surface candidate rejected: {error}"))?;
                 self.mark_failed(source_order);
             }
         }
@@ -1918,17 +1861,17 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         identity: &crate::objects::SourceIdentity,
         source_order: usize,
-    ) -> Option<IdentityKey> {
+    ) -> Result<Option<IdentityKey>, cadmpeg_core::CodecError> {
         let value = self.object_key(identity, source_order);
         match IdentityKey::try_new(value) {
-            Ok(key) => Some(key),
+            Ok(key) => Ok(Some(key)),
             Err(error) => {
                 self.scan_warning(
                     source_order,
-                    &format!("object identity key is invalid: {error}"),
-                );
+                    format_args!("object identity key is invalid: {error}"),
+                )?;
                 self.mark_failed(source_order);
-                None
+                Ok(None)
             }
         }
     }
@@ -2022,7 +1965,7 @@ impl<'a> DecodeContext<'a> {
         self.instance_selection = original_selection;
         self.instance_display = original_display;
         self.expansion_budget = original_expansion_budget;
-        self.scan_warning(source_order, &rejection_warning);
+        self.scan_warning(source_order, format_args!("{rejection_warning}"))?;
         Ok(false)
     }
 
@@ -2298,11 +2241,11 @@ impl<'a> DecodeContext<'a> {
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "SubD");
+            self.scan_unbound_unit_warning(source_order, "SubD")?;
             return Ok(());
         };
         let identity = &object.identity;
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let id = cadmpeg_ir::ids::SubdId::compose(
@@ -2328,10 +2271,7 @@ impl<'a> DecodeContext<'a> {
                 )? {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(
-                        source_order,
-                        "SubD candidate rejected atomically by IR validation",
-                    );
+                    self.scan_warning(source_order, format_args!("SubD candidate rejected atomically by IR validation"))?;
                     self.mark_failed(source_order);
                 }
             }
@@ -2340,13 +2280,10 @@ impl<'a> DecodeContext<'a> {
             }
             Err(error) => {
                 let future = matches!(error, crate::subd::SubdError::UnsupportedVersion { .. });
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "SubD {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -2368,7 +2305,7 @@ impl<'a> DecodeContext<'a> {
             warnings,
         } = decoded;
         for warning in warnings {
-            self.scan_diagnostic(source_order, &warning);
+            self.scan_diagnostic(source_order, &warning)?;
         }
         for diagnostic in enum_diagnostics {
             self.report
@@ -2376,10 +2313,7 @@ impl<'a> DecodeContext<'a> {
                 .push(RhinoLossCode::EnumerationValueDegraded.note(diagnostic.message()));
         }
         if neutral_metadata {
-            self.scan_warning(
-                source_order,
-                "SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping",
-            );
+            self.scan_warning(source_order, format_args!("SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping"))?;
         }
         let Some(object) = self.scan.objects.get(source_order) else {
             return Ok(false);
@@ -2406,10 +2340,7 @@ impl<'a> DecodeContext<'a> {
             Ok(link) => link,
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("SubD validation rejected candidate: {findings}"),
-                );
+                self.scan_warning(source_order, format_args!("SubD validation rejected candidate: {findings}"))?;
                 return Ok(false);
             }
         };
@@ -2424,7 +2355,7 @@ impl<'a> DecodeContext<'a> {
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "extrusion");
+            self.scan_unbound_unit_warning(source_order, "extrusion")?;
             self.commit_unknown_surface(source_order)?;
             return Ok(());
         };
@@ -2441,21 +2372,18 @@ impl<'a> DecodeContext<'a> {
         match decoded {
             Ok(extrusion) => {
                 for warning in &extrusion.warnings {
-                    self.scan_diagnostic(source_order, warning);
+                    self.scan_diagnostic(source_order, warning)?;
                 }
                 if self.commit_extrusion(source_order, extrusion)? {
                     self.mark_decoded(source_order);
                 } else {
-                    self.scan_warning(source_order, "extrusion candidate rejected atomically");
+                    self.scan_warning(source_order, format_args!("extrusion candidate rejected atomically"))?;
                     self.commit_unknown_surface(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("extrusion degraded and retained: {error}"),
-                );
+                self.scan_warning(source_order, format_args!("extrusion degraded and retained: {error}"))?;
                 self.commit_unknown_surface(source_order)?;
             }
         }
@@ -2824,36 +2752,60 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    fn scan_warning(&mut self, source_order: usize, message: &str) {
-        let class = report_class(&self.scan.objects[source_order]);
-        self.scan_warnings_for_class(&class, message);
+    fn scan_warning(
+        &mut self,
+        source_order: usize,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let class = self.scan.objects[source_order]
+            .class_uuid()
+            .unwrap_or_else(crate::wire::Uuid::nil);
+        self.report.phase_warnings.push_admitted(
+            self.expand.ctx(),
+            format_args!("{class}: {message}"),
+        )
     }
 
-    fn scan_unbound_unit_warning(&mut self, source_order: usize, kind: &str) {
+    fn scan_unbound_unit_warning(
+        &mut self,
+        source_order: usize,
+        kind: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let binding = self.unit_binding();
         self.scan_warning(
             source_order,
-            &format!(
+            format_args!(
                 "{kind} retained because the document has no physical millimetre binding ({})",
                 binding.label()
             ),
-        );
+        )
     }
 
-    fn scan_diagnostic(&mut self, source_order: usize, diagnostic: &crate::loss::RhinoDiagnostic) {
-        let class = report_class(&self.scan.objects[source_order]);
+    fn scan_diagnostic(
+        &mut self,
+        source_order: usize,
+        diagnostic: &crate::loss::RhinoDiagnostic,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let class = self.scan.objects[source_order]
+            .class_uuid()
+            .unwrap_or_else(crate::wire::Uuid::nil);
         self.report
             .phase_warnings
-            .push_diagnostic(crate::loss::RhinoDiagnostic {
-                code: diagnostic.code,
-                message: format!("{class}: {}", diagnostic.message),
-            });
+            .push_coded_admitted(
+                self.expand.ctx(),
+                diagnostic.code,
+                format_args!("{class}: {}", diagnostic.message),
+            )
     }
 
-    fn scan_warnings_for_class(&mut self, class: &str, message: &str) {
+    fn scan_warnings_for_class(
+        &mut self,
+        class: &str,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         self.report
             .phase_warnings
-            .push(format!("{class}: {message}"));
+            .push_admitted(self.expand.ctx(), format_args!("{class}: {message}"))
     }
 
     fn charge_entities(
@@ -2863,7 +2815,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<bool, cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
         if let Err(message) = budget.entities(amount) {
-            self.scan_warning(source_order, &message);
+            self.scan_warning(source_order, format_args!("{message}"))?;
             Ok(false)
         } else {
             self.charge_session_entities(amount)?;
@@ -2899,7 +2851,7 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(false);
         };
         let association = self.source_association(identity)?;
@@ -2980,7 +2932,7 @@ impl<'a> DecodeContext<'a> {
                     .checked_mul(2)
                     .and_then(|count| count.checked_add(3))
                 else {
-                    self.scan_warning(source_order, "point-cloud entity count overflow");
+                    self.scan_warning(source_order, format_args!("point-cloud entity count overflow"))?;
                     return Ok(false);
                 };
                 if !self.charge_entities(source_order, entity_count)? {
@@ -3036,7 +2988,7 @@ impl<'a> DecodeContext<'a> {
                     ) {
                         Ok(shell) => shell,
                         Err(error) => {
-                            self.scan_warning(source_order, &error.to_string());
+                            self.scan_warning(source_order, format_args!("{error}"))?;
                             return Ok(false);
                         }
                     },
@@ -3241,7 +3193,7 @@ impl<'a> DecodeContext<'a> {
         else {
             return Ok(false);
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(false);
         };
         if extrusion.boundaries.is_empty() {
@@ -3345,14 +3297,11 @@ impl<'a> DecodeContext<'a> {
         let links = match result {
             Ok(links) => links,
             Err(CandidateError::Admission(error)) => {
-                self.scan_warning(source_order, &error);
+                self.scan_warning(source_order, format_args!("{error}"))?;
                 return Ok(false);
             }
             Err(CandidateError::Validation(findings)) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("extrusion candidate rejected by IR validation: {findings}"),
-                );
+                self.scan_warning(source_order, format_args!("extrusion candidate rejected by IR validation: {findings}"))?;
                 return Ok(false);
             }
             Err(CandidateError::Codec(error)) => return Err(error),
@@ -3379,7 +3328,7 @@ impl<'a> DecodeContext<'a> {
         else {
             return Ok(());
         };
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let id = cadmpeg_ir::ids::SurfaceId::compose(
@@ -3403,10 +3352,7 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, &link)?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(findings) => self.scan_warning(
-                source_order,
-                &format!("unknown surface validation rejected candidate: {findings}"),
-            ),
+            Err(findings) => self.scan_warning(source_order, format_args!("unknown surface validation rejected candidate: {findings}"))?,
         }
         Ok(())
     }
@@ -3514,13 +3460,10 @@ impl<'a> DecodeContext<'a> {
                     error,
                     crate::curves::GeometryError::UnsupportedVersion { .. }
                 );
-                self.scan_warning(
-                    source_order,
-                    &format!(
+                self.scan_warning(source_order, format_args!(
                         "Brep {}: {error}",
                         if future { "retained" } else { "failed" }
-                    ),
-                );
+                    ))?;
                 if !future {
                     self.mark_failed(source_order);
                 }
@@ -3541,7 +3484,7 @@ impl<'a> DecodeContext<'a> {
                     .report
                     .typed_losses
                     .push(code.note(warning.message.clone())),
-                _ => self.scan_diagnostic(source_order, warning),
+                _ => self.scan_diagnostic(source_order, warning)?,
             }
         }
         let identity = &object.identity;
@@ -3552,11 +3495,11 @@ impl<'a> DecodeContext<'a> {
                 loss
             }));
         let Some(scale) = self.neutral_scale() else {
-            self.scan_unbound_unit_warning(source_order, "Brep");
+            self.scan_unbound_unit_warning(source_order, "Brep")?;
             return Ok(());
         };
         let association = self.source_association(identity)?;
-        let Some(key) = self.checked_object_key(identity, source_order) else {
+        let Some(key) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
         let unknown = self.unknowns[source_order].id().clone();
@@ -3609,10 +3552,7 @@ impl<'a> DecodeContext<'a> {
                     .map_err(|error| error.to_string())?
                 });
                 if let Err(error) = committed {
-                    self.scan_warning(
-                        source_order,
-                        &format!("Brep draft rejected before commit: {error}"),
-                    );
+                    self.scan_warning(source_order, format_args!("Brep draft rejected before commit: {error}"))?;
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
@@ -3626,32 +3566,23 @@ impl<'a> DecodeContext<'a> {
                             ) => {
                                 self.report.typed_losses.push(code.note(&warning.message));
                             }
-                            _ => self.scan_diagnostic(source_order, &warning),
+                            _ => self.scan_diagnostic(source_order, &warning)?,
                         }
                     }
                     if cache_only {
-                        self.scan_warning(
-                            source_order,
-                            "Brep emitted cache tessellations without decoded geometry",
-                        );
+                        self.scan_warning(source_order, format_args!("Brep emitted cache tessellations without decoded geometry"))?;
                     }
                     self.geometry_transferred |= full_topology || emitted_geometry;
                     if full_topology {
                         self.mark_decoded(source_order);
                     } else {
-                        self.scan_warning(
-                            source_order,
-                            "Brep topology invalid; decoded child carriers retained",
-                        );
+                        self.scan_warning(source_order, format_args!("Brep topology invalid; decoded child carriers retained"))?;
                     }
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                self.scan_warning(
-                    source_order,
-                    &format!("Brep geometry/topology degraded: {error}"),
-                );
+                self.scan_warning(source_order, format_args!("Brep geometry/topology degraded: {error}"))?;
             }
         }
         Ok(())
@@ -6498,8 +6429,8 @@ pub(crate) fn decode(
         Err(CandidateError::Codec(error)) => return Err(error),
         Err(error) => context.scan_warnings_for_class(
             "history",
-            &format!("history projection rejected atomically by IR validation: {error}"),
-        ),
+            format_args!("history projection rejected atomically by IR validation: {error}"),
+        )?,
     }
     context.commit()
 }

@@ -259,6 +259,47 @@ fn point_cloud_vertices_refuse_collection_limit() {
 }
 
 #[test]
+fn scan_warning_and_diagnostic_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_warning(0, format_args!("decode failed"))
+            .expect_err("warning requires a report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let diagnostic = crate::loss::RhinoDiagnostic {
+        code: Some(RhinoLossCode::IntegrityFailure),
+        message: "checksum mismatch".to_string(),
+    };
+    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_diagnostic(0, &diagnostic)
+            .expect_err("coded diagnostic requires a report slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    with_transaction_limits(&scan, 6, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .scan_warning(0, format_args!("decode failed"))
+            .expect("warning admitted");
+        context
+            .scan_diagnostic(0, &diagnostic)
+            .expect("coded diagnostic admitted");
+        assert_eq!(context.report.phase_warnings.len(), 2);
+    });
+}
+
+#[test]
 fn candidate_validation_propagates_entity_limit() {
     let scan = scan_with_objects(&[]);
     let refusal = with_entity_limit(&scan, 0, |expand| {
