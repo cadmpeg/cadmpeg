@@ -3276,6 +3276,7 @@ impl MeshQuotient {
             solution_limit: usize,
             budget: Option<&WorkBudget<'_>>,
         ) -> Result<(), CodecError> {
+            let _depth = ctx.enter_nested("catia_point_assignment_walk")?;
             fn rollback(
                 assigned: &mut [Option<usize>],
                 used: &mut HashSet<usize>,
@@ -3293,15 +3294,12 @@ impl MeshQuotient {
             if budget.is_some_and(|budget| !budget.charge()) {
                 return Ok(());
             }
-            let values_for = |root: usize, assigned: &[Option<usize>], used: &HashSet<usize>| {
-                domains[root]
-                    .iter()
-                    .copied()
-                    .filter(|point| !used.contains(point))
-                    .filter(|point| {
-                        value_viable(
+            let values_for = |root: usize, assigned: &[Option<usize>], used: &HashSet<usize>| -> Result<Vec<usize>, CodecError> {
+                let mut values = Vec::new();
+                for point in domains[root].iter().copied().filter(|point| !used.contains(point)) {
+                    if value_viable(
                             root,
-                            *point,
+                            point,
                             domains,
                             edge_roots,
                             root_edges,
@@ -3309,18 +3307,19 @@ impl MeshQuotient {
                             edge_neighbors,
                             assigned,
                             used,
-                        )
-                    })
-                    .collect::<Vec<_>>()
+                        ) {
+                        crate::resource::push(ctx, &mut values, point, "catia_point_assignment_values")?;
+                    }
+                }
+                Ok(values)
             };
             let mut propagated = Vec::new();
             let branch = loop {
-                let values = assigned
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, point)| point.is_none())
-                    .map(|(root, _)| (root, values_for(root, assigned, used)))
-                    .collect::<Vec<_>>();
+                let mut values = Vec::new();
+                for (root, _) in assigned.iter().enumerate().filter(|(_, point)| point.is_none()) {
+                    let candidates = values_for(root, assigned, used)?;
+                    crate::resource::push(ctx, &mut values, (root, candidates), "catia_point_assignment_value_rows")?;
+                }
                 if values.is_empty() {
                     break Some(None);
                 }
@@ -3335,7 +3334,7 @@ impl MeshQuotient {
                     if assigned[root].is_some() {
                         continue;
                     }
-                    let values = values_for(root, assigned, used);
+                    let values = values_for(root, assigned, used)?;
                     let Some(&point) = values.first() else {
                         dead = true;
                         break;
@@ -3343,12 +3342,12 @@ impl MeshQuotient {
                     if values.len() != 1 {
                         continue;
                     }
-                    if !used.insert(point) {
+                    if !crate::resource::insert_set(ctx, used, point, "catia_point_assignment_used")? {
                         dead = true;
                         break;
                     }
                     assigned[root] = Some(point);
-                    propagated.push((root, point));
+                    crate::resource::push(ctx, &mut propagated, (root, point), "catia_point_assignment_propagated")?;
                     progress = true;
                 }
                 if dead {
@@ -3367,15 +3366,20 @@ impl MeshQuotient {
                 return Ok(());
             };
             let Some((root, values)) = branch else {
-                if let Some(solution) = assigned.iter().copied().collect::<Option<Vec<_>>>() {
-                    solutions.push(solution);
+                if assigned.iter().all(Option::is_some) {
+                    let mut solution = Vec::new();
+                    crate::resource::reserve_vec(ctx, &mut solution, assigned.len(), "catia_point_assignment_solution")?;
+                    for value in assigned.iter().flatten() {
+                        solution.push(*value);
+                    }
+                    crate::resource::push(ctx, solutions, solution, "catia_point_assignment_solutions")?;
                 }
                 rollback(assigned, used, propagated);
                 return Ok(());
             };
             for point in values {
                 assigned[root] = Some(point);
-                used.insert(point);
+                crate::resource::insert_set(ctx, used, point, "catia_point_assignment_used")?;
                 walk(
                     ctx,
                     domains,
@@ -3403,34 +3407,28 @@ impl MeshQuotient {
         for node in 0..self.union.len() {
             let root = self.union.find(node);
             if root == node {
-                roots.push(root);
+                crate::resource::push(ctx, &mut roots, root, "catia_point_assignment_roots")?;
             }
         }
         if roots.len() != point_count {
             return Ok(PointAssignmentOutcome::Complete(Vec::new()));
         }
-        let domains = roots
-            .iter()
-            .map(|root| self.domains[*root].clone())
-            .collect::<Vec<_>>();
-        let root_indices = roots
-            .iter()
-            .enumerate()
-            .map(|(index, root)| (*root, index))
-            .collect::<HashMap<_, _>>();
-        let Some(edge_roots) = edge_candidates
-            .iter()
-            .enumerate()
-            .map(|(edge, _)| {
-                Some([
-                    *root_indices.get(&self.union.find(edge * 2))?,
-                    *root_indices.get(&self.union.find(edge * 2 + 1))?,
-                ])
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(PointAssignmentOutcome::Complete(Vec::new()));
-        };
+        let mut domains = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut domains, roots.len(), "catia_point_assignment_domains")?;
+        let mut root_indices = HashMap::new();
+        for (index, root) in roots.iter().copied().enumerate() {
+            domains.push(Arc::clone(&self.domains[root]));
+            crate::resource::insert_map(ctx, &mut root_indices, root, index, "catia_point_assignment_root_indices")?;
+        }
+        let mut edge_roots = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut edge_roots, edge_candidates.len(), "catia_point_assignment_edge_roots")?;
+        for edge in 0..edge_candidates.len() {
+            let (Some(left), Some(right)) = (
+                root_indices.get(&self.union.find(edge * 2)),
+                root_indices.get(&self.union.find(edge * 2 + 1)),
+            ) else { return Ok(PointAssignmentOutcome::Complete(Vec::new())); };
+            edge_roots.push([*left, *right]);
+        }
         let mut root_edges =
             ctx.alloc_filled(roots.len(), Vec::new(), "catia point assignment root edges")?;
         for (edge_index, edge) in edge_roots.iter().enumerate() {
@@ -3449,20 +3447,22 @@ impl MeshQuotient {
                 )?;
             }
         }
-        let edge_neighbors = edge_candidates
-            .iter()
-            .map(|candidates| {
-                let mut neighbors = PointNeighbors::new();
-                for [left, right] in candidates {
-                    neighbors.entry(*left).or_default().insert(*right);
-                    neighbors.entry(*right).or_default().insert(*left);
+        let mut edge_neighbors = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut edge_neighbors, edge_candidates.len(), "catia_point_assignment_neighbor_rows")?;
+        for candidates in edge_candidates {
+            let mut neighbors = PointNeighbors::new();
+            for [left, right] in candidates {
+                for (from, to) in [(*left, *right), (*right, *left)] {
+                    crate::resource::admit_map_entry(ctx, &mut neighbors, &from, "catia_point_assignment_neighbor_keys")?;
+                    crate::resource::insert_set(ctx, neighbors.entry(from).or_default(), to, "catia_point_assignment_neighbor_points")?;
                 }
-                neighbors
-            })
-            .collect::<Vec<_>>();
+            }
+            edge_neighbors.push(neighbors);
+        }
 
         let mut solutions = Vec::new();
         let mut assigned = ctx.alloc_filled(domains.len(), None, "catia point assignment slots")?;
+        let mut used = HashSet::new();
         walk(
             ctx,
             &domains,
@@ -3471,7 +3471,7 @@ impl MeshQuotient {
             edge_candidates,
             &edge_neighbors,
             &mut assigned,
-            &mut HashSet::new(),
+            &mut used,
             &mut solutions,
             solution_limit,
             budget,
@@ -3479,12 +3479,16 @@ impl MeshQuotient {
         if budget.is_some_and(WorkBudget::exhausted) {
             Ok(PointAssignmentOutcome::Exhausted)
         } else {
-            Ok(PointAssignmentOutcome::Complete(
-                solutions
-                    .into_iter()
-                    .map(|solution| roots.iter().copied().zip(solution).collect())
-                    .collect(),
-            ))
+            let mut completed = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut completed, solutions.len(), "catia_point_assignment_completed")?;
+            for solution in solutions {
+                let mut pairs = HashMap::new();
+                for (root, point) in roots.iter().copied().zip(solution) {
+                    crate::resource::insert_map(ctx, &mut pairs, root, point, "catia_point_assignment_completed_pairs")?;
+                }
+                completed.push(pairs);
+            }
+            Ok(PointAssignmentOutcome::Complete(completed))
         }
     }
 }

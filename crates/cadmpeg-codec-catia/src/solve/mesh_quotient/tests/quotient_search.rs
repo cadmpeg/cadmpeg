@@ -1233,6 +1233,50 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
 }
 
 #[test]
+fn point_assignment_refuses_before_matching_collections_grow() {
+    let mut refused = HashSet::new();
+    let make_quotient = || MeshQuotient::new(vec![
+        Arc::new(HashSet::from([0])),
+        Arc::new(HashSet::from([1])),
+    ]);
+    for cap in 0..128 {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            make_quotient().point_assignment(ctx, 2, &[vec![[0, 1]]], None)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("the endpoint pair determines an assignment"),
+            Err(error) => panic!("unexpected point assignment refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_point_assignment_roots",
+        "catia_point_assignment_domains",
+        "catia_point_assignment_root_indices",
+        "catia_point_assignment_edge_roots",
+        "catia_point_assignment_neighbor_rows",
+        "catia_point_assignment_neighbor_keys",
+        "catia_point_assignment_neighbor_points",
+        "catia_point_assignment_values",
+        "catia_point_assignment_value_rows",
+        "catia_point_assignment_used",
+        "catia_point_assignment_solution",
+        "catia_point_assignment_solutions",
+        "catia_point_assignment_completed",
+        "catia_point_assignment_completed_pairs",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+    assert!(crate::test_support::with_service_context(|ctx| {
+        make_quotient().point_assignment(ctx, 2, &[vec![[0, 1]]], None)
+    })
+    .expect("service resource budget")
+    .is_some());
+}
+
+#[test]
 fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 2));
