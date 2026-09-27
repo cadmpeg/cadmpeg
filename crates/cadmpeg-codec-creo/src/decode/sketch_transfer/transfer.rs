@@ -896,7 +896,7 @@ pub(in super::super) fn transfer_sketches(
             constraints.push(constraint);
         }
         source_carriers.admit_sketch_entities(ir, entities)?;
-        source_carriers.admit_sketch_constraints(ir, constraints)?;
+        source_carriers.admit_sketch_constraints(ctx, ir, constraints)?;
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
@@ -912,6 +912,7 @@ pub(in super::super) fn transfer_sketches(
         );
         ctx.charge_entities(1, "admit Creo model sketches")?;
         source_carriers.admit_sketch(
+            ctx,
             ir,
             Sketch {
                 id: sketch_id.clone(),

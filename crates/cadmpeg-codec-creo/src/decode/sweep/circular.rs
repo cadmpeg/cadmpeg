@@ -493,6 +493,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
+            ctx,
             ir,
             Body {
                 id: body_id,
