@@ -90,27 +90,27 @@ use std::collections::BTreeSet;
 const EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL: f64 = 1.0e-12;
 
 pub(super) fn thicken_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> IrFeatureDefinition {
+) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
     let transitions = feature_surface_transitions(
         feature_id,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     );
-    let faces = transitions
-        .as_ref()
-        .map_or(FaceSelection::Unresolved, |transitions| {
+    let faces = if let Some(transitions) = transitions.as_ref() {
             let source_ids = transitions
                 .iter()
                 .map(|(source_id, _)| *source_id)
                 .collect::<Vec<_>>();
             let available_features = model_feature_ids(scan);
             let result_surface_ids = feature_result_surface_ids_by_feature(
+                ctx,
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
-            );
+            )?;
             let native = format!(
                 "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
                 source_ids
@@ -139,16 +139,18 @@ pub(super) fn thicken_feature_definition(
             } else {
                 FaceSelection::Native(native)
             }
-        });
+    } else {
+        FaceSelection::Unresolved
+    };
     let offset = transitions.as_deref().and_then(|transitions| {
         thicken_plane_offset(transitions, &placed_planes(scan), &scan.surfaces.rows)
     });
-    IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces,
         thickness: offset
             .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
         side: offset.map(|(_, side)| side),
-    })
+    }))
 }
 
 pub(super) fn linear_extrusion_extent_and_direction(
@@ -223,10 +225,10 @@ pub(in super::super) fn schema_feature_definition(
         return Ok(filled_surface_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Ok(thicken_feature_definition(scan, ir, feature_id));
+        return thicken_feature_definition(ctx, scan, ir, feature_id);
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Ok(knit_surface_feature_definition(scan, feature_id));
+        return knit_surface_feature_definition(ctx, scan, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Ok(definition);
@@ -295,9 +297,10 @@ pub(in super::super) fn schema_feature_definition(
             .or_else(|| compact_simple_hole_geometry(scan, feature_id));
         let simple_form = solved.is_some() || compact_cylinder_id.is_some();
         let result_surface_ids = feature_result_surface_ids_by_feature(
+            ctx,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        );
+        )?;
         let available_features = model_feature_ids(scan);
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
@@ -802,7 +805,7 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     if schema_class == Some(SchemaClass::SurfaceMerge) {
-        return Ok(knit_surface_feature_definition(scan, feature_id));
+        return knit_surface_feature_definition(ctx, scan, feature_id);
     }
     if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
         let definitions = scan

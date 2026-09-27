@@ -20,6 +20,8 @@ use cadmpeg_ir::features::{
     GeneratedFaceRef, PathRef, SurfaceBoundary, SurfaceContinuity, ThickenSide,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-9;
@@ -203,12 +205,11 @@ pub(in super::super) fn knit_operand_surface_ids(
 }
 
 pub(super) fn knit_surface_feature_definition(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> IrFeatureDefinition {
-    let faces = knit_operand_entity_ids(scan, feature_id).map_or(
-        FaceSelection::Unresolved,
-        |(quilt_ids, namespace)| {
+) -> Result<IrFeatureDefinition, CodecError> {
+    let faces = if let Some((quilt_ids, namespace)) = knit_operand_entity_ids(scan, feature_id) {
             let native = format!(
                 "creo:allfeatur:{namespace}#{feature_id}:{}",
                 quilt_ids
@@ -219,9 +220,10 @@ pub(super) fn knit_surface_feature_definition(
             );
             let available_features = model_feature_ids(scan);
             let result_surface_ids = feature_result_surface_ids_by_feature(
+                ctx,
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
-            );
+            )?;
             let generated =
                 knit_operand_surface_ids(scan, feature_id, &quilt_ids).and_then(|surface_ids| {
                     generated_surface_face_refs(
@@ -236,14 +238,15 @@ pub(super) fn knit_surface_feature_definition(
                     .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }
-        },
-    );
-    IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
+    } else {
+        FaceSelection::Unresolved
+    };
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface {
         faces,
         merge_entities: Some(true),
         create_solid: Some(false),
         gap_tolerance: None,
-    })
+    }))
 }
 
 /// Select the neutral plane carried by a Draft feature's class-209 entity.
@@ -439,47 +442,60 @@ pub(in super::super) fn thicken_plane_offset(
 /// owning feature. Duplicate identifiers or malformed materialized rows
 /// invalidate the complete result state for that feature.
 pub(in super::super) fn feature_result_surface_ids(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
-) -> Option<Vec<u32>> {
+) -> Result<Option<Vec<u32>>, CodecError> {
     let mut surface_ids = Vec::new();
     let mut seen = BTreeSet::new();
     for table in tables.iter().filter(|table| table.feature_id == feature_id) {
         for surface_id in table.surface_ids_iter() {
-            let row = crate::surface::unique_surface_row(rows, surface_id)?;
-            if row.feature_id != feature_id || !seen.insert(surface_id) {
-                return None;
+            let Some(row) = crate::surface::unique_surface_row(rows, surface_id) else {
+                return Ok(None);
+            };
+            if row.feature_id != feature_id || seen.contains(&surface_id) {
+                return Ok(None);
             }
+            ctx.charge_collection_items(1, "creo feature result surface identity nodes")?;
+            seen.insert(surface_id);
+            ctx.try_reserve_items(&mut surface_ids, 1, "creo feature result surface IDs")?;
             surface_ids.push(surface_id);
         }
     }
-    (!surface_ids.is_empty()).then_some(surface_ids)
+    Ok((!surface_ids.is_empty()).then_some(surface_ids))
 }
 
 pub(super) fn feature_result_surface_ids_by_feature(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> BTreeMap<u32, Vec<u32>> {
-    tables
-        .iter()
-        .map(|table| table.feature_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|feature_id| {
-            feature_result_surface_ids(tables, rows, feature_id)
-                .map(|surface_ids| (feature_id, surface_ids))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
+    let mut unique_features = BTreeSet::new();
+    let mut by_feature = BTreeMap::new();
+    for table in tables {
+        let feature_id = table.feature_id;
+        if unique_features.contains(&feature_id) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "creo feature result feature identity nodes")?;
+        unique_features.insert(feature_id);
+        if let Some(surface_ids) = feature_result_surface_ids(ctx, tables, rows, feature_id)? {
+            ctx.charge_collection_items(1, "creo feature result surface map nodes")?;
+            by_feature.insert(feature_id, surface_ids);
+        }
+    }
+    Ok(by_feature)
 }
 
 pub(in super::super) fn feature_result_topology(
+    ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
     curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
-) -> Option<FeatureResultTopology> {
-    let faces = feature_result_surface_ids(tables, surface_rows, feature_id)
+) -> Result<Option<FeatureResultTopology>, CodecError> {
+    let faces = feature_result_surface_ids(ctx, tables, surface_rows, feature_id)?
         .unwrap_or_default()
         .into_iter()
         .map(|surface_id| cadmpeg_core::nonblank_literal!("surface#{surface_id}"))
@@ -489,8 +505,10 @@ pub(in super::super) fn feature_result_topology(
         .into_iter()
         .map(|curve_id| cadmpeg_core::nonblank_literal!("curve#{curve_id}"))
         .collect::<Vec<_>>();
-    (!faces.is_empty() || !edges.is_empty()).then_some(())?;
-    FeatureResultTopology::new(
+    if faces.is_empty() && edges.is_empty() {
+        return Ok(None);
+    }
+    Ok(FeatureResultTopology::new(
         FeatureResultTopologyId::compose(
             &crate::identity::MODEL_FEATURE_RESULT_TOPOLOGY,
             feature_id,
@@ -502,7 +520,7 @@ pub(in super::super) fn feature_result_topology(
         Vec::new(),
         None,
     )
-    .ok()
+    .ok())
 }
 
 pub(in super::super) fn generated_surface_face_refs(
@@ -541,11 +559,12 @@ pub(in super::super) fn emit_feature_result_topologies(
             continue;
         };
         let Some(state) = feature_result_topology(
+            ctx,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
             &scan.curves.topology_rows,
             feature_id,
-        ) else {
+        )? else {
             continue;
         };
         ctx.charge_entities(1, "admit Creo model feature_result_topologies")?;

@@ -89,10 +89,10 @@ fn name_only_feature_definition(
         )));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
-        return Ok(Some(thicken_feature_definition(scan, ir, feature_id)));
+        return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Ok(Some(knit_surface_feature_definition(scan, feature_id)));
+        return Ok(Some(knit_surface_feature_definition(ctx, scan, feature_id)?));
     }
     if let Some(definition) = surface_intersect_feature_definition(scan, feature_id, kind) {
         return Ok(Some(definition));
