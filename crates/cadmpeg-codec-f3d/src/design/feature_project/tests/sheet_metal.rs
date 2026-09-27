@@ -190,7 +190,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         component_naming_spaces: &[],
         histories: &[],
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
+    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
+        .unwrap()
         .expect("typed EdgeFlange definition");
 
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
@@ -290,7 +291,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let offset_definition =
-        crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs)
+        crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, None)
+            .unwrap()
             .expect("typed signed-offset EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         offset_definition
@@ -367,7 +369,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let multi_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs)
+        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, None)
+            .unwrap()
             .expect("typed multi-edge EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
         multi_definition
@@ -451,7 +454,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let per_edge_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs)
+        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, None)
+            .unwrap()
             .expect("equal per-edge symmetric widths project to one neutral width");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         per_edge_definition
@@ -487,7 +491,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     assert!(
-        crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs)
+        crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, None)
+            .unwrap()
             .is_none(),
         "distinct per-edge widths must remain source-native"
     );
@@ -551,7 +556,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let two_sided_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs)
+        crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, None)
+            .unwrap()
             .expect("independent two-sided per-edge widths project to a typed neutral law");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         two_sided_definition
@@ -819,7 +825,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         component_naming_spaces: &[],
         histories: &[],
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs)
+    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
+        .unwrap()
         .expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
         definition
@@ -907,7 +914,11 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         component_naming_spaces: &[],
         histories: &[],
     };
-    assert!(crate::design::feature_project::project_edge_flange(&scope, &inputs).is_none());
+    assert!(
+        crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -1344,7 +1355,9 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             component_naming_spaces: &[],
             histories: &[],
         };
-        crate::design::feature_project::project_hem(&scope, &inputs).expect("typed Hem definition")
+        crate::design::feature_project::project_hem(&scope, &inputs, None)
+            .unwrap()
+            .expect("typed Hem definition")
     };
 
     let gap_length = project(

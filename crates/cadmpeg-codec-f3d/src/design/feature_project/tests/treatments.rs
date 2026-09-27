@@ -1957,6 +1957,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         assert!(matches!(
             crate::design::feature_project::project_fillet_arm(
+                None,
                 &inputs,
                 &scope,
                 &parameters,
