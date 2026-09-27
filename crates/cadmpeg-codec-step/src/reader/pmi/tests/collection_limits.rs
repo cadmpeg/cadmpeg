@@ -60,6 +60,11 @@ fn pmi_targeted_aspects_refuse_collection_limit() {
     pmi_refuses("#1=DATUM('D');", "step_pmi_targeted_aspects");
 }
 
+#[test]
+fn pmi_typed_claims_refuse_collection_limit() {
+    pmi_refuses("#1=DATUM('D');", "step_pmi_typed_claims");
+}
+
 fn target_refusal(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
