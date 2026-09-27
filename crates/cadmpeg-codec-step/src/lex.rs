@@ -161,8 +161,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
     }
 
-    pub(crate) fn set_context(&mut self, budget: Option<&'ctx DecodeContext<'arena>>) {
-        self.budget = budget;
+    pub(crate) fn with_context(input: &'a [u8], ctx: &'ctx DecodeContext<'arena>) -> Self {
+        let mut lexer = Self::new(input);
+        lexer.budget = Some(ctx);
+        lexer
     }
 
     pub(crate) fn set_transient_literals(&mut self) {

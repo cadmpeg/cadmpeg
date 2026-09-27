@@ -14,8 +14,7 @@ fn lex_under_policy(
 ) -> Result<super::TokenKind, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)?;
-    let mut lexer = super::Lexer::new(input);
-    lexer.set_context(Some(&ctx));
+    let mut lexer = super::Lexer::with_context(input, &ctx);
     if transient {
         lexer.set_transient_literals();
     }

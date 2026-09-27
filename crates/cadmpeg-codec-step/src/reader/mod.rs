@@ -1080,8 +1080,7 @@ fn byte_accounting(
             format_args!("file signature at byte {}", signature.start),
         )?;
     }
-    let mut lexer = crate::lex::Lexer::new(input);
-    lexer.set_context(Some(ctx));
+    let mut lexer = crate::lex::Lexer::with_context(input, ctx);
     lexer.set_transient_literals();
     let mut cursor = 0;
     loop {
