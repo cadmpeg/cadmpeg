@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{malformed, sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
+use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -12,22 +14,27 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
-    let by_owner = properties.iter().fold(
-        HashMap::<&str, Vec<&PropertyRecord>>::new(),
-        |mut map, property| {
-            map.entry(&property.owner).or_default().push(property);
-            map
-        },
-    );
+    let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    for property in properties {
+        if !by_owner.contains_key(property.owner.as_str()) {
+            ctx.charge_collection_items(1, "fcstd joint owner index")?;
+            by_owner.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd joint owner index"))?;
+            by_owner.insert(&property.owner, Vec::new());
+        }
+        if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
+            reserve_vec_items(ctx, owned, 1, "fcstd joint owner properties")?;
+            owned.push(property);
+        }
+    }
     let mut output = Vec::new();
     for object in objects {
-        let owned = by_owner
-            .get(object.id.as_str())
-            .cloned()
-            .unwrap_or_default();
+        let source = by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
+        let mut owned = collection_vec(ctx, source.len(), "fcstd joint selected properties")?;
+        owned.extend_from_slice(source);
         let grounded_property = sole_named_property("joint", &owned, "ObjectToGround")?;
         let joint_type_property = sole_named_property("joint", &owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
@@ -61,10 +68,16 @@ pub(crate) fn transfer(
                 )));
             }
         }
-        let joint_type = joint_type_property.map(enumeration_value).transpose()?;
+        let joint_type = joint_type_property.map(|property| enumeration_value(ctx, property)).transpose()?;
         let body = if grounded_property.is_some() {
             let placement = placement(&owned, "Placement")?.unwrap_or_default();
-            let reference = links(&owned, "ObjectToGround").into_iter().next();
+            let reference = grounded_property
+                .into_iter()
+                .flat_map(PropertyRecord::links)
+                .flatten()
+                .find(|link| link.document().is_some() || link.object().is_some())
+                .map(|link| link.clone_with_context(ctx))
+                .transpose()?;
             JointBody::Grounded {
                 reference,
                 placement,
@@ -76,7 +89,7 @@ pub(crate) fn transfer(
                                     offset_name: &str|
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
-                    reference: connector(owned, reference_name)?,
+                    reference: connector(ctx, owned, reference_name)?,
                     placement: placement(owned, placement_name)?.unwrap_or_default(),
                     offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
@@ -91,9 +104,8 @@ pub(crate) fn transfer(
         } else {
             continue;
         };
-        let parameters = owned
-            .iter()
-            .filter(|property| {
+        let mut parameters = BTreeMap::new();
+        for property in owned.iter().filter(|property| {
                 matches!(
                     property.name.as_str(),
                     "Angle"
@@ -111,19 +123,17 @@ pub(crate) fn transfer(
                         | "Detach2"
                         | "Suppressed"
                 )
-            })
-            .map(|property| {
-                scalar_parameter(property)
-                    .map(|value| value.map(|value| (property.name.clone(), value)))
-            })
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect::<BTreeMap<_, _>>();
+            }) {
+            if let Some(value) = scalar_parameter(ctx, property)? {
+                ctx.charge_collection_items(1, "fcstd joint parameters")?;
+                parameters.insert(retained_string(ctx, &property.name, "fcstd joint parameter name")?, value);
+            }
+        }
+        reserve_vec_items(ctx, &mut output, 1, "fcstd joint records")?;
         output.push(
             JointRecord::try_new(
                 crate::native::native_id("joint", &object.name),
-                object.id.clone(),
+                retained_string(ctx, &object.id, "fcstd joint object")?,
                 body,
                 parameters,
             )
@@ -365,7 +375,7 @@ fn joint_kind(
     })
 }
 
-fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
+fn enumeration_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<String, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
         malformed(format!(
             "joint enumeration property {} has invalid XML: {error}",
@@ -379,14 +389,8 @@ fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
             property.id
         )));
     }
-    let values = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let Some(integer) = values
-        .first()
-        .copied()
-        .filter(|value| value.has_tag_name("Integer"))
+    let mut values = root.children().filter(roxmltree::Node::is_element);
+    let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer"))
     else {
         return Err(malformed(format!(
             "joint enumeration property {} requires one direct Integer value",
@@ -399,17 +403,15 @@ fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
             property.id
         )));
     }
-    if values.len() > 2
-        || values
-            .get(1)
-            .is_some_and(|value| !value.has_tag_name("CustomEnumList"))
+    let custom_list = values.next();
+    if values.next().is_some()
+        || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
     {
         return Err(malformed(format!(
             "joint enumeration property {} has extra direct value roots",
             property.id
         )));
     }
-    let custom_list = values.get(1).copied();
     let custom = match integer.attribute("CustomEnum") {
         None => false,
         Some("true") => true,
@@ -441,7 +443,7 @@ fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
                 property.id
             ))
         })?;
-    let enum_values = if let Some(custom_list) = custom_list {
+    let selected = if let Some(custom_list) = custom_list {
         let count = custom_list
             .attribute("count")
             .ok_or_else(|| {
@@ -457,44 +459,42 @@ fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
                     property.id
                 ))
             })?;
-        let values = custom_list
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .collect::<Vec<_>>();
-        if values.len() != count || values.iter().any(|value| !value.has_tag_name("Enum")) {
+        let values = custom_list.children().filter(roxmltree::Node::is_element);
+        let found = values.clone().count();
+        if found != count || values.clone().any(|value| !value.has_tag_name("Enum")) {
             return Err(malformed(format!(
                 "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
                 property.id,
-                values.len()
+                found
             )));
         }
-        values
-            .into_iter()
-            .map(|value| {
-                if value.children().any(|child| child.is_element()) {
-                    return Err(malformed(format!(
-                        "joint enumeration property {} has nested Enum values",
-                        property.id
-                    )));
-                }
-                value.attribute("value").map(str::to_owned).ok_or_else(|| {
-                    malformed(format!(
-                        "joint enumeration property {} Enum has no value",
-                        property.id
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        let mut selected = None;
+        for (position, value) in values.enumerate() {
+            if value.children().any(|child| child.is_element()) {
+                return Err(malformed(format!(
+                    "joint enumeration property {} has nested Enum values",
+                    property.id
+                )));
+            }
+            let text = value.attribute("value").ok_or_else(|| {
+                malformed(format!(
+                    "joint enumeration property {} Enum has no value",
+                    property.id
+                ))
+            })?;
+            if position == index {
+                selected = Some(text);
+            }
+        }
+        selected
     } else {
-        Vec::new()
+        None
     };
-    Ok(enum_values
-        .get(index)
-        .cloned()
-        .unwrap_or_else(|| index.to_string()))
+    selected.map(|value| retained_string(ctx, value, "fcstd joint enumeration value"))
+        .transpose().map(|value| value.unwrap_or_else(|| index.to_string()))
 }
 
-fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+fn scalar_parameter(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<String>, CodecError> {
     let (expected_type, expected_tag) = match property.name.as_str() {
         "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
         "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
@@ -520,34 +520,19 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
             property.id
         )));
     }
-    let value = value.attributes.get("value").cloned().ok_or_else(|| {
+    let value = value.attributes.get("value").ok_or_else(|| {
         malformed(format!(
             "joint parameter property {} has no value",
             property.id
         ))
     })?;
-    crate::native::joint::validate_parameter_value(&property.name, &value)
+    crate::native::joint::validate_parameter_value(&property.name, value)
         .map_err(|error| malformed(format!("joint parameter property {}: {error}", property.id)))?;
-    Ok(Some(value))
-}
-
-fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {
-    properties
-        .iter()
-        .find(|property| property.name == name)
-        .map(|property| {
-            property
-                .links()
-                .iter()
-                .flatten()
-                .filter(|link| link.document().is_some() || link.object().is_some())
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default()
+    Ok(Some(retained_string(ctx, value, "fcstd joint scalar parameter")?))
 }
 
 fn connector(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
@@ -580,7 +565,7 @@ fn connector(
             property.links().len()
         )));
     };
-    Ok(target.clone())
+    target.as_ref().map(|target| target.clone_with_context(ctx)).transpose()
 }
 
 fn placement(
@@ -598,6 +583,42 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
+
+    #[test]
+    fn joint_record_collection_refuses_at_caller_limit() {
+        let object = crate::native::ObjectRecord {
+            id: "fcstd:native:object#Joint".into(),
+            name: "Joint".into(),
+            type_name: "App::FeaturePython".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: Default::default(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let property = crate::native::PropertyRecord {
+            id: "property".into(),
+            owner: object.id.clone(),
+            name: "ObjectToGround".into(),
+            type_name: "App::PropertyLink".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        assert!(matches!(super::transfer(&ctx, &[object], &[property]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "fcstd joint records"));
+    }
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use cadmpeg_test_support::wire;
