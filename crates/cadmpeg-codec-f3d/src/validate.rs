@@ -7877,21 +7877,23 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let resolve = |indices: &[u32]| {
-            indices
-                .iter()
-                .map(|record_index| {
-                    sketch_operands
-                        .get(&(native_stream, *record_index))
-                        .cloned()
-                        .unwrap_or(records::sketch_relations::SketchRelationOperand::Record {
-                            record_index: *record_index,
+        let agrees = |reference: &records::sketch_relations::SketchRelationReference| {
+            let record_index = reference.record_index();
+            match sketch_operands.get(&(native_stream, record_index)) {
+                Some(expected) => reference.resolved() == Some(expected),
+                None => {
+                    reference.resolved()
+                        == Some(&records::sketch_relations::SketchRelationOperand::Record {
+                            record_index,
                         })
-                })
-                .collect::<Vec<_>>()
+                }
+            }
         };
-        if relation.resolved_members() != resolve(&relation.member_indices())
-            || relation.resolved_return_members() != resolve(&relation.return_member_indices())
+        if !relation.members().iter().all(|member| agrees(&member.reference))
+            || !relation
+                .return_members()
+                .iter()
+                .all(|member| agrees(&member.reference))
         {
             findings.push(Finding {
                 check: Check::NativeLinks,

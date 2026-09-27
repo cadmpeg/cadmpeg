@@ -5698,7 +5698,12 @@ pub(super) fn exact_offset_constraint(
         || relation.return_members().len() < 4
         || !relation.return_members().len().is_multiple_of(2)
         || relation.return_members().len() != relation.members().len()
-        || relation.resolved_return_members().len() != relation.return_members().len()
+        || relation
+            .return_members()
+            .iter()
+            .filter(|member| member.reference.resolved().is_some())
+            .count()
+            != relation.return_members().len()
     {
         return None;
     }
@@ -5710,25 +5715,28 @@ pub(super) fn exact_offset_constraint(
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
-    for operands in relation.resolved_return_members().chunks_exact(2) {
+    for operands in relation.return_members().chunks_exact(2) {
         let (first_record_index, first_secondary_id, second_record_index, second_secondary_id) =
             match operands {
-                [SketchRelationOperand::Curve {
+                [first, second] => match (first.reference.resolved(), second.reference.resolved()) {
+                (Some(SketchRelationOperand::Curve {
                     record_index: first_record_index,
                     secondary_id: first_secondary_id,
                     ..
-                }, SketchRelationOperand::Curve {
+                }), Some(SketchRelationOperand::Curve {
                     record_index: second_record_index,
                     secondary_id: second_secondary_id,
                     ..
-                }] => (
+                })) => (
                     *first_record_index,
                     *first_secondary_id,
                     *second_record_index,
                     *second_secondary_id,
                 ),
                 _ => return None,
-            };
+            },
+            _ => return None,
+        };
         let (source_record_index, result_record_index) =
             if ordered_pairs || (first_secondary_id == 0 && second_secondary_id != 0) {
                 (first_record_index, second_record_index)

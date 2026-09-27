@@ -173,10 +173,16 @@ pub(crate) fn project_sketch_constraints(
             .filter(|_| semantic_entities.len() == relation.return_members().len());
         let native_entities = || {
             relation
-                .member_indices()
-                .into_iter()
+                .members()
+                .iter()
+                .map(|member| member.reference.record_index())
                 .chain(relation.auxiliary_references().values().copied())
-                .chain(relation.return_member_indices())
+                .chain(
+                    relation
+                        .return_members()
+                        .iter()
+                        .map(|member| member.reference.record_index()),
+                )
                 .filter_map(|record_index| {
                     projected
                         .get(&(scope, record_index))
@@ -215,8 +221,9 @@ pub(crate) fn project_sketch_constraints(
                 entities: native_entities(),
                 parameter: None,
                 operands: relation
-                    .member_indices()
-                    .into_iter()
+                    .members()
+                    .iter()
+                    .map(|member| member.reference.record_index())
                     .map(|record_index| {
                         native_operand(
                             scope,
@@ -238,8 +245,9 @@ pub(crate) fn project_sketch_constraints(
                     )
                     .chain(
                         relation
-                            .return_member_indices()
-                            .into_iter()
+                            .return_members()
+                            .iter()
+                            .map(|member| member.reference.record_index())
                             .map(|record_index| {
                                 native_operand(
                                     scope,
@@ -504,7 +512,13 @@ fn exact_text_relation(
                     .values()
                     .copied()
                     .eq([*text_reference])
-                && relation.return_member_indices() == relation.member_indices()[1..] =>
+                && relation
+                    .return_members()
+                    .iter()
+                    .map(|member| member.reference.record_index())
+                    .eq(relation.members()[1..]
+                        .iter()
+                        .map(|member| member.reference.record_index())) =>
         {
             let text = projected.get(&(scope, *text_reference))?;
             if !matches!(
@@ -548,8 +562,11 @@ fn exact_text_relation(
                 .values()
                 .copied()
                 .eq([*text_reference])
-            && relation.return_member_indices()
-                == [relation.members()[0].reference.record_index()] =>
+            && relation
+                .return_members()
+                .iter()
+                .map(|member| member.reference.record_index())
+                .eq([relation.members()[0].reference.record_index()]) =>
         {
             let path = projected.get(&(scope, relation.members()[0].reference.record_index()))?;
             let text = projected.get(&(scope, *text_reference))?;
