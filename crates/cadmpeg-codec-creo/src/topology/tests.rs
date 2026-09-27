@@ -61,6 +61,131 @@ fn assert_build_collection_refusal(limit: u64, operation: &'static str) {
             && resource.operation == operation));
 }
 
+fn orbit_with_collection_limit(
+    edges: &[HalfEdge],
+    max_collection_items: u64,
+) -> Result<super::VertexOrbits, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    vertex_orbits(&ctx, edges)
+}
+
+fn orphan_edge() -> HalfEdge {
+    HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 1,
+            side: crate::topology::Side::Zero,
+        },
+        face_id: std::num::NonZeroU32::new(10),
+        next: None,
+    }
+}
+
+fn assert_orbit_collection_refusal(limit: u64, operation: &'static str) {
+    let error = orbit_with_collection_limit(&[orphan_edge()], limit)
+        .expect_err("one half-edge exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn vertex_orbits_refuse_half_edge_lookup_node() {
+    assert_orbit_collection_refusal(0, "creo vertex-orbit half-edge lookup nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_adjacency_node() {
+    assert_orbit_collection_refusal(1, "creo vertex adjacency nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_pending_seed() {
+    assert_orbit_collection_refusal(2, "creo vertex orbit pending edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_visited_node() {
+    assert_orbit_collection_refusal(3, "creo visited vertex-orbit edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_member_node() {
+    assert_orbit_collection_refusal(4, "creo vertex orbit member nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_half_edge_vector() {
+    assert_orbit_collection_refusal(5, "creo vertex orbit half-edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_vertex_vector() {
+    assert_orbit_collection_refusal(6, "creo topological vertices");
+}
+
+#[test]
+fn vertex_orbits_refuse_start_vertex_lookup_node() {
+    assert_orbit_collection_refusal(7, "creo start-vertex lookup nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_incidence_vector() {
+    assert_orbit_collection_refusal(8, "creo half-edge vertex incidence");
+}
+
+#[test]
+fn vertex_orbits_refuse_predecessor_group_node() {
+    let mut edge = orphan_edge();
+    edge.next = Some(edge.id);
+    let error = orbit_with_collection_limit(&[edge], 1)
+        .expect_err("one successor needs a predecessor node");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo predecessor group nodes"));
+}
+
+#[test]
+fn vertex_orbits_refuse_predecessor_group_member() {
+    let mut edge = orphan_edge();
+    edge.next = Some(edge.id);
+    let error = orbit_with_collection_limit(&[edge], 2)
+        .expect_err("one successor needs a predecessor member");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo predecessor group members"));
+}
+
+#[test]
+fn vertex_orbits_refuse_adjacency_links() {
+    let mut first = orphan_edge();
+    first.next = Some(HalfEdgeId {
+        curve_id: 2,
+        side: crate::topology::Side::Zero,
+    });
+    let second = HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 1,
+            side: crate::topology::Side::One,
+        },
+        ..orphan_edge()
+    };
+    let third = HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 2,
+            side: crate::topology::Side::Zero,
+        },
+        ..orphan_edge()
+    };
+    let error = orbit_with_collection_limit(&[first, second, third], 8)
+        .expect_err("linked predecessor needs an adjacency edge");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo vertex adjacency links"));
+}
+
 #[test]
 fn topology_build_refuses_unique_row_count_node() {
     assert_build_collection_refusal(0, "creo unique-row count nodes");
@@ -204,7 +329,12 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         },
     ];
 
-    let vertices = vertex_orbits(&edges).vertices;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let vertices = vertex_orbits(&ctx, &edges)
+        .expect("service vertex orbits")
+        .vertices;
     assert!(vertices.iter().any(|vertex| vertex.half_edges
         == vec![
             HalfEdgeId {
