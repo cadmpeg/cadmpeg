@@ -376,6 +376,246 @@ fn curve_expression_emitted_ordinals(
     Ok(emitted)
 }
 
+fn joined_dependency_names(
+    ctx: &DecodeContext<'_>,
+    names: &[String],
+    include: impl Fn(&str) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<String>, CodecError> {
+    let mut count = 0usize;
+    let mut bytes = 0usize;
+    for name in names {
+        if include(name)? {
+            bytes = bytes
+                .checked_add(name.len())
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, usize::MAX as u64, u64::MAX))?;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return Ok(None);
+    }
+    bytes = bytes
+        .checked_add(count - 1)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, usize::MAX as u64, u64::MAX))?;
+    let mut joined = String::new();
+    ctx.try_reserve_retained_text(&mut joined, bytes, operation)?;
+    let mut emitted = false;
+    for name in names {
+        if include(name)? {
+            if emitted {
+                joined.push(',');
+            }
+            joined.push_str(name);
+            emitted = true;
+        }
+    }
+    Ok(Some(joined))
+}
+
+fn insert_curve_expression_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    name: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "creo curve-expression property nodes")?;
+    let key = ctx.copy_retained_text(name, "creo curve-expression property key")?;
+    properties.insert(key, value);
+    Ok(())
+}
+
+fn join_cyclic_dependency_names(
+    ctx: &DecodeContext<'_>,
+    names: &[&str],
+) -> Result<String, CodecError> {
+    let bytes = names
+        .iter()
+        .try_fold(0usize, |total, name| total.checked_add(name.len()))
+        .and_then(|total| total.checked_add(if names.is_empty() { 0 } else { names.len() - 1 }))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "creo curve-expression cyclic dependency text",
+                usize::MAX as u64,
+                u64::MAX,
+            )
+        })?;
+    let mut joined = String::new();
+    ctx.try_reserve_retained_text(
+        &mut joined,
+        bytes,
+        "creo curve-expression cyclic dependency text",
+    )?;
+    for (index, name) in names.iter().enumerate() {
+        if index > 0 {
+            joined.push(',');
+        }
+        joined.push_str(name);
+    }
+    Ok(joined)
+}
+
+fn curve_expression_source_text(
+    ctx: &DecodeContext<'_>,
+    lines: &[crate::curve::CurveExpressionLine],
+) -> Result<String, CodecError> {
+    let bytes = lines
+        .iter()
+        .try_fold(0usize, |total, line| total.checked_add(line.text.len()))
+        .and_then(|total| total.checked_add(if lines.is_empty() { 0 } else { lines.len() - 1 }))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "creo curve-expression feature source text",
+                usize::MAX as u64,
+                u64::MAX,
+            )
+        })?;
+    let mut text = String::new();
+    ctx.try_reserve_retained_text(
+        &mut text,
+        bytes,
+        "creo curve-expression feature source text",
+    )?;
+    for (index, line) in lines.iter().enumerate() {
+        if index > 0 {
+            text.push('\n');
+        }
+        text.push_str(&line.text);
+    }
+    Ok(text)
+}
+
+fn curve_expression_properties(
+    ctx: &DecodeContext<'_>,
+    assignment: &crate::curve::CurveExpressionAssignment,
+    assignment_ordinal: usize,
+    parameter_name: &str,
+    parameter_id: &ParameterId,
+    assignment_indices_by_name: &BTreeMap<String, Option<usize>>,
+    unique_assignment_indices: &BTreeMap<String, usize>,
+    dimension_parameters: &BTreeMap<String, ParameterId>,
+    cyclic_edges: &HashSet<(usize, usize)>,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
+        return Err(CodecError::malformed(
+            "curve expression assignment has no parameter target",
+        ));
+    };
+    let external_dependencies = joined_dependency_names(
+        ctx,
+        &assignment.dependencies,
+        |name| {
+            let (mut key, _reservation) =
+                ctx.copy_scoped_text(name, "creo curve-expression external lookup")?;
+            key.make_ascii_lowercase();
+            Ok(key != "t"
+                && !assignment_indices_by_name.contains_key(&key)
+                && !dimension_parameters.contains_key(&key))
+        },
+        "creo curve-expression external dependency text",
+    )?;
+    let ambiguous_dependencies = joined_dependency_names(
+        ctx,
+        &assignment.dependencies,
+        |name| {
+            let (mut key, _reservation) =
+                ctx.copy_scoped_text(name, "creo curve-expression ambiguous lookup")?;
+            key.make_ascii_lowercase();
+            Ok(matches!(assignment_indices_by_name.get(&key), Some(None)))
+        },
+        "creo curve-expression ambiguous dependency text",
+    )?;
+    let intrinsic_dependencies = joined_dependency_names(
+        ctx,
+        &assignment.dependencies,
+        |name| Ok(name.eq_ignore_ascii_case("t")),
+        "creo curve-expression intrinsic dependency text",
+    )?;
+    let mut properties = BTreeMap::new();
+    if let Some(value) = external_dependencies {
+        insert_curve_expression_property(ctx, &mut properties, "external_dependencies", value)?;
+    }
+    if let Some(value) = ambiguous_dependencies {
+        insert_curve_expression_property(ctx, &mut properties, "ambiguous_dependencies", value)?;
+    }
+    insert_curve_expression_property(
+        ctx,
+        &mut properties,
+        "source_assignment_ordinal",
+        assignment_ordinal.to_string(),
+    )?;
+    insert_curve_expression_property(
+        ctx,
+        &mut properties,
+        "activation",
+        assignment.activation.token().to_string(),
+    )?;
+    if let Some(unit) = declared_unit {
+        let unit = ctx.copy_retained_text(unit, "creo curve-expression declared unit")?;
+        insert_curve_expression_property(ctx, &mut properties, "declared_unit", unit)?;
+    }
+    if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value {
+        insert_curve_expression_property(
+            ctx,
+            &mut properties,
+            "evaluated_canonical_value",
+            quantity.value.to_string(),
+        )?;
+        insert_curve_expression_property(
+            ctx,
+            &mut properties,
+            "evaluated_dimension",
+            format!(
+                "length:{},mass:{},time:{},angle:{},temperature:{}",
+                quantity.length_power,
+                quantity.mass_power,
+                quantity.time_power,
+                quantity.angle_power,
+                quantity.temperature_power
+            ),
+        )?;
+    }
+    if parameter_name != assignment_name {
+        let source_name =
+            ctx.copy_retained_text(assignment_name, "creo curve-expression source name")?;
+        insert_curve_expression_property(ctx, &mut properties, "source_name", source_name)?;
+    }
+    if let Some(value) = intrinsic_dependencies {
+        insert_curve_expression_property(ctx, &mut properties, "independent_variables", value)?;
+    }
+    let mut cyclic_dependencies = Vec::new();
+    for name in &assignment.dependencies {
+        let (mut key, _reservation) =
+            ctx.copy_scoped_text(name, "creo curve-expression cyclic lookup")?;
+        key.make_ascii_lowercase();
+        if unique_assignment_indices
+            .get(&key)
+            .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
+        {
+            ctx.try_reserve_items(
+                &mut cyclic_dependencies,
+                1,
+                "creo curve-expression cyclic dependency names",
+            )?;
+            cyclic_dependencies.push(name.as_str());
+        }
+    }
+    cyclic_dependencies.sort_unstable();
+    cyclic_dependencies.dedup();
+    if !cyclic_dependencies.is_empty() {
+        let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
+        insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
+    }
+    ctx.charge_collection_items(
+        properties.len() as u64,
+        "creo curve-expression named properties",
+    )?;
+    Ok(cadmpeg_core::text::named_entries(
+        parameter_id.as_str(),
+        properties,
+    )?)
+}
+
 pub(super) fn transfer_curve_expression_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -420,12 +660,22 @@ pub(super) fn transfer_curve_expression_features(
             emitted_ordinals.len(),
             "creo curve-expression source content",
         )?;
+        let parameter_start = ir.model.parameters.len();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
-            let Some((assignment_name, declared_unit)) = assignment.parameter_target() else {
+            let Some((_assignment_name, _declared_unit)) = assignment.parameter_target() else {
                 continue;
             };
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
+            };
+            let Some(parameter_name) = parameter_names
+                .get(assignment_ordinal)
+                .and_then(Option::as_ref)
+            else {
+                return Err(cadmpeg_core::CodecError::malformed(format!(
+                    "curve expression record {} assignment {} has no parameter name",
+                    record.entity_id, assignment_ordinal
+                )));
             };
             let parameter_id = ParameterId::compose(
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
@@ -491,117 +741,6 @@ pub(super) fn transfer_curve_expression_features(
                 })?;
                 dependencies.push(copied);
             }
-            let external_dependencies = assignment
-                .dependencies
-                .iter()
-                .filter(|name| {
-                    let key = crate::curve::expression_identifier_key(name);
-                    key != "t"
-                        && !assignment_indices_by_name.contains_key(&key)
-                        && !dimension_parameters.contains_key(&key)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let ambiguous_dependencies = assignment
-                .dependencies
-                .iter()
-                .filter(|name| {
-                    matches!(
-                        assignment_indices_by_name
-                            .get(&crate::curve::expression_identifier_key(name)),
-                        Some(None)
-                    )
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            let intrinsic_dependencies = assignment
-                .dependencies
-                .iter()
-                .filter(|name| crate::curve::expression_identifier_key(name) == "t")
-                .cloned()
-                .collect::<Vec<_>>();
-            let mut properties = BTreeMap::new();
-            if !external_dependencies.is_empty() {
-                properties.insert(
-                    "external_dependencies".to_string(),
-                    external_dependencies.join(","),
-                );
-            }
-            if !ambiguous_dependencies.is_empty() {
-                properties.insert(
-                    "ambiguous_dependencies".to_string(),
-                    ambiguous_dependencies.join(","),
-                );
-            }
-            properties.insert(
-                "source_assignment_ordinal".to_string(),
-                assignment_ordinal.to_string(),
-            );
-            properties.insert(
-                "activation".to_string(),
-                assignment.activation.token().to_string(),
-            );
-            if let Some(unit) = declared_unit {
-                properties.insert("declared_unit".to_string(), unit.to_owned());
-            }
-            if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value
-            {
-                properties.insert(
-                    "evaluated_canonical_value".to_string(),
-                    quantity.value.to_string(),
-                );
-                properties.insert(
-                    "evaluated_dimension".to_string(),
-                    format!(
-                        "length:{},mass:{},time:{},angle:{},temperature:{}",
-                        quantity.length_power,
-                        quantity.mass_power,
-                        quantity.time_power,
-                        quantity.angle_power,
-                        quantity.temperature_power
-                    ),
-                );
-            }
-            let Some(parameter_name) = parameter_names
-                .get(assignment_ordinal)
-                .and_then(Option::as_ref)
-            else {
-                return Err(cadmpeg_core::CodecError::malformed(format!(
-                    "curve expression record {} assignment {} has no parameter name",
-                    record.entity_id, assignment_ordinal
-                )));
-            };
-            if parameter_name != assignment_name {
-                properties.insert("source_name".to_string(), assignment_name.to_owned());
-            }
-            if !intrinsic_dependencies.is_empty() {
-                properties.insert(
-                    "independent_variables".to_string(),
-                    intrinsic_dependencies.join(","),
-                );
-            }
-            let cyclic_dependencies = assignment
-                .dependencies
-                .iter()
-                .filter_map(|name| {
-                    let key = crate::curve::expression_identifier_key(name);
-                    unique_assignment_indices
-                        .get(&key)
-                        .filter(|dependency| {
-                            cyclic_edges.contains(&(assignment_ordinal, **dependency))
-                        })
-                        .map(|_| name.clone())
-                })
-                .collect::<BTreeSet<_>>();
-            if !cyclic_dependencies.is_empty() {
-                properties.insert(
-                    "cyclic_dependencies".to_string(),
-                    cyclic_dependencies
-                        .into_iter()
-                        .collect::<Vec<_>>()
-                        .join(","),
-                );
-            }
             annotate(
                 annotations,
                 parameter_id.as_str(),
@@ -617,46 +756,81 @@ pub(super) fn transfer_curve_expression_features(
                     "validate Creo curve-expression dependency uniqueness",
                 )?;
             }
+            let value = match assignment.value.as_ref() {
+                Some(crate::curve::CurveExpressionValue::String(value)) => {
+                    Some(ParameterValue::String(ctx.copy_retained_text(
+                        value,
+                        "creo curve-expression parameter string value",
+                    )?))
+                }
+                other => other.and_then(|value| match value {
+                    crate::curve::CurveExpressionValue::Number(value) => Some(
+                        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
+                    ),
+                    crate::curve::CurveExpressionValue::Length(value) => Some(
+                        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
+                    ),
+                    crate::curve::CurveExpressionValue::Angle(value) => Some(
+                        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(value.to_radians())?),
+                    ),
+                    crate::curve::CurveExpressionValue::Quantity(_)
+                    | crate::curve::CurveExpressionValue::String(_) => None,
+                }),
+            };
             source_carriers.admit_parameter(
                 ir,
                 DesignParameter {
                     id: parameter_id.clone(),
                     owner: Some(feature_id.clone()),
                     ordinal,
-                    name: parameter_name.clone(),
-                    expression: assignment.expression.clone(),
+                    name: ctx.copy_retained_text(
+                        parameter_name,
+                        "creo curve-expression IR parameter name",
+                    )?,
+                    expression: ctx.copy_retained_text(
+                        &assignment.expression,
+                        "creo curve-expression IR expression",
+                    )?,
                     display: None,
-                    value: assignment.value.as_ref().and_then(|value| match value {
-                        crate::curve::CurveExpressionValue::Number(value) => Some(
-                            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(*value)?),
-                        ),
-                        crate::curve::CurveExpressionValue::Length(value) => Some(
-                            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(*value)?),
-                        ),
-                        crate::curve::CurveExpressionValue::Angle(value) => {
-                            Some(ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(
-                                value.to_radians(),
-                            )?))
-                        }
-                        crate::curve::CurveExpressionValue::Quantity(_) => None,
-                        crate::curve::CurveExpressionValue::String(value) => {
-                            Some(ParameterValue::String(value.clone()))
-                        }
-                    }),
+                    value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
                         dependencies,
                     )
                     .map_err(CodecError::malformed)?,
-                    properties: cadmpeg_core::text::named_entries(
-                        parameter_id.as_str(),
-                        properties,
-                    )?,
+                    properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: Some(curve_expression_record_id(record)),
                 },
             )?;
             transferred_parameter_count += 1;
             source_content.push(FeatureSourceContent::Parameter(parameter_id.clone()));
+        }
+        let mut parameter_index = parameter_start;
+        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            if assignment.parameter_target().is_none()
+                || !emitted_ordinals.contains_key(&assignment_ordinal)
+            {
+                continue;
+            }
+            let parameter = ir
+                .model
+                .parameters
+                .get_mut(parameter_index)
+                .ok_or_else(|| {
+                    CodecError::malformed("curve-expression parameter sequence is incomplete")
+                })?;
+            parameter.properties = curve_expression_properties(
+                ctx,
+                assignment,
+                assignment_ordinal,
+                &parameter.name,
+                &parameter.id,
+                &assignment_indices_by_name,
+                &unique_assignment_indices,
+                dimension_parameters,
+                &cyclic_edges,
+            )?;
+            parameter_index += 1;
         }
         annotate(
             annotations,
@@ -712,37 +886,39 @@ pub(super) fn transfer_curve_expression_features(
                 ProceduralCurve::new(procedural_id, procedural_definition),
             )?;
         }
-        let definition = neutral_helix
-            .or_else(|| {
-                let helix = helix?;
-                Some(IrFeatureDefinition::Operation(
-                    IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: cadmpeg_core::text::NonBlankString::new(
-                            curve_expression_record_id(record),
-                        )?,
-                        axial_rise: Length::new(helix.height)?,
-                        pitch: Length::new(helix.height / helix.revolutions.get())?,
-                        revolutions: helix.revolutions,
-                        start_angle: helix.start_angle,
-                        clockwise: helix.clockwise,
-                    },
-                ))
+        let axis_definition = neutral_helix.or_else(|| {
+            let helix = helix?;
+            Some(IrFeatureDefinition::Operation(
+                IrFeatureOperation::HelixNativeAxis {
+                    axis_native_ref: cadmpeg_core::text::NonBlankString::new(
+                        curve_expression_record_id(record),
+                    )?,
+                    axial_rise: Length::new(helix.height)?,
+                    pitch: Length::new(helix.height / helix.revolutions.get())?,
+                    revolutions: helix.revolutions,
+                    start_angle: helix.start_angle,
+                    clockwise: helix.clockwise,
+                },
+            ))
+        });
+        let definition = if let Some(definition) = axis_definition {
+            definition
+        } else {
+            ctx.charge_collection_items(2, "creo curve-expression native parameters")?;
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                kind: "CurveFromEquation".into(),
+                parameters: BTreeMap::from([
+                    (
+                        cadmpeg_core::nonblank_literal!("entity_id"),
+                        record.entity_id.to_string(),
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("assignment_count"),
+                        record.assignments.len().to_string(),
+                    ),
+                ]),
             })
-            .unwrap_or_else(|| {
-                IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: "CurveFromEquation".into(),
-                    parameters: BTreeMap::from([
-                        (
-                            cadmpeg_core::nonblank_literal!("entity_id"),
-                            record.entity_id.to_string(),
-                        ),
-                        (
-                            cadmpeg_core::nonblank_literal!("assignment_count"),
-                            record.assignments.len().to_string(),
-                        ),
-                    ]),
-                })
-            });
+        };
         ctx.charge_entities(1, "admit Creo model features")?;
         source_carriers.admit_feature(
             ir,
@@ -754,14 +930,7 @@ pub(super) fn transfer_curve_expression_features(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("crv_fr_eqn".to_string()),
-                source_text: Some(
-                    record
-                        .lines
-                        .iter()
-                        .map(|line| line.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                ),
+                source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
                 source_content: source_content.try_into().map_err(|message: &'static str| {
                     cadmpeg_core::CodecError::Malformed(message.into())
                 })?,
