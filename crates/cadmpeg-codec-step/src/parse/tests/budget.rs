@@ -34,6 +34,116 @@ fn header_record_vector_refuses_collection_limit() {
     assert!(refusal_at_header, "one limit must refuse the header allocation");
 }
 
+fn collection_refusal_reaches_parser(source: &[u8], operation: &str) {
+    let arena = DecodeArena::new();
+    let refused = (0..1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            crate::parse::parse_with_context(source, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+const VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
+const ANCHOR_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const COMPLEX_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
+const OMITTED_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+const SCHEMA_DIAGNOSTIC_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const UNVERIFIED_LEVEL_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const SIGNATURE_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
+
+macro_rules! parser_vector_limit_test {
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            collection_refusal_reaches_parser($source, $operation);
+        }
+    };
+}
+
+parser_vector_limit_test!(
+    parameter_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_parameter"
+);
+parser_vector_limit_test!(
+    record_partial_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_record_partials"
+);
+parser_vector_limit_test!(
+    section_id_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_section_ids"
+);
+parser_vector_limit_test!(
+    data_section_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_data_sections"
+);
+parser_vector_limit_test!(
+    anchor_tag_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_anchor_tags"
+);
+parser_vector_limit_test!(
+    anchor_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_anchors"
+);
+parser_vector_limit_test!(
+    reference_entry_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_reference_entries"
+);
+parser_vector_limit_test!(
+    reference_pending_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_reference_pending"
+);
+parser_vector_limit_test!(
+    reference_id_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_reference_ids"
+);
+parser_vector_limit_test!(
+    value_reference_id_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_value_reference_ids"
+);
+parser_vector_limit_test!(
+    complex_diagnostic_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    omitted_name_diagnostic_vector_refuses_collection_limit,
+    OMITTED_VECTOR_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    schema_identifier_diagnostic_vector_refuses_collection_limit,
+    SCHEMA_DIAGNOSTIC_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    implementation_level_diagnostic_vector_refuses_collection_limit,
+    UNVERIFIED_LEVEL_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    signature_span_vector_refuses_collection_limit,
+    SIGNATURE_VECTOR_SOURCE,
+    "step_parse_signature_spans"
+);
+
 #[test]
 fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let value = Value::List((0..8).map(Value::Integer).collect());
