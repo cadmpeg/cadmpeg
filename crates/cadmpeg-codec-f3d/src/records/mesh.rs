@@ -326,6 +326,7 @@ impl DesignMeshTextureTable {
         }
         Ok(table)
     }
+    #[cfg(test)]
     fn into_wire(
         self,
     ) -> (
@@ -1241,6 +1242,7 @@ impl DesignMeshCollection {
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
+    #[cfg(test)]
     fn base_record(&self) -> DesignMeshRecordIdentity {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
         DesignMeshRecordIdentity {
