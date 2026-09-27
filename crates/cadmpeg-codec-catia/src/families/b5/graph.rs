@@ -5254,9 +5254,8 @@ fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
                 .checked_add(15)
                 .filter(|&end| end <= bytes.len())
                 .filter(|&end| {
-                    let rows =
-                        crate::wire::records::scan_vertex_record_ranges(&bytes[position..end]);
-                    matches!(rows.as_slice(), [range] if range.start == 0 && range.end == 15)
+                    crate::wire::records::scan_vertex_record_ranges(&bytes[position..end])
+                        .eq(std::iter::once(0..15))
                 })
                 .or_else(|| {
                     external_grids

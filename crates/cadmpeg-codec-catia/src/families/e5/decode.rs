@@ -110,7 +110,10 @@ pub(in crate::families) fn try_decode_e5(
             vertices.len()
         };
         let points = {
-            let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
+            let roster = match crate::families::e5::records::e5_vertices(ctx, &scan.data, vertex_count) {
+                Ok(roster) => roster,
+                Err(error) => return Some(Err(error)),
+            };
             if roster.len() == vertex_count {
                 roster
             } else {

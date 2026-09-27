@@ -35,7 +35,7 @@ pub fn e5_topology(data: &[u8]) {
 
 /// Exercise standard-family vertex-record scanning.
 pub fn geometry_vertices(data: &[u8]) {
-    let _probe = crate::wire::records::scan_vertex_records(data);
+    let _probe = crate::wire::records::scan_vertex_records(data).count();
 }
 
 /// Exercise standard-family surface-prefix extraction.
