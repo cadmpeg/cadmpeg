@@ -586,8 +586,12 @@ pub(crate) struct SegmentLineage {
 }
 
 /// Extract the bounded feature-history inputs used by terminal body lineage.
-pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream]) -> SegmentLineage {
-    let bindings = segment_body_bindings(container, streams);
+pub(crate) fn extract_segment_lineage(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+    streams: &[Stream],
+) -> Result<SegmentLineage, CodecError> {
+    let bindings = segment_body_bindings(ctx, container, streams)?;
     let labels = feature_operation_labels(container);
     let references = feature_body_references(container);
     let blocks = data_blocks(container);
@@ -614,7 +618,7 @@ pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream])
         &inputs,
     )
     .unwrap_or_default();
-    SegmentLineage {
+    Ok(SegmentLineage {
         bindings,
         labels,
         references,
@@ -626,7 +630,7 @@ pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream])
         operands,
         booleans,
         statuses,
-    }
+    })
 }
 
 /// Select emitted body images whose complete segment binding has a terminal
@@ -730,7 +734,10 @@ impl NativeModel {
             operands: feature_operation_body_operands,
             booleans: feature_boolean_operations,
             statuses: segment_body_lineage_statuses,
-        } = precomputed_lineage.unwrap_or_else(|| extract_segment_lineage(container, streams));
+        } = match precomputed_lineage {
+            Some(lineage) => lineage,
+            None => extract_segment_lineage(ctx, container, streams)?,
+        };
         let data_block_object_frames = data_block_object_frames(container);
         let segment_index_rows = segment_index_rows(ctx, container)?;
         let segment_om_links = segment_om_links(container);

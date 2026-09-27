@@ -185,8 +185,15 @@ pub(super) fn try_decode_geometry(
     })
     .flatten();
     let terminal_lineage =
-        rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
-            .then(|| crate::native::model::extract_segment_lineage(&scan.container, &scan.streams));
+        if rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected) {
+            Some(crate::native::model::extract_segment_lineage(
+                ctx,
+                &scan.container,
+                &scan.streams,
+            )?)
+        } else {
+            None
+        };
     let mut emitted_body_ids = BTreeSet::new();
     for body in body_node_ids.keys() {
         ctx.charge_collection_items(1, "nx emitted terminal body index")?;

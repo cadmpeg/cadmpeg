@@ -707,11 +707,12 @@ pub(super) fn segment_stream_links(
 
 /// Bind partition and cached-body streams to feature-history body object indices.
 pub(super) fn segment_body_bindings(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     streams: &[Stream],
-) -> Vec<SegmentBodyBinding> {
+) -> Result<Vec<SegmentBodyBinding>, CodecError> {
     let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let word_at = |word: usize| {
@@ -722,43 +723,91 @@ pub(super) fn segment_body_bindings(
             _ => row.value,
         })
     };
-    segment_stream_links(container, streams)
-        .into_iter()
-        .filter(|link| {
-            matches!(
-                link.stream_kind,
-                crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+    let mut bindings = Vec::new();
+    for link in segment_stream_links(container, streams) {
+        if !matches!(
+            link.stream_kind,
+            crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+        ) {
+            continue;
+        }
+        let slot = match link.slot {
+            SegmentIndexSlot::TypeCode => 0,
+            SegmentIndexSlot::SubtypeCode => 1,
+            SegmentIndexSlot::Value => 2,
+        };
+        let Some(pointer_word) = link
+            .row
+            .checked_mul(3)
+            .and_then(|row| row.checked_add(slot))
+        else {
+            continue;
+        };
+        let Some(fields) = pointer_word.checked_add(1).and_then(|after| {
+            (word_at(after) == Some(0)).then_some((
+                word_at(after.checked_add(1)?)?,
+                word_at(after.checked_add(2)?)?,
+                word_at(after.checked_add(3)?)?,
+            ))
+        }) else {
+            continue;
+        };
+        let (body_object_index, body_alias_object_index, stream_role) = fields;
+        if body_object_index == 0 || body_alias_object_index == 0 {
+            continue;
+        }
+        let Some(source_offset) = pointer_word
+            .checked_add(2)
+            .and_then(|word| word.checked_mul(4))
+            .and_then(|offset| u64::try_from(offset).ok())
+            .and_then(|offset| entry_offset.checked_add(offset))
+        else {
+            continue;
+        };
+        let old_prefix = "nx:segment-stream-links:link#";
+        let new_prefix = "nx:segment-body-bindings:binding#";
+        let (prefix, suffix) = link
+            .id
+            .strip_prefix(old_prefix)
+            .map_or(("", link.id.as_str()), |suffix| (new_prefix, suffix));
+        let id_len = prefix.len().checked_add(suffix.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment body binding identity", 0, u64::MAX)
+        })?;
+        ctx.charge_collection_items(1, "nx segment body bindings")?;
+        ctx.charge_entities(1, "nx segment body bindings")?;
+        ctx.charge_retained(
+            u64::try_from(std::mem::size_of::<SegmentBodyBinding>()).unwrap_or(u64::MAX),
+            "nx segment body bindings",
+        )?;
+        ctx.charge_retained(
+            u64::try_from(id_len).unwrap_or(u64::MAX),
+            "nx segment body binding identity",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment body binding identity",
+                0,
+                u64::try_from(id_len).unwrap_or(u64::MAX),
             )
-        })
-        .filter_map(|link| {
-            let row = link.row;
-            let slot = match link.slot {
-                SegmentIndexSlot::TypeCode => 0,
-                SegmentIndexSlot::SubtypeCode => 1,
-                SegmentIndexSlot::Value => 2,
-            };
-            let pointer_word = row.checked_mul(3)?.checked_add(slot)?;
-            (word_at(pointer_word.checked_add(1)?) == Some(0)).then_some(())?;
-            let body_object_index = word_at(pointer_word.checked_add(2)?)?;
-            let body_alias_object_index = word_at(pointer_word.checked_add(3)?)?;
-            let stream_role = word_at(pointer_word.checked_add(4)?)?;
-            (body_object_index != 0 && body_alias_object_index != 0).then_some(())?;
-            Some(SegmentBodyBinding {
-                id: link.id.replacen(
-                    "nx:segment-stream-links:link#",
-                    "nx:segment-body-bindings:binding#",
-                    1,
-                ),
-                stream_link: link.id,
-                stream_ordinal: link.stream_ordinal,
-                stream_kind: link.stream_kind,
-                body_object_index,
-                body_alias_object_index,
-                stream_role,
-                source_offset: entry_offset + ((pointer_word + 2) * 4) as u64,
-            })
-        })
-        .collect()
+        })?;
+        id.push_str(prefix);
+        id.push_str(suffix);
+        bindings
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment body bindings", 0, 1))?;
+        bindings.push(SegmentBodyBinding {
+            id,
+            stream_link: link.id,
+            stream_ordinal: link.stream_ordinal,
+            stream_kind: link.stream_kind,
+            body_object_index,
+            body_alias_object_index,
+            stream_role,
+            source_offset,
+        });
+    }
+    Ok(bindings)
 }
 
 #[cfg(test)]
@@ -915,6 +964,65 @@ mod tests {
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
         assert_eq!(bindings[0].source_offset, 108);
+    }
+
+    #[test]
+    fn segment_body_bindings_refuse_collection_limit_before_record_allocation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid partition stream");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_body_bindings(&ctx, &scan.container, &scan.streams)
+            .expect_err("one binding exceeds zero collection items");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx segment body bindings"
+        ));
+    }
+
+    #[test]
+    fn segment_body_bindings_refuse_identity_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid partition stream");
+        let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+        let first_id = "nx:segment-body-bindings:binding#0";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            u64::try_from(binding_slot + first_id.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_body_bindings(&ctx, &scan.container, &scan.streams)
+            .expect_err("binding identity exceeds retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment body binding identity"
+        ));
     }
 
     #[test]
