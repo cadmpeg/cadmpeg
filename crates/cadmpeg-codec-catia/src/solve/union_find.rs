@@ -77,6 +77,32 @@ mod tests {
     use super::UnionFind;
 
     #[test]
+    fn charged_union_parents_refuse_below_node_count() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let mut union = UnionFind::charged(&ctx, 2, "catia_union_test_parents")
+            .expect("service resource budget");
+        assert_eq!(union.find(1), 1);
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        assert!(
+            matches!(UnionFind::charged(&ctx, 2, "catia_union_test_parents"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "catia_union_test_parents")
+        );
+    }
+
+    #[test]
     fn long_chain_compression_preserves_left_root_selection() {
         const LAST: usize = 100_000;
         let mut union = UnionFind::new(LAST + 1);

@@ -1158,27 +1158,43 @@ pub(super) fn reconstruct(
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],
 ) -> Result<Option<StandardTopology>, CodecError> {
-    let mut union = UnionFind::new(edge_rows.len() * 2);
-    let mut faces = Vec::with_capacity(trims.len());
+    let node_count = edge_rows
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_reconstruct_union", u64::MAX, u64::MAX))?;
+    let mut union = UnionFind::charged(ctx, node_count, "catia_reconstruct_union")?;
+    let mut faces = Vec::new();
     for trim in trims {
         let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
             return Ok(None);
         };
-        let mut boundaries = Vec::with_capacity(cycles.len());
+        let mut boundaries = Vec::new();
         for cycle in cycles {
             let Some(boundary) = cover_cycle(ctx, &cycle, &edge_rows, &mut union)? else {
                 return Ok(None);
             };
-            boundaries.push(boundary);
+            crate::resource::push(
+                ctx,
+                &mut boundaries,
+                boundary,
+                "catia_reconstruct_boundaries",
+            )?;
         }
-        faces.push(FaceTopology { boundaries });
+        crate::resource::push(
+            ctx,
+            &mut faces,
+            FaceTopology { boundaries },
+            "catia_reconstruct_faces",
+        )?;
     }
 
     let mut roots = HashMap::new();
     for node in 0..union.len() {
         let root = union.find(node);
         let next = roots.len();
-        roots.entry(root).or_insert(next);
+        if !roots.contains_key(&root) {
+            crate::resource::insert_map(ctx, &mut roots, root, next, "catia_reconstruct_roots")?;
+        }
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {

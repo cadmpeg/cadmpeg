@@ -75,6 +75,18 @@ pub(crate) fn reserve_set<T: Eq + Hash>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), count, operation))
 }
 
+pub(crate) fn reserve_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(count as u64, operation)?;
+    values
+        .try_reserve(count)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), count, operation))
+}
+
 pub(crate) fn insert_set<T: Eq + Hash>(
     ctx: &DecodeContext<'_>,
     values: &mut HashSet<T>,
