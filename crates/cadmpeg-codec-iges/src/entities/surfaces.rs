@@ -481,38 +481,44 @@ fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
 fn split_homogeneous_bezier_span(
     span: &HomogeneousBezierSpan,
     cut: f64,
-) -> Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)>, CodecError> {
     if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
-        return None;
+        return Ok(None);
     }
-    let parameter = span_fraction(cut, span.domain)?;
+    let Some(parameter) = span_fraction(cut, span.domain) else {
+        return Ok(None);
+    };
     if !parameter.is_finite() || parameter <= 0.0 || parameter >= 1.0 {
-        return None;
+        return Ok(None);
     }
-    let degree = span.controls.len().checked_sub(1)?;
-    let mut levels = vec![span.controls.clone()];
+    let Some(degree) = span.controls.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let mut levels = reserve_optional_vec(ctx, degree + 1, "iges span split levels")?;
+    let mut first_level = reserve_optional_vec(ctx, span.controls.len(), "iges span split first controls")?;
+    first_level.extend_from_slice(&span.controls);
+    levels.push(first_level);
     for _ in 1..=degree {
-        let previous = levels.last()?;
-        let current = previous
-            .windows(2)
-            .map(|pair| {
-                std::array::from_fn(|axis| {
+        let Some(previous) = levels.last() else {
+            return Ok(None);
+        };
+        let mut current = reserve_optional_vec(ctx, previous.len() - 1, "iges span split level controls")?;
+        current.extend(previous.windows(2).map(|pair| {
+            std::array::from_fn(|axis| {
                     (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-                })
             })
-            .collect::<Vec<_>>();
+        }));
         if current.iter().flatten().any(|value| !value.is_finite()) {
-            return None;
+            return Ok(None);
         }
         levels.push(current);
     }
-    let left = (0..=degree)
-        .map(|level| levels[level][0])
-        .collect::<Vec<_>>();
-    let right = (0..=degree)
-        .map(|index| levels[degree - index][index])
-        .collect::<Vec<_>>();
-    Some((
+    let mut left = reserve_optional_vec(ctx, degree + 1, "iges span split left controls")?;
+    left.extend((0..=degree).map(|level| levels[level][0]));
+    let mut right = reserve_optional_vec(ctx, degree + 1, "iges span split right controls")?;
+    right.extend((0..=degree).map(|index| levels[degree - index][index]));
+    Ok(Some((
         HomogeneousBezierSpan {
             domain: [span.domain[0], cut],
             controls: left,
@@ -521,7 +527,7 @@ fn split_homogeneous_bezier_span(
             domain: [cut, span.domain[1]],
             controls: right,
         },
-    ))
+    )))
 }
 
 fn homogeneous_span_domain(spans: &[HomogeneousBezierSpan]) -> Option<[f64; 2]> {
@@ -532,52 +538,70 @@ fn homogeneous_span_domain(spans: &[HomogeneousBezierSpan]) -> Option<[f64; 2]> 
 fn normalized_span_boundaries(
     spans: &[HomogeneousBezierSpan],
     domain: [f64; 2],
-) -> Option<Vec<f64>> {
-    let mut boundaries = Vec::with_capacity(spans.len().checked_add(1)?);
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<f64>>, CodecError> {
+    let Some(capacity) = spans.len().checked_mul(2) else {
+        return Ok(None);
+    };
+    let mut boundaries = reserve_optional_vec(ctx, capacity, "iges span normalized boundaries")?;
     for span in spans {
         for value in span.domain {
-            let normalized = span_fraction(value, domain)?;
+            let Some(normalized) = span_fraction(value, domain) else {
+                return Ok(None);
+            };
             if !normalized.is_finite() || !(0.0..=1.0).contains(&normalized) {
-                return None;
+                return Ok(None);
             }
             boundaries.push(normalized);
         }
     }
     boundaries.sort_by(f64::total_cmp);
     boundaries.dedup();
-    (boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries)
+    Ok((boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries))
 }
 
 fn partition_homogeneous_spans(
     spans: &[HomogeneousBezierSpan],
     domain: [f64; 2],
     boundaries: &[f64],
-) -> Option<Vec<HomogeneousBezierSpan>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let mut partitioned = Vec::new();
     for span in spans {
-        let start = span_fraction(span.domain[0], domain)?;
-        let end = span_fraction(span.domain[1], domain)?;
+        let Some(start) = span_fraction(span.domain[0], domain) else {
+            return Ok(None);
+        };
+        let Some(end) = span_fraction(span.domain[1], domain) else {
+            return Ok(None);
+        };
         if !start.is_finite() || !end.is_finite() || start >= end {
-            return None;
+            return Ok(None);
         }
-        let cuts = boundaries
-            .iter()
-            .copied()
-            .filter(|boundary| start < *boundary && *boundary < end)
-            .map(|boundary| {
-                cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
-                    .map(cadmpeg_ir::scalar::FiniteReal::get)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let mut current = span.clone();
-        for cut in cuts {
-            let (left, right) = split_homogeneous_bezier_span(&current, cut)?;
+        if boundaries.iter().copied().filter(|boundary| start < *boundary && *boundary < end).any(|boundary| {
+            cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary).is_none()
+        }) {
+            return Ok(None);
+        }
+        let mut controls = reserve_optional_vec(ctx, span.controls.len(), "iges span partition controls")?;
+        controls.extend_from_slice(&span.controls);
+        let mut current = HomogeneousBezierSpan { domain: span.domain, controls };
+        for boundary in boundaries.iter().copied().filter(|boundary| start < *boundary && *boundary < end) {
+            let Some(cut) = cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+            else {
+                return Ok(None);
+            };
+            let Some((left, right)) = split_homogeneous_bezier_span(&current, cut, ctx)? else {
+                return Ok(None);
+            };
+            reserve_optional_vec_growth(ctx, &mut partitioned, 1, "iges span partition slots")?;
             partitioned.push(left);
             current = right;
         }
+        reserve_optional_vec_growth(ctx, &mut partitioned, 1, "iges span partition slots")?;
         partitioned.push(current);
     }
-    Some(partitioned)
+    Ok(Some(partitioned))
 }
 
 fn aligned_homogeneous_spans(
@@ -597,23 +621,28 @@ fn aligned_homogeneous_spans(
     ) else {
         return Ok(None);
     };
-    let Some(mut boundaries) = normalized_span_boundaries(&first_spans, first_domain) else {
+    let Some(mut boundaries) = normalized_span_boundaries(&first_spans, first_domain, ctx)? else {
         return Ok(None);
     };
-    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain) else {
+    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain, ctx)? else {
         return Ok(None);
     };
+    reserve_optional_vec_growth(ctx, &mut boundaries, second_boundaries.len(), "iges span combined boundaries")?;
     boundaries.extend(second_boundaries);
     boundaries.sort_by(f64::total_cmp);
     boundaries.dedup();
-    let (Some(first_spans), Some(second_spans)) = (
-        partition_homogeneous_spans(&first_spans, first_domain, &boundaries),
-        partition_homogeneous_spans(&second_spans, second_domain, &boundaries),
-    ) else {
+    let Some(first_spans) = partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)? else {
         return Ok(None);
     };
-    Ok((first_spans.len() == second_spans.len())
-        .then(|| first_spans.into_iter().zip(second_spans).collect()))
+    let Some(second_spans) = partition_homogeneous_spans(&second_spans, second_domain, &boundaries, ctx)? else {
+        return Ok(None);
+    };
+    if first_spans.len() != second_spans.len() {
+        return Ok(None);
+    }
+    let mut pairs = reserve_optional_vec(ctx, first_spans.len(), "iges span aligned pairs")?;
+    pairs.extend(first_spans.into_iter().zip(second_spans));
+    Ok(Some(pairs))
 }
 
 fn projectively_shared_weights(
