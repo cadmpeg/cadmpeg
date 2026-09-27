@@ -3,12 +3,17 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::loss::Diagnostics;
+use std::io::{self, Write};
 use std::ops::Range;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, View,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
+use serde::ser::{SerializeMap, SerializeSeq};
+use serde::{Serialize, Serializer};
 
 use crate::mesh::MeshExpand;
 
@@ -296,28 +301,108 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn semantic_json(polyedge: &PersistentPolyEdge) -> Option<String> {
-    let segments = polyedge
-        .segments
-        .iter()
-        .map(|segment| {
-            serde_json::json!({
-                "object_id": segment.reference.object_id.to_string(),
-                "component": segment.reference.component,
-                "edge_domain": segment.reference.domains.edge,
-                "trim_domain": segment.reference.domains.trim,
-                "reversed": segment.reversed,
-                "domain": segment.domain,
-                "proxy_domain": segment.proxy_domain,
-            })
-        })
-        .collect::<Vec<_>>();
-    serde_json::to_string(&serde_json::json!({
-        "kind": "polyedge_reference",
-        "parameters": polyedge.parameters,
-        "segments": segments,
-    }))
-    .ok()
+const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
+
+struct SemanticJson<'a>(&'a PersistentPolyEdge);
+
+impl Serialize for SemanticJson<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("kind", "polyedge_reference")?;
+        map.serialize_entry("parameters", &self.0.parameters)?;
+        map.serialize_entry("segments", &SemanticSegments(&self.0.segments))?;
+        map.end()
+    }
+}
+
+struct SemanticSegments<'a>(&'a [Segment<PersistentReference, FiniteVector<2>>]);
+
+impl Serialize for SemanticSegments<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for segment in self.0 {
+            sequence.serialize_element(&SemanticSegment(segment))?;
+        }
+        sequence.end()
+    }
+}
+
+struct SemanticSegment<'a>(&'a Segment<PersistentReference, FiniteVector<2>>);
+
+impl Serialize for SemanticSegment<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(7))?;
+        map.serialize_entry("component", &self.0.reference.component)?;
+        map.serialize_entry("domain", &self.0.domain)?;
+        map.serialize_entry("edge_domain", &self.0.reference.domains.edge)?;
+        map.serialize_entry("object_id", &SemanticUuid(self.0.reference.object_id))?;
+        map.serialize_entry("proxy_domain", &self.0.proxy_domain)?;
+        map.serialize_entry("reversed", &self.0.reversed)?;
+        map.serialize_entry("trim_domain", &self.0.reference.domains.trim)?;
+        map.end()
+    }
+}
+
+struct SemanticUuid(Uuid);
+
+impl Serialize for SemanticUuid {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
+struct SemanticJsonWriter<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    bytes: Vec<u8>,
+    refusal: Option<CodecError>,
+}
+
+impl Write for SemanticJsonWriter<'_, '_> {
+    fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
+        let result = self
+            .ctx
+            .charge_retained(u64_from_index(chunk.len()), SEMANTIC_JSON_OPERATION)
+            .and_then(|()| {
+                self.bytes.try_reserve(chunk.len()).map_err(|_| {
+                    CodecError::ResourceLimit(ResourceLimit {
+                        dimension: ResourceDimension::RetainedBytes,
+                        reason: ResourceFailure::AllocationFailed,
+                        limit: u64::MAX,
+                        used: 0,
+                        additional: u64_from_index(chunk.len()),
+                        operation: SEMANTIC_JSON_OPERATION,
+                    })
+                })
+            });
+        if let Err(error) = result {
+            self.refusal = Some(error);
+            return Err(io::ErrorKind::Other.into());
+        }
+        self.bytes.extend_from_slice(chunk);
+        Ok(chunk.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(crate) fn semantic_json(
+    ctx: &DecodeContext<'_>,
+    polyedge: &PersistentPolyEdge,
+) -> Result<Option<String>, CodecError> {
+    let mut writer = SemanticJsonWriter {
+        ctx,
+        bytes: Vec::new(),
+        refusal: None,
+    };
+    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge));
+    if let Some(refusal) = writer.refusal {
+        return Err(refusal);
+    }
+    Ok(serialized
+        .ok()
+        .and_then(|()| String::from_utf8(writer.bytes).ok()))
 }
 
 #[cfg(test)]

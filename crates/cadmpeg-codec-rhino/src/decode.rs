@@ -1321,7 +1321,8 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
-        let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
+        let Some(construction) = crate::polyedge::semantic_json(self.expand.ctx(), &polyedge)?
+        else {
             self.scan_warning(source_order, "polyedge semantic serialization failed");
             return Ok(());
         };

@@ -1126,6 +1126,37 @@ fn embedded_polyedge_resource_refusal_is_not_an_absent_value() {
 }
 
 #[test]
+fn embedded_polyedge_semantic_json_refusal_is_not_an_absent_value() {
+    let bytes = crate::polyedge::tests::polyedge_payload();
+    let geometry = EmbeddedGeometry {
+        class_id: crate::polyedge::CURVE_CLASS,
+        class_data_range: 0..bytes.len(),
+        userdata: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut refusal = None;
+    assert!(extended_geometry_json(
+        crate::mesh::MeshExpand::new(&ctx, root),
+        &geometry,
+        ArchiveVersion::V8,
+        None,
+        MillimeterScale::IDENTITY,
+        &mut Diagnostics::new(),
+        &mut refusal,
+    )
+    .is_none());
+    assert!(matches!(
+        refusal,
+        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino polyedge semantic JSON"
+    ));
+}
+
+#[test]
 fn scan_retains_history_record_source_boundaries() {
     let archive = ArchiveVersion::V5;
     let history_record = crc_chunk(archive, 0x2000_807b, &[1, 2, 3, 4]);
