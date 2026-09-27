@@ -86,10 +86,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.paired_class_tag.as_str(), "261");
     assert_eq!(scope.paired_byte_offset(), paired_at as u64);
     let discovered =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        )
+        ).unwrap()
         .into_iter()
         .filter_map(|header| {
             parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
