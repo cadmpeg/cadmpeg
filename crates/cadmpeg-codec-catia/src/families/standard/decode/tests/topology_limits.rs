@@ -80,3 +80,54 @@ fn standard_topology_charges_deferred_and_ordered_endpoint_arrays() {
     assert!(operations.contains("catia_deferred_port_edges"));
     assert!(operations.contains("catia_ordered_endpoint_pairs"));
 }
+
+#[test]
+fn standard_topology_candidate_maps_refuse_before_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
+    let scan = crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, bytes.clone()))
+        .expect("service resource budget");
+    let expected = [
+        "catia_standard_surface_indices",
+        "catia_standard_endpoint_candidate_rows",
+        "catia_face_incidence_points",
+        "catia_face_incidence_rows",
+        "catia_incidence_right_points",
+        "catia_incidence_shared_points",
+        "catia_incidence_candidate_rows",
+        "catia_incidence_candidate_copy",
+        "catia_native_port_options",
+    ];
+    let mut operations = BTreeSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("topology fixture fits input limit");
+        match crate::families::standard::decode::try_decode_standard(&ctx, &scan, &mut crate::nurbs::LaneRefusals::new()) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+                let next = error.used + error.additional;
+                assert!(next > limit, "a refusal advances the collection cap");
+                limit = next;
+                if expected.iter().all(|operation| operations.contains(operation)) {
+                    limit = DecodePolicy::service().limits.max_collection_items;
+                }
+            }
+            Ok(Some(_)) => { completed = true; break; }
+            Ok(None) => panic!("tetrahedron fixture must decode"),
+            Err(error) => panic!("unexpected topology refusal: {error}"),
+        }
+    }
+    assert!(completed, "adaptive caps must admit the fixture");
+    for operation in expected {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}

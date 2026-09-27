@@ -153,8 +153,8 @@ fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
         &edge_faces,
         &mut allowed_faces,
         Some(&face_bounds),
-        Some(&face_geometries),
-        &edge_geometries,
+        Some(&face_geometries.iter().collect::<Vec<_>>()),
+        &edge_geometries.iter().collect::<Vec<_>>(),
     );
     assert_eq!(allowed_faces, vec![vec![1]]);
 }
