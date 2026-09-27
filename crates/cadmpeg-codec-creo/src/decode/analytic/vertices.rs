@@ -305,12 +305,16 @@ fn restrict_planar_conic_to_chart(
     }
 }
 
-fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
+fn conic_conic_intersections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    first: &CurveGeometry,
+    second: &CurveGeometry,
+) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let Some(first_equation) = planar_conic_equation(first) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(second_equation) = planar_conic_equation(second) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let normal_cross = cross(first_equation.normal, second_equation.normal);
     if dot(normal_cross, normal_cross) > 1e-18 {
@@ -324,18 +328,18 @@ fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> V
                 normal: second_equation.normal,
             },
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::from(origin),
             Vector3::from(direction),
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
         let mut points = line_conic_intersections(&line, first);
         points.retain(|point| curve_contains_points(second, [*point, *point]));
-        return points;
+        return Ok(points);
     }
     let delta: [f64; 3] = std::array::from_fn(|coordinate| {
         second_equation.origin[coordinate] - first_equation.origin[coordinate]
@@ -350,7 +354,7 @@ fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> V
             f64::max,
         );
     if dot(delta, first_equation.normal).abs() > EPS_AGREE * scale {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let first_chart = restrict_planar_conic_to_chart(
         first_equation,
@@ -364,7 +368,9 @@ fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> V
         first_equation.x_axis,
         first_equation.y_axis,
     );
-    common_plane_conic_parameters(first_chart, second_chart)
+    let parameters = common_plane_conic_parameters(ctx, first_chart, second_chart)?;
+    ctx.charge_collection_items(parameters.len() as u64, "creo conic model intersections")?;
+    Ok(parameters
         .into_iter()
         .map(|[u, v]| {
             std::array::from_fn(|coordinate| {
@@ -377,19 +383,23 @@ fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> V
             curve_contains_points(first, [*point, *point])
                 && curve_contains_points(second, [*point, *point])
         })
-        .collect()
+        .collect())
 }
 
-fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
+fn incident_analytic_vertex_domain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curves: &[&CurveGeometry],
+) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     for first in 0..curves.len() {
         for second in first + 1..curves.len() {
+            let conic_points = conic_conic_intersections(ctx, curves[first], curves[second])?;
             candidates.extend(
                 line_line_intersection(curves[first], curves[second])
                     .into_iter()
                     .chain(line_conic_intersections(curves[first], curves[second]))
                     .chain(line_conic_intersections(curves[second], curves[first]))
-                    .chain(conic_conic_intersections(curves[first], curves[second])),
+                    .chain(conic_points),
             );
         }
     }
@@ -398,7 +408,7 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
             .iter()
             .all(|curve| curve_contains_points(curve, [*point, *point]))
     });
-    candidates
+    Ok(candidates
         .into_iter()
         .fold(Vec::new(), |mut unique, point| {
             // A candidate outside the finite range agrees with no other
@@ -411,7 +421,7 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
                 unique.push(point);
             }
             unique
-        })
+        }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -468,12 +478,13 @@ pub(in crate::decode) struct SolvedTopologicalVertices {
 }
 
 pub(in crate::decode) fn solve_topological_vertices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> SolvedTopologicalVertices {
+) -> Result<SolvedTopologicalVertices, cadmpeg_core::CodecError> {
     let mut diagnostics = TopologicalVertexSolveDiagnostics {
         topological_vertices: scan.topology.vertices.len(),
         ..TopologicalVertexSolveDiagnostics::default()
@@ -499,7 +510,8 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         }
         diagnostics.carrier_incident_vertices += 1;
-        let (point, carrier_diagnostics) = solve_carriers_with_diagnostics(&incident_carriers);
+        let (point, carrier_diagnostics) =
+            solve_carriers_with_diagnostics(ctx, &incident_carriers)?;
         diagnostics.carrier_pair_candidates += carrier_diagnostics.pair_intersections;
         diagnostics.carrier_triple_candidates += carrier_diagnostics.triple_intersections;
         diagnostics.carrier_valid_candidates += carrier_diagnostics.valid_candidates;
@@ -542,7 +554,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
-        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers);
+        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers)?;
     diagnostics.pcurve = pcurve_diagnostics;
     let edge_endpoints = endpoint_evidence
         .into_iter()
@@ -670,13 +682,13 @@ pub(in crate::decode) fn solve_topological_vertices(
             (!curves.is_empty()).then_some((vertex.id, curves))
         })
         .collect::<BTreeMap<_, _>>();
-    let analytic_domains = incident_curves
-        .iter()
-        .filter_map(|(vertex, curves)| {
-            let candidates = incident_analytic_vertex_domain(curves);
-            (!candidates.is_empty()).then_some((*vertex, candidates))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut analytic_domains = BTreeMap::new();
+    for (vertex, curves) in &incident_curves {
+        let candidates = incident_analytic_vertex_domain(ctx, curves)?;
+        if !candidates.is_empty() {
+            analytic_domains.insert(*vertex, candidates);
+        }
+    }
     diagnostics.analytic_domain_vertices = analytic_domains.len();
     let points = solve_pcurve_vertex_domains_with_authoritative_points(
         &constraints,
@@ -686,27 +698,29 @@ pub(in crate::decode) fn solve_topological_vertices(
         &authoritative_points,
     );
     diagnostics.solved_vertices = points.len();
-    SolvedTopologicalVertices {
+    Ok(SolvedTopologicalVertices {
         points,
         diagnostics,
-    }
+    })
 }
 
 pub(in crate::decode) fn solved_topological_vertices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> BTreeMap<u32, [f64; 3]> {
-    solve_topological_vertices(
+) -> Result<BTreeMap<u32, [f64; 3]>, cadmpeg_core::CodecError> {
+    Ok(solve_topological_vertices(
+        ctx,
         scan,
         ir,
         carriers,
         nurbs_endpoint_witnesses,
         source_carriers,
-    )
-    .points
+    )?
+    .points)
 }
 
 #[cfg(test)]
@@ -771,10 +785,14 @@ mod tests {
     }
 
     fn stated_parameters(first: PlanarConicEquation, second: PlanarConicEquation) -> Vec<[f64; 2]> {
-        common_plane_conic_parameters(
-            restrict_planar_conic_to_chart(first, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
-            restrict_planar_conic_to_chart(second, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
-        )
+        crate::decode::with_test_decode_ctx(|ctx| {
+            common_plane_conic_parameters(
+                ctx,
+                restrict_planar_conic_to_chart(first, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
+                restrict_planar_conic_to_chart(second, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
+            )
+        })
+        .expect("conic parameters")
     }
 
     #[test]

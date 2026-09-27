@@ -8,11 +8,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// Sketch-profile selection frame named by a profile-based feature scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignSketchProfileOperandWire",
-    into = "DesignSketchProfileOperandWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignSketchProfileOperandWire")]
 pub(crate) struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
     pub(crate) scope_reference_ordinal: u32,
@@ -37,6 +34,31 @@ pub(crate) struct DesignSketchProfileOperand {
     paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     paired_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_PROFILE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignSketchProfileOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_PROFILE_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            asset_id: self.asset_id.clone(),
+            asset_id_offset: self.asset_id_offset,
+            entity_id: self.entity_id.clone(),
+            entity_reference_offset: self.entity_reference_offset,
+            region_selection: self.region_selection.clone(),
+            paired_class_tag: self.paired_class_tag.clone(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
 }
 
 impl DesignSketchProfileOperand {
@@ -64,6 +86,7 @@ impl DesignSketchProfileOperand {
         };
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignSketchProfileOperandDraft {
         DesignSketchProfileOperandDraft {
             scope_reference_ordinal: self.scope_reference_ordinal,
@@ -84,6 +107,42 @@ impl DesignSketchProfileOperand {
     }
     pub(crate) fn paired_byte_offset(&self) -> u64 {
         self.paired_byte_offset
+    }
+}
+
+impl Serialize for DesignSketchProfileOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            scope_reference_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            entity_id: &'a str,
+            entity_suffix: u64,
+            entity_reference_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            region_selection: Option<&'a DesignSketchProfileRegionSelection>,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        WireRef {
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset,
+            entity_id: &self.entity_id.text,
+            entity_suffix: self.entity_id.suffix(),
+            entity_reference_offset: self.entity_reference_offset,
+            region_selection: self.region_selection.as_ref(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -171,6 +230,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
     fn from(value: DesignSketchProfileOperand) -> Self {
         let value = value.into_draft();
@@ -221,7 +281,7 @@ pub(crate) struct DesignSketchProfileRegion {
 }
 
 /// One fixed-width persistent curve member of a selected sketch region.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignSketchProfileRegionMemberWire",
     into = "DesignSketchProfileRegionMemberWire"

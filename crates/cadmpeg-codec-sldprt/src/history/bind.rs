@@ -185,8 +185,9 @@ fn sketch_alias_base_name(name: &str) -> Option<&str> {
 /// explicit dependency before its consumer. Native history ordinals retain the
 /// independent Keywords serialization order.
 pub(crate) fn order_features_for_regeneration(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let tree_parent_by_child = features
         .iter()
         .filter_map(|feature| {
@@ -209,20 +210,16 @@ pub(crate) fn order_features_for_regeneration(
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let Ok(mut outgoing) = cadmpeg_core::decode::alloc_filled(
+    let mut outgoing = ctx.alloc_filled(
         features.len(),
         Vec::<usize>::new(),
         "sldprt feature regeneration adjacency",
-    ) else {
-        return false;
-    };
-    let Ok(mut indegree) = cadmpeg_core::decode::alloc_filled(
+    )?;
+    let mut indegree = ctx.alloc_filled(
         features.len(),
         0usize,
         "sldprt feature regeneration indegree",
-    ) else {
-        return false;
-    };
+    )?;
     for (consumer, feature) in features.iter().enumerate() {
         let mut predecessors = feature
             .dependencies
@@ -258,17 +255,20 @@ pub(crate) fn order_features_for_regeneration(
         }
     }
     if order.len() != features.len() {
-        return false;
+        return Ok(false);
     }
     for (ordinal, index) in order.into_iter().enumerate() {
         features[index].ordinal = ordinal as u64;
     }
-    true
+    Ok(true)
 }
 
 /// Assign one regeneration order that satisfies the baseline feature graph and
 /// every configuration-local feature graph.
-pub(crate) fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool {
+pub(crate) fn order_model_features_for_regeneration(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut ordering_graph = ir.model.features.clone();
     let by_id = ordering_graph
         .iter()
@@ -298,8 +298,8 @@ pub(crate) fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) 
             }
         }
     }
-    if !order_features_for_regeneration(&mut ordering_graph) {
-        return false;
+    if !order_features_for_regeneration(ctx, &mut ordering_graph)? {
+        return Ok(false);
     }
     let ordinals = ordering_graph
         .into_iter()
@@ -308,7 +308,7 @@ pub(crate) fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) 
     for feature in &mut ir.model.features {
         feature.ordinal = ordinals[&feature.id];
     }
-    true
+    Ok(true)
 }
 
 /// Mutable references to every side an extrusion extent carries.

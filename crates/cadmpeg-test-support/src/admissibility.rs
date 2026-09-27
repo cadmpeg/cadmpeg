@@ -71,7 +71,7 @@ mod tests {
 
     /// Rhino draft gate today: full annotations validation minus `ArenaOrder`.
     fn rhino_draft_gate(ir: &CadIr, annotations: &Annotations) -> bool {
-        let mut validation = validate_neutral_with_annotations(ir, annotations, Vec::new());
+        let mut validation = validate_neutral_with_annotations(ir, annotations, Vec::new()).expect("resource allocation did not fail");
         validation
             .findings
             .retain(|finding| finding.check != Check::ArenaOrder);
@@ -80,14 +80,14 @@ mod tests {
 
     /// Rhino instance gate today: full neutral validation.
     fn rhino_instance_gate(ir: &CadIr) -> bool {
-        validate_neutral(ir, Vec::new()).is_ok()
+        validate_neutral(ir, Vec::new()).expect("resource allocation did not fail").is_ok()
     }
 
     #[test]
     fn freeze_accepted_empty_under_current_gates() {
         let ir = accepted_empty();
         let annotations = Annotations::default();
-        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
         assert!(rhino_draft_gate(&ir, &annotations));
         assert!(rhino_instance_gate(&ir));
     }
@@ -96,7 +96,7 @@ mod tests {
     fn freeze_rejected_missing_point_under_current_gates() {
         let ir = rejected_missing_point("test:model").expect("valid identity");
         let annotations = Annotations::default();
-        let report = validate_neutral(&ir, Vec::new());
+        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
         assert!(!report.is_ok(), "{report:?}");
         assert!(report
             .findings
@@ -110,7 +110,7 @@ mod tests {
     fn freeze_rejected_missing_region_under_current_gates() {
         let ir = rejected_missing_region("test:model").expect("valid identity");
         let annotations = Annotations::default();
-        assert!(!validate_neutral(&ir, Vec::new()).is_ok());
+        assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
         assert!(!rhino_draft_gate(&ir, &annotations));
         assert!(!rhino_instance_gate(&ir));
     }

@@ -1,18 +1,20 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology, TrimRecord,
+    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardIncidenceEvidence, StandardTopology,
+    TrimRecord,
 };
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
-use crate::solve::incidence::reconstruct_incidence_candidates;
+use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
@@ -35,14 +37,18 @@ const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1.0e-6;
 /// the unique largest contiguous stride-eight FBB run; shorter marker runs are
 /// not members of this face population. Equal-largest runs leave ownership
 /// unresolved.
-#[must_use]
-pub(super) fn standard_face_count(bytes: &[u8]) -> Option<usize> {
-    let selected = selected_standard_run(bytes)?;
+pub(super) fn standard_face_count(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some(selected) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let layouts = fbb_population_layouts(bytes);
     if layouts.is_empty() || layouts.iter().any(|layout| layout.face_run == selected) {
-        Some(selected.face_count())
+        Ok(Some(selected.face_count()))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -50,11 +56,15 @@ pub(super) fn standard_face_count(bytes: &[u8]) -> Option<usize> {
 ///
 /// The count is available without solving trim incidence or mesh topology,
 /// so it can gate the independent `0x60` support-table walk.
-#[must_use]
-pub(crate) fn standard_edge_count(bytes: &[u8]) -> Option<usize> {
-    let face_run = selected_standard_run(bytes)?;
+pub(crate) fn standard_edge_count(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len())
+    Ok(parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len()))
 }
 
 /// Number of physical edge rows in the width-selected FBB-only tables.
@@ -66,13 +76,22 @@ pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
 }
 
 /// RGBA display color for each positional standard face row.
-#[must_use]
-pub(crate) fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
-    let face_run = selected_standard_run(bytes)?;
+pub(crate) fn standard_face_colors(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<[u8; 4]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let start = face_run.face_start();
     let count = face_run.face_count();
-    let marker: [u8; 4] = bytes.get(start..start + fbb_row::ALPHA)?.try_into().ok()?;
-    (0..count)
+    let Some(marker) = bytes
+        .get(start..start + fbb_row::ALPHA)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+    else {
+        return Ok(None);
+    };
+    Ok((0..count)
         .map(|index| {
             let row =
                 bytes.get(start + index * fbb_row::LEN..start + (index + 1) * fbb_row::LEN)?;
@@ -83,7 +102,7 @@ pub(crate) fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
                 row[fbb_row::ALPHA],
             ])
         })
-        .collect()
+        .collect())
 }
 
 fn trim_frame_vectors(
@@ -111,11 +130,11 @@ fn trim_frame_vectors(
 /// `expected_face_count`, the result concatenates those population-local
 /// vectors in source order; otherwise it uses the established
 /// single-population selection.
-#[must_use]
 pub(super) fn standard_face_frame_vectors(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_face_count: usize,
-) -> Vec<Option<FiniteVector<3>>> {
+) -> Result<Vec<Option<FiniteVector<3>>>, CodecError> {
     let runs = crate::container::fbb_run_ranges(bytes);
     if runs.len() > 1 {
         let combined = runs
@@ -125,22 +144,26 @@ pub(super) fn standard_face_frame_vectors(
         if let Some(vectors) = combined
             .filter(|vectors| vectors.iter().map(Vec::len).sum::<usize>() == expected_face_count)
         {
-            return vectors.into_iter().flatten().collect();
+            return Ok(vectors.into_iter().flatten().collect());
         }
     }
-    let Some(face_run) = selected_standard_run(bytes) else {
-        return Vec::new();
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(Vec::new());
     };
-    trim_frame_vectors(bytes, face_run.face_start(), face_run.face_count()).unwrap_or_default()
+    Ok(trim_frame_vectors(bytes, face_run.face_start(), face_run.face_count()).unwrap_or_default())
 }
 
 /// Return the counted vertex table of an admitted standard nested spine.
-#[must_use]
-pub(super) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
-    let face_run = selected_standard_run(bytes)?;
+pub(super) fn standard_vertex_points(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (_, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    parse_vertex_points(bytes, vertex_header)
+    Ok(parse_standard_edge_tables(bytes, after_faces)
+        .and_then(|(_, vertex_header)| parse_vertex_points(bytes, vertex_header)))
 }
 
 /// Coordinates from the counted vertex table following a complete FBB-only
@@ -156,41 +179,63 @@ pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> 
 /// Parses the counted standard spine, positional trim packets, mesh boundary
 /// cycles, physical edge uses, and port/corner vertex equivalence classes.
 /// Returns `None` unless every positional face boundary is unambiguous.
-#[must_use]
-pub(crate) fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+pub(crate) fn parse_standard(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header, handle_width) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    reconstruct(edge_rows, vertex_points, &trims)
+    let Some((edge_rows, vertex_header, handle_width)) =
+        parse_standard_edge_tables_with_width(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    reconstruct(ctx, edge_rows, vertex_points, &trims)
 }
 
 /// Reconstruct regular-motif standard topology by replaying the trim packet's
 /// vertex-allocation program. The allocation is accepted only when it covers
 /// the complete vertex table and reproduces every supplied circle endpoint
 /// anchor.
-#[must_use]
 pub(super) fn parse_standard_motif(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     circle_anchors: &[Option<[usize; 2]>],
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header, handle_width) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header, handle_width)) =
+        parse_standard_edge_tables_with_width(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
-        return None;
+        return Ok(None);
     }
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    let port_points = motif_port_points(&trims, vertex_points.len())?;
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
+        return Ok(None);
+    };
     let edge_points = edge_rows
         .iter()
         .map(|row| {
@@ -199,7 +244,10 @@ pub(super) fn parse_standard_motif(
                 *port_points.get(row.handles.last()?)?,
             ])
         })
-        .collect::<Option<Vec<[usize; 2]>>>()?;
+        .collect::<Option<Vec<[usize; 2]>>>();
+    let Some(edge_points) = edge_points else {
+        return Ok(None);
+    };
     let anchors_match = edge_points
         .iter()
         .zip(circle_anchors)
@@ -212,9 +260,10 @@ pub(super) fn parse_standard_motif(
             })
         });
     if !anchors_match {
-        return None;
+        return Ok(None);
     }
     reconstruct_incidence(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
@@ -225,18 +274,24 @@ pub(super) fn parse_standard_motif(
 
 /// Reconstruct standard topology while treating equal curve-class identifiers
 /// as interchangeable serialized edge rows during incidence-slot completion.
-#[must_use]
 pub(super) fn parse_standard_endpoints_with_edge_classes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_points.len()
         || edge_classes.is_some_and(|classes| classes.len() != edge_rows.len())
@@ -245,16 +300,19 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
     reconstruct_incidence_with_edge_classes_and_mesh(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        Some(bytes),
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: Some(bytes),
+        },
     )
 }
 
@@ -367,18 +425,24 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
 /// indistinguishable line rows. The selected assignment must close every face
 /// cycle and satisfy radial orientation. Search charges the supplied topology
 /// phase budget.
-#[must_use]
 pub(super) fn parse_standard_endpoint_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_candidates.iter().any(Vec::is_empty)
@@ -388,15 +452,18 @@ pub(super) fn parse_standard_endpoint_candidates(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
 
     reconstruct_incidence_candidates(
+        ctx,
         &edge_rows,
         &vertex_points,
         edge_faces,
-        edge_candidates,
-        None,
+        IncidenceEndpointDomains {
+            candidates: edge_candidates,
+            ports: None,
+        },
         face_count,
         budget,
     )
@@ -405,19 +472,25 @@ pub(super) fn parse_standard_endpoint_candidates(
 /// Reconstruct standard topology from geometric endpoint candidates while
 /// enforcing the serialized endpoint-port equality quotient during search.
 /// Search charges the supplied topology phase budget.
-#[must_use]
 pub(super) fn parse_standard_port_endpoint_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_ports: &[[u32; 2]],
     budget: &WorkBudget<'_>,
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, cadmpeg_core::CodecError> {
+    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
         || edge_rows.len() != edge_ports.len()
@@ -428,14 +501,17 @@ pub(super) fn parse_standard_port_endpoint_candidates(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
     reconstruct_incidence_candidates(
+        ctx,
         &edge_rows,
         &vertex_points,
         edge_faces,
-        edge_candidates,
-        Some(edge_ports),
+        IncidenceEndpointDomains {
+            candidates: edge_candidates,
+            ports: Some(edge_ports),
+        },
         face_count,
         budget,
     )
@@ -449,18 +525,24 @@ pub(super) fn parse_standard_port_endpoint_candidates(
 /// the native endpoint registry has already selected every pair, face
 /// incidence can be closed directly. This path does not infer endpoint
 /// identities from trim order.
-#[must_use]
 pub(super) fn parse_fbb_endpoints_with_edge_classes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-) -> Option<StandardTopology> {
-    let face_run = largest_fbb_run(bytes)?;
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let Some((edge_rows, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_points.len()
         || edge_classes.is_some_and(|classes| classes.len() != edge_rows.len())
@@ -469,16 +551,19 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return None;
+        return Ok(None);
     }
     reconstruct_incidence_with_edge_classes_and_mesh(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
         edge_points,
         face_count,
-        edge_classes,
-        Some(bytes),
+        StandardIncidenceEvidence {
+            edge_classes,
+            mesh_bytes: Some(bytes),
+        },
     )
 }
 
@@ -681,12 +766,19 @@ impl FbbFaceRun {
 /// The result is intentionally not reduced to the largest run. A caller that
 /// has a single result may select it; a caller that has multiple results must
 /// bind their carrier and incidence rosters before creating neutral bodies.
-#[must_use]
-pub(super) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
-    crate::container::fbb_run_ranges(bytes)
-        .into_iter()
-        .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
-        .collect()
+pub(super) fn standard_fbb_groups(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<FbbFaceRun>, CodecError> {
+    let mut groups = Vec::new();
+    for range in crate::container::fbb_run_ranges(bytes) {
+        if let Some(group) =
+            parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
+        {
+            groups.push(group);
+        }
+    }
+    Ok(groups)
 }
 
 /// Grammar of a population's edge tables.
@@ -782,29 +874,45 @@ pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
         .collect()
 }
 
-fn parse_standard_group(bytes: &[u8], face_start: usize, face_count: usize) -> Option<FbbFaceRun> {
-    let face_run = FbbFaceRun::try_new(face_start, face_count)?;
+fn parse_standard_group(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    face_start: usize,
+    face_count: usize,
+) -> Result<Option<FbbFaceRun>, CodecError> {
+    let Some(face_run) = FbbFaceRun::try_new(face_start, face_count) else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header, handle_width) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
-    reconstruct(edge_rows, vertex_points, &trims)?;
-    Some(face_run)
+    let Some((edge_rows, vertex_header, handle_width)) =
+        parse_standard_edge_tables_with_width(bytes, after_faces)
+    else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    Ok(reconstruct(ctx, edge_rows, vertex_points, &trims)?.map(|_| face_run))
 }
 
-pub(crate) fn selected_standard_run(bytes: &[u8]) -> Option<FbbFaceRun> {
+pub(crate) fn selected_standard_run(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<FbbFaceRun>, CodecError> {
     let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
-        return FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN);
+        return Ok(FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN));
     }
-    let groups = standard_fbb_groups(bytes);
-    match groups.as_slice() {
+    let groups = standard_fbb_groups(ctx, bytes)?;
+    Ok(match groups.as_slice() {
         [group] => Some(*group),
         [] => largest_fbb_run(bytes),
         _ => None,
-    }
+    })
 }
 
 pub(crate) fn largest_fbb_run(bytes: &[u8]) -> Option<FbbFaceRun> {
@@ -848,12 +956,87 @@ mod appearance_tests {
             0xb0, 4, 4, 0xff, 0x99, 0x1f, 0x1a, 0xd1, 0xb0, 4, 4, 0xff, 0xff, 0xe0, 0x3d, 0x14,
         ];
         assert_eq!(
-            standard_face_colors(&bytes),
+            crate::test_support::with_service_context(|ctx| standard_face_colors(ctx, &bytes))
+                .expect("service resource budget"),
             Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
         );
         let mut mixed = bytes;
         mixed[8] = 0x30;
-        assert_eq!(standard_face_colors(&mixed), None);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| standard_face_colors(ctx, &mixed))
+                .expect("service resource budget"),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
+mod allocation_tests {
+    use super::{parse_standard, standard_face_count};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    fn assert_coverage_refusal(
+        bytes: &[u8],
+        run: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecError>,
+    ) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("fixture fits the input limit");
+        let error = run(&ctx).expect_err("boundary coverage exceeds the collection limit");
+        match error {
+            CodecError::ResourceLimit(limit) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                assert_eq!(limit.operation, "catia FBB boundary coverage");
+            }
+            other => panic!("expected collection resource limit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fbb_boundary_coverage_propagates_collection_refusal() {
+        let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+        crate::test_support::with_service_context(|ctx| {
+            assert!(parse_standard(ctx, &bytes)
+                .expect("service resource budget")
+                .is_some());
+        });
+        assert_coverage_refusal(&bytes, |ctx| {
+            parse_standard(ctx, &bytes)?;
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn fbb_only_boundary_coverage_propagates_collection_refusal() {
+        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+        crate::test_support::with_service_context(|ctx| {
+            assert!(crate::families::standard::topology::parse_fbb(ctx, &bytes)
+                .expect("service resource budget")
+                .is_some());
+        });
+        assert_coverage_refusal(&bytes, |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn multiple_standard_runs_propagate_coverage_refusal_during_selection() {
+        let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+        bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(
+                standard_face_count(ctx, &bytes).expect("service resource budget"),
+                None
+            );
+        });
+        assert_coverage_refusal(&bytes, |ctx| {
+            standard_face_count(ctx, &bytes)?;
+            Ok(())
+        });
     }
 }
 
@@ -1416,14 +1599,20 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
 }
 
 pub(super) fn cover_cycle(
+    ctx: &DecodeContext<'_>,
     cycle: &[u32],
     rows: &[EdgeRow],
     union: &mut UnionFind,
-) -> Option<Boundary> {
-    cover_cycle_by_rows(cycle, rows, union)
+) -> Result<Option<Boundary>, CodecError> {
+    cover_cycle_by_rows(ctx, cycle, rows, union)
 }
 
-fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -> Option<Boundary> {
+fn cover_cycle_by_rows(
+    ctx: &DecodeContext<'_>,
+    cycle: &[u32],
+    rows: &[EdgeRow],
+    union: &mut UnionFind,
+) -> Result<Option<Boundary>, CodecError> {
     let length = cycle.len();
     let mut matches = Vec::new();
     for (edge_row, row) in rows.iter().enumerate() {
@@ -1449,25 +1638,29 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         }
         if row_matches.len() == 1 {
             let (start, reversed) = row_matches[0];
-            let (boundary_start, segment_count) = row.boundary_span(start, length)?;
+            let Some((boundary_start, segment_count)) = row.boundary_span(start, length) else {
+                return Ok(None);
+            };
             matches.push((boundary_start, segment_count, edge_row, reversed));
         } else if !row_matches.is_empty() {
-            return None;
+            return Ok(None);
         }
     }
     if matches.is_empty() {
-        return None;
+        return Ok(None);
     }
-
-    let mut coverage = alloc_filled(length, 0_u8, "catia FBB boundary coverage").ok()?;
+    let mut coverage = ctx.alloc_filled(length, 0_u8, "catia FBB boundary coverage")?;
     for &(start, edge_count, _, _) in &matches {
         for offset in 0..edge_count {
-            coverage[(start + offset) % length] =
-                coverage[(start + offset) % length].checked_add(1)?;
+            let index = (start + offset) % length;
+            let Some(count) = coverage[index].checked_add(1) else {
+                return Ok(None);
+            };
+            coverage[index] = count;
         }
     }
     if coverage.iter().any(|count| *count != 1) {
-        return None;
+        return Ok(None);
     }
     matches.sort_by_key(|entry| entry.0 % length);
     let mut corner_nodes = HashMap::new();
@@ -1498,7 +1691,7 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
             end_vertex: end_node,
         });
     }
-    Boundary::new(coedges)
+    Ok(Boundary::new(coedges))
 }
 
 #[cfg(test)]
@@ -1533,13 +1726,19 @@ mod endpoint_tests {
 
     #[test]
     fn fbb_endpoint_reconstruction_uses_the_native_edge_pairs() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
         let bytes = synthetic_fbb_triangle();
         let topology = parse_fbb_endpoints_with_edge_classes(
+            &ctx,
             &bytes,
             &[[0, 1], [0, 1], [0, 1]],
             &[[0, 1], [1, 2], [0, 2]],
             Some(&[0, 1, 2]),
         )
+        .expect("service resource budget")
         .expect("native endpoint pairs close the FBB face");
 
         assert_eq!(topology.face_count(), 2);
@@ -1548,7 +1747,12 @@ mod endpoint_tests {
             topology.vertex_points(),
             &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(topology.edge_vertices(), Some(vec![[0, 1], [1, 2], [0, 2]]));
+        assert_eq!(
+            topology
+                .edge_vertices(&ctx)
+                .expect("service resource budget"),
+            Some(vec![[0, 1], [1, 2], [0, 2]])
+        );
     }
 }
 

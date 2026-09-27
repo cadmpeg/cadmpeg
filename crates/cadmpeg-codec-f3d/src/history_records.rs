@@ -561,8 +561,9 @@ pub(crate) struct AsmHistoricalTopologyDelta {
     pub(crate) pcurves: AsmHistoricalEntityDelta,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AsmHistoryRecordWire", into = "AsmHistoryRecordWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
     pub(crate) id: String,
     pub(crate) parent: String,
@@ -570,6 +571,70 @@ pub(crate) struct AsmHistoryRecord {
     pub(crate) byte_offset: u64,
     pub(crate) framing: AsmHistoryRecordFraming,
     pub(crate) raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static HISTORY_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for AsmHistoryRecord {
+    fn clone(&self) -> Self {
+        HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            parent: self.parent.clone(),
+            revision_id: self.revision_id,
+            byte_offset: self.byte_offset,
+            framing: self.framing.clone(),
+            raw_bytes: self.raw_bytes.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AsmHistoryRecordWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision_id: Option<i64>,
+    index: u64,
+    byte_offset: u64,
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    framing_error: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+    entity_references: &'a [i64],
+    #[serde(with = "cadmpeg_ir::bytes")]
+    raw_bytes: &'a [u8],
+}
+
+impl Serialize for AsmHistoryRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (index, name, framing_error, entity_references) = match &self.framing {
+            AsmHistoryRecordFraming::Framed {
+                index,
+                name,
+                entity_references,
+            } => (*index, name.as_str(), None, entity_references.as_slice()),
+            AsmHistoryRecordFraming::Opaque { error } => {
+                (0, "opaque_history_payload", Some(error.as_str()), &[][..])
+            }
+        };
+        AsmHistoryRecordWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            revision_id: self.revision_id,
+            index,
+            byte_offset: self.byte_offset,
+            name,
+            framing_error,
+            entity_references,
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -600,7 +665,8 @@ impl AsmHistoryRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
@@ -664,6 +730,7 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
     }
 }
 
+#[cfg(test)]
 impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
     fn from(record: AsmHistoryRecord) -> Self {
         let (index, name, framing_error, entity_references) = match record.framing {
@@ -700,13 +767,69 @@ pub(crate) struct AsmBulletinBoard {
     pub(crate) changes: Vec<AsmEntityChange>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AsmEntityChangeSerde", into = "AsmEntityChangeSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
     pub(crate) id: String,
     pub(crate) parent: String,
     pub(crate) byte_offset: u64,
     pub(crate) kind: AsmEntityChangeKind,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ENTITY_CHANGE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for AsmEntityChange {
+    fn clone(&self) -> Self {
+        ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            parent: self.parent.clone(),
+            byte_offset: self.byte_offset,
+            kind: self.kind,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AsmEntityChangeWireRef<'a> {
+    id: &'a str,
+    parent: &'a str,
+    byte_offset: u64,
+    kind: AsmEntityChangeKindWire,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_ref: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_ref: Option<i64>,
+}
+
+impl Serialize for AsmEntityChange {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (kind, old_ref, new_ref) = match self.kind {
+            AsmEntityChangeKind::Insert { new } => {
+                (AsmEntityChangeKindWire::Insert, None, Some(new))
+            }
+            AsmEntityChangeKind::Delete { old } => {
+                (AsmEntityChangeKindWire::Delete, Some(old), None)
+            }
+            AsmEntityChangeKind::Update { old, new } => {
+                (AsmEntityChangeKindWire::Update, Some(old), Some(new))
+            }
+        };
+        AsmEntityChangeWireRef {
+            id: &self.id,
+            parent: &self.parent,
+            byte_offset: self.byte_offset,
+            kind,
+            old_ref,
+            new_ref,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -736,7 +859,8 @@ impl AsmEntityChange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
@@ -791,6 +915,7 @@ impl TryFrom<AsmEntityChangeSerde> for AsmEntityChange {
     }
 }
 
+#[cfg(test)]
 impl From<AsmEntityChange> for AsmEntityChangeSerde {
     fn from(change: AsmEntityChange) -> Self {
         let (kind, old_ref, new_ref) = match change.kind {
@@ -818,6 +943,160 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
 #[cfg(test)]
 mod tests {
     use super::{AsmDeltaState, AsmHistoricalTopology, AsmTopologyCache};
+
+    #[test]
+    fn history_record_borrowed_wire_matches_owned_wire_bytes() {
+        use super::{AsmHistoryRecord, AsmHistoryRecordFraming, AsmHistoryRecordWire};
+
+        for framing in [
+            AsmHistoryRecordFraming::Framed {
+                index: 4,
+                name: "edge".into(),
+                entity_references: vec![7, -1],
+            },
+            AsmHistoryRecordFraming::Opaque {
+                error: "invalid frame".into(),
+            },
+        ] {
+            let record = AsmHistoryRecord {
+                id: "f3d:native:history_record#1".into(),
+                parent: "f3d:native:state#1".into(),
+                revision_id: Some(7),
+                byte_offset: 12,
+                framing,
+                raw_bytes: b"history payload".to_vec(),
+            };
+            let old = AsmHistoryRecordWire::from(record.clone());
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&old).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn history_record_native_retained_limit_refuses_before_raw_bytes_clone() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let record = super::AsmHistoryRecord {
+            id: "f3d:native:history_record#1".into(),
+            parent: "f3d:native:state#1".into(),
+            revision_id: Some(7),
+            byte_offset: 12,
+            framing: super::AsmHistoryRecordFraming::Framed {
+                index: 4,
+                name: "edge".into(),
+                entity_references: vec![7, -1],
+            },
+            raw_bytes: vec![0xab; 4096],
+        };
+        let needed = serde_json::to_vec(&record).unwrap().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::HISTORY_RECORD_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "asm_history_records",
+                std::slice::from_ref(&record),
+            )
+            .unwrap_err();
+        super::HISTORY_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "asm_history_records",
+                std::slice::from_ref(&record),
+            )
+            .unwrap();
+        let stored = &namespace.arenas()["asm_history_records"][0];
+        assert_eq!(
+            serde_json::to_value(stored).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
+    }
+
+    #[test]
+    fn entity_change_borrowed_wire_matches_owned_wire_bytes() {
+        use super::{AsmEntityChange, AsmEntityChangeKind, AsmEntityChangeSerde};
+
+        for kind in [
+            AsmEntityChangeKind::Insert { new: 7 },
+            AsmEntityChangeKind::Delete { old: 8 },
+            AsmEntityChangeKind::Update { old: 8, new: 7 },
+        ] {
+            let change = AsmEntityChange {
+                id: "f3d:native:entity_change#1".into(),
+                parent: "f3d:native:bulletin#1".into(),
+                byte_offset: 12,
+                kind,
+            };
+            let owned = AsmEntityChangeSerde::from(change.clone());
+            assert_eq!(
+                serde_json::to_vec(&change).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn entity_change_native_retained_limit_refuses_before_string_clone() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let change = super::AsmEntityChange {
+            id: "f3d:native:entity_change#1".into(),
+            parent: "f3d:native:bulletin#1".into(),
+            byte_offset: 12,
+            kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
+        };
+        let needed = serde_json::to_vec(&change).unwrap().len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| count.set(0));
+        let error = namespace
+            .set_arena(
+                &limited,
+                "asm_entity_changes",
+                std::slice::from_ref(&change),
+            )
+            .unwrap_err();
+        super::ENTITY_CHANGE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(
+                &service,
+                "asm_entity_changes",
+                std::slice::from_ref(&change),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
+            serde_json::to_value(&change).unwrap()
+        );
+    }
 
     #[test]
     fn topology_cache_wire_preserves_every_form_and_rejects_a_missing_topology() {

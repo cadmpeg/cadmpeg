@@ -9,6 +9,7 @@ use super::{
     MillimeterScale, NativeUnknownRecord, PcurveGeometry, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SourceObjectAssociation, Surface, UnknownId,
 };
+use crate::loss::RhinoLossCode;
 
 #[test]
 fn plane_pcurve_lookup_set_refuses_collection_limit() {
@@ -193,7 +194,8 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
             .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -315,7 +317,8 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -385,7 +388,8 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         .draft
         .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit Brep with an isolated vertex");
-    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -1119,5 +1123,30 @@ fn reused_brep_c2_curve_refuses_before_the_second_copy() {
     assert!(
         witnessed,
         "reused C2 curve copy must refuse below its item count"
+    );
+}
+
+/// A dropped Brep display-mesh cache slot carries the mesh-cache code itself.
+#[test]
+fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
+    let mut staged = BrepDraft::default();
+    staged
+        .mesh_cache_slot_dropped(
+            &cadmpeg_test_support::service_decode_context(),
+            "render",
+            2,
+            &"payload is truncated",
+        )
+        .expect("service profile admits cache warning");
+    assert_eq!(
+        staged
+            .warnings
+            .iter()
+            .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            Some(RhinoLossCode::BrepMeshCacheDegraded),
+            "invalid render mesh cache slot 2: payload is truncated"
+        )]
     );
 }

@@ -31,7 +31,7 @@ use crate::records::{
         sketch_profile::DesignSketchProfileRegionMember,
     },
 };
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -49,6 +49,7 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub(crate) linear_tolerance: f64,
     pub(crate) angular_tolerance: f64,
     pub(crate) arrangement_budget: &'a WorkBudget<'a>,
+    pub(crate) ctx: Option<&'a DecodeContext<'a>>,
 }
 
 #[derive(Clone, Copy)]
@@ -59,6 +60,7 @@ pub(in crate::design) struct ScopedExtrudeProfileResolution<'a> {
     linear_tolerance: f64,
     angular_tolerance: f64,
     arrangement_budget: &'a WorkBudget<'a>,
+    ctx: Option<&'a DecodeContext<'a>>,
 }
 
 impl<'a> ExtrudeProfileResolution<'a> {
@@ -73,6 +75,7 @@ impl<'a> ExtrudeProfileResolution<'a> {
             linear_tolerance: self.linear_tolerance,
             angular_tolerance: self.angular_tolerance,
             arrangement_budget: self.arrangement_budget,
+            ctx: self.ctx,
         }
     }
 }
@@ -395,7 +398,7 @@ pub(crate) fn bind_extrude_profile_selections(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     for feature in features {
@@ -552,7 +555,7 @@ pub(crate) fn bind_extrude_profile_selections(
                         effective_previous_history_state_id,
                     )
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             *profile =
                 merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
                     ProfileRef::Planar(
@@ -569,6 +572,7 @@ pub(crate) fn bind_extrude_profile_selections(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn resolve_entity_selection_profile(
@@ -910,7 +914,7 @@ pub(super) fn resolved_extrude_profile_selection(
     resolution: ScopedExtrudeProfileResolution<'_>,
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
-) -> cadmpeg_ir::features::ProfileRef {
+) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
     let mut selection_members = members
@@ -954,32 +958,30 @@ pub(super) fn resolved_extrude_profile_selection(
         }
         (!selected.is_empty()).then_some(ResolvedProfileSelection::Loops(selected))
     });
-    let resolved_profiles = resolved_profiles
-        .flatten()
-        .or_else(|| {
-            exact_member_run.then(|| {
-                historical_selection_regions(
-                    &selection_members,
-                    sketch,
-                    resolution.entities,
-                    resolution.histories,
-                    resolution.linear_tolerance,
-                    resolution.arrangement_budget,
-                )
-            })?
-        })
-        .or_else(|| {
-            transition_profile_selection(
-                sketch,
-                resolution,
-                history_state_id?,
-                previous_history_state_id?,
-            )
-        })
-        .or_else(|| {
-            (sketch.profiles.len() == 1).then_some(ResolvedProfileSelection::Loops(vec![0]))
-        });
-    match resolved_profiles {
+    let mut resolved_profiles = resolved_profiles.flatten();
+    if resolved_profiles.is_none() && exact_member_run {
+        resolved_profiles = historical_selection_regions(
+            &selection_members,
+            sketch,
+            resolution.entities,
+            resolution.histories,
+            resolution.linear_tolerance,
+            resolution.arrangement_budget,
+            resolution.ctx,
+        )?;
+    }
+    if resolved_profiles.is_none() {
+        if let (Some(state_id), Some(previous_state_id)) =
+            (history_state_id, previous_history_state_id)
+        {
+            resolved_profiles =
+                transition_profile_selection(sketch, resolution, state_id, previous_state_id)?;
+        }
+    }
+    if resolved_profiles.is_none() && sketch.profiles.len() == 1 {
+        resolved_profiles = Some(ResolvedProfileSelection::Loops(vec![0]));
+    }
+    Ok(match resolved_profiles {
         Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::Planar(
             PlanarProfileRef::sketch_profiles(sketch_id.clone(), profiles)
                 .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone())),
@@ -992,7 +994,7 @@ pub(super) fn resolved_extrude_profile_selection(
             PlanarProfileRef::sketch_selection(sketch_id.clone(), vec![group.id.clone()])
                 .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone())),
         ),
-    }
+    })
 }
 
 fn transition_profile_selection(
@@ -1000,7 +1002,15 @@ fn transition_profile_selection(
     resolution: ScopedExtrudeProfileResolution<'_>,
     state_id: i64,
     previous_state_id: i64,
-) -> Option<ResolvedProfileSelection> {
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    macro_rules! geometric {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     let entities = resolution.entities;
     let arrangement_budget = resolution.arrangement_budget;
     let mut states = resolution
@@ -1008,7 +1018,7 @@ fn transition_profile_selection(
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == state_id);
-    let state = states.next()?;
+    let state = geometric!(states.next());
     if states.next().is_some()
         || state
             .transition
@@ -1016,24 +1026,40 @@ fn transition_profile_selection(
             .and_then(|transition| transition.previous_state_id)
             != Some(previous_state_id)
     {
-        return None;
+        return Ok(None);
     }
-    let topology = state.topology()?;
-    let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
+    let topology = geometric!(state.topology());
+    let inserted_faces = &geometric!(state.transition.as_ref())
+        .topology
+        .faces
+        .inserted;
     // The document linear tolerance is admitted at or above the analytic floor
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = resolution.linear_tolerance;
+    let mut inserted_selections = Vec::new();
+    for face in inserted_faces {
+        let selection = match historical_face_points(*face, topology) {
+            Some(points) => selection_containing_points(
+                sketch,
+                entities,
+                &points,
+                tolerance,
+                arrangement_budget,
+                resolution.ctx,
+            )?,
+            None => None,
+        };
+        inserted_selections.push(selection);
+    }
     let inserted = transition_inserted_profile_selection(
         sketch,
         entities,
         tolerance,
-        inserted_faces.iter().map(|face| {
-            let points = historical_face_points(*face, topology)?;
-            selection_containing_points(sketch, entities, &points, tolerance, arrangement_budget)
-        }),
-    );
+        inserted_selections,
+        resolution.ctx,
+    )?;
     if inserted.is_some() {
-        return inserted;
+        return Ok(inserted);
     }
     if let Some(selection) = unique_resolved_selection(inserted_faces.iter().map(|face| {
         inserted_cylindrical_profile_selection(
@@ -1045,24 +1071,39 @@ fn transition_profile_selection(
             resolution.angular_tolerance,
         )
     })) {
-        return Some(selection);
+        return Ok(Some(selection));
     }
     let mut previous_states = resolution
         .histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
-    let previous = previous_states.next()?;
+    let previous = geometric!(previous_states.next());
     if previous_states.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let previous_topology = previous.topology()?;
-    let deleted = &state.transition.as_ref()?.topology.faces.deleted;
-    let faces = unique_multi_face_deleted_carrier_family(deleted, previous_topology)?;
-    ordered_unique_profile_selections(faces.into_iter().map(|face| {
-        let points = historical_face_points(face, previous_topology)?;
-        selection_containing_points(sketch, entities, &points, tolerance, arrangement_budget)
-    }))
+    let previous_topology = geometric!(previous.topology());
+    let deleted = &geometric!(state.transition.as_ref()).topology.faces.deleted;
+    let faces = geometric!(unique_multi_face_deleted_carrier_family(
+        deleted,
+        previous_topology
+    ));
+    let mut selections = Vec::new();
+    for face in faces {
+        let selection = match historical_face_points(face, previous_topology) {
+            Some(points) => selection_containing_points(
+                sketch,
+                entities,
+                &points,
+                tolerance,
+                arrangement_budget,
+                resolution.ctx,
+            )?,
+            None => None,
+        };
+        selections.push(selection);
+    }
+    Ok(ordered_unique_profile_selections(selections))
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -1136,9 +1177,12 @@ fn inserted_cylindrical_profile_selection(
             ((candidate_center.u - center.u).hypot(candidate_center.v - center.v)
                 <= linear_tolerance
                 && (candidate_radius.get() - cylinder.radius).abs() <= linear_tolerance
-                && projected
-                    .iter()
-                    .all(|point| point_on_sketch_entity(*point, entity, linear_tolerance)))
+                && projected.iter().all(|point| {
+                    ((point.u - candidate_center.u).hypot(point.v - candidate_center.v)
+                        - candidate_radius.get())
+                    .abs()
+                        <= linear_tolerance
+                }))
             .then(|| u32::try_from(index).ok())?
         });
     let profile = matches.next()?;
@@ -1402,12 +1446,13 @@ fn transition_inserted_profile_selection(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     selections: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
     let selections = selections.into_iter().flatten().collect::<Vec<_>>();
     if let Some(selection) = unique_resolved_selection(selections.iter().cloned().map(Some)) {
-        return Some(selection);
+        return Ok(Some(selection));
     }
     let loop_selections = selections
         .iter()
@@ -1418,7 +1463,7 @@ fn transition_inserted_profile_selection(
         .collect::<Vec<_>>();
     if let Some(first) = loop_selections.first() {
         if loop_selections.iter().all(|candidate| candidate == first) {
-            return Some(ResolvedProfileSelection::Loops(first.to_vec()));
+            return Ok(Some(ResolvedProfileSelection::Loops(first.to_vec())));
         }
     }
     if loop_selections.len() == selections.len() {
@@ -1431,8 +1476,10 @@ fn transition_inserted_profile_selection(
                 }
                 loops
             });
-        if !loops.is_empty() && profile_loops_are_independent(sketch, entities, &loops, tolerance) {
-            return Some(ResolvedProfileSelection::Loops(loops));
+        if !loops.is_empty()
+            && profile_loops_are_independent(sketch, entities, &loops, tolerance, ctx)?
+        {
+            return Ok(Some(ResolvedProfileSelection::Loops(loops)));
         }
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
@@ -1444,9 +1491,11 @@ fn transition_inserted_profile_selection(
         },
         ResolvedProfileSelection::Loops(_) => None,
     });
-    let (outer, holes) = regions.next()?;
+    let Some((outer, holes)) = regions.next() else {
+        return Ok(None);
+    };
     if regions.any(|candidate| candidate != (outer, holes)) {
-        return None;
+        return Ok(None);
     }
     let mut has_boundary_support = false;
     for selection in &selections {
@@ -1464,15 +1513,15 @@ fn transition_inserted_profile_selection(
             {
                 has_boundary_support = true;
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
     if !has_boundary_support {
-        return None;
+        return Ok(None);
     }
-    Some(ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::loops(outer, holes.to_vec()).ok()?,
-    ]))
+    Ok(SketchProfileRegion::loops(outer, holes.to_vec())
+        .ok()
+        .map(|region| ResolvedProfileSelection::Regions(vec![region])))
 }
 
 pub(super) fn historical_face_points(
@@ -1525,7 +1574,8 @@ fn historical_selection_regions(
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
     arrangement_budget: &WorkBudget<'_>,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     // The document linear tolerance is admitted at or above the analytic floor
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = linear_tolerance;
@@ -1536,8 +1586,10 @@ fn historical_selection_regions(
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
-    let mut state_ids = members
-        .first()?
+    let Some(first_member) = members.first() else {
+        return Ok(None);
+    };
+    let mut state_ids = first_member
         .historical
         .as_ref()
         .into_iter()
@@ -1555,83 +1607,99 @@ fn historical_selection_regions(
     state_ids.sort_unstable();
     let mut previous_member_points = None;
     let mut previous_selection = None;
-    let state_selections = state_ids
-        .into_iter()
-        .filter_map(|state_id| {
-            let topology = states.get(&state_id)?.as_ref()?.topology()?;
-            let member_points = members
-                .iter()
-                .map(|member| {
-                    historical_member_points_in_state(member, topology)
-                        .or_else(|| resolved_selection_member_points(member, sketch, entities))
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let key = member_points
-                .iter()
-                .map(|points| {
-                    points
-                        .iter()
-                        .map(|point| (point.x.to_bits(), point.y.to_bits(), point.z.to_bits()))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            if previous_member_points.as_ref() == Some(&key) {
-                return previous_selection.clone();
-            }
-            let selection = selection_for_member_points(
-                members,
-                sketch,
-                entities,
-                &member_points,
-                tolerance,
-                arrangement_budget,
-            );
-            previous_member_points = Some(key);
-            previous_selection.clone_from(&selection);
-            selection
-        })
-        .collect::<Vec<_>>();
-    if !state_selections.is_empty() {
-        return unique_resolved_selection(state_selections.into_iter().map(Some));
-    }
-    {
-        if let Some(selection) = members
-            .iter()
-            .map(|member| resolved_selection_member_points(member, sketch, entities))
-            .collect::<Option<Vec<_>>>()
-            .and_then(|member_points| {
-                selection_for_member_points(
-                    members,
-                    sketch,
-                    entities,
-                    &member_points,
-                    tolerance,
-                    arrangement_budget,
-                )
-            })
-        {
-            return Some(selection);
-        }
-        let selections = members
+    let mut state_selections = Vec::new();
+    for state_id in state_ids {
+        let Some(topology) = states
+            .get(&state_id)
+            .and_then(|state| state.as_ref())
+            .and_then(|state| state.topology())
+        else {
+            continue;
+        };
+        let member_points = members
             .iter()
             .map(|member| {
-                if let Some(points) = resolved_selection_member_points(member, sketch, entities) {
-                    selection_containing_points(
-                        sketch,
-                        entities,
-                        &points,
-                        tolerance,
-                        arrangement_budget,
-                    )
-                } else {
-                    resolved_selection_member_profiles(member, sketch)
-                        .map(ResolvedProfileSelection::Loops)
-                }
+                historical_member_points_in_state(member, topology)
+                    .or_else(|| resolved_selection_member_points(member, sketch, entities))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(member_points) = member_points else {
+            continue;
+        };
+        let key = member_points
+            .iter()
+            .map(|points| {
+                points
+                    .iter()
+                    .map(|point| (point.x.to_bits(), point.y.to_bits(), point.z.to_bits()))
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        ordered_unique_profile_selections(selections.iter().cloned())
-            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections))
+        if previous_member_points.as_ref() == Some(&key) {
+            if let Some(selection) = previous_selection.clone() {
+                state_selections.push(selection);
+            }
+            continue;
+        }
+        let selection = selection_for_member_points(
+            members,
+            sketch,
+            entities,
+            &member_points,
+            tolerance,
+            arrangement_budget,
+            ctx,
+        )?;
+        previous_member_points = Some(key);
+        previous_selection.clone_from(&selection);
+        if let Some(selection) = selection {
+            state_selections.push(selection);
+        }
     }
+    if !state_selections.is_empty() {
+        return Ok(unique_resolved_selection(
+            state_selections.into_iter().map(Some),
+        ));
+    }
+    if let Some(member_points) = members
+        .iter()
+        .map(|member| resolved_selection_member_points(member, sketch, entities))
+        .collect::<Option<Vec<_>>>()
+    {
+        if let Some(selection) = selection_for_member_points(
+            members,
+            sketch,
+            entities,
+            &member_points,
+            tolerance,
+            arrangement_budget,
+            ctx,
+        )? {
+            return Ok(Some(selection));
+        }
+    }
+    let mut selections = Vec::new();
+    for member in members {
+        selections.push(
+            if let Some(points) = resolved_selection_member_points(member, sketch, entities) {
+                selection_containing_points(
+                    sketch,
+                    entities,
+                    &points,
+                    tolerance,
+                    arrangement_budget,
+                    ctx,
+                )?
+            } else {
+                resolved_selection_member_profiles(member, sketch)
+                    .map(ResolvedProfileSelection::Loops)
+            },
+        );
+    }
+    Ok(
+        ordered_unique_profile_selections(selections.iter().cloned())
+            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections)),
+    )
 }
 
 fn selection_for_member_points(
@@ -1641,21 +1709,34 @@ fn selection_for_member_points(
     member_points: &[Vec<Point3>],
     tolerance: f64,
     arrangement_budget: &WorkBudget<'_>,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
-    if let Some(selection) =
-        selection_containing_points(sketch, entities, &all_points, tolerance, arrangement_budget)
-    {
-        return Some(selection);
+    if let Some(selection) = selection_containing_points(
+        sketch,
+        entities,
+        &all_points,
+        tolerance,
+        arrangement_budget,
+        ctx,
+    )? {
+        return Ok(Some(selection));
     }
-    let selections = member_points
-        .iter()
-        .map(|points| {
-            selection_containing_points(sketch, entities, points, tolerance, arrangement_budget)
-        })
-        .collect::<Vec<_>>();
-    ordered_unique_profile_selections(selections.iter().cloned())
-        .or_else(|| region_with_boundary_selection_members(members, sketch, &selections))
+    let mut selections = Vec::new();
+    for points in member_points {
+        selections.push(selection_containing_points(
+            sketch,
+            entities,
+            points,
+            tolerance,
+            arrangement_budget,
+            ctx,
+        )?);
+    }
+    Ok(
+        ordered_unique_profile_selections(selections.iter().cloned())
+            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections)),
+    )
 }
 
 fn region_with_boundary_selection_members(
@@ -1802,29 +1883,44 @@ fn selection_containing_points(
     points: &[Point3],
     tolerance: f64,
     arrangement_budget: &WorkBudget<'_>,
-) -> Option<ResolvedProfileSelection> {
-    let projected = points
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
+    let Some(projected) = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>()?;
-    let boundaries = sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| {
-            projected.iter().all(|point| {
-                profile.iter().any(|use_| {
-                    entities
-                        .iter()
-                        .find(|entity| entity.id() == &use_.entity)
-                        .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
-                })
-            })
-        })
-        .map(|(index, _)| u32::try_from(index).ok())
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let mut boundaries = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let mut matches = true;
+        for point in &projected {
+            let mut on_boundary = false;
+            for use_ in profile {
+                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity)
+                else {
+                    continue;
+                };
+                if point_on_sketch_entity(*point, entity, tolerance)? {
+                    on_boundary = true;
+                    break;
+                }
+            }
+            if !on_boundary {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            let Some(index) = u32::try_from(index).ok() else {
+                return Ok(None);
+            };
+            boundaries.push(index);
+        }
+    }
     if let [profile] = boundaries.as_slice() {
-        return Some(ResolvedProfileSelection::Loops(vec![*profile]));
+        return Ok(Some(ResolvedProfileSelection::Loops(vec![*profile])));
     }
     if let Some(region) = arrangement_region_containing_points(
         sketch,
@@ -1832,14 +1928,17 @@ fn selection_containing_points(
         &projected,
         tolerance,
         arrangement_budget,
-    ) {
-        return Some(ResolvedProfileSelection::Regions(vec![region]));
+        ctx,
+    )? {
+        return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
     }
     if !boundaries.is_empty() {
-        return None;
+        return Ok(None);
     }
-    region_containing_points(sketch, entities, points, tolerance)
-        .map(|region| ResolvedProfileSelection::Regions(vec![region]))
+    Ok(
+        region_containing_points(sketch, entities, points, tolerance, ctx)?
+            .map(|region| ResolvedProfileSelection::Regions(vec![region])),
+    )
 }
 
 /// Solved sketch records used to bind Loft and Revolve profile operands and

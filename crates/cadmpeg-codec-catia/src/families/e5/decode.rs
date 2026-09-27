@@ -88,7 +88,10 @@ pub(in crate::families) fn try_decode_e5(
     let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal);
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
-        let topology = crate::families::e5::graph::parse_topology(stream);
+        let topology = match crate::families::e5::graph::parse_topology(ctx, stream) {
+            Ok(topology) => topology,
+            Err(error) => return Some(Err(error)),
+        };
         let vertex_count = topology.as_ref().map_or_else(
             || {
                 crate::families::e5::records::e5_edges(stream)
@@ -299,7 +302,14 @@ pub(in crate::families) fn try_decode_e5(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
-            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+            if transferred {
+                match neutral_model_is_admissible(&mut topology_ir, &unknowns) {
+                    Ok(admissible) => admissible,
+                    Err(limit) => return Some(Err(limit.into())),
+                }
+            } else {
+                false
+            }
         } else {
             false
         };

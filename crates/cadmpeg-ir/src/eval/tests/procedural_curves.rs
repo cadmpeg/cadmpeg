@@ -77,6 +77,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 1.0,
                 NonNegativeLength::ZERO,
             )
+            .expect("resource allocation did not fail")
             .map(crate::scalar::FiniteReal::get),
             Some(1.0),
         );

@@ -117,7 +117,8 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
         ..Model::default()
     };
     let result = ir.try_append(model, Native::default(), |combined| {
-        let report = crate::admit(combined, crate::DRAFT_CORE_CHECKS, Vec::new());
+        let report = crate::admit(combined, crate::DRAFT_CORE_CHECKS, Vec::new())
+            .expect("resource allocation did not fail");
         if report.is_ok() {
             Ok(())
         } else {

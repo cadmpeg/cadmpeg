@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Base features, the body references they carry and the results they state.
 
+use crate::records::serde_column::SliceColumn;
 use crate::records::{identity::Located, mesh::DesignRelaxedGuidText};
 use serde::{Deserialize, Serialize};
 /// Encoded compact Base Feature mode.
@@ -55,11 +56,8 @@ impl DesignBaseFeatureBodyReferenceForm {
 }
 
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignBaseFeatureConstructionWire",
-    into = "DesignBaseFeatureConstructionWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignBaseFeatureConstructionWire")]
 pub(crate) enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.
     ResultBodies {
@@ -124,6 +122,321 @@ pub(crate) enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+}
+
+#[cfg(test)]
+thread_local! {
+    static BASE_FEATURE_CONSTRUCTION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignBaseFeatureConstruction {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        BASE_FEATURE_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        match self {
+            Self::ResultBodies {
+                bodies,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+            } => Self::ResultBodies {
+                bodies: bodies.clone(),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field: metadata_field.clone(),
+            },
+            Self::BodyBasedOnFaces {
+                body,
+                parameter_body_record,
+                parameter_body_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => Self::BodyBasedOnFaces {
+                body: *body,
+                parameter_body_record: *parameter_body_record,
+                parameter_body_record_offset: *parameter_body_record_offset,
+                auxiliary_record: *auxiliary_record,
+                auxiliary_record_offset: *auxiliary_record_offset,
+                envelope_guid: envelope_guid.clone(),
+                envelope_guid_offset: *envelope_guid_offset,
+                tag_body_based_on_faces_offset: *tag_body_based_on_faces_offset,
+            },
+            Self::LegacyBodyBasedOnFaces {
+                form,
+                scope_reference,
+                scope_reference_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => Self::LegacyBodyBasedOnFaces {
+                form: *form,
+                scope_reference: *scope_reference,
+                scope_reference_offset: *scope_reference_offset,
+                envelope_guid: envelope_guid.clone(),
+                envelope_guid_offset: *envelope_guid_offset,
+                tag_body_based_on_faces_offset: *tag_body_based_on_faces_offset,
+            },
+            Self::BodySnapshot {
+                bodies,
+                related_guids,
+                related_guid_offsets,
+                linkage_record,
+                linkage_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+            } => Self::BodySnapshot {
+                bodies: bodies.clone(),
+                related_guids: related_guids.clone(),
+                related_guid_offsets: *related_guid_offsets,
+                linkage_record: *linkage_record,
+                linkage_record_offset: *linkage_record_offset,
+                auxiliary_record: *auxiliary_record,
+                auxiliary_record_offset: *auxiliary_record_offset,
+            },
+        }
+    }
+}
+
+struct ResultBodyColumn<'a, T> {
+    bodies: &'a DesignBaseFeatureResults,
+    value: fn(&DesignBaseFeatureResultBody) -> T,
+}
+
+impl<T: Serialize> Serialize for ResultBodyColumn<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.bodies.iter().map(self.value))
+    }
+}
+
+struct RepeatedReferenceFields<'a>(&'a DesignBaseFeatureResults);
+
+impl Serialize for RepeatedReferenceFields<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            DesignBaseFeatureResults::WithoutRepeatedFields(_) => {
+                serializer.collect_seq(std::iter::empty::<[u8; 6]>())
+            }
+            DesignBaseFeatureResults::WithRepeatedFields { first, rest } => {
+                serializer.collect_seq(std::iter::once(first.1).chain(rest.iter().map(|row| row.1)))
+            }
+        }
+    }
+}
+
+impl Serialize for DesignBaseFeatureConstruction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum BorrowedWire<'a> {
+            ResultBodies {
+                body_entity_suffixes: ResultBodyColumn<'a, u64>,
+                body_entity_suffix_offsets: ResultBodyColumn<'a, u64>,
+                body_entity_fields: ResultBodyColumn<'a, [u8; 6]>,
+                body_reference_records: ResultBodyColumn<'a, u32>,
+                body_reference_record_offsets: ResultBodyColumn<'a, u64>,
+                body_reference_fields: ResultBodyColumn<'a, [u8; 6]>,
+                repeated_reference_fields: RepeatedReferenceFields<'a>,
+                metadata_record: u32,
+                metadata_record_offset: u64,
+                metadata_field: &'a Vec<u8>,
+                result_records: ResultBodyColumn<'a, u32>,
+                result_record_offsets: ResultBodyColumn<'a, u64>,
+                result_fields: ResultBodyColumn<'a, [u8; 6]>,
+            },
+            BodyBasedOnFaces {
+                body_entity_suffixes: [u64; 1],
+                body_entity_suffix_offsets: [u64; 1],
+                body_reference_records: [u32; 1],
+                body_reference_record_offsets: [u64; 1],
+                parameter_body_record: u32,
+                parameter_body_record_offset: u64,
+                auxiliary_record: u32,
+                auxiliary_record_offset: u64,
+                envelope_guid: &'a DesignRelaxedGuidText,
+                envelope_guid_offset: u64,
+                tag_body_based_on_faces: bool,
+                tag_body_based_on_faces_offset: u64,
+            },
+            LegacyBodyBasedOnFaces {
+                form: DesignBaseFeatureBodyReferenceFormWire,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                mode: Option<u8>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                mode_offset: Option<u64>,
+                body_entity_suffixes: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                body_entity_fields: SliceColumn<'a, DesignLegacyBaseFeatureBody, [u8; 6]>,
+                body_reference_records: SliceColumn<'a, DesignLegacyBaseFeatureBody, u32>,
+                body_reference_record_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                parameter_body_records: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                parameter_body_record_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                auxiliary_records: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                auxiliary_record_offsets: SliceColumn<'a, DesignLegacyBaseFeatureBody, u64>,
+                scope_reference: u64,
+                scope_reference_offset: u64,
+                envelope_guid: &'a DesignRelaxedGuidText,
+                envelope_guid_offset: u64,
+                tag_body_based_on_faces: bool,
+                tag_body_based_on_faces_offset: u64,
+            },
+            BodySnapshot {
+                body_entity_suffixes: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_suffix_offsets: SliceColumn<'a, DesignBaseFeatureEntry<u64>, u64>,
+                body_entity_fields: SliceColumn<'a, DesignBaseFeatureEntry<u64>, [u8; 6]>,
+                related_guids: &'a [DesignRelaxedGuidText; 3],
+                related_guid_offsets: [u64; 3],
+                linkage_record: u32,
+                linkage_record_offset: u64,
+                auxiliary_record: u32,
+                auxiliary_record_offset: u64,
+            },
+        }
+        let wire = match self {
+            Self::ResultBodies {
+                bodies,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+            } => BorrowedWire::ResultBodies {
+                body_entity_suffixes: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.entity.value,
+                },
+                body_entity_suffix_offsets: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.entity.offset,
+                },
+                body_entity_fields: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.entity.field,
+                },
+                body_reference_records: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.reference.value,
+                },
+                body_reference_record_offsets: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.reference.offset,
+                },
+                body_reference_fields: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.reference.field,
+                },
+                repeated_reference_fields: RepeatedReferenceFields(bodies),
+                metadata_record: *metadata_record,
+                metadata_record_offset: *metadata_record_offset,
+                metadata_field,
+                result_records: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.result.value,
+                },
+                result_record_offsets: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.result.offset,
+                },
+                result_fields: ResultBodyColumn {
+                    bodies,
+                    value: |row| row.result.field,
+                },
+            },
+            Self::BodyBasedOnFaces {
+                body,
+                parameter_body_record,
+                parameter_body_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => BorrowedWire::BodyBasedOnFaces {
+                body_entity_suffixes: [u64::from(body.value)],
+                body_entity_suffix_offsets: [body.offset],
+                body_reference_records: [body.value],
+                body_reference_record_offsets: [body.offset],
+                parameter_body_record: *parameter_body_record,
+                parameter_body_record_offset: *parameter_body_record_offset,
+                auxiliary_record: *auxiliary_record,
+                auxiliary_record_offset: *auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset: *envelope_guid_offset,
+                tag_body_based_on_faces: true,
+                tag_body_based_on_faces_offset: *tag_body_based_on_faces_offset,
+            },
+            Self::LegacyBodyBasedOnFaces {
+                form,
+                scope_reference,
+                scope_reference_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => {
+                let bodies = form.bodies();
+                let (wire_form, mode, mode_offset) = match form {
+                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (
+                        DesignBaseFeatureBodyReferenceFormWire::CompactOneBody,
+                        Some(mode.value as u8),
+                        Some(mode.offset),
+                    ),
+                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (
+                        DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody,
+                        None,
+                        None,
+                    ),
+                };
+                BorrowedWire::LegacyBodyBasedOnFaces {
+                    form: wire_form,
+                    mode,
+                    mode_offset,
+                    body_entity_suffixes: SliceColumn::new(bodies, |row| {
+                        u64::from(row.entity.value)
+                    }),
+                    body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.entity.offset),
+                    body_entity_fields: SliceColumn::new(bodies, |row| row.entity.field),
+                    body_reference_records: SliceColumn::new(bodies, |row| row.entity.value),
+                    body_reference_record_offsets: SliceColumn::new(bodies, |row| {
+                        row.entity.offset
+                    }),
+                    parameter_body_records: SliceColumn::new(bodies, |row| {
+                        row.parameter_body.value
+                    }),
+                    parameter_body_record_offsets: SliceColumn::new(bodies, |row| {
+                        row.parameter_body.offset
+                    }),
+                    auxiliary_records: SliceColumn::new(bodies, |row| row.auxiliary.value),
+                    auxiliary_record_offsets: SliceColumn::new(bodies, |row| row.auxiliary.offset),
+                    scope_reference: *scope_reference,
+                    scope_reference_offset: *scope_reference_offset,
+                    envelope_guid,
+                    envelope_guid_offset: *envelope_guid_offset,
+                    tag_body_based_on_faces: true,
+                    tag_body_based_on_faces_offset: *tag_body_based_on_faces_offset,
+                }
+            }
+            Self::BodySnapshot {
+                bodies,
+                related_guids,
+                related_guid_offsets,
+                linkage_record,
+                linkage_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+            } => BorrowedWire::BodySnapshot {
+                body_entity_suffixes: SliceColumn::new(bodies, |row| row.value),
+                body_entity_suffix_offsets: SliceColumn::new(bodies, |row| row.offset),
+                body_entity_fields: SliceColumn::new(bodies, |row| row.field),
+                related_guids,
+                related_guid_offsets: *related_guid_offsets,
+                linkage_record: *linkage_record,
+                linkage_record_offset: *linkage_record_offset,
+                auxiliary_record: *auxiliary_record,
+                auxiliary_record_offset: *auxiliary_record_offset,
+            },
+        };
+        wire.serialize(serializer)
+    }
 }
 
 /// One aligned body, passive reference, and result record.
@@ -561,6 +874,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
     }
 }
 
+#[cfg(test)]
 impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
@@ -773,3 +1087,6 @@ impl DesignBaseFeatureConstruction {
             .chain(single)
     }
 }
+
+#[cfg(test)]
+mod tests;

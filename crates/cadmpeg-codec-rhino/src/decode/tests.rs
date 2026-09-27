@@ -1478,7 +1478,9 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.model.faces[1].sense, Sense::Forward);
         }
         assert_eq!(
-            cadmpeg_ir::validate_neutral(&ir, Vec::new()).error_count(),
+            cadmpeg_ir::validate_neutral(&ir, Vec::new())
+                .expect("resource allocation did not fail")
+                .error_count(),
             0
         );
     }
@@ -1498,8 +1500,13 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
+    .expect("resource allocation did not fail")
     .is_ok());
-    assert!(cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::admit(&accepted, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 
     assert!(!cadmpeg_ir::admit_with_annotations(
         &rejected,
@@ -1507,8 +1514,13 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
         Vec::new(),
     )
+    .expect("resource allocation did not fail")
     .is_ok());
-    assert!(!cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new()).is_ok());
+    assert!(
+        !cadmpeg_ir::admit(&rejected, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1596,7 +1608,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
                 .len(),
             1
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert_eq!(validation.error_count(), 0);
     });
 }
@@ -1951,31 +1964,6 @@ fn class_report_preserves_nil_class_source_selection() {
             );
         });
     }
-}
-
-/// A dropped Brep display-mesh cache slot carries the mesh-cache code itself.
-#[test]
-fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
-    let mut staged = BrepDraft::default();
-    staged
-        .mesh_cache_slot_dropped(
-            &cadmpeg_test_support::service_decode_context(),
-            "render",
-            2,
-            &"payload is truncated",
-        )
-        .expect("service profile admits cache warning");
-    assert_eq!(
-        staged
-            .warnings
-            .iter()
-            .map(|diagnostic| (diagnostic.code, diagnostic.message.as_str()))
-            .collect::<Vec<_>>(),
-        [(
-            Some(RhinoLossCode::BrepMeshCacheDegraded),
-            "invalid render mesh cache slot 2: payload is truncated"
-        )]
-    );
 }
 
 fn finite_interval(endpoints: [f64; 2]) -> crate::settings::Interval {

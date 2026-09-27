@@ -51,6 +51,7 @@ impl<O> MultiInstanceOutputs<O> {
         &self.references
     }
 
+    #[cfg(test)]
     pub(crate) fn ordinals(&self) -> impl ExactSizeIterator<Item = u8> + '_ {
         let mut ordinals = BTreeMap::<u32, u8>::new();
         self.selectors.iter().map(move |selector| {

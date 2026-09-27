@@ -56,6 +56,7 @@ impl<T> ThruCurveBranchItems<T> {
 
     // Names follow the ordered source slots in this fixed-width lane.
     #[allow(clippy::many_single_char_names)]
+    #[cfg(test)]
     pub(crate) fn state_lane(&self) -> Vec<u8> {
         match self {
             Self::Standard(members) => [0; 258][..members.len() + 4].to_vec(),

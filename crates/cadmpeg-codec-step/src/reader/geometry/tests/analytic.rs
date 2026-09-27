@@ -191,7 +191,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -252,7 +252,7 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -295,7 +295,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
     assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
 
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -409,7 +409,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -607,7 +607,7 @@ fn annotation_plane_keeps_its_neutral_plane_reachable() {
             .map(|association| association.object_id.as_str()),
         Some("#71")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#70")
@@ -705,7 +705,7 @@ fn complex_geometry_instances_decode_named_partials() {
         &decoded.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
     ));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -734,7 +734,7 @@ fn complex_points_and_directions_decode_named_partials() {
                 Some(SolvedSurfaceGeometry::Plane(_))
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -770,7 +770,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
     assert_eq!(source.object_id, "#9");
     assert_eq!(source.name, None);
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -795,7 +795,7 @@ fn geometric_surface_representation_salvages_valid_sibling_sets() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("skipped non-set member #99") }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -822,7 +822,7 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| record.id.as_str() == "step:data:shape_representation#4"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -852,7 +852,7 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
             .map(|source| source.object_id.as_str()),
         Some("#14")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -958,7 +958,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
             "missing retained source record #{id}"
         );
     }
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -1040,7 +1040,7 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
                 || record.id.as_str().ends_with("#4")
                 || record.id.as_str().ends_with("#5")
         }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

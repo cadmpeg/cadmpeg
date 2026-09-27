@@ -9,7 +9,7 @@ pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{alloc_filled, bounded_len, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -3283,7 +3283,16 @@ fn parsed_named_surface_value(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let slots = counted_parameter_scalar_slots(remaining, array.values().len(), cache)?;
+                let slots = match counted_parameter_scalar_slots(
+                    ctx,
+                    remaining,
+                    array.values().len(),
+                    cache,
+                ) {
+                    Ok(Some(slots)) => slots,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 array.fill_tokens(slots)?;
                 return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
@@ -5889,16 +5898,16 @@ fn admitted_counted_parameter_body(body: &[u8], values_start: usize, count: u32)
 }
 
 fn counted_parameter_scalar_slots(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<ScalarTokenSlot>> {
-    let mut states = alloc_filled(
+) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
+    let mut states = ctx.alloc_filled(
         body.len() + 1,
         BTreeMap::new(),
         "creo_counted_parameter_slots",
-    )
-    .ok()?;
+    )?;
     states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
     for cursor in 0..body.len() {
         let current = std::mem::take(&mut states[cursor]);
@@ -5967,8 +5976,8 @@ fn counted_parameter_scalar_slots(
         }
     }
     match states[body.len()].remove(&count) {
-        Some(CountedParameterParse::Unique(slots)) => Some(slots),
-        Some(CountedParameterParse::Ambiguous) | None => None,
+        Some(CountedParameterParse::Unique(slots)) => Ok(Some(slots)),
+        Some(CountedParameterParse::Ambiguous) | None => Ok(None),
     }
 }
 

@@ -86,17 +86,21 @@ impl<B> Extrude32Frame<B> {
             + 2
     }
 
-    pub(crate) fn atoms(&self) -> impl Iterator<Item = (WrappedCompactIndex, &B, u64)> {
+    pub(crate) fn atoms(&self) -> impl Iterator<Item = (WrappedCompactIndex, &B, u64)> + Clone {
         self.atoms
             .as_slice()
             .iter()
             .enumerate()
             .map(|(slot, (token, binding))| (*token, binding, self.origin + 13 + 4 * slot as u64))
     }
-    pub(crate) fn first_indices(&self) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> {
+    pub(crate) fn first_indices(
+        &self,
+    ) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
         compact_positions(&self.first, self.origin + self.first_position())
     }
-    pub(crate) fn second_indices(&self) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> {
+    pub(crate) fn second_indices(
+        &self,
+    ) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
         compact_positions(&self.second, self.origin + self.second_position())
     }
     pub(crate) fn relocate(self, base: u64) -> Option<Self> {
@@ -131,7 +135,7 @@ impl<B> Extrude32Frame<B> {
 fn compact_positions<B>(
     members: &BranchItems<(CompactIndexAtom, B)>,
     mut at: u64,
-) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> {
+) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
     members.as_slice().iter().map(move |(token, binding)| {
         let offset = at;
         at += token.raw().len() as u64;

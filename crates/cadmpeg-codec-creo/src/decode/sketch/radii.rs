@@ -43,8 +43,9 @@ const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn resolved_section_radii(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<u32, f64> {
+) -> Result<BTreeMap<u32, f64>, cadmpeg_core::CodecError> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
     for segment in definition
         .segments
@@ -74,7 +75,7 @@ pub(in crate::decode) fn resolved_section_radii(
             }
         }
     }
-    let radial_coordinates = resolved_section_coordinates(definition);
+    let radial_coordinates = resolved_section_coordinates(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -183,7 +184,7 @@ pub(in crate::decode) fn resolved_section_radii(
             }
         }
     }
-    let points = resolved_section_points(definition);
+    let points = resolved_section_points(ctx, definition)?;
     for segment in definition
         .segments
         .iter()
@@ -325,7 +326,7 @@ pub(in crate::decode) fn resolved_section_radii(
         }
         remaining.retain(|radius_id| !component.contains(radius_id));
     }
-    radii
+    Ok(radii)
 }
 
 pub(super) fn section_relation_length_dimension<'a>(
@@ -677,9 +678,18 @@ mod tests {
     fn numerical_followup_arc_radius_evidence_requires_matching_endpoints() {
         for radius in [1e-6, 1.0] {
             let equal = arc_radius_definition([radius, radius]);
-            assert_eq!(resolved_section_radii(&equal).get(&42), Some(&radius));
+            assert_eq!(
+                crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &equal))
+                    .expect("test section solve")
+                    .get(&42),
+                Some(&radius)
+            );
             let unequal = arc_radius_definition([radius, 1.0005 * radius]);
-            assert!(!resolved_section_radii(&unequal).contains_key(&42));
+            assert!(
+                !crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &unequal))
+                    .expect("test section solve")
+                    .contains_key(&42)
+            );
         }
     }
 
@@ -742,7 +752,11 @@ mod tests {
             }],
             offset: 0,
         });
-        assert!(resolved_section_radii(&definition).is_empty());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+                .expect("test section solve")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -801,7 +815,11 @@ mod tests {
             triples: None,
             offset: 0,
         });
-        assert!(resolved_section_radii(&definition).is_empty());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+                .expect("test section solve")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1022,7 +1040,8 @@ mod tests {
             .expect("segments")
             .is_complete());
         assert_eq!(
-            resolved_section_radii(&definition),
+            crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
+                .expect("test section solve"),
             std::collections::BTreeMap::from([(42, 3.0)])
         );
         assert!(matches!(

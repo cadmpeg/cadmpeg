@@ -174,6 +174,7 @@ pub(super) fn emit_model_features(
                     .any(|round| round.feature_id == feature_id)
                 {
                     schema_feature_definition(
+                        ctx,
                         scan,
                         ir,
                         source_carriers,
@@ -219,6 +220,7 @@ pub(super) fn emit_model_features(
                 current_feature_recipe(&scan.features.operations, operation.feature_id)
                     .map(|_| {
                         schema_feature_definition(
+                            ctx,
                             scan,
                             ir,
                             source_carriers,
@@ -230,6 +232,7 @@ pub(super) fn emit_model_features(
                     .or_else(|| {
                         current_operation.and_then(|operation| {
                             named_or_referenced_feature_definition(
+                                ctx,
                                 scan,
                                 ir,
                                 source_carriers,
@@ -262,6 +265,7 @@ pub(super) fn emit_model_features(
             },
             |schema_class| {
                 schema_feature_definition(
+                    ctx,
                     scan,
                     ir,
                     source_carriers,
@@ -442,9 +446,10 @@ pub(super) fn emit_model_features(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || match named_feature_definition(scan, ir, source_carriers, feature_id, kind)?.or_else(
-                || unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id),
-            ) {
+            || match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
+                .or_else(|| {
+                    unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)
+                }) {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: kind.into(),
@@ -456,6 +461,7 @@ pub(super) fn emit_model_features(
             },
             |schema_class| {
                 schema_feature_definition(
+                    ctx,
                     scan,
                     ir,
                     source_carriers,

@@ -67,6 +67,7 @@ pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
         .expect("source image identity is unique");
 }
 
+pub(crate) mod allocation;
 pub(crate) mod appearance;
 pub(crate) mod container;
 pub(crate) mod history;

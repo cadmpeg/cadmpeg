@@ -3,9 +3,15 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct CsysIdentity(String);
+
+impl Serialize for CsysIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl TryFrom<String> for CsysIdentity {
     type Error = &'static str;
@@ -17,8 +23,15 @@ impl TryFrom<String> for CsysIdentity {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static CSYS_IDENTITY_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<CsysIdentity> for String {
     fn from(value: CsysIdentity) -> Self {
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         value.0
     }
 }
@@ -155,7 +168,10 @@ impl From<CsysDescriptorSlot> for u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor};
+    use super::{
+        CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
+        CSYS_IDENTITY_INTO_WIRE_COUNT,
+    };
 
     #[test]
     fn identity_lengths_and_maximal_runs_are_checked_at_construction() {
@@ -189,5 +205,29 @@ mod tests {
                 (5..=7).contains(&slot)
             );
         }
+    }
+
+    #[test]
+    fn csys_identity_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            identity: &'a CsysIdentity,
+        }
+        let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&identity).unwrap(),
+            serde_json::to_vec(&String::from(identity.clone())).unwrap()
+        );
+        let record = Record {
+            id: "nx:feature:csys-identity#0",
+            identity: &identity,
+        };
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
+        );
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

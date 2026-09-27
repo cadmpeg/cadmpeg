@@ -544,13 +544,29 @@ impl std::error::Error for DesignParameterScopePayloadError {}
 /// parameter scope.
 const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
 
+#[cfg(test)]
+std::thread_local! {
+    static SCOPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq)]
+struct ScopeCloneProbe;
+
+#[cfg(test)]
+impl Clone for ScopeCloneProbe {
+    fn clone(&self) -> Self {
+        SCOPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignParameterScopeSerde",
-    into = "DesignParameterScopeSerde"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignParameterScopeSerde")]
 pub(crate) struct DesignParameterScope {
+    #[cfg(test)]
+    clone_probe: ScopeCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the primary indexed record header.
@@ -1229,16 +1245,30 @@ struct DesignPathFeatureWire {
 }
 
 /// Sketch-module entity named by a sketch parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignSketchEntityBindingWire",
-    into = "DesignSketchEntityBindingWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignSketchEntityBindingWire")]
 pub(crate) struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the sketch entity suffix.
     pub(crate) entity_reference_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_ENTITY_BINDING_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignSketchEntityBinding {
+    fn clone(&self) -> Self {
+        SKETCH_ENTITY_BINDING_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            entity_id: self.entity_id.clone(),
+            entity_reference_offset: self.entity_reference_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1251,6 +1281,26 @@ struct DesignSketchEntityBindingWire {
     entity_suffix: u64,
     /// Byte offset of the sketch entity suffix.
     entity_reference_offset: u64,
+}
+
+impl Serialize for DesignSketchEntityBinding {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            #[serde(rename = "entity_id")]
+            id: &'a str,
+            #[serde(rename = "entity_suffix")]
+            suffix: u64,
+            #[serde(rename = "entity_reference_offset")]
+            reference_offset: u64,
+        }
+        WireRef {
+            id: self.entity_id.as_str(),
+            suffix: self.entity_id.suffix(),
+            reference_offset: self.entity_reference_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
@@ -1268,6 +1318,7 @@ impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
     }
 }
 
+#[cfg(test)]
 impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
     fn from(value: DesignSketchEntityBinding) -> Self {
         let entity_suffix = value.entity_id.suffix();
@@ -2106,6 +2157,8 @@ impl DesignParameterScope {
             return Err(fail("reference_member_offsets/kind_offset"));
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: ScopeCloneProbe,
             id: draft.id,
             byte_offset: draft.byte_offset,
             class_tag: draft.class_tag,
@@ -2792,3 +2845,5 @@ impl DesignParameterScope {
 
 #[cfg(test)]
 mod tests;
+
+mod serialize;

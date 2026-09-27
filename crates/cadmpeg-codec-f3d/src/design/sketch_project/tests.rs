@@ -89,7 +89,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     };
 
     let (sketches, entities) =
-        project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6).expect("sketch lanes pair");
+        project_sketch_design(None, &[placement], &[], &[], &[], &[], 1.0e-6)
+            .expect("sketch lanes pair");
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -244,6 +245,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     .unwrap();
 
     let (sketches, entities) = project_sketch_design(
+        None,
         &[placement],
         &[point],
         &curves,
@@ -356,6 +358,7 @@ fn point_closure_does_not_mark_construction_geometry() {
     };
 
     let (sketches, entities) = project_sketch_design(
+        None,
         &[placement],
         &[point, standalone_point],
         &[curve],
@@ -500,7 +503,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let points = vec![point];
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
     let (sketches, entities) =
-        project_sketch_design(&placements, &points, &curves, &[], &[], 1.0e-6)
+        project_sketch_design(None, &placements, &points, &curves, &[], &[], 1.0e-6)
             .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
@@ -538,11 +541,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .expect("non-clamped NURBS projects");
     let endpoints = sketch_entity_endpoints(nurbs).expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
-    assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9));
-    assert!(point_lies_on_sketch_geometry(
-        Point2::new(2.0, 1.0),
-        &nurbs.geometry
-    ));
+    assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9)
+        .expect("resource allocation did not fail"));
+    assert!(
+        point_lies_on_sketch_geometry(Point2::new(2.0, 1.0), &nurbs.geometry)
+            .expect("resource allocation did not fail")
+    );
 
     let relation = |record_index, member| {
         SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -1146,9 +1150,16 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         horizontal_relation,
         point_on_surface_relation,
     ];
-    let (planar_sketches, planar_entities) =
-        project_sketch_design(&[placement.clone()], &points, &curves, &[], &[], 1.0e-6)
-            .expect("sketch lanes pair");
+    let (planar_sketches, planar_entities) = project_sketch_design(
+        None,
+        &[placement.clone()],
+        &points,
+        &curves,
+        &[],
+        &[],
+        1.0e-6,
+    )
+    .expect("sketch lanes pair");
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
@@ -1282,7 +1293,7 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     };
     let placements = [placement];
     let (planar, planar_entities) =
-        project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
+        project_sketch_design(None, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
             .expect("sketch lanes pair");
     let (spatial, spatial_entities) =
         project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)

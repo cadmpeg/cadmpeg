@@ -52,6 +52,7 @@ pub(crate) fn rewrite_schema_version(bytes: &[u8], version: &str) -> Vec<u8> {
 
 pub(crate) fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .into_iter()
         .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)

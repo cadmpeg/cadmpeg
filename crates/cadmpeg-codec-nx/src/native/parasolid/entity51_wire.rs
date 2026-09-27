@@ -6,7 +6,8 @@ use crate::parasolid::entity_references::EntityReferences;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct Entity51Wire {
     id: String,
     stream_ordinal: u32,
@@ -19,6 +20,40 @@ pub(super) struct Entity51Wire {
     byte_len: u64,
     inflated_offset: u64,
 }
+
+#[derive(Serialize)]
+struct Entity51Ref<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    flags: u32,
+    sequence: u32,
+    definition_xmt: u32,
+    leading_references: [u32; 5],
+    trailing_references: &'a [u32],
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidEntity51Record {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Entity51Ref {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt.into(),
+            flags: self.trailing_references.values().len() as u32,
+            sequence: self.sequence.get(),
+            definition_xmt: self.definition_xmt,
+            leading_references: self.leading_references,
+            trailing_references: self.trailing_references.values(),
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidEntity51Record> for Entity51Wire {
     fn from(value: ParasolidEntity51Record) -> Self {
         Self {
@@ -65,6 +100,10 @@ mod tests {
         let json = r#"{"id":"entity","stream_ordinal":0,"xmt":50,"flags":2,"sequence":7,"definition_xmt":34,"leading_references":[60,61,70,71,72],"trailing_references":[70,71],"byte_len":28,"inflated_offset":200}"#;
         let record: ParasolidEntity51Record = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::Entity51Wire::from(record.clone())).unwrap()
+        );
         for (field, invalid) in [("xmt", 0), ("xmt", 1), ("sequence", 0)] {
             let mut wire = serde_json::to_value(&record).unwrap();
             wire[field] = invalid.into();
@@ -94,5 +133,15 @@ mod tests {
                     .contains("trailing_references"));
             }
         }
+    }
+
+    #[test]
+    fn entity51_native_limit_refuses_before_trailing_reference_copy() {
+        let json = r#"{"id":"nx:parasolid:entity-51#0","stream_ordinal":0,"xmt":50,"flags":2,"sequence":7,"definition_xmt":34,"leading_references":[60,61,70,71,72],"trailing_references":[70,71],"byte_len":28,"inflated_offset":200}"#;
+        let record: ParasolidEntity51Record = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }

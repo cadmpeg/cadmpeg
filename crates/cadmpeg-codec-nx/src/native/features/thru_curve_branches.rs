@@ -13,8 +13,10 @@ use crate::om::thru_curve_state::ThruCurveBranchItems;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "GroupWire", into = "GroupWire")]
+mod borrowed_wires;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "GroupWire")]
 pub(in crate::native) struct FeatureThruCurveConstructionBranchGroup {
     id: String,
     operation_label: String,
@@ -57,6 +59,7 @@ struct ReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureThruCurveConstructionBranchGroup> for GroupWire {
     fn from(value: FeatureThruCurveConstructionBranchGroup) -> Self {
         let branches = value
@@ -214,7 +217,7 @@ mod tests {
 
     // Group count at 100. The standard branch occupies 24 bytes and the
     // extended branch occupies 40 bytes. The adjacent terminator occupies 9.
-    const WIRE: &str = concat!(
+    pub(super) const WIRE: &str = concat!(
         r#"{"id":"g","operation_label":"o","declared_count":3,"branches":["#,
         r#"{"ordinal":0,"mode":255,"declared_count":3,"state_lane":[0,0,0,0,0,0],"members":["#,
         r#"{"ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":104},"#,

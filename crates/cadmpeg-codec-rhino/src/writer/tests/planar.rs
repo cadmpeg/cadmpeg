@@ -158,7 +158,7 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         assert_ne!(uses[0].sense, uses[1].sense);
         assert_eq!(uses[0].radial_next, uses[1].id);
         assert_eq!(uses[1].radial_next, uses[0].id);
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -214,7 +214,7 @@ fn planar_tetrahedron_round_trips_as_closed_solid() {
             .coedges
             .iter()
             .all(|coedge| coedge.radial_next != coedge.id));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -268,7 +268,7 @@ fn multiple_brep_objects_round_trip_in_one_archive() {
         assert_eq!(decoded.ir().model.bodies.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.faces.len(), 3, "{version:?}");
         assert_eq!(decoded.ir().model.edges.len(), 10, "{version:?}");
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -354,7 +354,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
                 origin.z == 3.0
             })
         ));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 

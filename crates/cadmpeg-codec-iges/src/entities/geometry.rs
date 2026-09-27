@@ -2280,11 +2280,11 @@ pub(crate) fn project_geometry(
         "iges_geometry_wire_topology",
     )?;
     let (trimming_projection, trimming_vertex_derivations) =
-        super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences);
+        super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
-    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)
+    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
     super::csg::project(ir, directory, parameters, global, ctx)

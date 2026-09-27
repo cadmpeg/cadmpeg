@@ -50,7 +50,7 @@ fn decode_preserves_unresolved_active_configuration() {
         loss.message
             == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .points
         .iter()
         .all(|point| point.id.as_str().contains("@block@")));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -292,7 +292,7 @@ fn decode_uses_the_active_configuration_source_site() {
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

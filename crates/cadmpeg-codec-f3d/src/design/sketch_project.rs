@@ -136,6 +136,7 @@ fn text_frame_curve_records(
 
 /// Project placed Design sketches and their exact planar point/curve records.
 pub(crate) fn project_sketch_design(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -384,11 +385,8 @@ pub(crate) fn project_sketch_design(
     }));
     entities.sort_by(|a, b| a.id().cmp(b.id()));
     for sketch in &mut sketches {
-        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed_sketch_profiles(
-            &sketch.id,
-            &entities,
-            linear_tolerance,
-        )) else {
+        let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
             continue;
         };
         sketch.profiles = profiles;

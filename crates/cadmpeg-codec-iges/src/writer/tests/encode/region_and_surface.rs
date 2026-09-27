@@ -113,7 +113,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         "{:#?}",
         round_trip.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

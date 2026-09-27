@@ -4,7 +4,8 @@
 use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -699,13 +700,14 @@ impl SectionCoordinateEquation {
 }
 
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
+    ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
     distances: &[(u32, u32, SectionAxis, f64)],
-) -> BTreeMap<SectionCoordinateVariable, f64> {
+) -> Result<BTreeMap<SectionCoordinateVariable, f64>, CodecError> {
     const MAX_SIGNED_BRANCHES: usize = 4096;
     if distances.is_empty() {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     }
 
     let variables = equations
@@ -726,13 +728,11 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let Ok(mut adjacency) = alloc_filled(
+    let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
         "creo section equation adjacency",
-    ) else {
-        return BTreeMap::new();
-    };
+    )?;
     let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
         for &first in &members {
             adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
@@ -812,7 +812,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     first, second, coordinate, delta,
                 ));
             }
-            let candidate = solve_section_coordinate_equations(&branched, stored_coordinates);
+            let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
             let mut values = stored_coordinates.clone();
             for (point, coordinates) in &candidate {
                 for (coordinate, value) in SectionAxis::ALL
@@ -884,7 +884,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             }
         }
     }
-    resolved
+    Ok(resolved)
 }
 
 pub(super) fn section_equal_length_coordinate_values(
@@ -1034,9 +1034,10 @@ pub(in crate::decode) fn approximately_equal(first: FiniteReal, second: FiniteRe
 }
 
 pub(in crate::decode) fn solve_section_coordinate_equations(
+    ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
-) -> BTreeMap<u32, [Option<f64>; 2]> {
+) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
     let variables = equations
         .iter()
         .flat_map(|equation| equation.terms.keys().copied())
@@ -1048,20 +1049,16 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let Ok(mut adjacency) = alloc_filled(
+    let mut adjacency = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
         "creo section coordinate adjacency",
-    ) else {
-        return BTreeMap::new();
-    };
-    let Ok(mut variable_equations) = alloc_filled(
+    )?;
+    let mut variable_equations = ctx.alloc_filled(
         variables.len(),
         BTreeSet::new(),
         "creo section coordinate equation membership",
-    ) else {
-        return BTreeMap::new();
-    };
+    )?;
     for (equation_index, equation) in equations.iter().enumerate() {
         let members = equation
             .terms
@@ -1132,7 +1129,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     for ((point, coordinate), value) in solved {
         points.entry(point).or_insert([None; 2])[coordinate.index()] = Some(value);
     }
-    points
+    Ok(points)
 }
 
 struct SectionLinearRow {
@@ -1233,8 +1230,74 @@ fn uniquely_solved_linear_variables(
 #[cfg(test)]
 mod tests {
     use super::super::axis::SectionAxis;
-    use super::{SectionCoordinateVariable, SectionEqualLengthConstraint};
+    use super::{
+        SectionCoordinateEquation, SectionCoordinateVariable, SectionEqualLengthConstraint,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeMap;
+
+    fn with_collection_limit<T>(limit: u64, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+        run(&ctx)
+    }
+
+    #[test]
+    fn section_coordinate_adjacency_reports_collection_limit() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(0, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("one adjacency row exceeds the collection limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section coordinate adjacency")
+        );
+    }
+
+    #[test]
+    fn section_coordinate_equation_membership_reports_collection_limit() {
+        let equations = [SectionCoordinateEquation::point_value(
+            1,
+            SectionAxis::U,
+            1.0,
+        )];
+        let error = with_collection_limit(1, |ctx| {
+            super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new())
+        })
+        .expect_err("membership row exceeds the remaining collection limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section coordinate equation membership")
+        );
+    }
+
+    #[test]
+    fn unsigned_dimension_adjacency_reports_collection_limit() {
+        let error = with_collection_limit(1, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &[],
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("two adjacency rows exceed the collection limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section equation adjacency")
+        );
+    }
 
     #[test]
     fn numerical_followup_equal_length_tangency_keeps_its_single_coordinate() {

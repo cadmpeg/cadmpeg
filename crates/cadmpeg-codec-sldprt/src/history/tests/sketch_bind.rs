@@ -83,7 +83,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert!(sketch.native_ref.as_deref().is_some_and(|native_ref| {
         native_ref.starts_with("sldprt:feature-input:resolved-features#")
     }));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 
@@ -303,7 +303,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
             },
             ..
         }) if matches!((profile.as_ref(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(value)),) if value == &sketch_id))));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -533,7 +533,7 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
         .expect("bound sweep");
     assert_ne!(sweep.0, sweep.1);
     assert!(bound.contains(sweep.0) && bound.contains(sweep.1));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:?}", validation.findings);
 }
 

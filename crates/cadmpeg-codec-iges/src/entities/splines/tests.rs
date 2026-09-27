@@ -114,7 +114,7 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -154,7 +154,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

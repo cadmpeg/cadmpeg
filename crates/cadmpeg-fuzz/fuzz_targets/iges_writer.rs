@@ -86,7 +86,11 @@ fuzz_target!(|data: &[u8]| {
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
     let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
 
     if control & 0x40 != 0 {
@@ -128,6 +132,10 @@ fuzz_target!(|data: &[u8]| {
         let edited = codec
             .decode(&mut edited_decode, &DecodeOptions::default())
             .expect("edited writer output must decode");
-        assert!(cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok());
+        assert!(
+            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 });

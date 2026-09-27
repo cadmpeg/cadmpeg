@@ -527,7 +527,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

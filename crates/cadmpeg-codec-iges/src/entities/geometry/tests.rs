@@ -479,7 +479,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
         "{:?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -537,7 +537,7 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
                 .message
                 .contains("Type 125 Form 0 has no defining entity pointer")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -591,7 +591,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -858,7 +858,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         Some([0.0, 1.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -894,7 +894,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         Some([0.0, 1.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1006,7 +1006,7 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .iter()
         .any(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1034,7 +1034,7 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1099,7 +1099,7 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
     assert_eq!(radius, 1.0);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1127,7 +1127,7 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1184,7 +1184,7 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
         "D1"
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1209,7 +1209,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(native.arenas()["entities"][0].fields()["form"], form);
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1232,7 +1232,7 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
         2
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

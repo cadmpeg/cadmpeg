@@ -34,7 +34,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
 
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding.entity.as_deref() == Some(owner.as_str())
@@ -115,7 +115,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);
     ir.model.features.push(feature);
-    assert!(!validate_neutral(&ir, Vec::new())
+    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -132,7 +132,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
             .try_into()
             .unwrap();
     });
-    assert!(validate_neutral(&ir, Vec::new())
+    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {

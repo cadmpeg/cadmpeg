@@ -146,8 +146,8 @@ pub(crate) struct PmDcUnitPayload {
     pub(crate) kind: PmDcUnitKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "PmDcUnitKindWire", into = "PmDcUnitKindWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "PmDcUnitKindWire")]
 pub(crate) enum PmDcUnitKind {
     Definition {
         numerators: PmDcPairedReferenceList<[u16; 2]>,
@@ -162,6 +162,60 @@ pub(crate) enum PmDcUnitKind {
         magnitude: FiniteReal,
         factor: FiniteReal,
     },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "form", rename_all = "snake_case")]
+enum PmDcUnitKindRef<'a> {
+    Definition {
+        numerators: &'a [PmDcReference],
+        numerator_metadata: Option<[u16; 2]>,
+        denominators: &'a [PmDcReference],
+        denominator_metadata: Option<[u16; 2]>,
+        visible: bool,
+        derived: PmDcReference,
+    },
+    Base {
+        dimension: &'a PmDcUnitDimension,
+        symbol: &'a str,
+        scale_to_internal: &'a FiniteReal,
+        magnitude: &'a FiniteReal,
+        factor: &'a FiniteReal,
+    },
+}
+
+impl Serialize for PmDcUnitKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let wire = match self {
+            Self::Definition {
+                numerators,
+                denominators,
+                visible,
+                derived,
+            } => PmDcUnitKindRef::Definition {
+                numerators: numerators.references(),
+                numerator_metadata: numerators.metadata().copied(),
+                denominators: denominators.references(),
+                denominator_metadata: denominators.metadata().copied(),
+                visible: *visible,
+                derived: *derived,
+            },
+            Self::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            } => PmDcUnitKindRef::Base {
+                dimension,
+                symbol,
+                scale_to_internal,
+                magnitude,
+                factor,
+            },
+        };
+        wire.serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2554,4 +2608,6 @@ mod tests {
                     && limit.used == 0
         ));
     }
+
+    mod serialization;
 }

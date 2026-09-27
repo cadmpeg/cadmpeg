@@ -731,7 +731,8 @@ impl<'a> DecodeContext<'a> {
                     &annotations,
                     cadmpeg_ir::RHINO_DRAFT_CHECKS,
                     Vec::new(),
-                );
+                )
+                .map_err(|limit| CandidateError::Codec(limit.into()))?;
                 if !validation.is_ok() {
                     return Err(CandidateError::Validation(validation_findings(&validation)));
                 }
@@ -2136,22 +2137,22 @@ impl<'a> DecodeContext<'a> {
                 let validation = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
                     cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
                 });
-                if validation
-                    .as_ref()
-                    .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
-                {
+                if validation.as_ref().is_ok_and(|result| {
+                    result
+                        .as_ref()
+                        .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
+                }) {
                     self.append_links(source_order, &links)?;
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
                     return Ok(true);
                 }
-                format!(
-                    "instance expansion rejected atomically by IR admission: {}",
-                    match validation {
-                        Ok(report) => validation_findings(&report),
-                        Err(error) => error.to_string(),
-                    }
-                )
+                let findings = match validation {
+                    Ok(Ok(report)) => validation_findings(&report),
+                    Ok(Err(limit)) => return Err(cadmpeg_core::CodecError::ResourceLimit(limit)),
+                    Err(error) => error.to_string(),
+                };
+                format!("instance expansion rejected atomically by IR admission: {findings}")
             }
             Err(ReferenceFailure::Codec(error)) => return Err(error),
             Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),

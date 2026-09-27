@@ -3,7 +3,7 @@
 
 use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -1790,21 +1790,28 @@ fn try_decode_standard_population(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
-    let points = (match edge_table_form {
+    let vertex_points = match edge_table_form {
         EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
-        EdgeTableForm::Standard => fbb::standard_vertex_points(standard_spine),
-    })
-    .unwrap_or_default();
+        EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
+            Ok(points) => points,
+            Err(error) => return Some(Err(error)),
+        },
+    };
+    let points = vertex_points.unwrap_or_default();
     let vertex_roster = selection
         .is_none_or(|selection| selection.vertex_roster_compatible)
         .then(|| {
             crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
         })
         .flatten();
-    let face_count = selection.map_or_else(
-        || fbb::standard_face_count(standard_spine).unwrap_or_default(),
-        |selection| selection.records.len(),
-    );
+    let face_count = if let Some(selection) = selection {
+        selection.records.len()
+    } else {
+        match fbb::standard_face_count(ctx, standard_spine) {
+            Ok(count) => count.unwrap_or_default(),
+            Err(error) => return Some(Err(error)),
+        }
+    };
     let records = selection.map_or_else(
         || {
             crate::families::standard::records::standard_surface_records(brep, face_count)
@@ -1835,17 +1842,19 @@ fn try_decode_standard_population(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let standard_edge_count = selection.map_or_else(
-        || {
-            (if edge_table_form == EdgeTableForm::FbbOnly {
-                fbb::fbb_only_edge_count(standard_spine)
-            } else {
-                fbb::standard_edge_count(standard_spine)
-            })
-            .filter(|count| *count > 0)
-        },
-        |selection| (!selection.supports.is_empty()).then_some(selection.supports.len()),
-    );
+    let standard_edge_count = if let Some(selection) = selection {
+        (!selection.supports.is_empty()).then_some(selection.supports.len())
+    } else {
+        let count = if edge_table_form == EdgeTableForm::FbbOnly {
+            fbb::fbb_only_edge_count(standard_spine)
+        } else {
+            match fbb::standard_edge_count(ctx, standard_spine) {
+                Ok(count) => count,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+        count.filter(|count| *count > 0)
+    };
     let curve_supports = selection.map_or_else(
         || {
             crate::families::standard::records::standard_curve_supports(
@@ -1860,20 +1869,27 @@ fn try_decode_standard_population(
         .iter()
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
-    let object_evidence = standard_object_evidence(
+    let object_evidence = match standard_object_evidence(
+        ctx,
         scan,
         &freeform_tags,
         &edge_tags,
         &consolidated_records,
         refusal,
-    );
+    ) {
+        Ok(evidence) => evidence,
+        Err(error) => return Some(Err(error)),
+    };
     let standard_limit_curve_count = object_evidence.limit_curves.len();
     let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
         &scan.data,
         &consolidated_records,
     )
     .len();
-    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine, records.len());
+    let face_frame_vectors = match fbb::standard_face_frame_vectors(ctx, standard_spine, records.len()) {
+        Ok(vectors) => vectors,
+        Err(error) => return Some(Err(error)),
+    };
     let mut curved_surfaces = records
         .iter()
         .map(|record| match record {
@@ -2452,6 +2468,7 @@ fn try_decode_standard_population(
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
     match attach_standard_faces(
+        ctx,
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
@@ -2459,13 +2476,13 @@ fn try_decode_standard_population(
         &mut admission,
     ) {
         Ok(()) => {}
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
-        Err(_) => return None,
+        Err(error) => return Some(Err(error)),
     }
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
     let topology_result = attach_standard_topology(
+        ctx,
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
@@ -2487,7 +2504,7 @@ fn try_decode_standard_population(
         &mut admission,
     )
     .and_then(|()| {
-        neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        neutral_model_is_admissible(&mut topology_ir, &unknowns)?
             .then_some(())
             .ok_or(StandardTopologyError::Semantic(
                 StandardTopologyFailure::InadmissibleNeutralModel,
@@ -2540,16 +2557,22 @@ fn try_decode_standard_population(
     };
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
-    consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
+    consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
+        ctx,
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        StandardConsolidatedSource {
+            data: &scan.data,
+            records: &consolidated_records,
+        },
         &face_bounds,
         &owner_binding_budget,
         refusal,
-    )
-    .ok()?;
+    ) {
+        Ok(bound) => bound,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
 
@@ -2859,6 +2882,12 @@ impl From<StandardTopologyFailure> for StandardTopologyError {
     }
 }
 
+impl From<cadmpeg_core::decode::ResourceLimit> for StandardTopologyError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Resource(limit.into())
+    }
+}
+
 impl StandardTopologyFailure {
     const ALL: [Self; 11] = [
         Self::NoCurveSupports,
@@ -3034,25 +3063,27 @@ impl StandardSurfaceEvidence {
 }
 
 fn standard_object_evidence(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> StandardObjectEvidence {
+) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut evidence = standard_object_evidence_from_streams(
+        ctx,
         container::logical_record_streams(scan),
         tags,
         edge_tags,
         refusal,
-    );
+    )?;
     merge_standard_limit_curves_from_records(
         &mut evidence.limit_curves,
         &scan.data,
         consolidated_records,
         refusal,
     );
-    evidence
+    Ok(evidence)
 }
 
 fn merge_standard_limit_curves_from_records(
@@ -3078,11 +3109,12 @@ fn merge_standard_limit_curves_from_records(
 }
 
 pub(super) fn standard_object_evidence_from_streams(
+    ctx: &DecodeContext<'_>,
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> StandardObjectEvidence {
+) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut support_candidates =
         HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
@@ -3161,42 +3193,45 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         );
         let targeted_graph = crate::families::b5::graph::targeted_geometry_graph_from_frames(
-            &stream, &frames, refusal,
-        );
+            ctx, &stream, &frames, refusal,
+        )?;
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
             };
-            let evidence = targeted_graph
-                .as_ref()
-                .and_then(|graph| standard_surface_evidence(graph, surface_id, refusal))
-                .or_else(|| {
-                    targeted_graph
-                        .as_ref()
-                        .and_then(|graph| {
-                            crate::families::b5::transfer::resolved_surface_carrier_in_graph(
-                                graph, surface_id, refusal,
-                            )
-                        })
-                        .or_else(|| {
-                            crate::families::b5::transfer::resolved_surface_carrier(surface)
-                        })
-                        .map(|carrier| match carrier {
-                            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
-                                geometry,
-                            ) => StandardSurfaceEvidence::Geometry(geometry),
-                            crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+            let graph_evidence = match targeted_graph.as_ref() {
+                Some(graph) => standard_surface_evidence(ctx, graph, surface_id, refusal)?,
+                None => None,
+            };
+            let evidence = if graph_evidence.is_some() {
+                graph_evidence
+            } else {
+                let graph_carrier = match targeted_graph.as_ref() {
+                    Some(graph) => {
+                        crate::families::b5::transfer::resolved_surface_carrier_in_graph(
+                            ctx, graph, surface_id, refusal,
+                        )?
+                    }
+                    None => None,
+                };
+                graph_carrier
+                    .or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface))
+                    .map(|carrier| match carrier {
+                        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                            geometry,
+                        ) => StandardSurfaceEvidence::Geometry(geometry),
+                        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                            carrier_object_id,
+                            definition,
+                        } => StandardSurfaceEvidence::Procedure(
+                            StandardSurfaceProcedure::RollingBall {
                                 carrier_object_id,
-                                definition,
-                            } => StandardSurfaceEvidence::Procedure(
-                                StandardSurfaceProcedure::RollingBall {
-                                    carrier_object_id,
-                                    definition: *definition,
-                                    source: StandardRollingBallSource::ObjectStreamA8,
-                                },
-                            ),
-                        })
-                });
+                                definition: *definition,
+                                source: StandardRollingBallSource::ObjectStreamA8,
+                            },
+                        ),
+                    })
+            };
             let Some(evidence) = evidence else {
                 continue;
             };
@@ -3208,7 +3243,8 @@ pub(super) fn standard_object_evidence_from_streams(
                 if surface_candidates.contains_key(&object_id) {
                     continue;
                 }
-                let Some(evidence) = standard_surface_evidence(graph, surface_id, refusal) else {
+                let Some(evidence) = standard_surface_evidence(ctx, graph, surface_id, refusal)?
+                else {
                     continue;
                 };
                 merge_standard_procedure_supports(&mut support_candidates, &evidence);
@@ -3253,16 +3289,23 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         );
         for (edge, references) in edge_pcurves {
-            let sides = references.map(|reference| {
-                let pcurve = pcurves.get(&reference)?.as_ref()?;
+            let sides = references.map(|reference| -> Result<_, cadmpeg_core::CodecError> {
+                let Some(pcurve) = pcurves.get(&reference).and_then(Option::as_ref) else {
+                    return Ok(None);
+                };
+                let Some(surface) = targeted_surfaces.get(&pcurve.support_id) else {
+                    return Ok(None);
+                };
                 crate::families::b5::transfer::resolved_object_stream_pcurve(
+                    ctx,
                     pcurve,
-                    targeted_surfaces.get(&pcurve.support_id)?,
+                    surface,
                     targeted_graph.as_ref(),
                     refusal,
                 )
             });
-            let [Some(first), Some(second)] = sides else {
+            let [left, right] = sides;
+            let [Some(first), Some(second)] = [left?, right?] else {
                 continue;
             };
             if first.parameter_range != second.parameter_range {
@@ -3295,12 +3338,14 @@ pub(super) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
-        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames, refusal)
+        let Some(graph) =
+            crate::families::b5::graph::parse_from_frames(ctx, &stream, &frames, refusal)?
         else {
             continue;
         };
         for &surface_id in tags {
-            let Some(evidence) = standard_surface_evidence(&graph, surface_id, refusal) else {
+            let Some(evidence) = standard_surface_evidence(ctx, &graph, surface_id, refusal)?
+            else {
                 continue;
             };
             merge_standard_procedure_supports(&mut support_candidates, &evidence);
@@ -3310,7 +3355,7 @@ pub(super) fn standard_object_evidence_from_streams(
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let evidence = standard_surface_evidence(&graph, surface_id, refusal);
+            let evidence = standard_surface_evidence(ctx, &graph, surface_id, refusal)?;
             let Some(evidence) = evidence else { continue };
             merge_standard_procedure_supports(&mut support_candidates, &evidence);
             merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
@@ -3333,7 +3378,7 @@ pub(super) fn standard_object_evidence_from_streams(
                     .all(|surface| !repeated_population_ids.contains(surface))
             })
     });
-    StandardObjectEvidence {
+    Ok(StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
             .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry_ref()?.clone())))
@@ -3380,52 +3425,47 @@ pub(super) fn standard_object_evidence_from_streams(
             .filter_map(|(edge, support)| Some((edge, support?)))
             .collect(),
         limit_curves,
-    }
+    })
 }
 
 fn standard_surface_evidence(
+    ctx: &DecodeContext<'_>,
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<StandardSurfaceEvidence> {
+) -> Result<Option<StandardSurfaceEvidence>, cadmpeg_core::CodecError> {
     let geometry =
-        crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id, refusal);
-    let procedure =
-        crate::families::b5::transfer::resolved_offset_surface(graph, surface_id, refusal)
-            .map(|offset| StandardSurfaceProcedure::Offset {
-                carrier_object_id: offset.carrier_object_id,
-                support_object_id: offset.support_object_id,
-                support: offset.support,
-                distance: offset.distance,
-                parameter_bounds: offset.parameter_bounds,
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_extrusion_surface(
-                    graph, surface_id, refusal,
-                )
-                .map(Box::new)
-                .map(StandardSurfaceProcedure::Extrusion)
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_surface_procedural_definition(
-                    graph, surface_id, refusal,
-                )
-                .map(|(carrier_object_id, definition)| {
-                    StandardSurfaceProcedure::RollingBall {
-                        carrier_object_id,
-                        definition,
-                        source: StandardRollingBallSource::ObjectStreamA8,
-                    }
-                })
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_revolution_surface(
-                    graph, surface_id, refusal,
-                )
-                .map(Box::new)
-                .map(StandardSurfaceProcedure::Revolution)
-            });
-    StandardSurfaceEvidence::from_parts(geometry, procedure)
+        crate::families::b5::transfer::resolved_surface_geometry(ctx, graph, surface_id, refusal)?;
+    let procedure = if let Some(offset) =
+        crate::families::b5::transfer::resolved_offset_surface(ctx, graph, surface_id, refusal)?
+    {
+        Some(StandardSurfaceProcedure::Offset {
+            carrier_object_id: offset.carrier_object_id,
+            support_object_id: offset.support_object_id,
+            support: offset.support,
+            distance: offset.distance,
+            parameter_bounds: offset.parameter_bounds,
+        })
+    } else if let Some(extrusion) =
+        crate::families::b5::transfer::resolved_extrusion_surface(ctx, graph, surface_id, refusal)?
+    {
+        Some(StandardSurfaceProcedure::Extrusion(Box::new(extrusion)))
+    } else if let Some((carrier_object_id, definition)) =
+        crate::families::b5::transfer::resolved_surface_procedural_definition(
+            ctx, graph, surface_id, refusal,
+        )?
+    {
+        Some(StandardSurfaceProcedure::RollingBall {
+            carrier_object_id,
+            definition,
+            source: StandardRollingBallSource::ObjectStreamA8,
+        })
+    } else {
+        crate::families::b5::transfer::resolved_revolution_surface(ctx, graph, surface_id, refusal)?
+            .map(Box::new)
+            .map(StandardSurfaceProcedure::Revolution)
+    };
+    Ok(StandardSurfaceEvidence::from_parts(geometry, procedure))
 }
 
 fn merge_standard_surface_evidence(
@@ -3523,13 +3563,14 @@ fn merge_standard_procedure_supports(
 /// Attach standard analytic carriers to faces only when every FBB face has a
 /// decoded carrier and its stored sense byte.
 fn attach_standard_faces(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let face_count = fbb::standard_face_count(brep).unwrap_or_default();
+    let face_count = fbb::standard_face_count(ctx, brep)?.unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
         return Ok(());
     }
@@ -4136,6 +4177,7 @@ fn resolve_standard_limit_curve_binding(
 
 #[allow(clippy::too_many_arguments)]
 fn attach_standard_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -4157,12 +4199,13 @@ fn attach_standard_topology(
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), StandardTopologyError> {
     let face_count = ir.model.faces.len();
-    let Some(edge_count) = (if edge_table_form == EdgeTableForm::FbbOnly {
+    let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
         crate::families::standard::fbb::fbb_only_edge_count(spine)
     } else {
-        crate::families::standard::fbb::standard_edge_count(spine)
-    })
-    .filter(|count| *count > 0) else {
+        crate::families::standard::fbb::standard_edge_count(ctx, spine)
+            .map_err(StandardTopologyError::Resource)?
+    };
+    let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
         return Err(StandardTopologyFailure::NoCurveSupports.into());
     };
     let mut supports = support_override.map_or_else(
@@ -4184,12 +4227,14 @@ fn attach_standard_topology(
         .map(|support| support.faces)
         .collect::<Vec<_>>();
     let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(spine, &serialized_edge_faces)
+        missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
+            .map_err(StandardTopologyError::Resource)?
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
     };
-    let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
-        .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut deferred_port_edges = ctx
+        .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+        .map_err(StandardTopologyError::Resource)?;
     let mut open_face_domains = None;
     let mut endpoint_face_assignments = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
@@ -4205,12 +4250,13 @@ fn attach_standard_topology(
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
     let face_point_membership =
-        standard_face_point_membership(ir, bindings, &surface_indices, face_bounds);
+        standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
+            .map_err(StandardTopologyError::Resource)?;
     let limit_curve_bindings =
         standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
-    let mut ordered_endpoint_pairs =
-        alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
-            .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut ordered_endpoint_pairs = ctx
+        .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+        .map_err(StandardTopologyError::Resource)?;
     let point_coordinates = ir
         .model
         .points
@@ -4223,9 +4269,11 @@ fn attach_standard_topology(
             ]
         })
         .collect::<Vec<_>>();
-    let visualization_endpoint_pairs = missing_edge::standard_edge_rows(spine).and_then(|rows| {
-        missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
-    });
+    let visualization_endpoint_pairs = missing_edge::standard_edge_rows(ctx, spine)
+        .map_err(StandardTopologyError::Resource)?
+        .and_then(|rows| {
+            missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
+        });
     if let Some(pairs) = &visualization_endpoint_pairs {
         if pairs.len() != ordered_endpoint_pairs.len() {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
@@ -4308,14 +4356,18 @@ fn attach_standard_topology(
     }
     let edge_classes = standard_curve_edge_classes(&supports);
     let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
-    let topology_graph = crate::families::b5::graph::parse(source, refusal);
+    let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
+        .map_err(StandardTopologyError::Resource)?;
     let mut native_edges = topology_graph
         .as_ref()
         .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
         .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
-    if let Some(e5_topology) = crate::container::e5_record_stream(source)
-        .and_then(|range| crate::families::e5::graph::parse_topology(&source[range]))
-    {
+    let e5_topology = match crate::container::e5_record_stream(source) {
+        Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
+            .map_err(StandardTopologyError::Resource)?,
+        None => None,
+    };
+    if let Some(e5_topology) = e5_topology {
         let e5_edges = e5_topology
             .edges
             .into_iter()
@@ -4424,19 +4476,17 @@ fn attach_standard_topology(
         }
     }
     for edge in 0..supports.len() {
-        let native_pair = native_supports_by_row
-            .get(edge)
-            .and_then(Option::as_ref)
-            .and_then(|native| {
-                standard_native_support_endpoint_pair(
-                    native,
-                    &ir.model.points,
-                    &endpoint_candidates[edge],
-                    native_endpoint_evidence
-                        .as_ref()
-                        .and_then(|pairs| pairs[edge]),
-                )
-            });
+        let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
+            Some(native) => standard_native_support_endpoint_pair(
+                native,
+                &ir.model.points,
+                &endpoint_candidates[edge],
+                native_endpoint_evidence
+                    .as_ref()
+                    .and_then(|pairs| pairs[edge]),
+            )?,
+            None => None,
+        };
         let Some(pair) = native_pair else { continue };
         if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
             return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
@@ -4464,10 +4514,12 @@ fn attach_standard_topology(
         Some(pairs) => {
             let Some(propagated) =
                 missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                    ctx,
                     &native_port_options,
                     pairs,
                     &ordered_endpoint_pairs,
                 )
+                .map_err(StandardTopologyError::Resource)?
             else {
                 return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
             };
@@ -4488,9 +4540,11 @@ fn attach_standard_topology(
     }
     if let Some(options) = &mut endpoint_options {
         let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
+            ctx,
             spine,
             &serialized_edge_faces,
-        );
+        )
+        .map_err(StandardTopologyError::Resource)?;
         let mut allowed_faces = supports
             .iter()
             .enumerate()
@@ -4552,7 +4606,7 @@ fn attach_standard_topology(
             &edge_geometries,
         );
         let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
-        let endpoint_closures = has_alternates
+        let endpoint_pairs = has_alternates
             .then(|| {
                 options
                     .iter()
@@ -4563,15 +4617,18 @@ fn attach_standard_topology(
                     })
                     .collect::<Option<Vec<_>>>()
             })
-            .flatten()
-            .and_then(|pairs| {
-                missing_edge::repeated_face_endpoint_closures(
-                    &edge_faces,
-                    &allowed_faces,
-                    &pairs,
-                    face_count,
-                )
-            });
+            .flatten();
+        let endpoint_closures = match endpoint_pairs {
+            Some(pairs) => missing_edge::repeated_face_endpoint_closures(
+                ctx,
+                &edge_faces,
+                &allowed_faces,
+                &pairs,
+                face_count,
+            )
+            .map_err(StandardTopologyError::Resource)?,
+            None => None,
+        };
         let endpoint_completed = endpoint_closures
             .as_deref()
             .and_then(|closures| match closures {
@@ -4587,17 +4644,17 @@ fn attach_standard_topology(
         // A non-empty domain remains open when endpoint degree closure does
         // not select one complete incidence assignment. Face-local endpoint
         // evidence cannot choose among multiple globally closed assignments.
-        let completed = endpoint_completed.or_else(|| {
-            (!has_alternates)
-                .then(|| {
-                    missing_edge::resolve_standard_duplicate_edge_faces(
-                        spine,
-                        &edge_faces,
-                        &allowed_faces,
-                    )
-                })
-                .flatten()
-        });
+        let completed = if endpoint_completed.is_some() || has_alternates {
+            endpoint_completed
+        } else {
+            missing_edge::resolve_standard_duplicate_edge_faces(
+                ctx,
+                spine,
+                &edge_faces,
+                &allowed_faces,
+            )
+            .map_err(StandardTopologyError::Resource)?
+        };
         if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -4723,8 +4780,13 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>();
             let mut changed = false;
-            if let Some(placement_domains) =
-                missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
+            if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
+                ctx,
+                spine,
+                &edge_faces,
+                &seeds,
+            )
+            .map_err(StandardTopologyError::Resource)?
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
@@ -4747,18 +4809,18 @@ fn attach_standard_topology(
                     changed |= options[edge] != previous;
                 }
             }
-            if let Some(boundary_domains) = options
-                .iter()
-                .all(|domain| !domain.is_empty())
-                .then(|| {
-                    missing_edge::standard_mesh_prune_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                    )
-                })
-                .flatten()
-            {
+            let boundary_domains = if options.iter().all(|domain| !domain.is_empty()) {
+                missing_edge::standard_mesh_prune_endpoint_candidates(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    options,
+                )
+                .map_err(StandardTopologyError::Resource)?
+            } else {
+                None
+            };
+            if let Some(boundary_domains) = boundary_domains {
                 for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
                         continue;
@@ -4797,12 +4859,19 @@ fn attach_standard_topology(
     let graph_propagated_pairs = graph_propagated_endpoint_pairs
         .as_ref()
         .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
-    let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
-        endpoint_options.as_ref().and_then(|options| {
+    let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
+        Some(pairs)
+    } else {
+        (|| -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
             const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
             const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
-            let ports = native_ports.as_ref()?;
+            let Some(options) = endpoint_options.as_ref() else {
+                return Ok(None);
+            };
+            let Some(ports) = native_ports.as_ref() else {
+                return Ok(None);
+            };
             let seeds = options
                 .iter()
                 .map(|choices| {
@@ -4811,47 +4880,55 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let propagated = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+            let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                ctx,
                 ports,
                 &seeds,
                 &ordered_endpoint_pairs,
-            )?;
+            )?
+            else {
+                return Ok(None);
+            };
             if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-                return Some(complete);
+                return Ok(Some(complete));
             }
             // Exhaustive binding is a fallback after exact identity propagation.
             // Large symmetric choice sets remain unresolved and continue through
             // trim-mesh and incidence paths instead of making decode unbounded.
             let choice_count = options.iter().map(Vec::len).sum::<usize>();
-            (choice_count <= MAX_NATIVE_PORT_CHOICES
+            if choice_count <= MAX_NATIVE_PORT_CHOICES
                 && options
                     .len()
                     .checked_mul(choice_count)
-                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-            .then(|| missing_edge::bind_edge_port_candidates(ports, options))?
-        })
-    });
-    let propagated_endpoint_pairs = endpoint_options
-        .as_ref()
-        .zip(missing_edge::edge_port_identities(spine))
-        .and_then(|(options, ports)| {
-            let pairs = options
-                .iter()
-                .map(|pairs| {
-                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                        .ok()
-                        .map(|pair| pair[0])
-                })
-                .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-                &ports,
-                &pairs,
-                &ordered_endpoint_pairs,
-                &deferred_port_edges,
-            )
-        })
-        .zip(endpoint_options.as_ref())
-        .map(|(propagated, options)| {
+                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
+            {
+                missing_edge::bind_edge_port_candidates(ctx, ports, options)
+            } else {
+                Ok(None)
+            }
+        })()
+        .map_err(StandardTopologyError::Resource)?
+    };
+    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options.as_ref().zip(
+        missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Resource)?,
+    ) {
+        let pairs = options
+            .iter()
+            .map(|pairs| {
+                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                    .ok()
+                    .map(|pair| pair[0])
+            })
+            .collect::<Vec<_>>();
+        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            ctx,
+            &ports,
+            &pairs,
+            &ordered_endpoint_pairs,
+            &deferred_port_edges,
+        )
+        .map_err(StandardTopologyError::Resource)?
+        .map(|propagated| {
             propagated
                 .into_iter()
                 .zip(options)
@@ -4863,26 +4940,34 @@ fn attach_standard_topology(
                     })
                 })
                 .collect::<Vec<_>>()
-        });
-    let mesh_propagated_endpoint_pairs = endpoint_options
-        .as_ref()
-        .zip(missing_edge::standard_mesh_edge_ports(spine))
-        .and_then(|(options, ports)| {
-            let pairs = options
-                .iter()
-                .map(|pairs| {
-                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                        .ok()
-                        .map(|pair| pair[0])
-                })
-                .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-                &ports,
-                &pairs,
-                &ordered_endpoint_pairs,
-                &deferred_port_edges,
-            )
-        });
+        })
+    } else {
+        None
+    };
+    let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
+        endpoint_options.as_ref().zip(
+            missing_edge::standard_mesh_edge_ports(ctx, spine)
+                .map_err(StandardTopologyError::Resource)?,
+        ) {
+        let pairs = options
+            .iter()
+            .map(|pairs| {
+                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                    .ok()
+                    .map(|pair| pair[0])
+            })
+            .collect::<Vec<_>>();
+        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            ctx,
+            &ports,
+            &pairs,
+            &ordered_endpoint_pairs,
+            &deferred_port_edges,
+        )
+        .map_err(StandardTopologyError::Resource)?
+    } else {
+        None
+    };
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
         propagated_endpoint_pairs,
         mesh_propagated_endpoint_pairs,
@@ -4901,7 +4986,8 @@ fn attach_standard_topology(
     });
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(spine),
+        missing_edge::standard_mesh_edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Resource)?,
     ) {
         let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
             fbb::prune_edge_candidates_by_port_domains_with_deferred(
@@ -4917,12 +5003,15 @@ fn attach_standard_topology(
         }
         let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
             missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
                 &ports,
                 options,
                 &deferred_port_edges,
             )
+            .map_err(StandardTopologyError::Resource)?
         } else {
-            missing_edge::unique_mesh_edge_port_candidate_pairs(&ports, options)
+            missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
+                .map_err(StandardTopologyError::Resource)?
                 .map(|pairs| pairs.into_iter().map(Some).collect())
         };
         if let Some(pairs) = unique_pairs {
@@ -4952,46 +5041,75 @@ fn attach_standard_topology(
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
-    let fbb_mesh_ports = (edge_table_form == EdgeTableForm::FbbOnly)
-        .then(|| missing_edge::standard_mesh_edge_ports(spine))
-        .flatten();
-    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
-        fbb_mesh_ports
-            .as_deref()
-            .and_then(|ports| topology::parse_fbb_with_native_vertices(spine, ports))
-            .or_else(|| topology::parse_fbb(spine))
+    let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
+        missing_edge::standard_mesh_edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Resource)?
     } else {
-        fbb::parse_standard(spine)
-            .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
+        None
     };
-    let mesh_bound = (!has_open_face_domains)
-        .then_some(mesh_topology)
-        .flatten()
-        .and_then(|topology| {
-            let endpoint_pairs = resolved_endpoint_pairs
-                .clone()
-                .or_else(|| {
-                    endpoint_candidates
-                        .iter()
-                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                        .collect::<Option<Vec<[usize; 2]>>>()
-                })
-                .or_else(|| {
-                    let ports = topology
-                        .edge_vertices()?
-                        .into_iter()
-                        .map(|[left, right]| {
-                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    missing_edge::bind_edge_port_candidates(
-                        &ports,
-                        constrained_endpoint_options.as_ref()?,
-                    )
-                })?;
-            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-            Some((topology, point_assignment))
+    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
+        let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
+            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                .map_err(StandardTopologyError::Resource)?
+        } else {
+            None
+        };
+        if native.is_some() {
+            native
+        } else {
+            topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Resource)?
+        }
+    } else {
+        let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Resource)?;
+        if standard.is_some() {
+            standard
+        } else if let Some(ports) = native_ports.as_ref() {
+            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                .map_err(StandardTopologyError::Resource)?
+        } else {
+            None
+        }
+    };
+    let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
+            return Ok(None);
+        };
+        let candidate_pairs = resolved_endpoint_pairs.clone().or_else(|| {
+            endpoint_candidates
+                .iter()
+                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                .collect::<Option<Vec<[usize; 2]>>>()
         });
+        let endpoint_pairs = if let Some(pairs) = candidate_pairs {
+            Some(pairs)
+        } else {
+            let Some(vertices) = topology.edge_vertices(ctx)? else {
+                return Ok(None);
+            };
+            let ports = vertices
+                .into_iter()
+                .map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?]))
+                .collect::<Option<Vec<_>>>();
+            let Some(ports) = ports else {
+                return Ok(None);
+            };
+            let Some(options) = constrained_endpoint_options.as_ref() else {
+                return Ok(None);
+            };
+            missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
+        };
+        let Some(endpoint_pairs) = endpoint_pairs else {
+            return Ok(None);
+        };
+        let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
+            return Ok(None);
+        };
+        Ok(Some((topology, point_assignment)))
+    })();
+    let mesh_bound = match mesh_bound {
+        Ok(bound) => bound,
+        Err(error) => return Err(StandardTopologyError::Resource(error)),
+    };
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)
@@ -5006,14 +5124,18 @@ fn attach_standard_topology(
     let mut mesh_search_exhausted = false;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
-        native_endpoint_pairs.as_ref().and_then(|pairs| {
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_fbb_endpoints_with_edge_classes(
+                ctx,
                 spine,
                 &edge_faces,
                 pairs,
                 Some(&edge_classes),
             )
-        })
+            .map_err(StandardTopologyError::Resource)?
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -5023,21 +5145,30 @@ fn attach_standard_topology(
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then_some(native_endpoint_pairs.as_ref())
-        .flatten()
-        .and_then(|pairs| {
+    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if has_open_face_domains {
+            return Ok(None);
+        }
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_standard_endpoints_with_edge_classes(
+                ctx,
                 spine,
                 &edge_faces,
                 pairs,
                 Some(&edge_classes),
             )
-        })
+        } else {
+            Ok(None)
+        }
+    })()
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
+    } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let Some(options) = constrained_endpoint_options.as_ref() else {
+            return Ok(None);
+        };
         let edge_identity_evidence = supports
             .iter()
             .enumerate()
@@ -5089,19 +5220,20 @@ fn attach_standard_topology(
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let mut solver_deferred_edges = deferred_port_edges.clone();
-        if let Some(ports) = missing_edge::edge_port_identities(spine) {
+        if let Some(ports) = missing_edge::edge_port_identities(ctx, spine)? {
             if !missing_edge::expand_deferred_edge_port_components(
                 &ports,
                 &mut solver_deferred_edges,
             ) {
-                return None;
+                return Ok(None);
             }
         }
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
              selected_edge_classes: &[usize],
-             solve_budget: &WorkBudget<'_>| {
+             solve_budget: &WorkBudget<'_>|
+             -> Result<mesh_quotient::MeshCandidateSolve, cadmpeg_core::CodecError> {
                 // FBB-only rows are complete boundary runs. Their global
                 // handle quotient is the incidence source.
                 let mut solver_options = standard_endpoint_options_for_selected_faces(
@@ -5112,7 +5244,7 @@ fn attach_standard_topology(
                     &point_positions,
                     options,
                     &edge_identity_evidence,
-                );
+                )?;
                 for (edge, deferred) in solver_deferred_edges.iter().copied().enumerate() {
                     if deferred && !edge_identity_evidence[edge] {
                         solver_options[edge].clear();
@@ -5162,6 +5294,7 @@ fn attach_standard_topology(
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                 let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    ctx,
                     spine,
                     selected_edge_faces,
                     &solver_options,
@@ -5195,13 +5328,13 @@ fn attach_standard_topology(
                                 pairs,
                             )
                     },
-                );
+                )?;
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
-                    return mesh_quotient::MeshSolve::Failed(
+                    return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
                             mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
                         ),
-                    );
+                    ));
                 }
                 let has_circle_preference = selected_circle_constraint_edges
                     .iter()
@@ -5214,6 +5347,7 @@ fn attach_standard_topology(
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                     let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                        ctx,
                         spine,
                         selected_edge_faces,
                         &solver_options,
@@ -5239,17 +5373,17 @@ fn attach_standard_topology(
                                     .edge_pairs(pairs)
                                     .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
-                    );
+                    )?;
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
-                        return mesh_quotient::MeshSolve::Failed(
+                        return Ok(mesh_quotient::MeshSolve::Failed(
                             mesh_quotient::MeshCandidateFailure::Exhausted(
                                 mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
                             ),
-                        );
+                        ));
                     }
-                    retry_rejected_mesh_solution(preferred, || fallback)
+                    Ok(retry_rejected_mesh_solution(preferred, || fallback))
                 } else {
-                    preferred
+                    Ok(preferred)
                 }
             };
         let outcome = if has_open_face_domains {
@@ -5286,7 +5420,7 @@ fn attach_standard_topology(
                         branch_budget,
                     )
                 },
-            ) {
+            )? {
                 mesh_quotient::MeshSolve::Solved((faces, topology, assignment)) => {
                     selected_face_assignment = Some(faces);
                     mesh_quotient::MeshSolve::Solved((topology, assignment))
@@ -5296,9 +5430,9 @@ fn attach_standard_topology(
                 }
             }
         } else {
-            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)
+            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
-        match outcome {
+        Ok(match outcome {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
                 mesh_search_exhausted |=
@@ -5306,38 +5440,43 @@ fn attach_standard_topology(
                 diagnostics.mesh_failure = Some(failure);
                 None
             }
-        }
-    }) {
-        bound
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then_some(constrained_endpoint_options.as_ref())
-        .flatten()
-        .and_then(|options| {
-            missing_edge::standard_mesh_edge_ports(spine)
-                .and_then(|ports| {
-                    fbb::parse_standard_port_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                        &ports,
-                        work_budget,
-                    )
-                })
-                .or_else(|| {
-                    fbb::parse_standard_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                        work_budget,
-                    )
-                })
         })
+    })()
+    .map_err(StandardTopologyError::Resource)?
+    {
+        bound
+    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if has_open_face_domains {
+            return Ok(None);
+        }
+        let Some(options) = constrained_endpoint_options.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(ports) = missing_edge::standard_mesh_edge_ports(ctx, spine)? {
+            let candidate = fbb::parse_standard_port_endpoint_candidates(
+                ctx,
+                spine,
+                &edge_faces,
+                options,
+                &ports,
+                work_budget,
+            )?;
+            if candidate.is_some() {
+                return Ok(candidate);
+            }
+        }
+        fbb::parse_standard_endpoint_candidates(ctx, spine, &edge_faces, options, work_budget)
+    })()
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then(|| fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors))
-        .flatten()
+    } else if let Some(topology) = (if has_open_face_domains {
+        Ok(None)
+    } else {
+        fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
+    })
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
@@ -5361,12 +5500,15 @@ fn attach_standard_topology(
         }
     }
     let Some(edge_vertices) = validate_standard_topology(
+        ctx,
         ir,
         annotations,
         &mut topology,
         &point_assignment,
-        &supports,
-        &endpoint_candidates,
+        StandardTopologyValidation {
+            supports: &supports,
+            endpoint_candidates: &endpoint_candidates,
+        },
         admission,
     )
     .map_err(StandardTopologyError::Resource)?
@@ -5411,18 +5553,28 @@ fn attach_standard_topology(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct StandardTopologyValidation<'a> {
+    supports: &'a [crate::families::standard::records::StandardCurveSupport],
+    endpoint_candidates: &'a [Vec<usize>],
+}
+
 /// Validates the solved topology against the decoded model, applies body kinds
 /// and face partitioning, and returns the per-edge logical vertex pairs.
 #[allow(clippy::question_mark)]
 fn validate_standard_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &mut crate::families::standard::topology::StandardTopology,
     point_assignment: &[usize],
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    endpoint_candidates: &[Vec<usize>],
+    validation: StandardTopologyValidation<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
+    let StandardTopologyValidation {
+        supports,
+        endpoint_candidates,
+    } = validation;
     let face_count = ir.model.faces.len();
     if topology.face_count() != face_count
         || topology.edge_rows().len() != supports.len()
@@ -5440,13 +5592,16 @@ fn validate_standard_topology(
         return Ok(None);
     }
     let face_groups = vec![topology.face_count()];
-    if topology.orient_solid_body_cycles(&face_groups).is_none() {
+    if topology
+        .orient_solid_body_cycles(ctx, &face_groups)?
+        .is_none()
+    {
         return Ok(None);
     }
     let Some(body_kinds) = topology.body_kinds(&face_groups) else {
         return Ok(None);
     };
-    let Some(edge_vertices) = topology.edge_vertices() else {
+    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
         return Ok(None);
     };
     if edge_vertices.iter().enumerate().any(|(edge, vertices)| {
@@ -5561,18 +5716,23 @@ fn emit_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let native_support = native_edge_supports
+        let native_support = match native_edge_supports
             .get(edge_index)
             .and_then(Option::as_ref)
-            .filter(|native| {
-                standard_native_support_endpoint_pair(
+        {
+            Some(native)
+                if standard_native_support_endpoint_pair(
                     native,
                     &ir.model.points,
                     &[start_point, end_point],
                     Some([start_point, end_point]),
-                )
-                .is_some()
-            });
+                )?
+                .is_some() =>
+            {
+                Some(native)
+            }
+            _ => None,
+        };
         let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
@@ -5828,71 +5988,102 @@ fn emit_standard_topology(
     Ok(())
 }
 
+fn lifted_standard_support_parameters<const N: usize>(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    parameters: [f64; N],
+) -> Result<[Option<Point3>; N], cadmpeg_core::decode::ResourceLimit> {
+    let mut points = [None; N];
+    for (index, parameter) in parameters.into_iter().enumerate() {
+        let Some(uv) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::pcurve_uv(pcurve, parameter))?
+        else {
+            continue;
+        };
+        points[index] = match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
+            Ok(point) => Some(point.get()),
+            Err(failure) => failure.non_finite()?,
+        };
+    }
+    Ok(points)
+}
+
 fn standard_native_support_endpoint_pair(
     support: &StandardEdgeSupport,
     points: &[Point],
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
-) -> Option<[usize; 2]> {
-    const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
+) -> Result<Option<[usize; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<[usize; 2], cadmpeg_core::decode::ResourceLimit>> {
+        const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| {
-            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
-            else {
-                return None;
-            };
-            // A non-finite lift is measured as a finite one is.
-            Some(support.parameter_range.map(|parameter| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
-                match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
-                    Ok(point) => Some(point.get()),
-                    Err(failure) => failure.non_finite(),
-                }
-            }))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
-    let direct = first
-        .iter()
-        .zip(&second)
-        .map(|(left, right)| left.distance_squared(*right).sqrt())
-        .fold(0.0, f64::max);
-    let reversed = first
-        .iter()
-        .zip(second.iter().rev())
-        .map(|(left, right)| left.distance_squared(*right).sqrt())
-        .fold(0.0, f64::max);
-    if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
-        return None;
-    }
-    let pair = first
-        .into_iter()
-        .map(|expected| {
-            let matches = candidates
-                .iter()
-                .copied()
-                .filter(|point| {
-                    points.get(*point).is_some_and(|point| {
-                        point.position().get().distance_squared(expected).sqrt()
-                            <= VERTEX_MATCH_TOLERANCE
+        let lifted = support
+            .carriers
+            .iter()
+            .zip(&support.pcurves)
+            .map(
+                |(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                        carrier
+                    else {
+                        return Ok(None);
+                    };
+                    // A non-finite lift is measured as a finite one is.
+                    Ok(Some(lifted_standard_support_parameters(
+                        surface,
+                        pcurve,
+                        support.parameter_range,
+                    )?))
+                },
+            )
+            .collect::<Result<Option<Vec<_>>, _>>();
+        let lifted = match lifted {
+            Ok(Some(lifted)) => lifted,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let [first, second] = <[[Option<Point3>; 2]; 2]>::try_from(lifted).ok()?;
+        let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+        let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        let direct = first
+            .iter()
+            .zip(&second)
+            .map(|(left, right)| left.distance_squared(*right).sqrt())
+            .fold(0.0, f64::max);
+        let reversed = first
+            .iter()
+            .zip(second.iter().rev())
+            .map(|(left, right)| left.distance_squared(*right).sqrt())
+            .fold(0.0, f64::max);
+        if direct.min(reversed) > SUPPORT_AGREEMENT_TOLERANCE {
+            return None;
+        }
+        let pair = first
+            .into_iter()
+            .map(|expected| {
+                let matches = candidates
+                    .iter()
+                    .copied()
+                    .filter(|point| {
+                        points.get(*point).is_some_and(|point| {
+                            point.position().get().distance_squared(expected).sqrt()
+                                <= VERTEX_MATCH_TOLERANCE
+                        })
                     })
-                })
-                .collect::<Vec<_>>();
-            <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    <[usize; 2]>::try_from(pair)
-        .ok()
-        .filter(|pair| pair[0] != pair[1])
-        .filter(|pair| {
-            required_pair.is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
-        })
+                    .collect::<Vec<_>>();
+                <[usize; 1]>::try_from(matches).ok().map(|[point]| point)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        <[usize; 2]>::try_from(pair)
+            .ok()
+            .filter(|pair| pair[0] != pair[1])
+            .filter(|pair| {
+                required_pair
+                    .is_none_or(|required| missing_edge::same_unordered_pair(*pair, required))
+            })
+            .map(Ok)
+    })()
+    .transpose()
 }
 
 fn resolve_standard_endpoint_pairs(
@@ -6615,31 +6806,31 @@ fn face_surface<'a>(
 /// Cache the exact face-membership predicate used by endpoint search.
 ///
 /// Face geometry and standard face bounds are immutable while a topology
-/// candidate is searched. The cache changes only lookup cost; allocation
-/// failure returns `None`, and callers retain the original predicate.
+/// candidate is searched. The cache changes only lookup cost.
 fn standard_face_point_membership(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
-) -> Option<Vec<Vec<bool>>> {
-    bindings
-        .iter()
-        .enumerate()
-        .map(|(face, _)| {
-            let surface = face_surface(ir, bindings, surface_indices, face)?;
-            let bounds = face_bounds
-                .and_then(|bounds| bounds.get(face).copied())
-                .flatten();
-            let mut membership =
-                alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
-            for (point, candidate) in ir.model.points.iter().enumerate() {
-                membership[point] =
-                    point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
-            }
-            Some(membership)
-        })
-        .collect()
+) -> Result<Option<Vec<Vec<bool>>>, cadmpeg_core::CodecError> {
+    let mut memberships =
+        ctx.alloc_filled(bindings.len(), Vec::new(), "catia_face_membership_rows")?;
+    for (face, membership) in memberships.iter_mut().enumerate() {
+        let Some(surface) = face_surface(ir, bindings, surface_indices, face) else {
+            return Ok(None);
+        };
+        let bounds = face_bounds
+            .and_then(|bounds| bounds.get(face).copied())
+            .flatten();
+        *membership =
+            ctx.alloc_filled(ir.model.points.len(), false, "catia_face_point_membership")?;
+        for (point, candidate) in ir.model.points.iter().enumerate() {
+            membership[point] =
+                point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
+        }
+    }
+    Ok(Some(memberships))
 }
 
 fn point_on_standard_face(
@@ -6892,49 +7083,68 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
             .is_some_and(|reversed| same_payload(left, &reversed))
 }
 
-fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 4]> {
-    let [[u_lower, u_upper], [v_lower, v_upper]] = nurbs_surface_parameter_domain(surface)?;
-    Some([
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
-            u_lower,
-        )?,
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
-            u_upper,
-        )?,
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
-            v_lower,
-        )?,
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
-            v_upper,
-        )?,
-    ])
+fn nurbs_surface_boundary_curves(
+    surface: &NurbsSurface,
+) -> Result<Option<[NurbsCurve; 4]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = nurbs_surface_parameter_domain(surface)
+    else {
+        return Ok(None);
+    };
+    let curve =
+        |axis, parameter| cadmpeg_ir::eval::nurbs_surface_isocurve(surface, axis, parameter);
+    let Some(u_lower) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        u_lower,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(u_upper) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        u_upper,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(v_lower) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+        v_lower,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(v_upper) = curve(
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+        v_upper,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some([u_lower, u_upper, v_lower, v_upper]))
 }
 
-fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
+fn nurbs_boundary_contains_point(
+    curve: &NurbsCurve,
+    point: Point3,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
-        return false;
+        return Ok(false);
     };
-    [lower, 0.5 * (lower + upper), upper]
-        .into_iter()
-        .any(|seed| {
-            cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
-                curve,
-                point,
-                NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
-                seed,
-            )
-            .is_some()
-        })
+    for seed in [lower, 0.5 * (lower + upper), upper] {
+        if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+            curve,
+            point,
+            NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+            seed,
+        )?
+        .is_some()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Return endpoint pairs that lie on an exact shared NURBS carrier boundary.
@@ -6948,16 +7158,20 @@ fn standard_shared_nurbs_boundary_pair_options(
     right: &SurfaceGeometry,
     points: &[Point3],
     options: &[[usize; 2]],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::decode::ResourceLimit> {
     let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(left)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(right)),
     ) = (left, right)
     else {
-        return None;
+        return Ok(None);
     };
-    let left_boundaries = nurbs_surface_boundary_curves(left)?;
-    let right_boundaries = nurbs_surface_boundary_curves(right)?;
+    let Some(left_boundaries) = nurbs_surface_boundary_curves(left)? else {
+        return Ok(None);
+    };
+    let Some(right_boundaries) = nurbs_surface_boundary_curves(right)? else {
+        return Ok(None);
+    };
     let shared_boundaries = left_boundaries
         .iter()
         .filter(|left| {
@@ -6967,23 +7181,33 @@ fn standard_shared_nurbs_boundary_pair_options(
         })
         .collect::<Vec<_>>();
     if shared_boundaries.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(
-        options
-            .iter()
-            .copied()
-            .filter(|pair| {
-                shared_boundaries.iter().any(|boundary| {
-                    pair.iter().all(|point| {
-                        points
-                            .get(*point)
-                            .is_some_and(|point| nurbs_boundary_contains_point(boundary, *point))
-                    })
-                })
-            })
-            .collect(),
-    )
+    let mut filtered = Vec::new();
+    for &pair in options {
+        let mut matches = false;
+        for boundary in &shared_boundaries {
+            let mut both = true;
+            for point_index in pair {
+                let Some(point) = points.get(point_index) else {
+                    both = false;
+                    break;
+                };
+                if !nurbs_boundary_contains_point(boundary, *point)? {
+                    both = false;
+                    break;
+                }
+            }
+            if both {
+                matches = true;
+                break;
+            }
+        }
+        if matches {
+            filtered.push(pair);
+        }
+    }
+    Ok(Some(filtered))
 }
 
 fn standard_shared_boundary_group_domains(
@@ -7057,41 +7281,47 @@ fn standard_endpoint_options_for_selected_faces(
     points: &[Point3],
     options: &[Vec<[usize; 2]>],
     edge_identity_evidence: &[bool],
-) -> Vec<Vec<[usize; 2]>> {
-    let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) = supports
+) -> Result<Vec<Vec<[usize; 2]>>, cadmpeg_core::decode::ResourceLimit> {
+    let selections = supports
         .iter()
         .enumerate()
-        .map(|(edge, support)| {
-            let Some(pairs) = options.get(edge) else {
-                return (Vec::new(), false);
-            };
-            if edge_identity_evidence.get(edge).copied().unwrap_or(false)
-                || !matches!(
-                    support.geometry,
-                    crate::families::standard::records::StandardCurveGeometry::Bspline
-                )
-                || support.faces[0] == support.faces[1]
-            {
-                return (pairs.clone(), false);
-            }
-            let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
-                return (pairs.clone(), false);
-            };
-            let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
-                return (pairs.clone(), false);
-            };
-            let filtered = standard_shared_nurbs_boundary_pair_options(
-                &left.geometry,
-                &right.geometry,
-                points,
-                pairs,
-            );
-            match filtered {
-                Some(filtered) if !filtered.is_empty() => (filtered, true),
-                _ => (pairs.clone(), false),
-            }
-        })
-        .unzip();
+        .map(
+            |(edge, support)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                let Some(pairs) = options.get(edge) else {
+                    return Ok((Vec::new(), false));
+                };
+                if edge_identity_evidence.get(edge).copied().unwrap_or(false)
+                    || !matches!(
+                        support.geometry,
+                        crate::families::standard::records::StandardCurveGeometry::Bspline
+                    )
+                    || support.faces[0] == support.faces[1]
+                {
+                    return Ok((pairs.clone(), false));
+                }
+                let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0])
+                else {
+                    return Ok((pairs.clone(), false));
+                };
+                let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1])
+                else {
+                    return Ok((pairs.clone(), false));
+                };
+                let filtered = standard_shared_nurbs_boundary_pair_options(
+                    &left.geometry,
+                    &right.geometry,
+                    points,
+                    pairs,
+                )?;
+                Ok(match filtered {
+                    Some(filtered) if !filtered.is_empty() => (filtered, true),
+                    _ => (pairs.clone(), false),
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
+    let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) =
+        selections.into_iter().unzip();
     standard_shared_boundary_group_domains(
         supports,
         options,
@@ -7099,7 +7329,7 @@ fn standard_endpoint_options_for_selected_faces(
         edge_identity_evidence,
         &boundary_witnesses,
     );
-    filtered_options
+    Ok(filtered_options)
 }
 
 fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {
@@ -7233,10 +7463,11 @@ fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool>
 }
 
 fn invariant_face_carrier_bindings(
+    ctx: &DecodeContext<'_>,
     face_edges: &[Vec<(usize, Vec<usize>)>],
     owner_count: usize,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Vec<Option<usize>>> {
+) -> Result<Option<Vec<Option<usize>>>, cadmpeg_core::CodecError> {
     let normalized = face_edges
         .iter()
         .map(|edges| {
@@ -7258,13 +7489,21 @@ fn invariant_face_carrier_bindings(
         .map(|edges| edges.keys().copied().collect::<Vec<_>>())
         .collect::<Vec<_>>();
     let matching = distinct_domain_matching_with_budget(
+        ctx,
         domains.iter().map(Vec::as_slice),
         owner_count,
         budget,
         None,
     )?;
-    retain_distinct_matching_supports(&mut domains, owner_count, &matching, budget)?;
-    Some(
+    let Some(matching) = matching else {
+        return Ok(None);
+    };
+    let Some(_) =
+        retain_distinct_matching_supports(ctx, &mut domains, owner_count, &matching, budget)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
         domains
             .iter()
             .zip(&normalized)
@@ -7281,7 +7520,7 @@ fn invariant_face_carrier_bindings(
                 carriers.into_iter().next()
             })
             .collect(),
-    )
+    ))
 }
 
 fn owner_matches_a5_carrier(
@@ -7414,15 +7653,22 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct StandardConsolidatedSource<'a> {
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+}
+
 fn bind_standard_a5_owner_surfaces(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    data: &[u8],
-    records: &[ConsolidatedRecord],
+    source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let StandardConsolidatedSource { data, records } = source;
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
@@ -7518,7 +7764,8 @@ fn bind_standard_a5_owner_surfaces(
                 .collect(),
         );
     }
-    let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
+    let Some(bindings) =
+        invariant_face_carrier_bindings(ctx, &face_edges, owners.len(), Some(budget))?
     else {
         return Ok(0);
     };
@@ -8422,37 +8669,39 @@ fn standard_oriented_native_support_pcurves(
     points: &[Point],
     endpoint_pair: [usize; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<[PcurveGeometry; 2]> {
+) -> Result<Option<[PcurveGeometry; 2]>, cadmpeg_core::decode::ResourceLimit> {
     let Some(native_pair) =
-        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
+        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))?
     else {
-        return Some(native.pcurves.clone());
+        return Ok(Some(native.pcurves.clone()));
     };
     if native_pair == endpoint_pair {
-        return Some(native.pcurves.clone());
+        return Ok(Some(native.pcurves.clone()));
     }
-    Some([
-        crate::nurbs::reverse_pcurve_geometry(
-            &native.pcurves[0],
-            native.parameter_range,
-            refusal,
-            &format!(
-                "standard native edge-support pcurve 0 of the edge between points {} and {}, \
+    Ok((|| {
+        Some([
+            crate::nurbs::reverse_pcurve_geometry(
+                &native.pcurves[0],
+                native.parameter_range,
+                refusal,
+                &format!(
+                    "standard native edge-support pcurve 0 of the edge between points {} and {}, \
                  reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
-        )?,
-        crate::nurbs::reverse_pcurve_geometry(
-            &native.pcurves[1],
-            native.parameter_range,
-            refusal,
-            &format!(
-                "standard native edge-support pcurve 1 of the edge between points {} and {}, \
+                    endpoint_pair[0], endpoint_pair[1]
+                ),
+            )?,
+            crate::nurbs::reverse_pcurve_geometry(
+                &native.pcurves[1],
+                native.parameter_range,
+                refusal,
+                &format!(
+                    "standard native edge-support pcurve 1 of the edge between points {} and {}, \
                  reversed onto its edge",
-                endpoint_pair[0], endpoint_pair[1]
-            ),
-        )?,
-    ])
+                    endpoint_pair[0], endpoint_pair[1]
+                ),
+            )?,
+        ])
+    })())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -8555,45 +8804,42 @@ fn build_standard_edge_curve(
                     }
                 }
                 Some(axis) => {
-                    let candidates = [axis, axis.reversed()]
-                        .into_iter()
-                        .filter_map(|axis| {
-                            let ref_direction =
-                                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
-                            let range = standard_circle_param_range(
-                                ir,
-                                bindings,
-                                surface_indices,
-                                brep,
-                                support,
-                                center,
-                                radius,
-                                *axis.as_raw(),
-                                ref_direction,
-                                start,
-                                end,
-                                refusal,
-                            )
-                            .or_else(|| {
-                                native_support.and_then(|native| {
-                                    native_support_circle_param_range(
-                                        native,
-                                        center,
-                                        radius,
-                                        *axis.as_raw(),
-                                        ref_direction,
-                                        start,
-                                        end,
-                                    )
-                                })
-                            })?;
-                            Some((
-                                axis,
-                                ref_direction,
-                                crate::nurbs::canonical_periodic_range(range)?,
-                            ))
-                        })
-                        .collect::<Vec<_>>();
+                    let mut candidates = Vec::new();
+                    for axis in [axis, axis.reversed()] {
+                        let ref_direction =
+                            cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
+                        let mut range = standard_circle_param_range(
+                            ir,
+                            bindings,
+                            surface_indices,
+                            brep,
+                            support,
+                            center,
+                            radius,
+                            *axis.as_raw(),
+                            ref_direction,
+                            start,
+                            end,
+                            refusal,
+                        );
+                        if range.is_none() {
+                            if let Some(native) = native_support {
+                                range = native_support_circle_param_range(
+                                    native,
+                                    center,
+                                    radius,
+                                    *axis.as_raw(),
+                                    ref_direction,
+                                    start,
+                                    end,
+                                )?;
+                            }
+                        }
+                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range)
+                        {
+                            candidates.push((axis, ref_direction, range));
+                        }
+                    }
                     let (axis, ref_direction, param_range) = match candidates.as_slice() {
                         [(axis, reference, range)] => (*axis, *reference, Some(*range)),
                         _ => (
@@ -8708,7 +8954,7 @@ fn build_standard_edge_curve(
                     &ir.model.points,
                     points,
                     refusal,
-                ) {
+                )? {
                     Some(pcurves) => Some(pcurves),
                     None => return Ok((None, None)),
                 }
@@ -9578,67 +9824,81 @@ fn native_support_circle_param_range(
     ref_direction: Vector3,
     start: Point3,
     end: Point3,
-) -> Option<[f64; 2]> {
-    const GEOMETRY_TOLERANCE: f64 = 2e-3;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
+        const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
-    let parameters = [
-        support.parameter_range[0],
-        0.5 * (support.parameter_range[0] + support.parameter_range[1]),
-        support.parameter_range[1],
-    ];
-    let lifted = support
-        .carriers
-        .iter()
-        .zip(&support.pcurves)
-        .map(|(carrier, pcurve)| {
-            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
-            else {
-                return None;
-            };
-            let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
-            (carrier_axis.as_raw().dot(axis) >= 0.9999).then_some(())?;
-            // A non-finite lift is measured as a finite one is.
-            Some(parameters.map(|parameter| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
-                match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
-                    Ok(point) => Some(point.get()),
-                    Err(failure) => failure.non_finite(),
-                }
-            }))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
-    let first = first.into_iter().collect::<Option<Vec<_>>>()?;
-    let second = second.into_iter().collect::<Option<Vec<_>>>()?;
-    if first
-        .iter()
-        .zip(&second)
-        .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
-    {
-        return None;
-    }
-    let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
-    let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
-    let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
-        && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
-    if source_forward == source_reversed {
-        return None;
-    }
-    let witness = first[1];
-    let transverse = axis.cross(ref_direction);
-    let angle = |point: Point3| {
-        let radial = point.vector_from(center);
-        let axial = radial.dot(axis);
-        let radial_length = radial.norm();
-        (axial.abs() <= GEOMETRY_TOLERANCE && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
-            .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
-    };
-    let start_angle = angle(start)?;
-    let end_angle = unwrap_angle(angle(end)?, start_angle);
-    let witness_angle = angle(witness)?;
-    let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
-    Some([start_angle, selected_end])
+        let parameters = [
+            support.parameter_range[0],
+            0.5 * (support.parameter_range[0] + support.parameter_range[1]),
+            support.parameter_range[1],
+        ];
+        let lifted = support
+            .carriers
+            .iter()
+            .zip(&support.pcurves)
+            .map(
+                |(carrier, pcurve)| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                        carrier
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(carrier_axis) =
+                        standard_circle_axis_from_carrier(center, radius, surface)
+                    else {
+                        return Ok(None);
+                    };
+                    if carrier_axis.as_raw().dot(axis) < 0.9999 {
+                        return Ok(None);
+                    }
+                    // A non-finite lift is measured as a finite one is.
+                    Ok(Some(lifted_standard_support_parameters(
+                        surface, pcurve, parameters,
+                    )?))
+                },
+            )
+            .collect::<Result<Option<Vec<_>>, _>>();
+        let lifted = match lifted {
+            Ok(Some(lifted)) => lifted,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let [first, second] = <[[Option<Point3>; 3]; 2]>::try_from(lifted).ok()?;
+        let first = first.into_iter().collect::<Option<Vec<_>>>()?;
+        let second = second.into_iter().collect::<Option<Vec<_>>>()?;
+        if first
+            .iter()
+            .zip(&second)
+            .any(|(left, right)| left.distance_squared(*right).sqrt() > SUPPORT_AGREEMENT_TOLERANCE)
+        {
+            return None;
+        }
+        let endpoint_error = |left: Point3, right: Point3| left.distance_squared(right).sqrt();
+        let source_forward = endpoint_error(first[0], start) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], end) <= GEOMETRY_TOLERANCE;
+        let source_reversed = endpoint_error(first[0], end) <= GEOMETRY_TOLERANCE
+            && endpoint_error(first[2], start) <= GEOMETRY_TOLERANCE;
+        if source_forward == source_reversed {
+            return None;
+        }
+        let witness = first[1];
+        let transverse = axis.cross(ref_direction);
+        let angle = |point: Point3| {
+            let radial = point.vector_from(center);
+            let axial = radial.dot(axis);
+            let radial_length = radial.norm();
+            (axial.abs() <= GEOMETRY_TOLERANCE
+                && (radial_length - radius).abs() <= GEOMETRY_TOLERANCE)
+                .then(|| radial.dot(transverse).atan2(radial.dot(ref_direction)))
+        };
+        let start_angle = angle(start)?;
+        let end_angle = unwrap_angle(angle(end)?, start_angle);
+        let witness_angle = angle(witness)?;
+        let selected_end = witness_arc_end(start_angle, end_angle, witness_angle)?;
+        Some(Ok([start_angle, selected_end]))
+    })()
+    .transpose()
 }
 
 fn attach_standard_circles(
