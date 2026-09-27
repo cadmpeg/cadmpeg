@@ -1610,22 +1610,28 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
             continue;
         };
-        let control_points = placed_directrix
-            .pole_rows()
-            .raw_points()
-            .into_iter()
-            .flat_map(|point| [point, point.translated(direction.get(), 1.0)])
-            .collect::<Vec<_>>();
-        let Ok(_) = u32::try_from(placed_directrix.control_points().len()) else {
+        let pole_count = placed_directrix.pole_count();
+        let Ok(_) = u32::try_from(pole_count) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix pole count exceeds u32"))?;
             continue;
         };
-        let weights: Option<Vec<Vec<NonZeroReal>>> = placed_directrix.weights().map(|weights| {
-            weights
-                .iter()
-                .map(|weight| vec![*weight, *weight])
-                .collect()
-        });
+        let mut pole_rows = reserve_optional_vec(ctx, pole_count, "iges tabulated pole rows")?;
+        for index in 0..pole_count {
+            let point = placed_directrix.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?.get();
+            let mut row = reserve_optional_vec(ctx, 2, "iges tabulated pole row controls")?;
+            row.extend([point, point.translated(direction.get(), 1.0)]);
+            pole_rows.push(row);
+        }
+        let weights = if placed_directrix.pole_rows().weight_at(0).is_some() {
+            let mut rows = reserve_optional_vec(ctx, pole_count, "iges tabulated weight rows")?;
+            for index in 0..pole_count {
+                let weight = placed_directrix.pole_rows().weight_at(index).and_then(NonZeroReal::new).ok_or_else(|| CodecError::malformed("tabulated directrix weight is missing"))?;
+                let mut row = reserve_optional_vec(ctx, 2, "iges tabulated weight row controls")?;
+                row.extend([weight, weight]);
+                rows.push(row);
+            }
+            Some(rows)
+        } else { None };
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
@@ -1634,28 +1640,25 @@ pub(super) fn project(
                     .tail(crate::ids::Word::PlacedDirectrix),
             );
             sequences.record_curve(&placed_id, entry.sequence, ctx)?;
-            ir.model.curves.push(Curve {
-                id: placed_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    placed_directrix.clone(),
-                )),
-                source_object: Some(source_object(entry, ctx)?),
-            });
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
+        let mut u_knots = reserve_optional_vec(ctx, placed_directrix.knots().len(), "iges tabulated u knots")?;
+        u_knots.extend_from_slice(placed_directrix.knots());
+        let mut v_knots = reserve_optional_vec(ctx, 4, "iges tabulated v knots")?;
+        v_knots.extend([0.0, 0.0, 1.0, 1.0]);
         let surface = match NurbsPoleGrid::from_checked_lanes(
-            control_points.chunks(2).map(<[_]>::to_vec).collect(),
+            pole_rows,
             weights,
         )
         .and_then(|poles| {
             NurbsSurface::new(
                 NurbsSurfaceAxis::new(
                     placed_directrix.degree(),
-                    placed_directrix.knots().clone(),
+                    u_knots,
                     placed_directrix.periodic(),
                 ),
-                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, v_knots, false),
                 poles,
                 false,
             )
@@ -1666,7 +1669,16 @@ pub(super) fn project(
                 continue;
             }
         };
+        if entry.transform != 0 {
+            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated placed directrix slots")?;
+            ir.model.curves.push(Curve {
+                id: procedural_directrix.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
+                source_object: Some(source_object(entry, ctx)?),
+            });
+        }
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),

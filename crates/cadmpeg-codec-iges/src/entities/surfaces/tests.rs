@@ -71,6 +71,52 @@ fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn type122_projection_refuses_tabulated_carrier_rows_knots_and_slots() {
+    let bytes = placed_tabulated_line_file();
+    for operation in [
+        "iges tabulated pole rows",
+        "iges tabulated pole row controls",
+        "iges tabulated u knots",
+        "iges tabulated v knots",
+        "iges tabulated placed directrix slots",
+        "iges tabulated neutral surface slots",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn type122_projection_refuses_rational_tabulated_weight_rows() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RATIONAL".into(),
+            status: "00000000",
+            parameters: "126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 122,
+            form: 0,
+            label: "TABULATE".into(),
+            status: "00000000",
+            parameters: "122,1,0,0,2;".into(),
+        },
+    ]);
+    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+        &surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+            cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
+            ..
+        } if nurbs.weights().is_some()
+    )));
+    for operation in ["iges tabulated weight rows", "iges tabulated weight row controls"] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
 fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
     let polynomial = nurbs_surface_file();
     for operation in [
