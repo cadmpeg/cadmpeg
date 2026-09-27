@@ -4,6 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::legacy::{
     self, NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload,
@@ -195,12 +197,12 @@ struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    fn build(persistence: &'a Persistence) -> Option<Self> {
+    fn build(ctx: &DecodeContext<'_>, persistence: &'a Persistence) -> Result<Option<Self>, CodecError> {
         let mut object_by_id = BTreeMap::new();
         let mut objects_by_parent_name = BTreeMap::new();
         for object in &persistence.objects {
             if object_by_id.insert(object.id(), object).is_some() {
-                return None;
+                return Ok(None);
             }
             if let Some(parent) = object.parent {
                 objects_by_parent_name
@@ -210,9 +212,9 @@ impl<'a> Index<'a> {
             }
         }
 
-        let integers_by_parent_name = legacy::value_index(&persistence.integer_values.rows);
-        let reals_by_parent_name = legacy::value_index(&persistence.real_values.rows);
-        let strings_by_parent_name = legacy::value_index(&persistence.string_values);
+        let integers_by_parent_name = legacy::value_index(ctx, &persistence.integer_values.rows)?;
+        let reals_by_parent_name = legacy::value_index(ctx, &persistence.real_values.rows)?;
+        let strings_by_parent_name = legacy::value_index(ctx, &persistence.string_values)?;
 
         let mut typed_field_names = BTreeMap::new();
         add_typed_field_names(&mut typed_field_names, &persistence.integer_values.rows);
@@ -226,14 +228,14 @@ impl<'a> Index<'a> {
         add_typed_field_names(&mut typed_field_names, &persistence.type_9_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.type_11_values.rows);
 
-        Some(Self {
+        Ok(Some(Self {
             object_by_id,
             objects_by_parent_name,
             integers_by_parent_name,
             reals_by_parent_name,
             strings_by_parent_name,
             typed_field_names,
-        })
+        }))
     }
 }
 
@@ -385,8 +387,17 @@ fn typed_value(
 /// `Solid` or `Sld_FamilyInfo`. Nested `drv_tbl_ptr` objects are instance
 /// targets and are never competing roots. Every admitted array is one
 /// dimensional and complete; instance values join item columns by ordinal.
-pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
-    let index = Index::build(persistence)?;
+pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
+    persistence: &Persistence,
+) -> Result<Option<FamilyTable>, CodecError> {
+    let Some(index) = Index::build(ctx, persistence)? else {
+        return Ok(None);
+    };
+    Ok(parse_indexed(persistence, &index))
+}
+
+fn parse_indexed(persistence: &Persistence, index: &Index<'_>) -> Option<FamilyTable> {
     let roots = persistence
         .objects
         .iter()
@@ -533,11 +544,20 @@ impl FamilyTable {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse, FamilyTableValuePayload, FAMILY_ROOT, INSTANCES_ARRAY, ITEMS_ARRAY, VALUES_ARRAY,
+        parse as parse_checked, FamilyTableValuePayload, FAMILY_ROOT, INSTANCES_ARRAY, ITEMS_ARRAY, VALUES_ARRAY,
         VALUE_INTEGER, VALUE_REAL, VALUE_STRING,
     };
     use crate::legacy;
     use crate::legacy::{NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    fn parse(persistence: &Persistence) -> Option<super::FamilyTable> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        parse_checked(&ctx, persistence).expect("service admits legacy family table")
+    }
 
     fn fixture_offset(id: &str) -> usize {
         match id {

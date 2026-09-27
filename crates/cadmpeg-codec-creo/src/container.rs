@@ -2772,16 +2772,19 @@ pub(crate) fn scan_bytes<'a>(
         .unwrap_or_default();
     let legacy_rounds = legacy_ascii
         .map(|framing| {
-            crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
+            crate::legacy_feature::scan(ctx, &framing.persistence, &legacy_geometry.topology_rows)
         })
+        .transpose()?
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(ctx, &sections)?;
     let census = geom_census(&sections)?;
     let principal_unit =
         binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
-    let legacy_family_table =
-        legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
+    let legacy_family_table = legacy_ascii
+        .map(|framing| crate::legacy_family::parse(ctx, &framing.persistence))
+        .transpose()?
+        .flatten();
     let nonvisible_geometry_sections = nonvisible_geometry_sections(ctx, &sections)?;
     let loop_array_sections = loop_array_sections(
         ctx,

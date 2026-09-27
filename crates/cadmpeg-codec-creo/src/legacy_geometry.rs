@@ -129,8 +129,8 @@ pub(crate) fn scan(
 ) -> Result<LegacyGeometryScan, CodecError> {
     let object_ids = object_id_index(ctx, &persistence.objects)?;
     let children = child_index(ctx, &persistence.objects)?;
-    let integer_fields = value_index(&persistence.integer_values.rows);
-    let real_fields = value_index(&persistence.real_values.rows);
+    let integer_fields = value_index(ctx, &persistence.integer_values.rows)?;
+    let real_fields = value_index(ctx, &persistence.real_values.rows)?;
     let (rows, mut carriers) = namespace(
         ctx,
         &persistence.objects,
@@ -1757,6 +1757,20 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = spline_persistence(true);
         assert_eq!(scan(&persistence).carriers.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy real vector array");
+    }
+
+    #[test]
+    fn legacy_value_index_nodes_refuse_before_btree_insertion() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy value index nodes");
+    }
+
+    #[test]
+    fn legacy_value_index_rows_refuse_before_vec_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy value index rows");
     }
 
     #[test]

@@ -13,19 +13,30 @@ mod numeric_array;
 pub(crate) mod type_code;
 use type_code::LegacyTypeCode;
 
-pub(crate) fn value_index<K: LegacyCode>(
-    records: &[ValueRecord<K>],
-) -> BTreeMap<(usize, &str), Vec<&ValueRecord<K>>> {
+pub(crate) fn value_index<'a, K: LegacyCode>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &'a [ValueRecord<K>],
+) -> Result<BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>, CodecError> {
     let mut index = BTreeMap::new();
     for record in records {
         if let Some(parent) = record.parent {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_insert_with(Vec::new)
-                .push(record);
+            match index.entry((parent, record.name.as_str())) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo legacy value index nodes")?;
+                    let mut values = Vec::new();
+                    ctx.try_reserve_items(&mut values, 1, "creo legacy value index rows")?;
+                    values.push(record);
+                    entry.insert(values);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let values = entry.get_mut();
+                    ctx.try_reserve_items(values, 1, "creo legacy value index rows")?;
+                    values.push(record);
+                }
+            }
         }
     }
-    index
+    Ok(index)
 }
 
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
