@@ -626,6 +626,36 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
 }
 
 #[test]
+fn e5_boundary_plan_refuses_before_face_and_relation_growth() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..4096 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected boundary decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_boundary_face_plans",
+        "catia_e5_face_plan_loops",
+        "catia_e5_loop_plan_seen",
+        "catia_e5_loop_plan_members",
+        "catia_e5_boundary_occurrence_senses",
+        "catia_e5_pcurve_plan",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn e5_route_propagates_station_collection_refusal() {
     let mut stream = e5_d8_rolling_ball_stream();
     for id in 100..109 {

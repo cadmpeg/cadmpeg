@@ -1086,31 +1086,32 @@ struct E5MemberPlan<'a> {
 }
 
 impl<'a> E5LoopPlan<'a> {
-    fn admit(source: &'a crate::families::e5::graph::E5Loop) -> Option<Self> {
-        let oriented = source.resolved_members()?;
+    fn admit(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        source: &'a crate::families::e5::graph::E5Loop,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(oriented) = source.resolved_members() else { return Ok(None); };
         if source.members.is_empty() || oriented.len() != source.members.len() {
-            return None;
+            return Ok(None);
         }
         let mut seen = HashSet::new();
-        let members = oriented
-            .iter()
-            .map(|orientation| {
-                let member = source.members.get(orientation.serialized_index)?;
-                if !seen.insert(orientation.serialized_index) {
-                    return None;
-                }
-                Some(E5MemberPlan {
-                    source: member,
-                    orientation,
-                    id: CoedgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
-                        cadmpeg_ir::ids::IdentityKey::from(source.record_id)
-                            .dash(orientation.serialized_index),
-                    ),
-                })
-            })
-            .collect::<Option<_>>()?;
-        Some(Self { source, members })
+        let mut members = Vec::new();
+        for orientation in oriented {
+            let Some(member) = source.members.get(orientation.serialized_index) else { return Ok(None); };
+            if !crate::resource::insert_set(ctx, &mut seen, orientation.serialized_index, "catia_e5_loop_plan_seen")? {
+                return Ok(None);
+            }
+            crate::resource::push(ctx, &mut members, E5MemberPlan {
+                source: member,
+                orientation,
+                id: CoedgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
+                    cadmpeg_ir::ids::IdentityKey::from(source.record_id)
+                        .dash(orientation.serialized_index),
+                ),
+            }, "catia_e5_loop_plan_members")?;
+        }
+        Ok(Some(Self { source, members }))
     }
 }
 
@@ -1158,7 +1159,7 @@ fn transfer_e5_topology(
         crate::resource::insert_map(ctx, &mut point_for_ref, reference, point.position().get(), "catia_e5_transfer_point_refs")?;
     }
 
-    let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref, refusal)
+    let Some(boundary) = plan_e5_boundary(ctx, topology, &surface_for_ref, &point_for_ref, refusal)?
     else {
         return Ok(false);
     };
@@ -1231,25 +1232,21 @@ fn transfer_e5_topology(
 /// or returns `None` when any binding fails admission.
 #[allow(clippy::question_mark)]
 fn plan_e5_boundary<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &'a crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     point_for_ref: &HashMap<u32, Point3>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<E5BoundaryPlan<'a>> {
-    let faces = topology
-        .faces
-        .iter()
-        .map(|face| {
-            Some(E5FacePlan {
-                source: face,
-                loops: face
-                    .loops
-                    .iter()
-                    .map(E5LoopPlan::admit)
-                    .collect::<Option<_>>()?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+) -> Result<Option<E5BoundaryPlan<'a>>, cadmpeg_core::CodecError> {
+    let mut faces = Vec::new();
+    for face in &topology.faces {
+        let mut loops = Vec::new();
+        for source in &face.loops {
+            let Some(loop_plan) = E5LoopPlan::admit(ctx, source)? else { return Ok(None); };
+            crate::resource::push(ctx, &mut loops, loop_plan, "catia_e5_face_plan_loops")?;
+        }
+        crate::resource::push(ctx, &mut faces, E5FacePlan { source: face, loops }, "catia_e5_boundary_face_plans")?;
+    }
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
@@ -1258,31 +1255,31 @@ fn plan_e5_boundary<'a>(
         BTreeMap::<u32, Vec<E5OccurrenceIntersectionSide>>::new();
     for face in &topology.faces {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
-            return None;
+            return Ok(None);
         };
         for loop_ in &face.loops {
             for (member_index, member) in loop_.members.iter().enumerate() {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
                 let Some(edge) = topology.edges.get(&edge_ref) else {
-                    return None;
+                    return Ok(None);
                 };
                 let Some(support) = topology.curve_supports.get(&edge.support) else {
-                    return None;
+                    return Ok(None);
                 };
                 let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else {
-                    return None;
+                    return Ok(None);
                 };
                 let Some((geometry, range, endpoints)) =
                     e5_pcurve_on_surface(pcurve, decoded_surface, refusal)
                 else {
-                    return None;
+                    return Ok(None);
                 };
                 let (Some(start), Some(end)) = (
                     point_for_ref.get(&edge.start_vertex),
                     point_for_ref.get(&edge.end_vertex),
                 ) else {
-                    return None;
+                    return Ok(None);
                 };
                 let forward = endpoints[0]
                     .distance(*start)
@@ -1297,16 +1294,20 @@ fn plan_e5_boundary<'a>(
                 let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
                     .or_else(|| unique_endpoint_direction(forward, reverse_error));
                 let Some(reversed) = reversed else {
-                    return None;
+                    return Ok(None);
                 };
-                if pcurve_use_reversed
-                    .insert((loop_.record_id, member_index), reversed)
-                    .is_some()
+                if crate::resource::insert_btree_map(
+                    ctx,
+                    &mut pcurve_use_reversed,
+                    (loop_.record_id, member_index),
+                    reversed,
+                    "catia_e5_boundary_occurrence_senses",
+                )?.is_some()
                 {
-                    return None;
+                    return Ok(None);
                 }
                 if if reversed { reverse_error } else { forward } > E5_ENDPOINT_MATCH_TOLERANCE {
-                    return None;
+                    return Ok(None);
                 }
                 let oriented_pcurve = if reversed {
                     let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
@@ -1318,7 +1319,7 @@ fn plan_e5_boundary<'a>(
                             loop_.record_id
                         ),
                     ) else {
-                        return None;
+                        return Ok(None);
                     };
                     reversed
                 } else {
@@ -1343,7 +1344,7 @@ fn plan_e5_boundary<'a>(
                                 loop_.record_id
                             ),
                         ) else {
-                            return None;
+                            return Ok(None);
                         };
                         (curve, curve_range) = reversed_curve;
                     }
@@ -1358,26 +1359,28 @@ fn plan_e5_boundary<'a>(
                         pcurve_range: range,
                         curve: lifted_curve.clone(),
                     };
+                    crate::resource::admit_btree_entry(ctx, &occurrence_intersection_sides, &edge_ref, "catia_e5_occurrence_side_keys")?;
                     let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
                     if !sides.iter().any(|existing| {
                         existing.surface == side.surface
                             && existing.pcurve == side.pcurve
                             && existing.pcurve_range == side.pcurve_range
                     }) {
-                        sides.push(side);
+                        crate::resource::push(ctx, sides, side, "catia_e5_occurrence_sides")?;
                     }
                 }
                 if let Some((curve, curve_range)) = lifted_curve {
                     if !support.is_intersection() {
                         if let Some(existing) = edge_curve_plan.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
-                                return None;
+                                return Ok(None);
                             }
                         } else {
-                            edge_curve_plan.insert(edge_ref, (curve, curve_range));
+                            crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref, (curve, curve_range), "catia_e5_edge_curve_plan")?;
                         }
                     }
                 } else if !support.is_intersection() {
+                    crate::resource::admit_btree_entry(ctx, &surface_curve_plan, &edge_ref, "catia_e5_surface_curve_plan")?;
                     surface_curve_plan.entry(edge_ref).or_insert_with(|| {
                         (
                             surface_for_ref[&face.surface].0.clone(),
@@ -1388,10 +1391,10 @@ fn plan_e5_boundary<'a>(
                 }
                 if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
                     if existing != &geometry || existing_range != &range {
-                        return None;
+                        return Ok(None);
                     }
                 } else {
-                    pcurve_plan.insert(pcurve_ref, (geometry, range));
+                    crate::resource::insert_btree_map(ctx, &mut pcurve_plan, pcurve_ref, (geometry, range), "catia_e5_pcurve_plan")?;
                 }
             }
         }
@@ -1399,7 +1402,7 @@ fn plan_e5_boundary<'a>(
     let mut intersection_sides = BTreeMap::<u32, BTreeMap<u32, E5IntersectionSidePlan>>::new();
     for (&edge_ref, edge) in &topology.edges {
         let Some(support) = topology.curve_supports.get(&edge.support) else {
-            return None;
+            return Ok(None);
         };
         if !support.is_intersection() {
             continue;
@@ -1408,7 +1411,7 @@ fn plan_e5_boundary<'a>(
             point_for_ref.get(&edge.start_vertex),
             point_for_ref.get(&edge.end_vertex),
         ) else {
-            return None;
+            return Ok(None);
         };
         for pcurve_ref in support.pcurves() {
             let Some(pcurve) = topology.pcurves.get(pcurve_ref) else {
@@ -1429,7 +1432,7 @@ fn plan_e5_boundary<'a>(
                 // A known intersection pcurve that cannot be normalized must
                 // reject the topology route; omitting one side would claim a
                 // closed graph with incomplete carrier geometry.
-                return None;
+                return Ok(None);
             };
             let forward = endpoints[0]
                 .distance(*start)
@@ -1480,7 +1483,8 @@ fn plan_e5_boundary<'a>(
             } else {
                 geometry
             };
-            intersection_sides.entry(edge_ref).or_default().insert(
+            crate::resource::admit_btree_entry(ctx, &intersection_sides, &edge_ref, "catia_e5_intersection_edge_keys")?;
+            crate::resource::insert_btree_map(ctx, intersection_sides.entry(edge_ref).or_default(),
                 *pcurve_ref,
                 E5IntersectionSidePlan {
                     surface: surface_id.clone(),
@@ -1488,18 +1492,17 @@ fn plan_e5_boundary<'a>(
                     pcurve_range: range,
                     curve,
                     curve_range,
-                },
-            );
+                }, "catia_e5_intersection_side_keys")?;
         }
     }
 
     let mut intersection_plan = BTreeMap::<u32, IntcurveSupportContext>::new();
     for (&edge_ref, sides) in &intersection_sides {
         let Some(edge) = topology.edges.get(&edge_ref) else {
-            return None;
+            return Ok(None);
         };
         let Some(support) = topology.curve_supports.get(&edge.support) else {
-            return None;
+            return Ok(None);
         };
         let [left_ref, right_ref] = support.pcurves() else {
             continue;
@@ -1519,10 +1522,8 @@ fn plan_e5_boundary<'a>(
         if !(same_carrier && same_parameterization || same_ordered_sweep) {
             continue;
         }
-        edge_curve_plan.insert(edge_ref, (left.curve.clone(), left.curve_range));
-        intersection_plan.insert(
-            edge_ref,
-            IntcurveSupportContext::try_new(
+        crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref, (left.curve.clone(), left.curve_range), "catia_e5_edge_curve_plan")?;
+        let Some(context) = IntcurveSupportContext::try_new(
                 [left, right].map(|side| IntcurveSupportSide {
                     surface: Some(side.surface.clone()),
                     pcurve: Some(SupportPcurve::new(
@@ -1532,19 +1533,18 @@ fn plan_e5_boundary<'a>(
                 }),
                 left.curve_range,
                 std::array::from_fn(|_| Vec::new()),
-            )
-            .ok()?,
-        );
+            ).ok() else { return Ok(None); };
+        crate::resource::insert_btree_map(ctx, &mut intersection_plan, edge_ref, context, "catia_e5_intersection_plan")?;
     }
     for (&edge_ref, sides) in &occurrence_intersection_sides {
         if intersection_plan.contains_key(&edge_ref) {
             continue;
         }
         let Some(edge) = topology.edges.get(&edge_ref) else {
-            return None;
+            return Ok(None);
         };
         let Some(support) = topology.curve_supports.get(&edge.support) else {
-            return None;
+            return Ok(None);
         };
         let cache = e5_occurrence_intersection_cache(sides);
         let support_range = support.range.map(FiniteReal::get);
@@ -1553,36 +1553,36 @@ fn plan_e5_boundary<'a>(
             e5_support_occurrence_intersection_context(support_range, solved_range, sides)
         else {
             if let [side] = sides.as_slice() {
+                crate::resource::admit_btree_entry(ctx, &surface_curve_plan, &edge_ref, "catia_e5_surface_curve_plan")?;
                 surface_curve_plan.entry(edge_ref).or_insert_with(|| {
                     (side.surface.clone(), side.pcurve.clone(), side.pcurve_range)
                 });
             }
             continue;
         };
-        edge_curve_plan.insert(
-            edge_ref,
+        crate::resource::insert_btree_map(ctx, &mut edge_curve_plan, edge_ref,
             cache.unwrap_or((
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 solved_range,
-            )),
-        );
-        intersection_plan.insert(edge_ref, context);
+            )), "catia_e5_edge_curve_plan")?;
+        crate::resource::insert_btree_map(ctx, &mut intersection_plan, edge_ref, context, "catia_e5_intersection_plan")?;
     }
 
     for (&edge_ref, (_, _, range)) in &surface_curve_plan {
+        crate::resource::admit_btree_entry(ctx, &edge_curve_plan, &edge_ref, "catia_e5_edge_curve_plan")?;
         edge_curve_plan.entry(edge_ref).or_insert((
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             *range,
         ));
     }
-    Some(E5BoundaryPlan {
+    Ok(Some(E5BoundaryPlan {
         faces,
         pcurve_plan,
         pcurve_use_reversed,
         edge_curve_plan,
         surface_curve_plan,
         intersection_plan,
-    })
+    }))
 }
 
 /// Drops surfaces no face, intersection side, or surface curve references.
@@ -3642,12 +3642,14 @@ mod route_tests {
             (401, Point3::new(0.0, 0.0, 0.0)),
         ]);
 
-        assert!(plan_e5_boundary(
+        assert!(crate::test_support::with_service_context(|ctx| plan_e5_boundary(
+            ctx,
             &topology,
             &surfaces,
             &points,
             &mut crate::nurbs::LaneRefusals::new()
-        )
+        ))
+        .expect("service resource budget")
         .is_none());
     }
 
@@ -3712,12 +3714,14 @@ mod route_tests {
             (401, Point3::new(0.0004, 0.0, 0.0)),
         ]);
 
-        let plan = plan_e5_boundary(
+        let plan = crate::test_support::with_service_context(|ctx| plan_e5_boundary(
+            ctx,
             &topology,
             &surfaces,
             &points,
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        ))
+        .expect("service resource budget")
         .expect("boundary plan");
         assert!(plan.intersection_plan.is_empty());
         assert!(plan.edge_curve_plan.is_empty());
@@ -3832,12 +3836,14 @@ mod route_tests {
             (401, Point3::new(1.0, 0.0, 0.0)),
         ]);
 
-        let plan = plan_e5_boundary(
+        let plan = crate::test_support::with_service_context(|ctx| plan_e5_boundary(
+            ctx,
             &topology,
             &surfaces,
             &points,
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        ))
+        .expect("service resource budget")
         .expect("boundary plan");
         assert!(plan.intersection_plan.is_empty());
         assert!(!plan.surface_curve_plan.contains_key(&200));
