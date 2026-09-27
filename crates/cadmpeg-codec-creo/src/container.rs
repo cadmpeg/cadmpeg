@@ -1283,19 +1283,27 @@ fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSe
     selected
 }
 
-fn surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    collect_section_records(
+fn surface_rows(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<SurfaceRow>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        surface::rows,
+        |bytes| Ok(surface::rows(bytes)),
         |row, base| row.offset += base,
         |row| row.offset,
     )
 }
 
-fn cross_section_surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    collect_section_records(
+fn cross_section_surface_rows(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<SurfaceRow>, CodecError> {
+    collect_section_records_result(
+        ctx,
         cross_sections(sections),
-        surface::cross_section_rows,
+        |bytes| Ok(surface::cross_section_rows(bytes)),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -1421,11 +1429,13 @@ fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
 }
 
 fn tabulated_cylinder_curve_replays(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
-) -> Vec<TabulatedCylinderCurveReplay> {
-    collect_section_records(
+) -> Result<Vec<TabulatedCylinderCurveReplay>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        surface::tabulated_cylinder_curve_replays,
+        |bytes| Ok(surface::tabulated_cylinder_curve_replays(bytes)),
         |record, base| {
             record.offset += base;
             record.surface_row_offset += base;
@@ -1466,10 +1476,14 @@ fn cross_section_plane_local_systems(
     )
 }
 
-fn plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    collect_section_records(
+fn plane_envelopes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        surface::plane_envelopes,
+        |bytes| Ok(surface::plane_envelopes(bytes)),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1478,10 +1492,14 @@ fn plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> 
     )
 }
 
-fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    collect_section_records(
+fn cross_section_plane_envelopes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
+    collect_section_records_result(
+        ctx,
         cross_sections(sections),
-        surface::cross_section_plane_envelopes,
+        |bytes| Ok(surface::cross_section_plane_envelopes(bytes)),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -1552,48 +1570,60 @@ fn curve_parameters(
 }
 
 fn two_chart_pcurves(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
-) -> Vec<TwoChartPcurveSamples> {
-    let mut records = collect_section_records(
+) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
+    let mut records = collect_section_records_result(
+        ctx,
         sections.iter(),
-        |bytes| curve::two_chart_pcurve_samples(bytes, Some(face_ids)),
+        |bytes| Ok(curve::two_chart_pcurve_samples(bytes, Some(face_ids))),
         |record, base| record.offset += base,
         |record| record.offset,
-    );
+    )?;
     let mut counts = BTreeMap::new();
     for record in &records {
         *counts.entry(record.curve_id).or_insert(0usize) += 1;
     }
     records.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    records
+    Ok(records)
 }
 
-fn prototype_pcurves(sections: &[ScannedSection<'_>]) -> Vec<PrototypePcurveEndpoints> {
-    collect_section_records(
+fn prototype_pcurves(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<PrototypePcurveEndpoints>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        curve::prototype_pcurve_endpoints,
+        |bytes| Ok(curve::prototype_pcurve_endpoints(bytes)),
         |record, base| record.offset += base,
         |record| record.offset,
     )
 }
 
-fn curve_prototype_topology(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototypeTopology> {
-    collect_section_records(
+fn curve_prototype_topology(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<CurvePrototypeTopology>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        curve::prototype_topology,
+        |bytes| Ok(curve::prototype_topology(bytes)),
         |record, base| record.offset += base,
         |record| record.offset,
     )
 }
 
 fn curve_topology_rows(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveTopologyRow> {
-    collect_section_records(
+) -> Result<Vec<CurveTopologyRow>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter(),
-        |bytes| curve::topology_rows_with_face_ids(bytes, Some(face_ids)),
+        |bytes| Ok(curve::topology_rows_with_face_ids(bytes, Some(face_ids))),
         |row, base| row.offset += base,
         |row| row.offset,
     )
@@ -1625,15 +1655,19 @@ fn cross_section_curve_prototypes(
     )
 }
 
-fn datum_planes(sections: &[ScannedSection<'_>]) -> Vec<DatumPlaneRecord> {
-    collect_section_records(
+fn datum_planes(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<DatumPlaneRecord>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections
             .iter()
             .filter(|section| section.section.name() == "ActDatums"),
         |bytes| {
             let mut planes = datum::planes(bytes);
             planes.extend(datum::named_plane(bytes));
-            planes
+            Ok(planes)
         },
         |plane, base| plane.offset_in_payload += base,
         |plane| plane.offset_in_payload,
@@ -1781,17 +1815,25 @@ fn feature_row_has_model_identity(
 }
 
 fn feature_entity_tables(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     feature_ids: &[u32],
     rows: &[SurfaceRow],
-) -> Vec<FeatureEntityTable> {
+) -> Result<Vec<FeatureEntityTable>, CodecError> {
     let feature_ids = feature_ids.iter().copied().collect();
     let surface_ids = rows.iter().map(|row| row.id).collect();
-    collect_section_records(
+    collect_section_records_result(
+        ctx,
         sections
             .iter()
             .filter(|section| section.section.name() == "AllFeatur"),
-        |bytes| feature::entity::entity_tables(bytes, &feature_ids, &surface_ids),
+        |bytes| {
+            Ok(feature::entity::entity_tables(
+                bytes,
+                &feature_ids,
+                &surface_ids,
+            ))
+        },
         |table, base| {
             table.offset += base;
             for entry in &mut table.entries {
@@ -2010,29 +2052,37 @@ fn section_owner_ranges(
     ranges
 }
 
-fn positional_replay_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition> {
-    collect_section_records(
+fn positional_replay_definitions(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections
             .iter()
             .filter(|section| section.section.name() == "FeatDefs"),
-        feature::definitions::positional_replay_definitions,
+        |bytes| Ok(feature::definitions::positional_replay_definitions(bytes)),
         offset_feature_definition,
         |definition| definition.offset,
     )
 }
 
-fn feature_operations(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperation> {
-    let records = collect_section_records(
+fn feature_operations(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureOperation>, CodecError> {
+    let records = collect_section_records_result(
+        ctx,
         sections.iter().filter(|section| {
             section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
         }),
-        feature::operations::operations,
+        |bytes| Ok(feature::operations::operations(bytes)),
         |record, base| {
             record.offset += base;
             record.state_offset += base;
         },
         |record| record.offset,
-    );
+    )?;
     let mut current = records
         .into_iter()
         .map(|record| (record.feature_id, record))
@@ -2040,7 +2090,7 @@ fn feature_operations(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperation> 
         .into_values()
         .collect::<Vec<_>>();
     current.sort_by_key(|record| record.offset);
-    current
+    Ok(current)
 }
 
 fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureReferenceName> {
@@ -2062,12 +2112,16 @@ fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureRefere
     records
 }
 
-fn feature_operation_states(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperationState> {
-    collect_section_records(
+fn feature_operation_states(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureOperationState>, CodecError> {
+    collect_section_records_result(
+        ctx,
         sections.iter().filter(|section| {
             section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
         }),
-        feature::operations::operation_states,
+        |bytes| Ok(feature::operations::operation_states(bytes)),
         |record, base| {
             record.offset += base;
             record.state_offset += base;
@@ -2340,13 +2394,13 @@ pub(crate) fn scan_bytes<'a>(
     loop_array_sections.sort_by_key(|section| section.section.offset());
     loop_array_sections.dedup_by_key(|section| section.section.offset());
     let loop_arrays = loop_array_scan(&loop_array_sections);
-    let mut nonvisible_surface_rows = surface_rows(&nonvisible_geometry_sections);
+    let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows.sort_by_key(|row| row.offset);
-    let mut surface_rows = surface_rows(&model_geometry_sections);
+    let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.sort_by_key(|row| row.offset);
-    let cross_section_surface_rows = cross_section_surface_rows(&sections);
+    let cross_section_surface_rows = cross_section_surface_rows(ctx, &sections)?;
     let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
     let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
     let cross_section_surface_parameters = cross_section_surface_parameters(ctx, &sections)?;
@@ -2354,11 +2408,11 @@ pub(crate) fn scan_bytes<'a>(
     let surface_contours = surface_contours(ctx, &model_geometry_sections)?;
     let cross_section_surface_contours = cross_section_surface_contours(ctx, &sections)?;
     let tabulated_cylinder_curve_replays =
-        tabulated_cylinder_curve_replays(&model_geometry_sections);
+        tabulated_cylinder_curve_replays(ctx, &model_geometry_sections)?;
     let plane_local_systems = plane_local_systems(ctx, &model_geometry_sections)?;
     let cross_section_plane_local_systems = cross_section_plane_local_systems(ctx, &sections)?;
-    let plane_envelopes = plane_envelopes(&model_geometry_sections);
-    let cross_section_plane_envelopes = cross_section_plane_envelopes(&sections);
+    let plane_envelopes = plane_envelopes(ctx, &model_geometry_sections)?;
+    let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, &sections)?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
         surface::positional_frame_planes(&surface_parameters, &surface_rows);
@@ -2406,9 +2460,10 @@ pub(crate) fn scan_bytes<'a>(
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
     let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;
     let nonvisible_curve_topology_rows =
-        curve_topology_rows(&nonvisible_geometry_sections, &topology_face_ids);
-    let mut curve_topology_rows = curve_topology_rows(&model_geometry_sections, &topology_face_ids);
-    let curve_prototype_topology = curve_prototype_topology(&model_geometry_sections);
+        curve_topology_rows(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
+    let mut curve_topology_rows =
+        curve_topology_rows(ctx, &model_geometry_sections, &topology_face_ids)?;
+    let curve_prototype_topology = curve_prototype_topology(ctx, &model_geometry_sections)?;
     let prototype_topology_rows = curve::prototype_topology_rows(
         &curve_prototypes,
         &curve_prototype_topology,
@@ -2420,7 +2475,7 @@ pub(crate) fn scan_bytes<'a>(
     curve_topology_rows.dedup_by_key(|row| row.offset);
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
-    let two_chart_pcurves = two_chart_pcurves(&model_geometry_sections, &topology_face_ids);
+    let two_chart_pcurves = two_chart_pcurves(ctx, &model_geometry_sections, &topology_face_ids)?;
     if matches!(layout, Layout::LegacyAscii(_)) {
         curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
         pcurves.extend(legacy_geometry.pcurves.iter().cloned());
@@ -2433,16 +2488,16 @@ pub(crate) fn scan_bytes<'a>(
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
-    let prototype_pcurves = prototype_pcurves(&model_geometry_sections);
+    let prototype_pcurves = prototype_pcurves(ctx, &model_geometry_sections)?;
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
     let vertex_orbits = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
-    let datum_planes = datum_planes(&sections);
+    let datum_planes = datum_planes(ctx, &sections)?;
     let datum_cylinders = datum_cylinders(ctx, &sections)?;
-    let feature_operation_states = feature_operation_states(&sections);
-    let feature_operations = feature_operations(&sections);
+    let feature_operation_states = feature_operation_states(ctx, &sections)?;
+    let feature_operations = feature_operations(ctx, &sections)?;
     let feature_reference_names = feature_reference_names(&sections);
     let structural_feature_ids =
         structural_feature_ids(&sections, &surface_rows, &curve_topology_rows);
@@ -2488,7 +2543,7 @@ pub(crate) fn scan_bytes<'a>(
     let surface_merge_replay_affected_ids =
         feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::rows::loop_restore_directions(&feature_rows);
-    let feature_entity_tables = feature_entity_tables(&sections, &feature_ids, &surface_rows);
+    let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
     let feature_definitions = feature_definitions(&sections);
     let feature_definitions =
         feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
@@ -2503,7 +2558,7 @@ pub(crate) fn scan_bytes<'a>(
         .filter_map(|definition| definition.identity.owner_feature_id())
         .collect();
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
-        positional_replay_definitions(&sections),
+        positional_replay_definitions(ctx, &sections)?,
         &feature_entity_tables,
         &claimed_definition_owners,
     );
@@ -2697,23 +2752,6 @@ fn cross_sections<'a, 'data>(
         section.section.name() == "Xsections"
             && find(section.region, b"Sld_Xsections\0", 0).is_some()
     })
-}
-
-fn collect_section_records<'a, 'data: 'a, T>(
-    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
-    mut decode: impl FnMut(&[u8]) -> Vec<T>,
-    relocate: impl Fn(&mut T, usize),
-    offset: impl Fn(&T) -> usize,
-) -> Vec<T> {
-    let mut records = Vec::new();
-    for section in sections {
-        records.extend(decode(section.region).into_iter().map(|mut record| {
-            relocate(&mut record, section.section.offset());
-            record
-        }));
-    }
-    records.sort_by_key(offset);
-    records
 }
 
 fn collect_section_records_result<'a, 'data: 'a, T>(
