@@ -21,10 +21,42 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]
+fn parameter_resolver_directory_index_refuses_collection_limit_before_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = ParameterResolver::new(&directory, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges parameter resolver directory index"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(ParameterResolver::new(&directory, &ctx).is_ok());
+}
+
+#[test]
 fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
     let directory = [directory_target(maximum, 116)];
-    let resolver = ParameterResolver::new(&directory);
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
 
     assert_eq!(
         resolver.resolve(
@@ -87,8 +119,15 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
 
 #[test]
 fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let directory = [directory_target(1, 116)];
-    let resolver = ParameterResolver::new(&directory);
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
     assert_eq!(
         resolver.resolve(
             1,
@@ -290,7 +329,7 @@ fn zero_pointer_absence_creates_no_reference_edge() {
     let directory = [directory_target(1, 116)];
     let mut graph = build(&directory, &ctx).unwrap();
     assert!(graph[&1].is_empty());
-    let resolver = ParameterResolver::new(&directory);
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
     let expectation = ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry);
     assert_eq!(
         resolver.resolve(1, 1, 0, expectation.clone(), |_| panic!("absent target")),
