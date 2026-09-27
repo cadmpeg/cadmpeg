@@ -87,5 +87,11 @@ pub fn catalog(data: &[u8]) {
 
 /// Exercise zero-entity record inventory parsing.
 pub fn zero_entity(data: &[u8]) {
-    let _probe = crate::families::zero_entity::records::zero_entity_record_inventory(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::families::zero_entity::records::zero_entity_record_inventory(&ctx, data);
 }

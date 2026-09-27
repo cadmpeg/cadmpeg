@@ -7915,8 +7915,9 @@ fn zero_entity_edge_strides(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<CatiaZeroEntityEdgeStride>, CodecError> {
-    let records =
-        crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range);
+    let records = crate::families::zero_entity::records::zero_entity_edge_strides_in_range(
+        ctx, bytes, range,
+    )?;
     let mut output = Vec::new();
     crate::resource::reserve_vec(
         ctx,
@@ -7945,8 +7946,8 @@ fn zero_entity_oriented_use_pairs(
     use crate::families::zero_entity::records::ZeroEntityUseSlot;
 
     let pairs = crate::families::zero_entity::records::zero_entity_oriented_use_pairs_in_range(
-        bytes, range,
-    );
+        ctx, bytes, range,
+    )?;
     let mut output = Vec::new();
     crate::resource::reserve_vec(
         ctx,
@@ -7980,8 +7981,9 @@ fn zero_entity_ownership_roots(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<CatiaZeroEntityOwnershipRoot>, CodecError> {
-    let roots =
-        crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range);
+    let roots = crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(
+        ctx, bytes, range,
+    )?;
     let mut output = Vec::new();
     crate::resource::reserve_vec(
         ctx,
@@ -8012,8 +8014,9 @@ fn zero_entity_vertex_incidences(
     range: Range<usize>,
     records: &[CatiaZeroEntityRecord],
 ) -> Result<Vec<CatiaZeroEntityVertexIncidence>, CodecError> {
-    let incidences =
-        crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(bytes, range);
+    let incidences = crate::families::zero_entity::records::zero_entity_vertex_incidences_in_range(
+        ctx, bytes, range,
+    )?;
     let mut output = Vec::new();
     crate::resource::reserve_vec(
         ctx,
@@ -8045,8 +8048,9 @@ fn zero_entity_records(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<CatiaZeroEntityRecord>, CodecError> {
-    let records =
-        crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range);
+    let records = crate::families::zero_entity::records::zero_entity_record_inventory_in_range(
+        ctx, bytes, range,
+    )?;
     let mut output = Vec::new();
     crate::resource::reserve_vec(ctx, &mut output, records.len(), "catia_native_zero_records")?;
     for record in records {
@@ -9147,10 +9151,11 @@ impl CatiaNative {
             zero_entity_ownership_roots(ctx, bytes, zero_entity_range.clone())?;
         let parsed_zero_entity_support_runs =
             crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+                ctx,
                 bytes,
                 zero_entity_range.clone(),
                 refusal,
-            );
+            )?;
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 ctx,

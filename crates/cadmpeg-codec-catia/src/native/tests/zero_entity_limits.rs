@@ -18,7 +18,7 @@ fn native_zero_entity_records_refuse_collection_limit_before_materialization() {
 
     let limited_arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 2;
     let (limited_ctx, _) = DecodeContext::from_root_bytes(&bytes, &limited_arena, &policy)
         .expect("fixture fits the input limit");
     let Err(CodecError::ResourceLimit(error)) = run(&limited_ctx) else {
