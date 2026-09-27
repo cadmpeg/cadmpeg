@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
@@ -271,8 +271,13 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         };
         let geometry = |surface_id| {
-            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
-            exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))
+            exactly_one(ir.model.surfaces.iter().filter(|surface| {
+                crate::identity::matches_numbered_identity(
+                    surface.id.as_str(),
+                    "creo:visibgeom:surface#",
+                    surface_id,
+                )
+            }))
                 .map(|surface| source_carriers.surface_geometry(surface))
         };
         let Some(first_geometry) = geometry(first.id) else {
