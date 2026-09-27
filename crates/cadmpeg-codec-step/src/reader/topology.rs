@@ -3,6 +3,7 @@
 
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
@@ -94,6 +95,22 @@ fn insert_topology_set<T: Ord>(
 ) -> Result<(), CodecError> {
     if !values.contains(&value) {
         ctx.charge_collection_items(1, operation)?;
+    }
+    values.insert(value);
+    Ok(())
+}
+
+fn insert_topology_hash_set<T: Eq + Hash>(
+    values: &mut HashSet<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&value) {
+        ctx.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     }
     values.insert(value);
     Ok(())
@@ -514,7 +531,7 @@ pub(super) fn decode(
                 continue;
             }
         if built_wire_models.contains(&model) {
-            result.claims.insert(representation);
+            insert_topology_hash_set(&mut result.claims, representation, ctx, "step_topology_claims")?;
             if let Some(body_ids) = result.body_by_root.get(&model).cloned() {
                 result.body_by_root.insert(representation, body_ids);
             }
@@ -539,14 +556,16 @@ pub(super) fn decode(
                 )?), ctx, "step_topology_losses")?;
             } else {
                 committed += 1;
-                built_wire_models.insert(model);
-                built.typed.insert(representation);
+                insert_topology_set(&mut built_wire_models, model, ctx, "step_built_wire_models")?;
+                insert_topology_hash_set(&mut built.typed, representation, ctx, "step_wire_typed")?;
                 result
                     .body_by_root
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.claims.extend(std::mem::take(&mut built.typed));
+                for typed in std::mem::take(&mut built.typed) {
+                    insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
+                }
             }
         }
         if committed == 0 {
@@ -598,7 +617,9 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.claims.extend(std::mem::take(&mut built.typed));
+                for typed in std::mem::take(&mut built.typed) {
+                    insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
+                }
             }
         }
         if committed == 0 {
@@ -642,7 +663,7 @@ pub(super) fn decode(
             continue;
         };
         if let Some(root_built) = built_roots.get(&key).cloned() {
-            result.claims.insert(id);
+            insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
             result.body_by_root.insert(id, root_built.body_ids.clone());
             for (shell, body_ids) in root_built.body_by_shell {
                 result
@@ -702,7 +723,9 @@ pub(super) fn decode(
                         .insert(built.body_id.clone());
                 }
                 body_ids.push(built.body_id.clone());
-                result.claims.extend(std::mem::take(&mut built.typed));
+                for typed in std::mem::take(&mut built.typed) {
+                    insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
+                }
                 // A rejected draft transfers no relation, so only a committed
                 // body contributes its admitted relations to the document.
                 admissions.extend(std::mem::take(&mut built.pcurve_admissions));
@@ -764,7 +787,8 @@ pub(super) fn decode(
                 exchange,
                 carrier_index,
                 &mut result.claims,
-            ) {
+                ctx,
+            )? {
                 continue;
             }
             push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
@@ -780,7 +804,9 @@ pub(super) fn decode(
             )?), ctx, "step_topology_losses")?;
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
-            result.claims.extend(std::mem::take(&mut built.typed));
+            for typed in std::mem::take(&mut built.typed) {
+                insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
+            }
         }
     }
     for (id, record) in exchange.entities_any(&[
@@ -810,7 +836,7 @@ pub(super) fn decode(
                     .join(", ")
             )), ctx, "step_topology_losses")?;
         }
-        mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims);
+        mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims, ctx)?;
     }
     for (id, record) in exchange.entities_any(&[
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
@@ -842,7 +868,7 @@ pub(super) fn decode(
         )?
         .is_empty();
         if has_body {
-            result.claims.insert(id);
+            insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
         }
     }
     for face in &commit_session.document().model.faces {
@@ -1491,9 +1517,10 @@ fn mark_standalone_geometric_set(
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
     typed: &mut HashSet<u64>,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let Some(set_ids) = representation_items(representation) else {
-        return false;
+        return Ok(false);
     };
     let mut decoded = false;
     for set_id in set_ids {
@@ -1512,14 +1539,14 @@ fn mark_standalone_geometric_set(
                 || carrier_index.surfaces.contains_key(&item)
         });
         if has_decoded_member {
-            typed.insert(set_id);
+            insert_topology_hash_set(typed, set_id, ctx, "step_topology_claims")?;
             decoded = true;
         }
     }
     if decoded {
-        typed.insert(id);
+        insert_topology_hash_set(typed, id, ctx, "step_topology_claims")?;
     }
-    decoded
+    Ok(decoded)
 }
 
 fn build_geometric_set(

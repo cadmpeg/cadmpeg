@@ -124,3 +124,33 @@ fn associated_pcurves_refuse_collection_limit() {
                 && refusal.operation == "step_associated_pcurves"
     ));
 }
+
+#[test]
+fn topology_claims_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_hash_set(&mut std::collections::HashSet::new(), 1u64, &ctx, "step_topology_claims"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_claims"
+    ));
+}
+
+#[test]
+fn built_wire_model_set_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_set(&mut std::collections::BTreeSet::new(), 1u64, &ctx, "step_built_wire_models"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_built_wire_models"
+    ));
+}
