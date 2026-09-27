@@ -4518,7 +4518,9 @@ pub(super) fn emit_loops(
         if r.head() == "loop" && kept_loops.contains(&i) {
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(ctx, r, by_index, kept_coedges, format)?;
-            let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()) else {
+            let Ok(ring) = cadmpeg_ir::topology::LoopRing::try_new_for_decode(
+                ctx, coedges, Vec::new(),
+            )? else {
                 continue;
             };
             charged_push!(ctx, out.loops, Loop {

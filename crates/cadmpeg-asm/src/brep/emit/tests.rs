@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{emit_carrier_curve, emit_coedges, emit_containers, emit_edges, emit_faces, emit_vertices, into_support_sides};
+use super::{emit_carrier_curve, emit_coedges, emit_containers, emit_edges, emit_faces, emit_loops, emit_vertices, into_support_sides};
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable, WireShellTopology};
 use crate::nurbs;
@@ -72,6 +72,42 @@ fn edge_continuity_copy_refuses_retained_limit() {
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "ASM edge continuity text");
+}
+
+#[test]
+fn loop_ring_members_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashMap;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let record = |index, name: &str, refs: &[i64]| Record {
+        index,
+        name: name.into(),
+        tokens: refs.iter().copied().map(Token::Ref).collect(),
+        offset: 0,
+        len: 0,
+    };
+    let records = [
+        record(0, "loop", &[-1, -1, -1, -1, 1, 3]),
+        record(1, "coedge", &[-1, -1, -1, 2]),
+        record(2, "coedge", &[-1, -1, -1, 1]),
+    ];
+    let by_index: HashMap<_, _> = records.iter().map(|record| (record.index as i64, record)).collect();
+    let reach = Reachable {
+        loops: HashSet::from([0]), coedges: HashSet::from([1, 2]), ..Reachable::default()
+    };
+    let error = emit_loops(
+        &ctx, &mut AsmBrep::default(), &records, &by_index, &reach, crate::asm_format!("f3d"),
+    ).expect_err("duplicate-check set exceeds remaining collection items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "loop ring members");
 }
 
 fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
