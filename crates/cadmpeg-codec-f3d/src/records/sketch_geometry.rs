@@ -903,8 +903,8 @@ fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
 }
 
 /// One point in a Fusion sketch coordinate system.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchPointSerde", into = "SketchPointSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchPointSerde")]
 pub(crate) struct SketchPoint {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -926,6 +926,106 @@ pub(crate) struct SketchPoint {
     pub(crate) paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     coordinates: FinitePoint2,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_POINT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchPoint {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_POINT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
+            record_form: self.record_form.clone(),
+            companion: self.companion.clone(),
+            paired_reference: self.paired_reference,
+            coordinates: self.coordinates,
+        }
+    }
+}
+
+impl Serialize for SketchPoint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct CompanionRef<'a> {
+            incident_curves: &'a [u32],
+        }
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_reference: Option<u32>,
+            class_tag: &'a str,
+            byte_offset: u64,
+            coordinate_offset: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            record_form: SketchPointRecordFormSerde,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persistent_id: Option<u64>,
+            paired_reference: u32,
+            #[serde(skip_serializing_if = "sketch_point_flags_are_zero")]
+            flags: [u8; 8],
+            coordinates: Point2,
+            depth: f64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            closure: Option<SketchPointClosureSerde>,
+            companion: CompanionRef<'a>,
+        }
+        let record_form = match self.record_form {
+            SketchPointRecordForm::Version0 { .. } => SketchPointRecordFormSerde::Version0,
+            SketchPointRecordForm::Version8 { .. } => SketchPointRecordFormSerde::Version8,
+            SketchPointRecordForm::Version10 { .. } => SketchPointRecordFormSerde::Version10,
+            SketchPointRecordForm::Version10InlineTyped {
+                trailing_reference, ..
+            } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
+            SketchPointRecordForm::Version11 {
+                padded_paired_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11 {
+                padded_paired_reference,
+                companion_prefix_present_zero,
+            },
+            SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+            },
+        };
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
+            entity_genesis: self.entity_genesis(),
+            record_form,
+            persistent_id: self.persistent_id(),
+            paired_reference: self.paired_reference,
+            flags: self.flags(),
+            coordinates: self.coordinates.get(),
+            depth: self.depth(),
+            closure: self.closure().map(SketchPointClosureSerde::from),
+            companion: CompanionRef {
+                incident_curves: &self.companion.incident_curves,
+            },
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1244,6 +1344,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
     }
 }
 
+#[cfg(test)]
 impl From<SketchPoint> for SketchPointSerde {
     fn from(point: SketchPoint) -> Self {
         let depth = point.depth();
@@ -2266,7 +2367,7 @@ impl SketchNurbsPoles {
 
 #[cfg(test)]
 mod tests {
-    use super::{SketchCurveGeometry, SketchSurface, SketchText};
+    use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
 
     fn native_surface_wire() -> serde_json::Value {
@@ -2301,6 +2402,63 @@ mod tests {
         wire["anchor"] = json!({"u": 2.0, "v": 3.0});
         wire["rotation"] = json!(0.5);
         wire
+    }
+
+    fn native_point_wire(form: &serde_json::Value) -> serde_json::Value {
+        let mut wire = json!({
+            "id": "point", "record_index": 1, "class_tag": "000",
+            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
+            "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0},
+            "depth": 0.0, "companion": {"incident_curves": [7, 2]}
+        });
+        if wire["record_form"]["kind"] != "version0" {
+            wire["persistent_id"] = json!(4);
+            wire["closure"] = json!({"selector": 0, "state": 0});
+        }
+        wire
+    }
+
+    #[test]
+    fn sketch_point_borrowed_wire_matches_owned_wire_bytes() {
+        for form in [
+            json!({"kind": "version0"}),
+            json!({"kind": "version8"}),
+            json!({"kind": "version10"}),
+            json!({"kind": "version10_inline_typed", "trailing_reference": 3}),
+            json!({"kind": "version11", "padded_paired_reference": false, "companion_prefix_present_zero": false}),
+            json!({"kind": "version11_inline_typed", "trailing_reference": 3, "companion_prefix_present_zero": false}),
+        ] {
+            let point: SketchPoint = serde_json::from_value(native_point_wire(&form)).unwrap();
+            let owned = super::SketchPointSerde::from(point.clone());
+            assert_eq!(
+                serde_json::to_vec(&point).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_point_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchPoint,
+        }
+        let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
+            "kind": "version11", "padded_paired_reference": false,
+            "companion_prefix_present_zero": false
+        })))
+        .unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-point#0",
+            value: &point,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_points",
+            || super::SKETCH_POINT_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_POINT_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 
     #[test]
