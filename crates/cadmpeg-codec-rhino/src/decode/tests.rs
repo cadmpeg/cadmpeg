@@ -1177,6 +1177,7 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
         lateral: crate::surfaces::extrusion_nurbs(
+            &cadmpeg_test_support::service_decode_context(),
             &start,
             &end,
             cadmpeg_ir::units::FiniteVector::new([0.0, 5.0]).expect("finite path domain"),
