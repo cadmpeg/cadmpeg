@@ -93,18 +93,18 @@ pub fn transfer_into_ir<'ir>(
     } = brep;
 
     let before = ir.model.entity_count();
-    ir.model.bodies.extend(bodies);
-    ir.model.regions.extend(regions);
-    ir.model.shells.extend(shells);
-    ir.model.faces.extend(faces);
-    ir.model.loops.extend(loops);
-    ir.model.coedges.extend(coedges);
-    ir.model.edges.extend(edges);
-    ir.model.vertices.extend(vertices);
-    ir.model.points.extend(points);
-    ir.model.surfaces.extend(surfaces);
-    ir.model.curves.extend(curves);
-    ir.model.pcurves.extend(pcurves);
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.bodies, bodies, "ASM transfer bodies")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.regions, regions, "ASM transfer regions")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.shells, shells, "ASM transfer shells")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.faces, faces, "ASM transfer faces")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.loops, loops, "ASM transfer loops")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.coedges, coedges, "ASM transfer coedges")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.edges, edges, "ASM transfer edges")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.vertices, vertices, "ASM transfer vertices")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.points, points, "ASM transfer points")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.curves, curves, "ASM transfer curves")?;
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
     for (owner, procedural) in procedural_surfaces {
         ir.model
             .add_procedural_surface(owner, procedural)
@@ -115,7 +115,7 @@ pub fn transfer_into_ir<'ir>(
             .add_procedural_curve(owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    ir.model.attributes.extend(attributes);
+    crate::decode_alloc::extend_vec(ctx, &mut ir.model.attributes, attributes, "ASM transfer attributes")?;
     // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
         (ir.model.entity_count() - before) as u64,
@@ -171,6 +171,35 @@ mod tests {
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         assert_eq!(namespace.arenas().len(), 12);
+    }
+
+    #[test]
+    fn transfer_regions_refuses_collection_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::Region;
+
+        let source = [0_u8];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("test root fits policy");
+        let mut brep = AsmBrep::default();
+        brep.regions.push(Region {
+            id: RegionId::mint("f3d:brep:region#1").unwrap(),
+            body: BodyId::mint("f3d:brep:body#1").unwrap(),
+            shells: Vec::new(),
+        });
+        let error = transfer_into_ir(&ctx, &mut CadIr::empty(), "test", brep)
+            .err()
+            .expect("one region exceeds zero items");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM transfer regions");
     }
 
     #[test]
