@@ -56,9 +56,16 @@ fn collection_refusal_at(
     source: &[u8],
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
+    collection_refusal_with_options(source, DecodeOptions::default(), operation)
+}
+
+fn collection_refusal_with_options(
+    source: &[u8],
+    mut options: DecodeOptions,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let mut options = DecodeOptions::default();
     options.policy.limits.max_collection_items = 0;
     for _ in 0..256 {
         let error = SldprtCodec
@@ -149,6 +156,17 @@ fn geometry_xml_metadata_refuses_retained_limit() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain SLDPRT XML metadata"
     ));
+}
+
+#[test]
+fn metadata_active_site_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    let limit = collection_refusal_with_options(&source, options, "retain SLDPRT metadata site");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]

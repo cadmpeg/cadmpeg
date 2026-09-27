@@ -3496,7 +3496,6 @@ fn build_metadata_ir(
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
-        let name = site.name();
         let id = site.section.native_id();
         let offset = match site.section {
             container::Section::Block(block) => block.offset as u64,
@@ -3504,11 +3503,19 @@ fn build_metadata_ir(
         };
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
-            name.clone(),
+            copy_retained_string(
+                ctx,
+                site.source_stream().as_str(),
+                "retain SLDPRT metadata active site name",
+            )?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("parasolid_schema"),
-            site.header.schema.value().to_owned(),
+            copy_retained_string(
+                ctx,
+                site.header.schema.value(),
+                "retain SLDPRT metadata schema",
+            )?,
         );
         crate::annotations::note(
             &mut annotations,
@@ -3518,6 +3525,7 @@ fn build_metadata_ir(
             "parasolid_stream",
             Exactness::Unknown,
         );
+        ctx.reserve_collection_vec(&mut unknowns, 1, "retain SLDPRT metadata site")?;
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
