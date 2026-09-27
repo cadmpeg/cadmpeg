@@ -4,7 +4,8 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::{named_parameter, references, RecordExt, ValueExt};
+use super::{named_parameter, RecordExt, ValueExt};
+use super::reference::references;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
