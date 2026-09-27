@@ -6,6 +6,8 @@
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
+#[cfg(test)]
+use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::CodecError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -8656,6 +8658,18 @@ fn copy_mesh_assignment(
     })
 }
 
+fn copy_mesh_edge_rows(
+    ctx: &DecodeContext<'_>,
+    rows: &[EdgeRow],
+) -> Result<Vec<EdgeRow>, CodecError> {
+    let mut copied = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut copied, rows.len(), "catia_mesh_edge_copy_rows")?;
+    for row in rows {
+        copied.push(row.clone_charged(ctx)?);
+    }
+    Ok(copied)
+}
+
 fn fixed_initial_orientations(
     ctx: &DecodeContext<'_>,
     fixed: &[bool],
@@ -10589,33 +10603,31 @@ pub(super) fn parse_standard_mesh_endpoint_candidates(
 }
 
 fn singleton_mesh_boundary_directions(
+    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_direction_evidence: Option<&[bool]>,
-) -> Option<Vec<bool>> {
+) -> Result<Option<Vec<bool>>, CodecError> {
     if boundary.is_empty() {
-        return None;
+        return Ok(None);
     }
     let first = boundary[0];
-    let first_pair = *edge_candidates.get(first.edge)?.first()?;
+    let Some(first_pair) = edge_candidates.get(first.edge).and_then(|candidates| candidates.first()).copied() else {
+        return Ok(None);
+    };
     let first_required = first.reversed.filter(|_| {
         edge_direction_evidence
             .and_then(|evidence| evidence.get(first.edge))
             .copied()
             .unwrap_or(false)
     });
-    let first_directions = first_required.map_or_else(
-        || {
-            if first_pair[0] == first_pair[1] {
-                vec![false]
-            } else {
-                vec![false, true]
-            }
-        },
-        |direction| vec![direction],
-    );
     let mut solutions = Vec::new();
-    for first_direction in first_directions {
+    for first_direction in [false, true] {
+        if first_required.is_some_and(|required| required != first_direction)
+            || (first_required.is_none() && first_pair[0] == first_pair[1] && first_direction)
+        {
+            continue;
+        }
         let first_start = if first_direction {
             first_pair[1]
         } else {
@@ -10626,39 +10638,36 @@ fn singleton_mesh_boundary_directions(
         } else {
             first_pair[1]
         };
-        let mut directions = vec![first_direction];
+        let mut directions = Vec::new();
+        crate::resource::push(ctx, &mut directions, first_direction, "catia_singleton_initial_direction")?;
         let mut valid = true;
         for use_ in &boundary[1..] {
-            let pair = *edge_candidates.get(use_.edge)?.first()?;
-            let mut choices = if pair[0] == pair[1] {
-                (pair[0] == current).then(|| vec![false])
-            } else {
-                Some(
-                    [pair[0] == current, pair[1] == current]
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(direction, matches)| matches.then_some(direction == 1))
-                        .collect::<Vec<_>>(),
-                )
-            }?;
+            let Some(pair) = edge_candidates.get(use_.edge).and_then(|candidates| candidates.first()).copied() else {
+                return Ok(None);
+            };
             let required = use_.reversed.filter(|_| {
                 edge_direction_evidence
                     .and_then(|evidence| evidence.get(use_.edge))
                     .copied()
                     .unwrap_or(false)
             });
-            if let Some(required) = required {
-                choices.retain(|direction| *direction == required);
-            }
-            let [direction] = choices.as_slice() else {
+            let false_direction = pair[0] == current && required.is_none_or(|direction| !direction);
+            let true_direction = pair[0] != pair[1]
+                && pair[1] == current
+                && required.is_none_or(|direction| direction);
+            let direction = match (false_direction, true_direction) {
+                (true, false) => false,
+                (false, true) => true,
+                _ => {
                 valid = false;
                 break;
+                }
             };
-            current = if *direction { pair[0] } else { pair[1] };
-            directions.push(*direction);
+            current = if direction { pair[0] } else { pair[1] };
+            crate::resource::push(ctx, &mut directions, direction, "catia_singleton_direction_step")?;
         }
         if valid && current == first_start {
-            solutions.push(directions);
+            crate::resource::push(ctx, &mut solutions, directions, "catia_singleton_direction_solutions")?;
         }
     }
     solutions.sort_unstable();
@@ -10674,55 +10683,58 @@ fn singleton_mesh_boundary_directions(
     {
         solutions.truncate(1);
     }
-    (solutions.len() == 1).then(|| solutions.remove(0))
+    Ok((solutions.len() == 1).then(|| solutions.remove(0)))
 }
 
 fn canonical_singleton_coordinate_cycles(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     directions: &[Vec<bool>],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<Vec<usize>>> {
-    fn canonical_cycle(points: &[usize]) -> Vec<usize> {
-        let rotations = |values: &[usize]| {
-            (0..values.len())
-                .map(move |start| {
-                    values[start..]
-                        .iter()
-                        .chain(&values[..start])
-                        .copied()
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    fn canonical_cycle(ctx: &DecodeContext<'_>, points: &[usize]) -> Result<Vec<usize>, CodecError> {
+        if points.is_empty() {
+            return Ok(Vec::new());
+        }
+        let value = |reversed: bool, start: usize, offset: usize| {
+            let until_wrap = points.len() - start;
+            let index = if offset >= until_wrap { offset - until_wrap } else { start + offset };
+            if reversed { points[points.len() - 1 - index] } else { points[index] }
         };
-        let reversed = points.iter().rev().copied().collect::<Vec<_>>();
-        rotations(points)
-            .into_iter()
-            .chain(rotations(&reversed))
-            .min()
-            .unwrap_or_default()
+        let mut best = (false, 0usize);
+        for reversed in [false, true] {
+            for start in 0..points.len() {
+                let candidate = (reversed, start);
+                if (0..points.len()).map(|offset| value(reversed, start, offset))
+                    .cmp((0..points.len()).map(|offset| value(best.0, best.1, offset))).is_lt() {
+                    best = candidate;
+                }
+            }
+        }
+        let mut canonical = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut canonical, points.len(), "catia_singleton_canonical_cycle")?;
+        canonical.extend((0..points.len()).map(|offset| value(best.0, best.1, offset)));
+        Ok(canonical)
     }
 
-    let mut cycles = assignment
-        .boundaries
-        .iter()
-        .zip(directions)
-        .map(|(boundary, directions)| {
-            if boundary.len() != directions.len() {
-                return None;
-            }
-            let points = boundary
-                .iter()
-                .zip(directions)
-                .map(|(use_, &reversed)| {
-                    let pair = *edge_candidates.get(use_.edge)?.first()?;
-                    Some(if reversed { pair[1] } else { pair[0] })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(canonical_cycle(&points))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut cycles = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut cycles, assignment.boundaries.len().min(directions.len()), "catia_singleton_cycle_rows")?;
+    for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+        if boundary.len() != directions.len() {
+            return Ok(None);
+        }
+        let mut points = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut points, boundary.len(), "catia_singleton_cycle_points")?;
+        for (use_, &reversed) in boundary.iter().zip(directions) {
+            let Some(pair) = edge_candidates.get(use_.edge).and_then(|candidates| candidates.first()).copied() else {
+                return Ok(None);
+            };
+            points.push(if reversed { pair[1] } else { pair[0] });
+        }
+        cycles.push(canonical_cycle(ctx, &points)?);
+    }
     cycles.sort_unstable();
-    Some(cycles)
+    Ok(Some(cycles))
 }
 
 fn reconstruct_singleton_coordinate_topology(
@@ -10736,46 +10748,35 @@ fn reconstruct_singleton_coordinate_topology(
     if selected.len() != directions.len() {
         return Ok(None);
     }
-    let faces = selected
-        .iter()
-        .zip(directions)
-        .map(|(assignment, directions)| {
-            let boundaries = assignment
-                .boundaries
-                .iter()
-                .zip(directions)
-                .map(|(boundary, directions)| {
-                    if boundary.len() != directions.len() || boundary.is_empty() {
-                        return None;
-                    }
-                    let coedges = boundary
-                        .iter()
-                        .zip(directions)
-                        .map(|(use_, &reversed)| {
-                            let pair = *edge_candidates.get(use_.edge)?.first()?;
-                            let [start_vertex, end_vertex] =
-                                if reversed { [pair[1], pair[0]] } else { pair };
-                            Some(CoedgeUse {
-                                edge_row: use_.edge,
-                                reversed,
-                                start_vertex,
-                                end_vertex,
-                            })
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Boundary::new(coedges)
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(FaceTopology { boundaries })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(faces) = faces else {
-        return Ok(None);
-    };
+    let mut faces = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut faces, selected.len(), "catia_singleton_topology_faces")?;
+    for (assignment, face_directions) in selected.iter().zip(directions) {
+        let mut boundaries = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut boundaries, assignment.boundaries.len().min(face_directions.len()), "catia_singleton_topology_boundaries")?;
+        for (boundary, directions) in assignment.boundaries.iter().zip(face_directions) {
+            if boundary.len() != directions.len() || boundary.is_empty() {
+                return Ok(None);
+            }
+            let mut coedges = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut coedges, boundary.len(), "catia_singleton_topology_coedges")?;
+            for (use_, &reversed) in boundary.iter().zip(directions) {
+                let Some(pair) = edge_candidates.get(use_.edge).and_then(|candidates| candidates.first()).copied() else {
+                    return Ok(None);
+                };
+                let [start_vertex, end_vertex] = if reversed { [pair[1], pair[0]] } else { pair };
+                coedges.push(CoedgeUse { edge_row: use_.edge, reversed, start_vertex, end_vertex });
+            }
+            let Some(boundary) = Boundary::new(coedges) else {
+                return Ok(None);
+            };
+            boundaries.push(boundary);
+        }
+        faces.push(FaceTopology { boundaries });
+    }
     let topology = StandardTopology {
         faces,
-        edge_rows: edge_rows.to_vec(),
-        vertex_points: vertex_points.to_vec(),
+        edge_rows: copy_mesh_edge_rows(ctx, edge_rows)?,
+        vertex_points: crate::resource::copy_retained_slice(ctx, vertex_points, "catia_singleton_topology_points")?,
         logical_vertex_count: vertex_points.len(),
     };
     let Some(_) = topology.edge_vertices(ctx)? else {
@@ -11143,38 +11144,54 @@ fn resolve_singleton_mesh_endpoint_candidates(
         return Ok(None);
     }
 
-    let selected = assignments
-        .iter()
-        .map(|face| {
-            let mut seen = HashSet::new();
-            let mut viable = face.iter().filter_map(|assignment| {
-                let directions = assignment
-                    .boundaries
-                    .iter()
-                    .map(|boundary| {
-                        singleton_mesh_boundary_directions(
-                            boundary,
-                            edge_candidates,
-                            edge_direction_evidence,
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                let signature = canonical_singleton_coordinate_cycles(
-                    assignment,
-                    &directions,
-                    edge_candidates,
-                )?;
-                seen.insert(signature)
-                    .then(|| (assignment.clone(), directions))
-            });
-            let first = viable.next()?;
-            viable.next().is_none().then_some(first)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let (selected, endpoint_labelled_directions): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
+    let mut selected = Vec::new();
+    let mut endpoint_labelled_directions = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut selected, assignments.len(), "catia_singleton_selected_assignments")?;
+    crate::resource::reserve_vec(ctx, &mut endpoint_labelled_directions, assignments.len(), "catia_singleton_selected_directions")?;
+    for face in assignments {
+        let mut seen = HashSet::new();
+        let mut first = None;
+        for assignment in face {
+            let mut directions = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut directions, assignment.boundaries.len(), "catia_singleton_direction_rows")?;
+            let mut valid = true;
+            for boundary in &assignment.boundaries {
+                let Some(row) = singleton_mesh_boundary_directions(ctx, boundary, edge_candidates, edge_direction_evidence)? else {
+                    valid = false;
+                    break;
+                };
+                directions.push(row);
+            }
+            if !valid {
+                continue;
+            }
+            let Some(signature) = canonical_singleton_coordinate_cycles(ctx, assignment, &directions, edge_candidates)? else {
+                continue;
+            };
+            if seen.contains(&signature) {
+                continue;
+            }
+            let Some(row_bytes) = signature.len().checked_mul(std::mem::size_of::<Vec<usize>>()) else {
+                return Err(ctx.refuse_codec_limit("catia_singleton_signature_retained", u64::MAX, u64::MAX));
+            };
+            let Some(bytes) = signature.iter().try_fold(row_bytes, |total, row| {
+                total.checked_add(row.len().checked_mul(std::mem::size_of::<usize>())?)
+            }).and_then(|bytes| u64::try_from(bytes).ok()) else {
+                return Err(ctx.refuse_codec_limit("catia_singleton_signature_retained", u64::MAX, u64::MAX));
+            };
+            ctx.charge_retained(bytes, "catia_singleton_signature_retained")?;
+            crate::resource::insert_set(ctx, &mut seen, signature, "catia_singleton_signatures")?;
+            if first.is_some() {
+                return Ok(None);
+            }
+            first = Some((copy_mesh_assignment(ctx, assignment)?, directions));
+        }
+        let Some((assignment, directions)) = first else {
+            return Ok(None);
+        };
+        selected.push(assignment);
+        endpoint_labelled_directions.push(directions);
+    }
     if let Some(topology) = reconstruct_singleton_coordinate_topology(
         ctx,
         edge_rows,
@@ -11183,35 +11200,31 @@ fn resolve_singleton_mesh_endpoint_candidates(
         &selected,
         &endpoint_labelled_directions,
     )? {
-        return Ok(Some(MeshSolve::Solved((
-            topology,
-            (0..vertex_points.len()).collect(),
-        ))));
+        let mut point_assignment = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut point_assignment, vertex_points.len(), "catia_singleton_identity_points")?;
+        point_assignment.extend(0..vertex_points.len());
+        return Ok(Some(MeshSolve::Solved((topology, point_assignment))));
     }
     // An unresolved coedge direction does not select a point endpoint. It is
     // a row-orientation gauge. Let the exact coordinate binding prove the
     // resulting cycle, then try the endpoint-labelled gauge only when the
     // fixed false direction cannot bind.
-    let fixed_directions = selected
-        .iter()
-        .map(|assignment| {
-            assignment
-                .boundaries
-                .iter()
-                .map(|boundary| {
-                    (!boundary.is_empty()).then(|| {
-                        boundary
-                            .iter()
-                            .map(|use_| use_.reversed.unwrap_or(false))
-                            .collect::<Vec<_>>()
-                    })
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(fixed_directions) = fixed_directions else {
-        return Ok(None);
-    };
+    let mut fixed_directions = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut fixed_directions, selected.len(), "catia_singleton_fixed_face_rows")?;
+    for assignment in &selected {
+        let mut face_directions = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut face_directions, assignment.boundaries.len(), "catia_singleton_fixed_boundary_rows")?;
+        for boundary in &assignment.boundaries {
+            if boundary.is_empty() {
+                return Ok(None);
+            }
+            let mut directions = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut directions, boundary.len(), "catia_singleton_fixed_directions")?;
+            directions.extend(boundary.iter().map(|use_| use_.reversed.unwrap_or(false)));
+            face_directions.push(directions);
+        }
+        fixed_directions.push(face_directions);
+    }
     if let Some(resolved) = resolve_singleton_mesh_selection(
         ctx,
         edge_rows,
@@ -14869,3 +14882,62 @@ mod direct_matching_tests {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[test]
+fn singleton_direction_growth_refuses_before_first_item() {
+    let boundary = [MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 1,
+        reversed: None,
+    }];
+    let candidates = vec![vec![[0, 0]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        singleton_mesh_boundary_directions(&service_ctx, &boundary, &candidates, None)
+            .expect("service budget"),
+        Some(vec![false])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
+    assert!(matches!(
+        singleton_mesh_boundary_directions(&limited_ctx, &boundary, &candidates, None),
+        Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_singleton_initial_direction"
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn singleton_cycle_signature_refuses_before_storage() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let directions = vec![vec![false]];
+    let candidates = vec![vec![[0, 0]]];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        canonical_singleton_coordinate_cycles(&service_ctx, &assignment, &directions, &candidates)
+            .expect("service budget"),
+        Some(vec![vec![0]])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
+    assert!(matches!(
+        canonical_singleton_coordinate_cycles(&limited_ctx, &assignment, &directions, &candidates),
+        Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_singleton_cycle_rows"
+    ));
+}
