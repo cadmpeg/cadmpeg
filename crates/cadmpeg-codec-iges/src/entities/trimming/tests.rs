@@ -51,6 +51,30 @@ const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
+fn implicit_outer_surface_attachment_refuses_procedural_slot() {
+    let bytes = trimmed_plane_with_boundaries(
+        "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+        "144,1,0,1,,13;",
+    );
+    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    assert!(!result.ir().model.procedural_surfaces.is_empty());
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == "iges procedural surface slots" { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected implicit outer procedural slot refusal: {other:?}"),
+        }
+    }
+    panic!("implicit outer procedural slot refusal was not reached");
+}
+
+#[test]
 fn linear_boundary_path_refuses_collection_limit_before_append() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

@@ -2402,6 +2402,7 @@ pub(super) fn project(
                     continue;
                 }
             };
+            reserve_vec_growth(ctx, &mut candidate.model_mut().procedural_surfaces, 1, "iges procedural surface slots")?;
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
                 ProceduralSurface::new(

@@ -1357,6 +1357,7 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1535,6 +1536,7 @@ pub(super) fn project(
                     "record bounds must be finite",
                 ))
             })?;
+            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 ProceduralSurface::new(
@@ -1692,6 +1694,7 @@ pub(super) fn project(
                 "record bounds must be finite",
             ))
         })?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1856,6 +1859,7 @@ pub(super) fn project(
                 },
                 source_object: Some(source_object(entry, ctx)?),
             });
+            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2046,6 +2050,7 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
+            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2428,6 +2433,7 @@ pub(super) fn project(
         });
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -2545,6 +2551,7 @@ pub(super) fn project(
             geometry,
             source_object: Some(source_object(entry, ctx)?),
         });
+        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
