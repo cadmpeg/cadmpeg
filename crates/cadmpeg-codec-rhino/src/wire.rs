@@ -4,7 +4,9 @@
 
 use std::fmt;
 
-use cadmpeg_core::decode::BoundedCount;
+use cadmpeg_core::decode::{
+    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -23,13 +25,25 @@ pub(crate) struct ExactVec<T> {
 }
 
 impl<T> ExactVec<T> {
-    /// Allocates storage for a count already bounded by the input window.
-    pub(crate) fn new(count: BoundedCount) -> Result<Self, CodecError> {
+    /// Charges and allocates storage for a count bounded by the input window.
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        count: BoundedCount,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         let capacity = count.get();
+        ctx.charge_collection_items(u64_from_index(capacity), operation)?;
         let mut values = Vec::new();
-        values
-            .try_reserve_exact(capacity)
-            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
+        values.try_reserve_exact(capacity).map_err(|_| {
+            CodecError::ResourceLimit(ResourceLimit {
+                dimension: ResourceDimension::CollectionItems,
+                reason: ResourceFailure::AllocationFailed,
+                limit: u64::MAX,
+                used: 0,
+                additional: u64_from_index(capacity),
+                operation,
+            })
+        })?;
         Ok(Self { values, capacity })
     }
 

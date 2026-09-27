@@ -72,7 +72,10 @@ pub(crate) struct HistoryPolyEdge {
 }
 
 fn refused(offset: usize, error: &CodecError) -> FramingError {
-    FramingError::structural(offset, format!("polyedge allocation refused: {error}"))
+    match error {
+        CodecError::ResourceLimit(limit) => FramingError::Resource(*limit),
+        _ => FramingError::structural(offset, format!("polyedge allocation refused: {error}")),
+    }
 }
 
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
@@ -219,8 +222,9 @@ pub(crate) fn decode(
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let (parameter_count, parameter_bound) = counted(&mut body, 8)?;
 
-    let mut reserved = ExactVec::<FiniteReal>::new(parameter_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut reserved =
+        ExactVec::<FiniteReal>::new(expand.ctx(), parameter_bound, "Rhino polyedge parameters")
+            .map_err(|error| refused(body.position(), &error))?;
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         let offset = body.position();
@@ -246,9 +250,12 @@ pub(crate) fn decode(
         .finish()
         .map_err(|error| refused(body.position(), &error))?;
 
-    let mut segments =
-        ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(segment_bound)
-            .map_err(|error| refused(body.position(), &error))?;
+    let mut segments = ExactVec::<Segment<PersistentReference, FiniteVector<2>>>::new(
+        expand.ctx(),
+        segment_bound,
+        "Rhino polyedge segments",
+    )
+    .map_err(|error| refused(body.position(), &error))?;
     for _ in 0..segment_count {
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;

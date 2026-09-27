@@ -920,8 +920,7 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
     assert_eq!(warnings.len(), 1);
 }
 
-#[test]
-fn embedded_cage_projects_exact_construction_semantics() {
+fn embedded_cage_payload() -> Vec<u8> {
     let mut body = 1_i32.to_le_bytes().to_vec();
     body.extend(0_i32.to_le_bytes());
     body.extend(3_i32.to_le_bytes());
@@ -938,11 +937,12 @@ fn embedded_cage_projects_exact_construction_semantics() {
             body.extend(coordinate.to_le_bytes());
         }
     }
-    let bytes = crate::test_support::test_dump::crc_chunk(
-        crate::chunks::ArchiveVersion::V5,
-        ANONYMOUS,
-        &body,
-    );
+    crate::test_support::test_dump::crc_chunk(crate::chunks::ArchiveVersion::V5, ANONYMOUS, &body)
+}
+
+#[test]
+fn embedded_cage_projects_exact_construction_semantics() {
+    let bytes = embedded_cage_payload();
     let geometry = EmbeddedGeometry {
         class_id: crate::cage::CLASS,
         class_data_range: 0..bytes.len(),
@@ -1032,6 +1032,68 @@ fn embedded_cage_projects_exact_construction_semantics() {
             .len(),
         3
     );
+}
+
+#[test]
+fn embedded_cage_resource_refusal_is_not_an_absent_value() {
+    let bytes = embedded_cage_payload();
+    let geometry = EmbeddedGeometry {
+        class_id: crate::cage::CLASS,
+        class_data_range: 0..bytes.len(),
+        userdata: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut refusal = None;
+    assert!(extended_geometry_json(
+        crate::mesh::MeshExpand::new(&ctx, root),
+        &geometry,
+        ArchiveVersion::V8,
+        None,
+        MillimeterScale::IDENTITY,
+        &mut Diagnostics::new(),
+        &mut refusal,
+    )
+    .is_none());
+    assert!(matches!(
+        refusal,
+        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino cage knot values"
+    ));
+}
+
+#[test]
+fn embedded_polyedge_resource_refusal_is_not_an_absent_value() {
+    let bytes = crate::polyedge::tests::polyedge_payload();
+    let geometry = EmbeddedGeometry {
+        class_id: crate::polyedge::CURVE_CLASS,
+        class_data_range: 0..bytes.len(),
+        userdata: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut refusal = None;
+    assert!(extended_geometry_json(
+        crate::mesh::MeshExpand::new(&ctx, root),
+        &geometry,
+        ArchiveVersion::V8,
+        None,
+        MillimeterScale::IDENTITY,
+        &mut Diagnostics::new(),
+        &mut refusal,
+    )
+    .is_none());
+    assert!(matches!(
+        refusal,
+        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino polyedge parameters"
+    ));
 }
 
 #[test]

@@ -114,7 +114,10 @@ pub(crate) struct Hatch {
 }
 
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    GeometryError::malformed(offset, format!("hatch allocation refused: {error}"))
+    match error {
+        CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
+        _ => GeometryError::malformed(offset, format!("hatch allocation refused: {error}")),
+    }
 }
 
 fn coordinate3(view: &mut View<'_>, label: &str) -> Result<FiniteVector<3>, GeometryError> {
@@ -204,7 +207,8 @@ pub(crate) fn decode(
     let loop_bound = body.counted(count as u64, 5).ok_or_else(|| {
         GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
     })?;
-    let mut loops = match ExactVec::<HatchLoop>::new(loop_bound) {
+    let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
+    {
         Ok(loops) => loops,
         Err(error) => return Err(refused(body.position(), &error)),
     };
@@ -582,6 +586,31 @@ pub(crate) mod tests {
         payload.extend(3.0_f64.to_le_bytes());
         payload.extend(4.0_f64.to_le_bytes());
         payload
+    }
+
+    #[test]
+    fn hatch_loops_refuse_collection_limit() {
+        let payload = version_two_hatch_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root bytes admitted");
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let error = decode(
+            expand,
+            0..payload.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .expect_err("one hatch loop exceeds collection limit");
+        assert!(matches!(
+            error,
+            crate::curves::GeometryError::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            ) if refusal.operation == "Rhino hatch loops"
+        ));
     }
 
     fn gradient_userdata_payload(gradient_type: i32, outer_suffix: &[u8]) -> Vec<u8> {

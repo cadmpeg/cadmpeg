@@ -87,6 +87,34 @@ fn decodes_persistent_polyedge_segment_construction() {
     assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
 }
 
+fn polyedge_collection_refusal(limit: u64, operation: &str) {
+    let payload = polyedge_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root bytes admitted");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let error = decode(expand, 0..payload.len(), ArchiveVersion::V8)
+        .expect_err("polyedge allocation exceeds collection limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(ref refusal)
+            if refusal.operation == operation
+    ));
+}
+
+#[test]
+fn polyedge_parameters_refuse_collection_limit() {
+    polyedge_collection_refusal(1, "Rhino polyedge parameters");
+}
+
+#[test]
+fn polyedge_segments_refuse_collection_limit() {
+    polyedge_collection_refusal(2, "Rhino polyedge segments");
+}
+
 #[test]
 fn accepts_empty_edge_and_trim_domains_for_a_source_curve_segment() {
     let payload =
