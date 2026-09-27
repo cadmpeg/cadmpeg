@@ -10,6 +10,7 @@
 //! co-parameterized support pcurve caches.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -79,6 +80,54 @@ struct SolvedChart {
     fit_tolerance_mm: f64,
     reversed: bool,
     endpoint_displacement: f64,
+}
+
+fn extend_group<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    groups: &mut HashMap<K, Vec<V>>,
+    key: K,
+    values: Vec<V>,
+    key_operation: &'static str,
+    value_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, key_operation)?;
+        groups.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    let count = u64::try_from(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(count, value_operation)?;
+    let group = groups.entry(key).or_default();
+    group.try_reserve(values.len()).map_err(|_| {
+        ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX)
+    })?;
+    group.extend(values);
+    Ok(())
+}
+
+fn push_group<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    groups: &mut HashMap<K, Vec<V>>,
+    key: K,
+    value: V,
+    key_operation: &'static str,
+    value_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, key_operation)?;
+        groups.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    ctx.charge_collection_items(1, value_operation)?;
+    let group = groups.entry(key).or_default();
+    group.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX)
+    })?;
+    group.push(value);
+    Ok(())
 }
 
 /// Offsets of every `00 tt` tag, with the optional `0xff` escape skipped.
@@ -156,15 +205,7 @@ fn chart_records(
         let Some((attr, candidates)) = chart_candidates(ctx, bytes, body)? else {
             continue;
         };
-                    if !out.contains_key(&attr) {
-                ctx.charge_collection_items(1, "collect Parasolid intersection charts")?;
-            }
-            ctx.charge_collection_items(
-                candidates.len() as u64,
-                "collect Parasolid intersection chart candidates",
-            )?;
-
-        out.entry(attr).or_default().extend(candidates);
+        extend_group(ctx, &mut out, attr, candidates, "collect Parasolid intersection charts", "collect Parasolid intersection chart candidates")?;
     }
     Ok(out)
 }
@@ -231,17 +272,23 @@ fn chart_candidates(
                 "decode Parasolid chart interior points",
             )?;
 
-        let Some(interior_points) = (1..count - 1)
-            .map(|index| finite_point(bytes, block + index * stride))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
+        let mut interior_points = Vec::new();
+        interior_points.try_reserve(count - 2).map_err(|_| {
+            ctx.refuse_codec_limit("decode Parasolid chart interior points", u64::MAX - 1, u64::MAX)
+        })?;
+        for index in 1..count - 1 {
+            if let Some(point) = finite_point(bytes, block + index * stride) {
+                interior_points.push(point);
+            }
+        }
         if !extended && first == last && interior_points.iter().all(|point| *point == first) {
             continue;
         }
                     ctx.charge_collection_items(1, "collect Parasolid chart stride candidates")?;
 
+        candidates.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect Parasolid chart stride candidates", u64::MAX - 1, u64::MAX)
+        })?;
         candidates.push(Chart {
             endpoints: [first, last],
             interior_points,
@@ -282,12 +329,7 @@ fn term_at(
             continue;
         }
         if let Some(point) = finite_point(bytes, body + 6 + label_len) {
-                            if !out.contains_key(&attr) {
-                    ctx.charge_collection_items(1, "collect Parasolid terminator groups")?;
-                }
-                ctx.charge_collection_items(1, "collect Parasolid terminator points")?;
-
-            out.entry(attr).or_default().push(point);
+            push_group(ctx, out, attr, point, "collect Parasolid terminator groups", "collect Parasolid terminator points")?;
         }
     }
     Ok(())
@@ -352,15 +394,19 @@ fn uv_at(
     }
             ctx.charge_collection_items(count as u64, "decode Parasolid support UV values")?;
 
-    let values = (0..count)
-        .map(|index| View::f64_be_at(bytes, body + support_uv::LEN + index * 8))
-        .collect::<Option<Vec<_>>>();
-    Ok(values.and_then(|values| {
-        values
-            .iter()
-            .all(|value| value.is_finite())
-            .then_some((attr, UvRecord { width, values }))
-    }))
+    let mut values = Vec::new();
+    values.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit("decode Parasolid support UV values", u64::MAX - 1, u64::MAX)
+    })?;
+    for index in 0..count {
+        if let Some(value) = View::f64_be_at(bytes, body + support_uv::LEN + index * 8) {
+            values.push(value);
+        }
+    }
+    Ok(values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some((attr, UvRecord { width, values })))
 }
 
 /// Every `00 cc` or inline `values` support-UV record, keyed by attribute.
@@ -371,24 +417,14 @@ fn uv_records(
     let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(ctx, bytes, body)? {
-                            if !out.contains_key(&attr) {
-                    ctx.charge_collection_items(1, "collect Parasolid support UV groups")?;
-                }
-                ctx.charge_collection_items(1, "collect Parasolid support UV records")?;
-
-            out.entry(attr).or_default().push(shape);
+            push_group(ctx, &mut out, attr, shape, "collect Parasolid support UV groups", "collect Parasolid support UV records")?;
         }
     }
     for label in find_iter(bytes, b"values") {
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(ctx, bytes, tail + INLINE_UV_TAIL.len())? {
-                                    if !out.contains_key(&attr) {
-                        ctx.charge_collection_items(1, "collect Parasolid support UV groups")?;
-                    }
-                    ctx.charge_collection_items(1, "collect Parasolid support UV records")?;
-
-                out.entry(attr).or_default().push(shape);
+                push_group(ctx, &mut out, attr, shape, "collect Parasolid support UV groups", "collect Parasolid support UV records")?;
             }
         }
     }
@@ -404,9 +440,9 @@ fn charge_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-            ctx.charge_collection_items(count as u64, operation)?;
-
-    Ok(())
+    let count = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
 }
 
 /// Build the derived polyline curve for one validated composite.
@@ -421,7 +457,10 @@ fn solved_curve(
     let mut parameter = chart.base_parameter;
     let point_count = chart.interior_points.len() + 2;
     charge_items(ctx, point_count, "construct intersection chart parameters")?;
-    let mut parameters = Vec::with_capacity(point_count);
+    let mut parameters = Vec::new();
+    parameters.try_reserve(point_count).map_err(|_| {
+        ctx.refuse_codec_limit("construct intersection chart parameters", u64::MAX - 1, u64::MAX)
+    })?;
     parameters.push(parameter);
     let mut previous = chart.endpoints[0];
     for &point in chart
@@ -434,10 +473,13 @@ fn solved_curve(
         previous = point;
     }
     charge_items(ctx, point_count, "construct intersection chart points")?;
-    let mut points = std::iter::once(start)
-        .chain(chart.interior_points.iter().copied())
-        .chain(std::iter::once(end))
-        .collect::<Vec<_>>();
+    let mut points = Vec::new();
+    points.try_reserve(point_count).map_err(|_| {
+        ctx.refuse_codec_limit("construct intersection chart points", u64::MAX - 1, u64::MAX)
+    })?;
+    points.push(start);
+    points.extend(chart.interior_points.iter().copied());
+    points.push(end);
     let reversed = if parameters.windows(2).all(|pair| pair[0] < pair[1]) {
         false
     } else if parameters.windows(2).all(|pair| pair[0] > pair[1]) {
@@ -453,15 +495,21 @@ fn solved_curve(
         (chart.base_parameter, parameter)
     };
     charge_items(ctx, point_count + 2, "construct intersection chart knots")?;
-    let knots = std::iter::once(first)
-        .chain(parameters.iter().copied())
-        .chain(std::iter::once(last))
-        .collect();
+    let mut knots = Vec::new();
+    knots.try_reserve(point_count + 2).map_err(|_| {
+        ctx.refuse_codec_limit("construct intersection chart knots", u64::MAX - 1, u64::MAX)
+    })?;
+    knots.push(first);
+    knots.extend(parameters.iter().copied());
+    knots.push(last);
     charge_items(ctx, point_count, "construct intersection curve controls")?;
-    let controls = points
-        .iter()
-        .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
-        .collect();
+    let mut controls = Vec::new();
+    controls.try_reserve(point_count).map_err(|_| {
+        ctx.refuse_codec_limit("construct intersection curve controls", u64::MAX - 1, u64::MAX)
+    })?;
+    controls.extend(points.iter().map(|p| {
+        Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)
+    }));
     charge_items(ctx, point_count, "admit intersection curve poles")?;
     let nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
         Ok(nurbs) => nurbs,
@@ -502,17 +550,18 @@ fn solved_support_uv(
             parameters.len() * 2,
             "construct intersection support UV controls",
         )?;
-        let controls = [0usize, 1].map(|support| {
-            let mut control_points = record
-                .values
-                .chunks_exact(4)
-                .map(|row| Point2::new(row[support * 2], row[support * 2 + 1]))
-                .collect::<Vec<_>>();
+        let mut controls = [Vec::new(), Vec::new()];
+        for (support, control_points) in controls.iter_mut().enumerate() {
+            control_points.try_reserve(parameters.len()).map_err(|_| {
+                ctx.refuse_codec_limit("construct intersection support UV controls", u64::MAX - 1, u64::MAX)
+            })?;
+            control_points.extend(record.values.chunks_exact(4).map(|row| {
+                Point2::new(row[support * 2], row[support * 2 + 1])
+            }));
             if reversed {
                 control_points.reverse();
             }
-            control_points
-        });
+        }
         if candidate
             .as_ref()
             .is_some_and(|previous| previous != &controls)
@@ -647,10 +696,12 @@ pub(super) fn scan_intersection_carriers(
             selected.reversed,
             uvs.get(&uv_ref).map(Vec::as_slice),
         )?;
-                    if !out.contains_key(&attr) {
-                ctx.charge_collection_items(1, "collect Parasolid intersection carriers")?;
-            }
-
+        if !out.contains_key(&attr) {
+            ctx.charge_collection_items(1, "collect Parasolid intersection carriers")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect Parasolid intersection carriers", u64::MAX - 1, u64::MAX)
+            })?;
+        }
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
                 attr,
