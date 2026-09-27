@@ -555,6 +555,102 @@ fn installed_texture_mapping_refuses_collection_limit() {
     );
 }
 
+fn rendering_mapping_refusal(limit: u64) -> FramingError {
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend([0x11; 16]);
+    channel_body.extend((0..16).flat_map(|value| f64::from(value).to_le_bytes()));
+    let channel = anonymous(1, &channel_body);
+    let mut mapping_body = vec![0x22; 16];
+    mapping_body.extend(1_i32.to_le_bytes());
+    mapping_body.extend(channel);
+    let mapping = anonymous(0, &mapping_body);
+    let mut body = 0_i32.to_le_bytes().to_vec();
+    body.extend(1_i32.to_le_bytes());
+    body.extend(mapping);
+    body.extend([0, 0, 1]);
+    let bytes = anonymous(3, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("rendering root admitted");
+    crate::presentation::rendering_attributes(
+        &ctx,
+        &bytes,
+        Some(0..bytes.len()),
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Object,
+    )
+    .expect_err("rendering UUID exceeds retained limit")
+}
+
+#[test]
+fn rendering_mapping_plugin_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(rendering_mapping_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering mapping plugin UUID")
+    );
+}
+
+#[test]
+fn rendering_channel_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(rendering_mapping_refusal(36), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering channel UUID")
+    );
+}
+
+fn rendering_material_refusal(limit: u64) -> FramingError {
+    let mut obsolete_channel_body = 7_i32.to_le_bytes().to_vec();
+    obsolete_channel_body.extend([0x33; 16]);
+    obsolete_channel_body.extend((0..16).flat_map(|value| f64::from(value).to_le_bytes()));
+    let obsolete_channel = anonymous(1, &obsolete_channel_body);
+    let mut material_body = vec![0x11; 16];
+    material_body.extend([0x22; 16]);
+    material_body.extend(1_i32.to_le_bytes());
+    material_body.extend(obsolete_channel);
+    material_body.extend([0x44; 16]);
+    material_body.extend([3, 0, 0, 0]);
+    let material = anonymous(1, &material_body);
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(material);
+    body.extend(0_i32.to_le_bytes());
+    body.extend([1, 1, 0]);
+    let bytes = anonymous(3, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("rendering root admitted");
+    crate::presentation::rendering_attributes(
+        &ctx,
+        &bytes,
+        Some(0..bytes.len()),
+        ArchiveVersion::V8,
+        settings::RenderingAttributesKind::Object,
+    )
+    .expect_err("rendering material UUID exceeds retained limit")
+}
+
+#[test]
+fn rendering_material_plugin_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(rendering_material_refusal(0), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering material plugin UUID")
+    );
+}
+
+#[test]
+fn rendering_front_material_uuid_refuses_retained_limit() {
+    assert!(
+        matches!(rendering_material_refusal(36), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering front material UUID")
+    );
+}
+
+#[test]
+fn rendering_back_material_uuid_refuses_retained_limit_after_obsolete_channel() {
+    assert!(
+        matches!(rendering_material_refusal(72), FramingError::Resource(refusal) if refusal.operation == "Rhino rendering back material UUID")
+    );
+}
+
 fn font_refusal(limit: u64) -> FramingError {
     let bytes = modern_font_chunk(7, &[]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
