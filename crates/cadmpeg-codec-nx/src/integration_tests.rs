@@ -102,7 +102,7 @@ fn inspect_summary_refuses_entry_slots_at_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("one summary entry exceeds zero collection items");
     assert!(matches!(
         error,
@@ -122,7 +122,7 @@ fn inspect_summary_refuses_attribute_node_at_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("one attribute exceeds the three view and entry items");
     assert!(matches!(
         error,
@@ -142,7 +142,7 @@ fn inspect_summary_refuses_attribute_text_at_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("the first attribute key and value need retained bytes");
     assert!(matches!(
         error,
@@ -156,7 +156,7 @@ fn inspect_summary_refuses_attribute_text_at_retained_limit() {
 fn inspect_summary_preserves_preview_attributes_under_service_profile() {
     let mut scan = one_preview_summary_scan();
     scan.streams[0].file_offset = 123_456_789;
-    let summary = crate::test_support::with_decode_context(|ctx| super::summarize(ctx, &scan))
+    let summary = crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
         .expect("preview summary fits the service profile");
     assert_eq!(summary.entries[0].name, "parasolid#0");
     assert_eq!(
@@ -178,7 +178,7 @@ fn inspect_summary_refuses_stream_name_at_retained_limit() {
     policy.limits.max_retained_bytes = 23;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("the two attributes use the available retained bytes");
     assert!(matches!(
         error,
@@ -208,7 +208,7 @@ fn inspect_summary_refuses_directory_name_at_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(preceding).expect("small fixture");
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("the directory attributes use the available retained bytes");
     assert!(matches!(
         error,
@@ -236,7 +236,7 @@ fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
     policy.limits.max_collection_items = 5;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("the entry, views, and attributes use five slots");
     assert!(matches!(
         error,
@@ -256,7 +256,7 @@ fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
     policy.limits.max_retained_bytes = 23;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let error = super::summarize(&ctx, &scan)
+    let error = crate::inspect::summarize(&ctx, &scan)
         .expect_err("the two attributes use the available retained bytes");
     assert!(matches!(
         error,
@@ -269,7 +269,7 @@ fn inspect_summary_refuses_storage_note_text_at_retained_limit() {
 #[test]
 fn inspect_summary_preserves_invalid_legacy_storage_note() {
     let scan = invalid_legacy_storage_summary_scan();
-    let summary = crate::test_support::with_decode_context(|ctx| super::summarize(ctx, &scan))
+    let summary = crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
         .expect("storage fallback fits the service profile");
     assert!(summary.notes.iter().any(|note| {
         note == "parasolid#0: verbatim container entry stores fewer bytes than it expands to: 2/3"
