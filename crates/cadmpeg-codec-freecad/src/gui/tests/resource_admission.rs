@@ -207,6 +207,25 @@ fn gui_property_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn gui_provider_identity_refuses_at_retained_limit() {
+    let text = r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
+    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
+    let id_len = crate::native::native_id("gui-view-provider", "Provider With Spaces").len();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("identity length fits u64");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
+        .expect("provider XML is within the root limit");
+    let error = super::super::append_native_provider(
+        &ctx, text, xml.root_element(), 0, None, &mut Vec::new(), &mut Vec::new(),
+    )
+    .expect_err("provider identity must charge before construction");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FreeCAD native identity"), "{error:?}");
+}
+
+#[test]
 fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><Camera settings=""/></Document>"#;

@@ -148,10 +148,6 @@ fn push_encoded_segment(output: &mut String, key: &str) {
     }
 }
 
-pub(crate) fn native_id_from_key(kind: &str, key: &IdentityKey) -> String {
-    format!("fcstd:native:{kind}#{key}")
-}
-
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     let parent_key = id_key(parent);
     format!(
