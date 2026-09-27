@@ -78,6 +78,32 @@ fn admitted_nurbs_curve_keeps_pole_storage() {
 }
 
 #[test]
+fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
+    use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+
+    let original = surface();
+    let grid = original.pole_grid().clone();
+    let NurbsPoleGrid::Rational { rows } = &grid else {
+        panic!("fixture must be rational");
+    };
+    let outer_storage = rows.as_ptr();
+    let inner_storage = rows.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+    let rebuilt = NurbsSurface::new(
+        NurbsSurfaceAxis::new(original.u_degree(), original.u_knots().clone(), original.u_periodic()),
+        NurbsSurfaceAxis::new(original.v_degree(), original.v_knots().clone(), original.v_periodic()),
+        grid,
+        original.normal_reversed(),
+    )
+    .unwrap();
+    let NurbsPoleGrid::Rational { rows } = rebuilt.pole_grid() else {
+        panic!("rebuilt surface must remain rational");
+    };
+    assert_eq!(rows.as_ptr(), outer_storage);
+    assert_eq!(rows.iter().map(Vec::as_ptr).collect::<Vec<_>>(), inner_storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;

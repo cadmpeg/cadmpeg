@@ -192,6 +192,11 @@ pub trait PoleValue<T>: Copy {
     fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
         poles.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
     }
+
+    /// Admit a surface pole grid, retaining its rows when the poles are admitted.
+    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
+        grid.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
 }
 
 impl PoleValue<FinitePoint3> for Point3 {
@@ -209,6 +214,12 @@ impl PoleValue<FinitePoint3> for FinitePoint3 {
         poles: NurbsPoles3<Self>,
     ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
         Ok(poles)
+    }
+
+    fn admit_surface_poles(
+        grid: NurbsPoleGrid<Self>,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        Ok(grid)
     }
 }
 
@@ -506,7 +517,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_surface_poles(self)
     }
 }
 
