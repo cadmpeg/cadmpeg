@@ -2163,6 +2163,7 @@ fn parse_texture(
 }
 
 fn texture_array(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -2192,7 +2193,7 @@ fn texture_array(
             "texture count exceeds limit",
         ));
     }
-    let mut textures = Vec::new();
+    let mut textures = crate::chunks::admitted_vec(ctx, count, "Rhino material textures")?;
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short() {
@@ -2322,6 +2323,7 @@ fn parse_v2_v3_texture(
 }
 
 fn parse_v2_v3_material(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     source_offset: usize,
@@ -2346,19 +2348,37 @@ fn parse_v2_v3_material(
     let _obsolete_wire_color = reader.array::<4>()?;
     reader.skip(20)?;
 
-    let mut textures = Vec::with_capacity(3);
+    let mut textures = Vec::new();
     if let Some(texture) =
         parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bitmap)?
     {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut textures,
+            1,
+            "Rhino V2/V3 material textures",
+        )?;
         textures.push(texture);
     }
     if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bump)?
     {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut textures,
+            1,
+            "Rhino V2/V3 material textures",
+        )?;
         textures.push(texture);
     }
     if let Some(texture) =
         parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Environment)?
     {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut textures,
+            1,
+            "Rhino V2/V3 material textures",
+        )?;
         textures.push(texture);
     }
 
@@ -2414,17 +2434,29 @@ fn parse_v2_v3_material(
     })
 }
 
-fn parse_material(
-    data: &[u8],
+struct MaterialParseInput {
     range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     source_offset: usize,
     physically_based: Option<PhysicallyBasedMaterialRecord>,
+}
+
+fn parse_material(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    input: MaterialParseInput,
     losses: &mut Vec<LossNote>,
 ) -> Result<MaterialRecord, FramingError> {
+    let MaterialParseInput {
+        range,
+        archive,
+        writer_version,
+        source_offset,
+        physically_based,
+    } = input;
     if matches!(archive, ArchiveVersion::V2 | ArchiveVersion::V3) {
-        return parse_v2_v3_material(data, range, source_offset, physically_based);
+        return parse_v2_v3_material(ctx, data, range, source_offset, physically_based);
     }
     let framed = data.get(range.start).copied() == Some(0);
     let (mut reader, component, minor, modern) = if framed {
@@ -2494,7 +2526,7 @@ fn parse_material(
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
     let shine = read_finite(&mut reader, "shine")?;
     let transparency = read_finite(&mut reader, "transparency")?;
-    let textures = texture_array(data, &mut reader, archive, losses)?;
+    let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
         let _obsolete_library = utf16(&mut reader)?;
     }
@@ -4565,27 +4597,36 @@ pub(crate) fn install(
                                 }
                             }
                         });
-                    if let Ok(mut material) = parse_material(
+                    match parse_material(
+                        ctx,
                         scan.data,
-                        range,
-                        scan.archive,
-                        scan.metadata.properties.writer_version,
-                        record.range.start,
-                        physically_based,
+                        MaterialParseInput {
+                            range,
+                            archive: scan.archive,
+                            writer_version: scan.metadata.properties.writer_version,
+                            source_offset: record.range.start,
+                            physically_based,
+                        },
                         &mut losses,
                     ) {
-                        if let Some(instance_id) = legacy_rdk_instance_id {
-                            material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
-                            material.rdk_instance_uuid = Some(instance_id.to_string());
+                        Ok(mut material) => {
+                            if let Some(instance_id) = legacy_rdk_instance_id {
+                                material.plugin_uuid = UNIVERSAL_RENDER_ENGINE.to_string();
+                                material.rdk_instance_uuid = Some(instance_id.to_string());
+                            }
+                            materials.push(material);
+                            if material_requires_opaque {
+                                opaque_records.push(OpaqueRecord {
+                                    table_typecode: table.typecode,
+                                    record: record.clone(),
+                                });
+                            }
+                            parsed = true;
                         }
-                        materials.push(material);
-                        if material_requires_opaque {
-                            opaque_records.push(OpaqueRecord {
-                                table_typecode: table.typecode,
-                                record: record.clone(),
-                            });
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit));
                         }
-                        parsed = true;
+                        Err(_) => {}
                     }
                 }
             } else if table_type == LIGHT_TABLE {

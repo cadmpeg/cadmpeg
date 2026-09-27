@@ -35,6 +35,7 @@ use crate::presentation::texture_array;
 use crate::presentation::DimensionStyleDetails;
 use crate::presentation::EmbeddedImageCompression;
 use crate::presentation::FontWeight;
+use crate::presentation::MaterialParseInput;
 use crate::presentation::ANONYMOUS;
 use crate::presentation::DIMSTYLE_EXTRA;
 use crate::presentation::LIGHT;
@@ -1378,12 +1379,15 @@ fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
 fn legacy_material_preserves_core_appearance_and_switches() {
     let bytes = legacy_material_bytes([5, 6, 7, 8]);
     let material = parse_material(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        Some(200_912_009),
-        0,
-        None,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_912_009),
+            source_offset: 0,
+            physically_based: None,
+        },
         &mut Vec::new(),
     )
     .expect("required invariant");
@@ -1409,12 +1413,15 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
     let bytes = legacy_material_bytes([5, 6, 7, 8]);
     let mut losses = Vec::new();
     let material = parse_material(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        None,
-        0,
-        None,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V5,
+            writer_version: None,
+            source_offset: 0,
+            physically_based: None,
+        },
         &mut losses,
     )
     .expect("legacy material without a writer stamp");
@@ -1427,12 +1434,15 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
 
     let mut stamped_losses = Vec::new();
     let stamped = parse_material(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        Some(200_912_010),
-        0,
-        None,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_912_010),
+            source_offset: 0,
+            physically_based: None,
+        },
         &mut stamped_losses,
     )
     .expect("legacy material with a modern writer stamp");
@@ -1443,12 +1453,15 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
     let agreeing = legacy_material_bytes([128, 128, 128, 24]);
     let mut agreeing_losses = Vec::new();
     let material = parse_material(
+        &cadmpeg_test_support::service_decode_context(),
         &agreeing,
-        0..agreeing.len(),
-        ArchiveVersion::V5,
-        None,
-        0,
-        None,
+        MaterialParseInput {
+            range: 0..agreeing.len(),
+            archive: ArchiveVersion::V5,
+            writer_version: None,
+            source_offset: 0,
+            physically_based: None,
+        },
         &mut agreeing_losses,
     )
     .expect("legacy material whose diffuse equals its transparent color");
@@ -1506,12 +1519,15 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
     for archive in [ArchiveVersion::V2, ArchiveVersion::V3] {
         let bytes = v2_v3_material_payload(1);
         let material = parse_material(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            0..bytes.len(),
-            archive,
-            None,
-            77,
-            None,
+            MaterialParseInput {
+                range: 0..bytes.len(),
+                archive,
+                writer_version: None,
+                source_offset: 77,
+                physically_based: None,
+            },
             &mut Vec::new(),
         )
         .expect("V2/V3 material payload");
@@ -1562,12 +1578,15 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
 fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity() {
     let bytes = v2_v3_material_payload(0);
     let material = parse_material(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V2,
-        None,
-        77,
-        None,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V2,
+            writer_version: None,
+            source_offset: 77,
+            physically_based: None,
+        },
         &mut Vec::new(),
     )
     .expect("V2 minor-zero material payload");
@@ -1934,8 +1953,14 @@ fn texture_array_closes_after_class_items_and_future_suffix() {
     let bytes = anonymous(4, &body);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
     let mut losses = Vec::new();
-    let values = texture_array(&bytes, &mut reader, ArchiveVersion::V8, &mut losses)
-        .expect("texture array child and suffix");
+    let values = texture_array(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &mut reader,
+        ArchiveVersion::V8,
+        &mut losses,
+    )
+    .expect("texture array child and suffix");
     assert_eq!(values.len(), 1);
     assert_eq!(values[0].legacy_file_path, "texture.png");
     assert_eq!(values[0].mapping_channel_id, 7);
