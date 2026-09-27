@@ -253,6 +253,7 @@ impl Serialize for DisplayJtGraph {
     }
 }
 
+#[cfg(test)]
 impl TryFrom<&NativeNamespace> for DisplayJtGraph {
     type Error = NativeConvertError;
 
