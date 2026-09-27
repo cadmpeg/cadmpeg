@@ -12,6 +12,44 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_body_output_prefix_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Body".into(),
+        name: "Body".into(),
+        type_name: "PartDesign::Body".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Body:Shape".into(),
+        owner: object.id.clone(),
+        name: "Shape".into(),
+        type_name: "Part::PropertyPartShape".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "fcstd:native:shape-payload#Body:Shape".into(),
+        property: property.id.clone(),
+        entry: "shape.brp".into(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd design body output prefix", |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::transfer(ctx, &mut ir, &[object.clone()], &[property.clone()], &[payload.clone()], &[], None)
+    });
+}
+
+#[test]
 fn sketch_placement_error_refuses_at_retained_limit() {
     let property = crate::native::PropertyRecord {
         id: "placement-property".into(),
