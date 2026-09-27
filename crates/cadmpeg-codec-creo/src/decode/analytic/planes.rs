@@ -163,11 +163,13 @@ pub(super) fn solve_carriers_with_diagnostics(
                 (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
                 | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
                     if let Some(point) = tangent_plane_sphere_point(plane, sphere) {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo carrier pair candidates")?;
                         candidates.push(point);
                     }
                 }
                 (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
                     if let Some(point) = tangent_sphere_point(first, second) {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo carrier pair candidates")?;
                         candidates.push(point);
                     }
                 }
@@ -188,15 +190,31 @@ pub(super) fn solve_carriers_with_diagnostics(
                 let mut tori = Vec::new();
                 for carrier in triple {
                     match carrier {
-                        CarrierEquation::Plane(plane) => planes.push(plane),
-                        CarrierEquation::Cylinder(cylinder) => cylinders.push(cylinder),
-                        CarrierEquation::Cone(cone) => cones.push(cone),
-                        CarrierEquation::Sphere(sphere) => spheres.push(sphere),
-                        CarrierEquation::Torus(torus) => tori.push(torus),
+                        CarrierEquation::Plane(plane) => {
+                            ctx.try_reserve_items(&mut planes, 1, "creo carrier triple groups")?;
+                            planes.push(plane);
+                        }
+                        CarrierEquation::Cylinder(cylinder) => {
+                            ctx.try_reserve_items(&mut cylinders, 1, "creo carrier triple groups")?;
+                            cylinders.push(cylinder);
+                        }
+                        CarrierEquation::Cone(cone) => {
+                            ctx.try_reserve_items(&mut cones, 1, "creo carrier triple groups")?;
+                            cones.push(cone);
+                        }
+                        CarrierEquation::Sphere(sphere) => {
+                            ctx.try_reserve_items(&mut spheres, 1, "creo carrier triple groups")?;
+                            spheres.push(sphere);
+                        }
+                        CarrierEquation::Torus(torus) => {
+                            ctx.try_reserve_items(&mut tori, 1, "creo carrier triple groups")?;
+                            tori.push(torus);
+                        }
                     }
                 }
                 if planes.len() == 3 {
                     if let Some(point) = solve_planes(&planes) {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo carrier triple candidates")?;
                         candidates.push(point);
                     }
                 } else if planes.len() == 1
@@ -213,20 +231,24 @@ pub(super) fn solve_carriers_with_diagnostics(
                         Vec::new()
                     };
                     if reduced.is_empty() {
-                        let quadrics = cylinders
+                        let mut quadrics = cylinders
                             .iter()
                             .copied()
                             .map(CarrierEquation::Cylinder)
                             .chain(cones.iter().copied().map(CarrierEquation::Cone))
-                            .chain(spheres.iter().copied().map(CarrierEquation::Sphere))
-                            .collect::<Vec<_>>();
-                        candidates.extend(intersect_plane_with_two_quadrics(
+                            .chain(spheres.iter().copied().map(CarrierEquation::Sphere));
+                        let Some(first_quadric) = quadrics.next() else { continue; };
+                        let Some(second_quadric) = quadrics.next() else { continue; };
+                        let intersections = intersect_plane_with_two_quadrics(
                             ctx,
                             planes[0],
-                            quadrics[0],
-                            quadrics[1],
-                        )?);
+                            first_quadric,
+                            second_quadric,
+                        )?;
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     } else {
+                        ctx.try_reserve_items(&mut candidates, reduced.len(), "creo carrier triple candidates")?;
                         candidates.extend(reduced);
                     }
                 } else if let ([first, second], []) = (planes.as_slice(), tori.as_slice()) {
@@ -249,58 +271,71 @@ pub(super) fn solve_carriers_with_diagnostics(
                             ),
                             _ => Vec::new(),
                         };
+                    ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                     candidates.extend(intersections);
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
-                        candidates.extend(intersect_two_planes_with_torus(*first, *second, *torus));
+                        let intersections = intersect_two_planes_with_torus(*first, *second, *torus);
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 } else if let ([plane], [cylinder], [torus]) =
                     (planes.as_slice(), cylinders.as_slice(), tori.as_slice())
                 {
                     if cones.is_empty() && spheres.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
+                        let intersections = intersect_plane_with_carrier_components(
                             *plane,
                             CarrierEquation::Cylinder(*cylinder),
                             CarrierEquation::Torus(*torus),
-                        ));
+                        );
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 } else if let ([plane], [cone], [sphere]) =
                     (planes.as_slice(), cones.as_slice(), spheres.as_slice())
                 {
                     if cylinders.is_empty() && tori.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
+                        let intersections = intersect_plane_with_carrier_components(
                             *plane,
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Sphere(*sphere),
-                        ));
+                        );
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 } else if let ([plane], [cone], [torus]) =
                     (planes.as_slice(), cones.as_slice(), tori.as_slice())
                 {
                     if cylinders.is_empty() && spheres.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
+                        let intersections = intersect_plane_with_carrier_components(
                             *plane,
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Torus(*torus),
-                        ));
+                        );
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 } else if let ([plane], [sphere], [torus]) =
                     (planes.as_slice(), spheres.as_slice(), tori.as_slice())
                 {
                     if cylinders.is_empty() && cones.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
+                        let intersections = intersect_plane_with_carrier_components(
                             *plane,
                             CarrierEquation::Sphere(*sphere),
                             CarrierEquation::Torus(*torus),
-                        ));
+                        );
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 } else if let ([plane], [first, second]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
+                        let intersections = intersect_plane_with_carrier_components(
                             *plane,
                             CarrierEquation::Torus(*first),
                             CarrierEquation::Torus(*second),
-                        ));
+                        );
+                        ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
+                        candidates.extend(intersections);
                     }
                 }
                 diagnostics.triple_intersections += candidates.len() - candidate_start;
@@ -321,6 +356,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                 .zip(candidate)
                 .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
         }) {
+            ctx.try_reserve_items(&mut unique, 1, "creo carrier unique candidates")?;
             unique.push(candidate);
         }
     }
@@ -1928,3 +1964,6 @@ pub(super) fn agreed_topology_bound_plane(
 
 #[cfg(test)]
 mod reconciliation_tests;
+
+#[cfg(test)]
+mod solver_tests;
