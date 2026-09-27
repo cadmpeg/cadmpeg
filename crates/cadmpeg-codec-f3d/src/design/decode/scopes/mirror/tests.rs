@@ -12,8 +12,7 @@ fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) ->
     start
 }
 
-#[test]
-fn compact_mirror_reference_uses_the_identity_record_lane() {
+fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
     let record_index = 40;
     let reference = 17_u32;
     let mut bytes = Vec::new();
@@ -42,12 +41,42 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
         byte_offset: start as u64,
     };
 
+    (bytes, header, identity, reference)
+}
+
+#[test]
+fn compact_mirror_reference_uses_the_identity_record_lane() {
+    let (mut bytes, header, identity, reference) = compact_reference_fixture();
     assert_eq!(
-        compact_feature_reference(&bytes, &header),
+        compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(),
         Some((reference, (identity + 21) as u64))
     );
     bytes[identity + 20] = 1;
-    assert_eq!(compact_feature_reference(&bytes, &header), None);
+    assert_eq!(compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(), None);
+}
+
+#[test]
+fn compact_mirror_reference_refuses_guid_text_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, header, identity, reference) = compact_reference_fixture();
+    for cap in [35, 71] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = compact_feature_reference(&ctx, &bytes, &header);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+    assert_eq!(
+        compact_feature_reference(&cadmpeg_test_support::service_decode_context(), &bytes, &header).unwrap(),
+        Some((reference, (identity + 21) as u64))
+    );
 }
 
 #[test]
