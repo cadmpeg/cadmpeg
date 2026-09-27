@@ -11,6 +11,30 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn drawing_record_collection_refuses_at_caller_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Page".into(),
+        name: "Page".into(),
+        type_name: "TechDraw::DrawPage".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer(&ctx, &[object], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd drawing records"));
+}
+
+#[test]
 fn drawing_direction_vector_refuses_nonfinite_components() {
     let mut attributes = std::collections::BTreeMap::from([
         ("valueX".into(), "0".into()),
