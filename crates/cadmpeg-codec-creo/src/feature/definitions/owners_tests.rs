@@ -5,7 +5,6 @@ use crate::feature::definitions::bind_definition_owners;
 use crate::feature::definitions::bind_replay_definition_owners;
 use crate::feature::definitions::bind_section_owners;
 use crate::feature::definitions::bind_trimmed_definition_owners;
-use crate::feature::definitions::definition_revolution_extents;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::positional_replay_definitions;
 use crate::feature::definitions::positional_segment_table;
@@ -35,6 +34,16 @@ use crate::feature::operations::OperationName;
 use crate::feature::rows::FeatureGeometryTable;
 use crate::feature::rows::FeatureGeometryTableKind;
 use std::collections::BTreeSet;
+
+fn definition_revolution_extents(
+    definitions: &[FeatureDefinition],
+    operations: &[FeatureOperation],
+) -> Vec<crate::feature::rows::FeatureRevolutionExtent> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::definition_revolution_extents(ctx, definitions, operations)
+    })
+    .expect("definition revolution extents are admitted")
+}
 
 #[test]
 fn binds_missing_definition_owner_from_unique_generated_datum_table() {
@@ -459,6 +468,40 @@ fn decodes_owned_depdb_full_turn_for_rotational_recipe() {
 
     let extrude = operation(247, Some(FeatureRecipe::ProtrudeExtrude), 10);
     assert!(definition_revolution_extents(&[definition], &[extrude]).is_empty());
+}
+
+#[test]
+fn definition_revolution_extent_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut definition = pending_replay(&[]);
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(247),
+        owner_feature_id: Some(247),
+    };
+    definition.body = vec![
+        0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    let revolve = operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10);
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&definition.body, &arena, &policy)
+            .expect("root definition is admitted");
+        super::definition_revolution_extents(
+            &ctx,
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&revolve),
+        )
+    };
+    assert_eq!(run(1).expect("one definition extent admitted").len(), 1);
+    let error = run(0).expect_err("definition extent needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo definition revolution extents"));
 }
 
 #[test]
