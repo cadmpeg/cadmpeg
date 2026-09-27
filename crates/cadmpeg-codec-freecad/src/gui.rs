@@ -101,10 +101,6 @@ fn provider_identity_key(name: &str) -> IdentityKey {
     IdentityKey::encode_segment(name)
 }
 
-fn provider_native_id(key: &IdentityKey) -> String {
-    crate::native::native_id_from_key("gui-view-provider", key)
-}
-
 fn object_appearance_id(provider: &IdentityKey) -> AppearanceId {
     AppearanceId::compose(
         &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "object"),
@@ -1257,7 +1253,7 @@ fn append_native_provider(
     let name = provider
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let id = provider_native_id(&provider_identity_key(name));
+    let id = crate::native::native_id_charged(ctx, "gui-view-provider", name)?;
     reserve_vec_items(ctx, providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
