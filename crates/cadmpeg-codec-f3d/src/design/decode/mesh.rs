@@ -1551,7 +1551,7 @@ fn resolve_mesh_body(
     entry_name: &str,
     fusion_uuid: &str,
 ) -> Option<(usize, usize, usize)> {
-    let mut matches = Vec::new();
+    let mut joined = None;
     for (design_ordinal, design) in records.iter().enumerate() {
         for (feature_ordinal, feature) in design.iter().enumerate() {
             for (body_ordinal, body) in feature.bodies().iter().enumerate() {
@@ -1559,15 +1559,15 @@ fn resolve_mesh_body(
                     && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
-                    matches.push((design_ordinal, feature_ordinal, body_ordinal));
+                    if joined.is_some() {
+                        return None;
+                    }
+                    joined = Some((design_ordinal, feature_ordinal, body_ordinal));
                 }
             }
         }
     }
-    let [joined] = matches.as_slice() else {
-        return None;
-    };
-    Some(*joined)
+    joined
 }
 
 /// Decode every mesh body: one per `.paramesh` container joined to the
