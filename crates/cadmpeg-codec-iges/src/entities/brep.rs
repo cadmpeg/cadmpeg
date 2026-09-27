@@ -100,6 +100,18 @@ enum SourceEdgeSelectionError {
     ResourceLimit(cadmpeg_core::decode::ResourceLimit),
 }
 
+#[derive(Debug)]
+enum PcurveProjectionError {
+    Invalid(&'static str),
+    Resource(CodecError),
+}
+
+impl From<CodecError> for PcurveProjectionError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 fn compose_sense(left: Sense, right: Sense) -> Sense {
     if left == right {
         Sense::Forward
@@ -198,36 +210,30 @@ fn project_pcurve_uses(
     resolved: Vec<(PcurveGeometry, [f64; 2])>,
     fit_tolerance: Option<f64>,
     id_stem: &crate::ids::Stem,
-) -> Result<Vec<PcurveUse>, &'static str> {
-    uses.iter()
-        .zip(resolved)
-        .enumerate()
-        .map(|(index, ((isoparametric, _), (geometry, range)))| {
-            let id = crate::ids::pcurve(&id_stem.slot(index));
-            candidate.model_mut().pcurves.push(Pcurve {
-                id: id.clone(),
-                geometry,
-                metadata: PcurveMetadata::general(
-                    None,
-                    Some(
-                        cadmpeg_ir::units::FiniteVector::new(range)
-                            .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)?,
-                    ),
-                    fit_tolerance
-                        .map(|value| {
-                            cadmpeg_ir::geometry::FitTolerance::try_new(value)
-                                .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
-                        })
-                        .transpose()?,
-                ),
-            });
-            Ok(PcurveUse {
-                pcurve: id,
-                isoparametric: Some(*isoparametric),
-                parameter_range: None,
-            })
-        })
-        .collect()
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
+    let mut projected = reserve_vec(ctx, resolved.len(), "iges B-rep projected pcurve uses")?;
+    for (index, ((isoparametric, _), (geometry, range))) in uses.iter().zip(resolved).enumerate() {
+        let parameter_range = cadmpeg_ir::units::FiniteVector::new(range)
+            .ok_or(PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE))?;
+        let checked_tolerance = fit_tolerance
+            .map(|value| cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                .map_err(|_| PcurveProjectionError::Invalid(PcurveMetadata::INVALID_FIT_TOLERANCE)))
+            .transpose()?;
+        reserve_vec_growth(ctx, &mut candidate.model_mut().pcurves, 1, "iges B-rep pcurve slots")?;
+        let id = crate::ids::pcurve(&id_stem.slot(index));
+        candidate.model_mut().pcurves.push(Pcurve {
+            id: id.clone(),
+            geometry,
+            metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
+        });
+        projected.push(PcurveUse {
+            pcurve: id,
+            isoparametric: Some(*isoparametric),
+            parameter_range: None,
+        });
+    }
+    Ok(projected)
 }
 
 fn surface_point_or_refusal(
@@ -947,13 +953,15 @@ pub(super) fn project(
                                 resolved,
                                 Some(tolerance),
                                 &shell_stem.child(loop_sequence).slot(use_index),
+                                ctx,
                             ) {
                                 Ok(projected) => projected,
-                                Err(error) => {
+                                Err(PcurveProjectionError::Invalid(error)) => {
                                     super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                                     valid = false;
                                     break;
                                 }
+                                Err(PcurveProjectionError::Resource(error)) => return Err(error),
                             };
                             loop_vertex_uses.push((vertex, after, projected));
                             continue;
@@ -1100,13 +1108,15 @@ pub(super) fn project(
                             resolved,
                             Some(tolerance),
                             &shell_stem.child(loop_sequence).slot(use_index),
+                            ctx,
                         ) {
                             Ok(projected) => projected,
-                            Err(error) => {
+                            Err(PcurveProjectionError::Invalid(error)) => {
                                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
                                 valid = false;
                                 break;
                             }
+                            Err(PcurveProjectionError::Resource(error)) => return Err(error),
                         };
                         let Some(coedge_position) = edge_use_indices
                             .iter()
