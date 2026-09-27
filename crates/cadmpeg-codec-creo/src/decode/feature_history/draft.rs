@@ -143,9 +143,15 @@ pub(super) fn thicken_feature_definition(
     } else {
         FaceSelection::Unresolved
     };
-    let offset = transitions.as_deref().and_then(|transitions| {
-        thicken_plane_offset(transitions, &placed_planes(scan), &scan.surfaces.rows)
-    });
+    let offset = match transitions.as_deref() {
+        Some(transitions) => thicken_plane_offset(
+            ctx,
+            transitions,
+            &placed_planes(scan),
+            &scan.surfaces.rows,
+        )?,
+        None => None,
+    };
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces,
         thickness: offset

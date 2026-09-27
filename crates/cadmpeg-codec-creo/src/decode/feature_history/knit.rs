@@ -390,39 +390,47 @@ pub(in super::super) fn surface_transition_dependencies(
 }
 
 pub(in super::super) fn thicken_plane_offset(
+    ctx: &DecodeContext<'_>,
     transitions: &[(u32, u32)],
     planes: &BTreeMap<u32, PlaneEquation>,
     rows: &[crate::surface::SurfaceRow],
-) -> Option<(f64, ThickenSide)> {
+) -> Result<Option<(f64, ThickenSide)>, CodecError> {
     let mut offsets = Vec::new();
     for &(source_id, output_id) in transitions {
         let (Some(source), Some(output)) = (planes.get(&source_id), planes.get(&output_id)) else {
             continue;
         };
-        let source_row = crate::surface::unique_surface_row(rows, source_id)?;
-        let output_row = crate::surface::unique_surface_row(rows, output_id)?;
-        (source_row.reversed != output_row.reversed).then_some(())?;
-        let source_normal = normalize(source.normal)?.map(|component| {
-            if source_row.reversed {
-                -component
-            } else {
-                component
-            }
-        });
-        let output_normal = normalize(output.normal)?;
-        if dot(source_normal, output_normal).abs() < 1.0 - EPS_NORMAL_ALIGNMENT {
-            return None;
-        }
-        let displacement = std::array::from_fn(|index| output.origin[index] - source.origin[index]);
-        offsets.push(dot(displacement, source_normal));
+        let Some(offset) = (|| {
+            let source_row = crate::surface::unique_surface_row(rows, source_id)?;
+            let output_row = crate::surface::unique_surface_row(rows, output_id)?;
+            (source_row.reversed != output_row.reversed).then_some(())?;
+            let source_normal = normalize(source.normal)?.map(|component| {
+                if source_row.reversed {
+                    -component
+                } else {
+                    component
+                }
+            });
+            let output_normal = normalize(output.normal)?;
+            (dot(source_normal, output_normal).abs() >= 1.0 - EPS_NORMAL_ALIGNMENT)
+                .then_some(())?;
+            let displacement =
+                std::array::from_fn(|index| output.origin[index] - source.origin[index]);
+            Some(dot(displacement, source_normal))
+        })() else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut offsets, 1, "creo thicken plane offsets")?;
+        offsets.push(offset);
     }
-    let magnitude = unique_positive_length(
-        &offsets
-            .iter()
-            .map(|offset| offset.abs())
-            .collect::<Vec<_>>(),
-    )?
-    .get();
+    let mut magnitudes = Vec::new();
+    ctx.try_reserve_items(&mut magnitudes, offsets.len(), "creo thicken plane magnitudes")?;
+    for offset in &offsets {
+        magnitudes.push(offset.abs());
+    }
+    let Some(magnitude) = unique_positive_length(&magnitudes).map(|value| value.get()) else {
+        return Ok(None);
+    };
     let tolerance = EPS_OFFSET_AGREEMENT * magnitude.max(1.0);
     let side = if offsets
         .iter()
@@ -435,9 +443,9 @@ pub(in super::super) fn thicken_plane_offset(
     {
         ThickenSide::Reverse
     } else {
-        return None;
+        return Ok(None);
     };
-    Some((magnitude, side))
+    Ok(Some((magnitude, side)))
 }
 
 /// Return the materialized surface identities that one feature can expose as
