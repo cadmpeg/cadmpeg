@@ -322,6 +322,7 @@ pub(super) fn decode(
                 )?;
             }
         }
+        admit_datum_reference_maps(&datum_references, ctx)?;
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
@@ -1413,6 +1414,28 @@ fn clone_pmi_modifiers(
         push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
     }
     Ok(copy)
+}
+
+fn admit_datum_reference_maps(
+    references: &[DatumReference],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let Some(ctx) = ctx else {
+        return Ok(());
+    };
+    for (index, reference) in references.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index), "step_pmi_datum_map_scan")?;
+        let prior = &references[..index];
+        if !prior.iter().any(|other| other.precedence == reference.precedence) {
+            ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
+        }
+        if let Some(group) = reference.common_group {
+            if !prior.iter().any(|other| other.common_group == Some(group)) {
+                ctx.charge_collection_items(1, "step_pmi_datum_common_groups")?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn datum_base(record: &RawRecord) -> Option<&Value> {
