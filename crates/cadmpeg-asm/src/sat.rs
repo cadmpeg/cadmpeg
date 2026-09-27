@@ -462,6 +462,31 @@ fn parse_header(
 // Record framing
 // ---------------------------------------------------------------------------
 
+fn record_error_reason(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    description: &'static str,
+) -> Result<String, StreamFailure> {
+    let length = "record `"
+        .len()
+        .checked_add(name.len())
+        .and_then(|length| length.checked_add("` ".len()))
+        .and_then(|length| length.checked_add(description.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
+    let requested = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(requested, "SAT record error text")?;
+    let mut reason = String::new();
+    reason
+        .try_reserve(length)
+        .map_err(|_| ctx.refuse_codec_limit("SAT record error text", 0, requested))?;
+    reason.push_str("record `");
+    reason.push_str(name);
+    reason.push_str("` ");
+    reason.push_str(description);
+    Ok(reason)
+}
+
 /// Parse a complete text stream into its header and typed record table.
 pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
@@ -504,7 +529,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 return Err(StreamError {
                     format: StreamFormat::Text,
                     offset: rec_start,
-                    reason: format!("record `{name}` has no `#` terminator"),
+                    reason: record_error_reason(ctx, &name, "has no `#` terminator")?,
                 }
                 .into());
             };
@@ -513,7 +538,11 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(StreamError {
                         format: StreamFormat::Text,
                         offset: at,
-                        reason: format!("record `{name}` terminates inside a subtype scope"),
+                        reason: record_error_reason(
+                            ctx,
+                            &name,
+                            "terminates inside a subtype scope",
+                        )?,
                     }
                     .into());
                 }
@@ -526,7 +555,11 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(StreamError {
                         format: StreamFormat::Text,
                         offset: at,
-                        reason: format!("record `{name}` closes an unopened subtype scope"),
+                        reason: record_error_reason(
+                            ctx,
+                            &name,
+                            "closes an unopened subtype scope",
+                        )?,
                     }
                     .into());
                 }
@@ -2038,6 +2071,29 @@ mod tests {
         };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "retain SAT kernel header string");
+    }
+
+    #[test]
+    fn sat_record_error_text_refuses_each_input_name_limit() {
+        for (body, description) in [
+            ("mystery 1\n", "has no `#` terminator"),
+            ("mystery { #\n", "terminates inside a subtype scope"),
+            ("mystery } #\n", "closes an unopened subtype scope"),
+        ] {
+            let source = asm_stream(body);
+            let reason = format!("record `mystery` {description}");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + reason.len() as u64 - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.operation, "SAT record error text");
+        }
     }
 
     fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
