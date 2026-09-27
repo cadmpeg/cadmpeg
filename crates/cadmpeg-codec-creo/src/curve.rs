@@ -5769,7 +5769,7 @@ pub(crate) fn depdb_cross_section_rows(
         return Ok(Vec::new());
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let positional_count = count - 1;
     // Each row consumes at least one payload byte past the topology cursor
     // before its terminator, so the row count cannot exceed the unread bytes.
