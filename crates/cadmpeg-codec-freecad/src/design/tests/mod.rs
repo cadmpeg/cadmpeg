@@ -280,9 +280,79 @@ fn design_ordered_objects_refuse_at_caller_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::feature_ordinals(
-        &ctx, &[object], &Default::default(), &Default::default(), &Default::default(),
+        &ctx, &[object], &Default::default(), &Default::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd design ordered objects"));
+}
+
+#[test]
+fn design_body_member_identity_refuses_at_retained_limit() {
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("child-object".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let property = crate::native::PropertyRecord {
+        id: "group-property".into(),
+        owner: "body".into(),
+        name: "Group".into(),
+        type_name: "App::PropertyLinkList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: vec![link],
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let mut feature_ids = std::collections::HashMap::new();
+    feature_ids.insert("child-object",
+        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Child")
+            .expect("valid feature identity"));
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd body member feature identity",
+        |ctx| super::body_definition(ctx, &[&property], &feature_ids),
+    );
+}
+
+#[test]
+fn design_body_tip_identity_refuses_at_retained_limit() {
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("child-object".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let property = crate::native::PropertyRecord {
+        id: "tip-property".into(),
+        owner: "body".into(),
+        name: "Tip".into(),
+        type_name: "App::PropertyLink".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: vec![link],
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let mut feature_ids = std::collections::HashMap::new();
+    feature_ids.insert("child-object",
+        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Child")
+            .expect("valid feature identity"));
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd body tip feature identity",
+        |ctx| super::body_definition(ctx, &[&property], &feature_ids),
+    );
 }
 
 #[test]

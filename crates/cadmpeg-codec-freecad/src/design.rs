@@ -98,16 +98,11 @@ pub(crate) fn transfer(
         body_ids.push(cadmpeg_ir::ids::BodyId::mint(retained_string(ctx, body.id.as_str(), "fcstd design body id")?)
             .map_err(CodecError::malformed)?);
     }
-    let mut source_order = HashMap::new();
-    for candidate in objects {
-        insert_hash_map(ctx, &mut source_order, feature_id(candidate)?, candidate.order, "fcstd design source order")?;
-    }
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         ctx,
         objects,
         &properties_by_owner,
         &parent_by_member,
-        &source_order,
     )?;
     let mut ordinal_by_feature = HashMap::new();
     for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
@@ -135,7 +130,7 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            body_definition(ctx, &owned, &feature_ids)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sketch(&object.type_name) {
@@ -439,28 +434,32 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
 }
 
 fn body_definition(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     if !body_membership_carrier_is_valid(properties) {
-        return None;
+        return Ok(None);
     }
-    let children = body_membership_property(properties).map_or_else(Vec::new, |property| {
-        property
-            .links()
-            .iter()
-            .filter_map(|link| link.as_ref()?.object())
-            .filter_map(|target| feature_ids.get(target).cloned())
-            .collect()
-    });
-    let active_child = match body_tip(properties, feature_ids) {
+    let mut children = Vec::new();
+    if let Some(property) = body_membership_property(properties) {
+        for target in property.links().iter().filter_map(|link| link.as_ref()?.object()) {
+            if let Some(feature) = feature_ids.get(target) {
+                reserve_vec_items(ctx, &mut children, 1, "fcstd body member features")?;
+                children.push(FeatureId::mint(retained_string(
+                    ctx, feature.as_str(), "fcstd body member feature identity",
+                )?).map_err(CodecError::malformed)?);
+            }
+        }
+    }
+    let active_child = match body_tip(ctx, properties, feature_ids)? {
         BodyTipResolution::Valid(active_child) => active_child,
-        BodyTipResolution::Invalid => return None,
+        BodyTipResolution::Invalid => return Ok(None),
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
+    Ok(cadmpeg_ir::features::TreeChildren::new(children, active_child).ok().map(|children| FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::SolidBodies,
-        children: cadmpeg_ir::features::TreeChildren::new(children, active_child).ok()?,
-    }))
+        children,
+    })))
 }
 
 enum BodyTipResolution {
@@ -469,16 +468,17 @@ enum BodyTipResolution {
 }
 
 fn body_tip(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
-) -> BodyTipResolution {
+) -> Result<BodyTipResolution, CodecError> {
     let Some(property) = property(properties, "Tip") else {
-        return BodyTipResolution::Valid(None);
+        return Ok(BodyTipResolution::Valid(None));
     };
     if property.type_name != "App::PropertyLink" {
-        return BodyTipResolution::Invalid;
+        return Ok(BodyTipResolution::Invalid);
     }
-    match property.links() {
+    Ok(match property.links() {
         [] | [None] => BodyTipResolution::Valid(None),
         [Some(link)]
             if link.subelements().is_empty()
@@ -486,16 +486,17 @@ fn body_tip(
                 && link.document_attribute().is_none() =>
         {
             let Some(target) = link.object() else {
-                return BodyTipResolution::Valid(None);
+                return Ok(BodyTipResolution::Valid(None));
             };
-            feature_ids
-                .get(target)
-                .cloned()
-                .map(Some)
-                .map_or(BodyTipResolution::Invalid, BodyTipResolution::Valid)
+            match feature_ids.get(target) {
+                Some(feature) => BodyTipResolution::Valid(Some(FeatureId::mint(
+                    retained_string(ctx, feature.as_str(), "fcstd body tip feature identity")?,
+                ).map_err(CodecError::malformed)?)),
+                None => BodyTipResolution::Invalid,
+            }
         }
         _ => BodyTipResolution::Invalid,
-    }
+    })
 }
 
 fn feature_ordinals<'a>(
@@ -503,7 +504,6 @@ fn feature_ordinals<'a>(
     objects: &'a [ObjectRecord],
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
-    source_order: &HashMap<FeatureId, usize>,
 ) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
     let count = objects.iter().filter(|object| is_design_object(&object.type_name)).count();
     let mut design_objects = collection_vec(ctx, count, "fcstd design ordered objects")?;
@@ -600,8 +600,7 @@ fn feature_ordinals<'a>(
                                     | "Sections"
                                     | "Source"
                                     | "Spine"
-                            ) || feature_id(dependency)
-                                .is_ok_and(|id| source_order[&id] < object.order)
+                            ) || dependency.order < object.order
                         })
                     })
                     .all(|(_, dependency)| emitted.contains(dependency))
