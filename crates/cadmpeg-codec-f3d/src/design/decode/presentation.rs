@@ -3,10 +3,11 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use std::ops::RangeInclusive;
 
-use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_reference};
+use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
 use crate::design::decode::meta::typed_primary_frames;
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
@@ -22,6 +23,57 @@ use crate::design::presentation::{
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
+
+fn lp_utf16_bounded_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok()) else {
+        return Ok(None);
+    };
+    if !bounds.contains(&count) {
+        return Ok(None);
+    }
+    let Some(start) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(end) = count.checked_mul(2).and_then(|bytes| start.checked_add(bytes)) else {
+        return Ok(None);
+    };
+    let Some(raw) = bytes.get(start..end) else {
+        return Ok(None);
+    };
+    let mut view = View::over_retained(raw);
+    let mut utf8_len = 0usize;
+    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        utf8_len = utf8_len.checked_add(character.len_utf8()).ok_or_else(|| {
+            ctx.refuse_codec_limit("f3d presentation UTF-16 length", 0, 1)
+        })?;
+    }
+    ctx.charge_retained(
+        u64::try_from(utf8_len).map_err(|_| {
+            ctx.refuse_codec_limit("f3d presentation UTF-16 length", 0, 1)
+        })?,
+        "f3d presentation UTF-16 text",
+    )?;
+    let mut text = String::new();
+    text.try_reserve(utf8_len).map_err(|_| {
+        ctx.refuse_codec_limit("f3d presentation UTF-16 allocation", 0, 1)
+    })?;
+    let mut view = View::over_retained(raw);
+    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+        let Ok(character) = decoded else {
+            return Ok(None);
+        };
+        text.push(character);
+    }
+    Ok(Some((text, end)))
+}
 
 /// One typed browser-node record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,7 +159,7 @@ pub(super) fn browser_node_records(
             )));
         }
         let Some((guid, after_guid)) =
-            lp_utf16_bounded(record, 21, GUID_LEN..=GUID_LEN).filter(|(guid, after)| {
+            lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN)?.filter(|(guid, after)| {
                 is_guid_prefix(guid)
                     && after
                         .checked_add(11)
@@ -201,12 +253,13 @@ pub(crate) fn body_presentations(
                     entity_id_offset: entity_id_offset as u64,
                 },
                 presentation_material(
+                    ctx,
                     framed_bytes,
                     header_end,
                     frame.end,
                     entity_suffix,
                     &entity_types,
-                ),
+                )?,
             )
         } else {
             let entity_suffix =
@@ -223,11 +276,12 @@ pub(crate) fn body_presentations(
                 )));
             }
             let Some(material) = bare_presentation_material(
+                ctx,
                 framed_bytes,
                 frame.start + 15,
                 frame.end,
                 entity_suffix,
-            ) else {
+            )? else {
                 continue;
             };
             (entity_suffix, BodyPresentationOwner::Bare, Some(material))
@@ -299,20 +353,23 @@ fn entity_types<'a>(
 }
 
 fn presentation_material(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     entity_suffix: u64,
     entity_types: &HashMap<u64, (&str, u32)>,
-) -> Option<PresentationMaterial> {
-    let bytes = bytes.get(..end)?;
+) -> Result<Option<PresentationMaterial>, CodecError> {
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
     let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID);
     let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID);
     let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
     let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
     let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
-        let Some((physical_guid_at, physical_guid)) = preceding_lp_utf16(bytes, start, physical_at)
+        let Some((physical_guid_at, physical_guid)) = preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
             continue;
         };
@@ -322,7 +379,7 @@ fn presentation_material(
         if bytes.get(node_tail_at..node_tail_at + 11) != Some(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
             continue;
         }
-        let Some((_, node_guid)) = preceding_lp_utf16(bytes, start, node_tail_at) else {
+        let Some((_, node_guid)) = preceding_lp_utf16(ctx, bytes, start, node_tail_at)? else {
             continue;
         };
         if physical_guid.len() != GUID_LEN
@@ -335,7 +392,7 @@ fn presentation_material(
         let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded(bytes, token_at, 1..=256) else {
+        let Some((physical_token, after_token)) = lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)? else {
             continue;
         };
         if !is_physical_material_token(&physical_token) || after_token > end {
@@ -367,13 +424,13 @@ fn presentation_material(
         {
             continue;
         }
-        let Some((_, after_name)) = lp_utf16_bounded(bytes, reference_at, 0..=256) else {
+        let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, reference_at, 0..=256)? else {
             continue;
         };
         let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, visual_at, 1..=256) else {
+        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256)? else {
             continue;
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
@@ -404,15 +461,18 @@ fn presentation_material(
         } else {
             continue;
         };
-        let visual_preset = legacy
-            .then(|| {
-                let at = skip_zeros(bytes, after_visual_marker, end)?;
-                let (value, _) = lp_utf16_bounded(bytes, at, 1..=256)?;
-                value.starts_with("Prism-").then_some((at, value))
-            })
-            .flatten();
+        let visual_preset = if legacy {
+            if let Some(at) = skip_zeros(bytes, after_visual_marker, end) {
+                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256)?
+                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         if candidate.is_some() {
-            return None;
+            return Ok(None);
         }
         candidate = Some(PresentationMaterial {
             node_guid,
@@ -426,18 +486,21 @@ fn presentation_material(
             }),
         });
     }
-    candidate
+    Ok(candidate)
 }
 
 /// Parse the material envelope of a body-presentation owner whose indexed
 /// head stores no component-qualified entity ID.
 fn bare_presentation_material(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     entity_suffix: u64,
-) -> Option<PresentationMaterial> {
-    let bytes = bytes.get(..end)?;
+) -> Result<Option<PresentationMaterial>, CodecError> {
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
     let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)
         .into_iter()
         .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID))
@@ -449,7 +512,7 @@ fn bare_presentation_material(
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
             continue;
         };
-        let Some((physical_token, after_token)) = lp_utf16_bounded(bytes, token_at, 1..=256) else {
+        let Some((physical_token, after_token)) = lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256)? else {
             continue;
         };
         if !is_physical_material_token(&physical_token) {
@@ -464,7 +527,7 @@ fn bare_presentation_material(
             continue;
         };
         let Some((node_guid, after_node_guid)) =
-            lp_utf16_bounded(bytes, node_guid_at, GUID_LEN..=GUID_LEN)
+            lp_utf16_bounded_charged(ctx, bytes, node_guid_at, GUID_LEN..=GUID_LEN)?
         else {
             continue;
         };
@@ -480,10 +543,10 @@ fn bare_presentation_material(
         }
 
         let mut name_ends = vec![node_reference_at];
-        if let Some((_, after_name)) = skip_zeros(bytes, node_reference_at, end)
-            .and_then(|name_at| lp_utf16_bounded(bytes, name_at, 1..=256))
-        {
-            name_ends.push(after_name);
+        if let Some(name_at) = skip_zeros(bytes, node_reference_at, end) {
+            if let Some((_, after_name)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 1..=256)? {
+                name_ends.push(after_name);
+            }
         }
         let mut visual_offsets = name_ends
             .into_iter()
@@ -494,7 +557,7 @@ fn bare_presentation_material(
         let [visual_at] = visual_offsets.as_slice() else {
             continue;
         };
-        let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, *visual_at, 1..=256) else {
+        let Some((visual_guid, after_visual)) = lp_utf16_bounded_charged(ctx, bytes, *visual_at, 1..=256)? else {
             continue;
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
@@ -516,7 +579,7 @@ fn bare_presentation_material(
             continue;
         }
         if candidate.is_some() {
-            return None;
+            return Ok(None);
         }
         candidate = Some(PresentationMaterial {
             node_guid,
@@ -527,7 +590,7 @@ fn bare_presentation_material(
             visual_preset: None,
         });
     }
-    candidate
+    Ok(candidate)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -594,7 +657,12 @@ fn skip_zeros_capped(bytes: &[u8], start: usize, end: usize, cap: usize) -> Opti
     (at <= end && (at == end || bytes.get(at) != Some(&0))).then_some(at)
 }
 
-fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(usize, String)> {
+fn preceding_lp_utf16(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    marker_at: usize,
+) -> Result<Option<(usize, String)>, CodecError> {
     let mut candidate = None;
     for gap in 0..=MAX_ENVELOPE_GAP {
         let Some(end) = marker_at.checked_sub(gap) else {
@@ -609,24 +677,31 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
         }
         let scan_start = end.saturating_sub(4 + 256 * 2).max(start);
         for at in scan_start..end {
-            let Some((value, after)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+            let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok()) else {
                 continue;
             };
-            if after == end {
-                if candidate.is_some() {
-                    return None;
-                }
-                candidate = Some((at, value));
+            if !(1..=256).contains(&count)
+                || at.checked_add(4).and_then(|start| count.checked_mul(2).and_then(|bytes| start.checked_add(bytes))) != Some(end)
+            {
+                continue;
             }
+            let Some((value, _)) = lp_utf16_bounded_charged(ctx, bytes, at, 1..=256)? else {
+                continue;
+            };
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some((at, value));
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        bare_presentation_material, body_presentations as body_presentations_with_context,
+        bare_presentation_material as bare_presentation_material_with_context,
+        body_presentations as body_presentations_with_context,
         browser_node_records as browser_node_records_with_context, BodyPresentationOwner,
     };
     use crate::bytes::lp_utf16_bytes;
@@ -641,6 +716,17 @@ mod tests {
     use crate::design::test_support::{design_type, primary_record};
     use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
     use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
+
+    fn bare_presentation_material(
+        bytes: &[u8],
+        start: usize,
+        end: usize,
+        entity_suffix: u64,
+    ) -> Option<super::PresentationMaterial> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            bare_presentation_material_with_context(ctx, bytes, start, end, entity_suffix)
+        }).unwrap()
+    }
 
     fn body_presentations(
         bytes: &[u8],
@@ -658,6 +744,35 @@ mod tests {
         crate::design::test_support::with_test_decode_context(|ctx| {
             browser_node_records_with_context(ctx, bytes, meta)
         })
+    }
+
+    #[test]
+    fn presentation_utf16_text_refuses_exact_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let text = "A雪𐍈";
+        let mut bytes = Vec::new();
+        lp_utf16(&mut bytes, text);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+            .err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "f3d presentation UTF-16 text"
+        ));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let decoded = super::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+            .unwrap().unwrap();
+        assert_eq!(decoded.0, text);
+        assert_eq!(decoded.1, bytes.len());
+
+        let invalid = [1, 0, 0, 0, 0, 0xd8];
+        assert!(super::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
+            .unwrap().is_none());
     }
 
     #[test]
@@ -879,7 +994,8 @@ mod tests {
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
         policy.limits.max_retained_bytes = (node_guid.len() - 1) as u64;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = body_presentations_with_context(&ctx, &bytes, &meta).err().unwrap();
+        let nodes = browser_node_records(&bytes, &meta).unwrap();
+        let error = super::copy_browser_node(&ctx, &nodes[0]).err().unwrap();
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
