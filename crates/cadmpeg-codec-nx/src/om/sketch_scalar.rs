@@ -14,7 +14,7 @@ impl SketchScaledAtom {
         Self(raw)
     }
 
-    fn raw(self) -> [u8; 7] {
+    pub(crate) fn raw(self) -> [u8; 7] {
         self.0
     }
 

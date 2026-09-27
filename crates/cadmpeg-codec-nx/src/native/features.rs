@@ -1339,11 +1339,8 @@ impl Serialize for FeaturePayloadScalarPair {
 }
 
 /// One exactly framed signed Q1.55 pair in a reconstructed datum-CSYS payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire",
-    into = "pair_wire::FeatureDatumCsysPayloadFixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire")]
 pub(super) struct FeatureDatumCsysPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub(super) id: String,
@@ -2007,11 +2004,8 @@ pub(in crate::native) enum FeaturePatternKind {
 }
 
 /// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureSketchPayloadFixedPairWire",
-    into = "pair_wire::FeatureSketchPayloadFixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadFixedPairWire")]
 pub(super) struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub(super) id: String,
@@ -2032,11 +2026,8 @@ pub(super) struct FeatureSketchPayloadFixedPair {
 }
 
 /// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureSketchPayloadMixedPairWire",
-    into = "pair_wire::FeatureSketchPayloadMixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadMixedPairWire")]
 pub(super) struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
     pub(super) id: String,
