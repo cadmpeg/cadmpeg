@@ -40,6 +40,30 @@ impl Sha256Hex {
     }
 }
 
+/// SHA-256 text emitted from a fixed digest without constructing a String.
+pub(super) struct Sha256WireDigest([u8; 32]);
+
+impl Sha256WireDigest {
+    pub(super) fn of(bytes: &[u8]) -> Self {
+        Self(cadmpeg_ir::hash::sha256(bytes))
+    }
+}
+
+impl std::fmt::Display for Sha256WireDigest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for Sha256WireDigest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 impl TryFrom<String> for Sha256Hex {
     type Error = &'static str;
 

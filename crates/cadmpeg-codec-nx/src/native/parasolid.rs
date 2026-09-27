@@ -784,8 +784,8 @@ pub(super) struct ParasolidDeltasTransmitHeader {
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "tail_wire::NullTailWire", into = "tail_wire::NullTailWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "tail_wire::NullTailWire")]
 pub(super) struct ParasolidDeltasTerminalNullReferences {
     /// Globally unique trailer identity.
     pub(super) id: String,
@@ -798,11 +798,8 @@ pub(super) struct ParasolidDeltasTerminalNullReferences {
 }
 
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "tail_wire::NumericTailWire",
-    into = "tail_wire::NumericTailWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "tail_wire::NumericTailWire")]
 pub(super) struct ParasolidDeltasTermUseNumericTail {
     /// Globally unique numeric-tail identity.
     pub(super) id: String,
