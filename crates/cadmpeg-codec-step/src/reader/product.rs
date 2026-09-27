@@ -368,10 +368,15 @@ pub(super) fn decode(
             name: name.filter(|name| !name.is_empty()),
         });
     }
-    let child_definitions = usages
-        .values()
-        .map(|usage| usage.child_definition)
-        .collect::<BTreeSet<_>>();
+    let mut child_definitions = BTreeSet::new();
+    for usage in usages.values() {
+        if !child_definitions.contains(&usage.child_definition) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_product_child_definitions")?;
+            }
+            child_definitions.insert(usage.child_definition);
+        }
+    }
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
@@ -459,10 +464,20 @@ pub(super) fn decode(
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
-        usages_by_parent
-            .entry(usage.parent_definition)
-            .or_default()
-            .push(usage_id);
+        if !usages_by_parent.contains_key(&usage.parent_definition) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_product_usage_parent_groups")?;
+            }
+        }
+        let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
+        }
+        grouped.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_product_usage_parent_members", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_product_usage_parent_members", 0, 1),
+        })?;
+        grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
     'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
