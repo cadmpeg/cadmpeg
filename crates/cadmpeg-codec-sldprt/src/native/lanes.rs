@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::admission::admit_temporary_clones;
+use super::admission::{admit_temporary_clones, admit_validation_candidates};
 use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
@@ -88,6 +88,30 @@ pub(super) fn admit(
             "validate SLDPRT expected lane pairs",
         )?;
     }
+    let validation_source_bytes = native
+        .feature_input_lanes
+        .iter()
+        .try_fold(0usize, |bytes, lane| {
+            bytes.checked_add(lane.native_payload.len())
+        })
+        .ok_or_else(|| {
+            ctx.map_or_else(
+                || {
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "SLDPRT lane validation byte count overflows".into(),
+                    )
+                },
+                |ctx| {
+                    ctx.refuse_codec_limit("validate SLDPRT derived lanes", u64::MAX - 1, u64::MAX)
+                        .into()
+                },
+            )
+        })?;
+    let _derived_reservation = admit_validation_candidates(
+        ctx,
+        validation_source_bytes,
+        "validate SLDPRT derived lanes",
+    )?;
     for (lane, expected_lane) in expected_lanes(native) {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,

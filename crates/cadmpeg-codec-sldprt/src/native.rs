@@ -7,7 +7,7 @@ use serde::{ser::SerializeMap, Deserialize, Serialize};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
-use self::admission::{admit_retained_clones, admit_temporary_clones};
+use self::admission::{admit_retained_clones, admit_temporary_clones, admit_validation_candidates};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -837,15 +837,13 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
-            if let Some(record) = lane
-                .body_selections
-                .iter()
-                .find(|record| body_selection_disagrees_with_payload(lane, record))
-            {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input body selection {} disagrees with its payload",
-                    record.id
-                )));
+            for record in &lane.body_selections {
+                if body_selection_disagrees_with_payload(ctx, lane, record)? {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input body selection {} disagrees with its payload",
+                        record.id
+                    )));
+                }
             }
             admit_retained_clones(
                 ctx,
@@ -870,9 +868,19 @@ impl SldprtNative {
                 &mut edge_features,
                 std::slice::from_ref(lane),
             );
-            if let Some(record) = lane.edge_selections.iter().find(|record| {
-                edge_selection_disagrees_with_payload(lane, record, &edge_features)
-                    || usize::try_from(record.offset)
+            for record in &lane.edge_selections {
+                if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input edge selection {} disagrees with its payload",
+                        record.id
+                    )));
+                }
+                let _reference_reservation = admit_validation_candidates(
+                    ctx,
+                    lane.native_payload.len(),
+                    "validate SLDPRT edge reference candidates",
+                )?;
+                let disagreement = usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| {
                             let feature_kind = edge_features
@@ -887,12 +895,13 @@ impl SldprtNative {
                             )
                         })
                         .unwrap_or_default()
-                        != record.references
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input edge selection {} disagrees with its payload",
-                    record.id
-                )));
+                        != record.references;
+                if disagreement {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input edge selection {} disagrees with its payload",
+                        record.id
+                    )));
+                }
             }
             let _surface_features_reservation = admit_temporary_clones(
                 ctx,
@@ -917,13 +926,13 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if let Some(record) = lane.surface_selections.iter().find(|record| {
-                surface_selection_disagrees_with_payload(lane, record, &surface_features)
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input surface selection {} disagrees with its payload",
-                    record.id
-                )));
+            for record in &lane.surface_selections {
+                if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input surface selection {} disagrees with its payload",
+                        record.id
+                    )));
+                }
             }
             admit_retained_clones(
                 ctx,
@@ -939,9 +948,7 @@ impl SldprtNative {
                 .collect::<Vec<_>>();
             records.sort_by_key(|record| record.ordinal);
             lane.generated_surface_identities = records;
-            if lane.generated_surface_identities
-                != crate::resolved_features::selections::generated_surface_identities(lane)
-            {
+            if generated_surface_identities_disagree_with_payload(ctx, lane)? {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input lane {} generated surface identities disagree with its payload",
                     lane.id
@@ -1064,20 +1071,33 @@ impl SldprtNative {
                     record.id, record.parent, lane.id
                 )));
             }
-            if let Some(record) = lane.body_selections.iter().find(|record| {
-                record.parent != lane.id
+            for record in &lane.body_selections {
+                let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
-                    || record.local_body_ids.is_empty()
-                    || crate::resolved_features::selections::compact_body_state_ids_for_selection(
+                    || record.local_body_ids.is_empty();
+                if invalid {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input body selection {} has inconsistent ownership",
+                        record.id
+                    )));
+                }
+                let _state_reservation = admit_validation_candidates(
+                    Some(ctx),
+                    lane.native_payload.len(),
+                    "validate SLDPRT body state candidates",
+                )?;
+                let invalid =
+                    crate::resolved_features::selections::compact_body_state_ids_for_selection(
                         lane, record,
                     ) != record.body_state_ids
-                    || body_selection_disagrees_with_payload(lane, record)
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input body selection {} has inconsistent ownership",
-                    record.id
-                )));
+                        || body_selection_disagrees_with_payload(Some(ctx), lane, record)?;
+                if invalid {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input body selection {} has inconsistent ownership",
+                        record.id
+                    )));
+                }
             }
             let _edge_features_reservation = admit_temporary_clones(
                 Some(ctx),
@@ -1089,17 +1109,24 @@ impl SldprtNative {
                 &mut edge_features,
                 std::slice::from_ref(lane),
             );
-            if let Some(record) = lane.edge_selections.iter().find(|record| {
-                record.parent != lane.id
+            for record in &lane.edge_selections {
+                let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
-                    || record.local_edge_ids.is_empty()
-                    || edge_selection_disagrees_with_payload(lane, record, &edge_features)
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input edge selection {} has inconsistent ownership",
-                    record.id
-                )));
+                    || record.local_edge_ids.is_empty();
+                if invalid
+                    || edge_selection_disagrees_with_payload(
+                        Some(ctx),
+                        lane,
+                        record,
+                        &edge_features,
+                    )?
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input edge selection {} has inconsistent ownership",
+                        record.id
+                    )));
+                }
             }
             let _surface_features_reservation = admit_temporary_clones(
                 Some(ctx),
@@ -1111,17 +1138,24 @@ impl SldprtNative {
                 &mut surface_features,
                 std::slice::from_ref(lane),
             );
-            if let Some(record) = lane.surface_selections.iter().find(|record| {
-                record.parent != lane.id
+            for record in &lane.surface_selections {
+                let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
-                    || record.components.is_empty()
-                    || surface_selection_disagrees_with_payload(lane, record, &surface_features)
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "feature-input surface selection {} has inconsistent ownership",
-                    record.id
-                )));
+                    || record.components.is_empty();
+                if invalid
+                    || surface_selection_disagrees_with_payload(
+                        Some(ctx),
+                        lane,
+                        record,
+                        &surface_features,
+                    )?
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "feature-input surface selection {} has inconsistent ownership",
+                        record.id
+                    )));
+                }
             }
             if let Some(record) = lane.scalars.iter().find(|record| {
                 record
@@ -1221,13 +1255,7 @@ impl SldprtNative {
                 .map(|record| (record.id(), record))
                 .collect::<std::collections::HashMap<_, _>>();
             for scalar in &lane.scalars {
-                let resolved_operands =
-                    crate::resolved_features::operands::resolve_scalar_operand_markers(
-                        lane.sketch_entities
-                            .iter()
-                            .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
-                        &scalar.operands,
-                    );
+                let resolved_operands = resolved_scalar_operand_markers(ctx, lane, scalar)?;
                 for (operand, resolved) in scalar.operands.iter().zip(resolved_operands) {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
@@ -1313,10 +1341,7 @@ impl SldprtNative {
             .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
             .cloned()
             .collect::<Vec<_>>();
-        crate::resolved_features::classes::bind_history_classes(
-            &mut expected_histories,
-            &history_lanes,
-        );
+        bind_history_classes_charged(ctx, &mut expected_histories, &history_lanes)?;
         if self
             .feature_histories
             .iter()
@@ -1333,36 +1358,134 @@ impl SldprtNative {
     }
 }
 
+fn bind_history_classes_charged(
+    ctx: &DecodeContext<'_>,
+    histories: &mut [FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let source_items = lanes.iter().try_fold(0usize, |count, lane| {
+        count
+            .checked_add(lane.names.len())
+            .and_then(|count| count.checked_add(lane.classes.len()))
+    });
+    let source_items = source_items.ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "validate SLDPRT history class candidates",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })?;
+    let _reservation = admit_validation_candidates(
+        Some(ctx),
+        source_items,
+        "validate SLDPRT history class candidates",
+    )?;
+    crate::resolved_features::classes::bind_history_classes(histories, lanes);
+    Ok(())
+}
+
+fn resolved_scalar_operand_markers<'a>(
+    ctx: &DecodeContext<'_>,
+    lane: &'a FeatureInputLane,
+    scalar: &crate::records::FeatureInputScalar,
+) -> Result<Vec<Option<&'a crate::records::SketchInputEntity>>, cadmpeg_ir::NativeConvertError> {
+    let source_items = lane
+        .sketch_entities
+        .len()
+        .checked_add(scalar.operands.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "validate SLDPRT scalar operand candidates",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    let _reservation = admit_validation_candidates(
+        Some(ctx),
+        source_items,
+        "validate SLDPRT scalar operand candidates",
+    )?;
+    Ok(
+        crate::resolved_features::operands::resolve_scalar_operand_markers(
+            lane.sketch_entities
+                .iter()
+                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
+            &scalar.operands,
+        ),
+    )
+}
+
+fn generated_surface_identities_disagree_with_payload(
+    ctx: Option<&DecodeContext<'_>>,
+    lane: &FeatureInputLane,
+) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let _reservation = if lane
+        .classes
+        .iter()
+        .any(|class| class.name.ends_with("SurfIdRep_c"))
+    {
+        admit_validation_candidates(
+            ctx,
+            lane.native_payload.len(),
+            "validate SLDPRT generated surface identities",
+        )?
+    } else {
+        None
+    };
+    Ok(lane.generated_surface_identities
+        != crate::resolved_features::selections::generated_surface_identities(lane))
+}
+
 /// `true` when a body selection disagrees with the compact selection in its lane payload.
 fn body_selection_disagrees_with_payload(
+    ctx: Option<&DecodeContext<'_>>,
     lane: &FeatureInputLane,
     record: &FeatureInputBodySelection,
-) -> bool {
-    usize::try_from(record.offset).ok().and_then(|offset| {
-        crate::resolved_features::selections::compact_body_selection_at(
-            &lane.native_payload,
-            offset,
-        )
-    }) != Some(record.local_body_ids.clone())
+) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let _reservation = admit_validation_candidates(
+        ctx,
+        lane.native_payload.len(),
+        "validate SLDPRT body selection candidates",
+    )?;
+    Ok(usize::try_from(record.offset)
+        .ok()
+        .and_then(|offset| {
+            crate::resolved_features::selections::compact_body_selection_at(
+                &lane.native_payload,
+                offset,
+            )
+        })
+        .as_ref()
+        != Some(&record.local_body_ids)
         || crate::resolved_features::selections::compact_body_retention_mode_for_selection(
             lane, record,
-        ) != record.mode
+        ) != record.mode)
 }
 
 /// `true` when an edge selection disagrees with the compact selection in its lane payload.
 ///
 /// `edge_features` are the history features enriched with this lane's object sources.
 fn edge_selection_disagrees_with_payload(
+    ctx: Option<&DecodeContext<'_>>,
     lane: &FeatureInputLane,
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
-) -> bool {
-    usize::try_from(record.offset).ok().and_then(|offset| {
-        crate::resolved_features::selections::compact_edge_selection_at(
-            &lane.native_payload,
-            offset,
-        )
-    }) != Some(record.local_edge_ids.clone())
+) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let _reservation = admit_validation_candidates(
+        ctx,
+        lane.native_payload.len(),
+        "validate SLDPRT edge selection candidates",
+    )?;
+    Ok(usize::try_from(record.offset)
+        .ok()
+        .and_then(|offset| {
+            crate::resolved_features::selections::compact_edge_selection_at(
+                &lane.native_payload,
+                offset,
+            )
+        })
+        .as_ref()
+        != Some(&record.local_edge_ids)
         || usize::try_from(record.offset)
             .ok()
             .and_then(|offset| {
@@ -1394,17 +1517,23 @@ fn edge_selection_disagrees_with_payload(
                 edge_features,
                 &record.feature_ref,
             )
-        }) != record.terminal_feature_ref
+        }) != record.terminal_feature_ref)
 }
 
 /// `true` when a surface selection disagrees with the compact reference in its lane payload.
 ///
 /// `surface_features` are the history features enriched with this lane's object sources.
 fn surface_selection_disagrees_with_payload(
+    ctx: Option<&DecodeContext<'_>>,
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
-) -> bool {
+) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let _reservation = admit_validation_candidates(
+        ctx,
+        lane.native_payload.len(),
+        "validate SLDPRT surface selection candidates",
+    )?;
     // An offset no index can name names no byte of the payload in memory, so
     // the selection states nothing the payload agrees with.
     let matches_payload = match usize::try_from(record.offset) {
@@ -1415,7 +1544,7 @@ fn surface_selection_disagrees_with_payload(
         ),
         Err(_) => false,
     };
-    !matches_payload
+    Ok(!matches_payload
         || crate::resolved_features::component_paths::surface_selection_producer_features(
             &record.components,
             record.terminal_feature_ref.as_deref(),
@@ -1428,7 +1557,7 @@ fn surface_selection_disagrees_with_payload(
                 &record.components,
                 surface_features,
             )
-        }) != record.terminal_feature_ref
+        }) != record.terminal_feature_ref)
 }
 
 fn relation_instance_shape_valid(
