@@ -990,7 +990,7 @@ impl CodecBackend for FcstdCodec {
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             geometry_transferred |=
-                application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
+                application_geometry::transfer(ctx, &mut ir, &graph.properties, &entry_records)?;
             let topology_occurrences = topology_transfer::transfer(
                 ctx,
                 &mut ir,
