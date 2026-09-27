@@ -3132,8 +3132,8 @@ fn derive_cylindrical_pcurves(
                         continue;
                     };
                     match (
-                        nurbs_parameter_at_point(nurbs, start),
-                        nurbs_parameter_at_point(nurbs, end),
+                        nurbs_parameter_at_point(nurbs, start)?,
+                        nurbs_parameter_at_point(nurbs, end)?,
                     ) {
                         (InverseResolution::Unique(start), InverseResolution::Unique(end)) => {
                             Some([start.min(end), start.max(end)])
@@ -3286,32 +3286,61 @@ fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::mat
     }
 }
 
-fn golden_section_minimum<F>(mut left: f64, mut right: f64, objective: &mut F) -> Option<(f64, f64)>
+fn golden_section_minimum<F>(
+    mut left: f64,
+    mut right: f64,
+    objective: &mut F,
+) -> Result<Option<(f64, f64)>, cadmpeg_core::decode::ResourceLimit>
 where
-    F: FnMut(f64) -> Option<f64>,
+    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit>,
 {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let mut a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?.get();
-    let mut b = cadmpeg_ir::math::interpolate(left, right, ratio)?.get();
-    let mut da = objective(a)?;
-    let mut db = objective(b)?;
+    let Some(a) = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio) else {
+        return Ok(None);
+    };
+    let Some(b) = cadmpeg_ir::math::interpolate(left, right, ratio) else {
+        return Ok(None);
+    };
+    let mut a = a.get();
+    let mut b = b.get();
+    let Some(mut da) = objective(a)? else {
+        return Ok(None);
+    };
+    let Some(mut db) = objective(b)? else {
+        return Ok(None);
+    };
     for _ in 0..80 {
         if da <= db {
             right = b;
             b = a;
             db = da;
-            a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?.get();
-            da = objective(a)?;
+            let Some(next) = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio) else {
+                return Ok(None);
+            };
+            a = next.get();
+            let Some(next) = objective(a)? else {
+                return Ok(None);
+            };
+            da = next;
         } else {
             left = a;
             a = b;
             da = db;
-            b = cadmpeg_ir::math::interpolate(left, right, ratio)?.get();
-            db = objective(b)?;
+            let Some(next) = cadmpeg_ir::math::interpolate(left, right, ratio) else {
+                return Ok(None);
+            };
+            b = next.get();
+            let Some(next) = objective(b)? else {
+                return Ok(None);
+            };
+            db = next;
         }
     }
-    let parameter = cadmpeg_ir::math::interpolate(left, right, 0.5)?.get();
-    Some((parameter, objective(parameter)?))
+    let Some(parameter) = cadmpeg_ir::math::interpolate(left, right, 0.5) else {
+        return Ok(None);
+    };
+    let parameter = parameter.get();
+    Ok(objective(parameter)?.map(|distance| (parameter, distance)))
 }
 
 /// Find one representative for every sampled local minimum of an objective on
@@ -3321,9 +3350,9 @@ fn sampled_parameter_minima<F>(
     knots: &[f64],
     domain: [f64; 2],
     mut objective: F,
-) -> Option<Vec<(f64, f64)>>
+) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit>
 where
-    F: FnMut(f64) -> Option<f64>,
+    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit>,
 {
     let mut candidates = Vec::new();
     for span in knots.windows(2).filter(|span| span[0] < span[1]) {
@@ -3334,27 +3363,35 @@ where
         }
         let mut samples = Vec::with_capacity(INVERSE_SAMPLE_COUNT + 1);
         for index in 0..=INVERSE_SAMPLE_COUNT {
-            let parameter = cadmpeg_ir::math::interpolate(
+            let Some(parameter) = cadmpeg_ir::math::interpolate(
                 start,
                 end,
                 index as f64 / INVERSE_SAMPLE_COUNT as f64,
-            )?
-            .get();
-            samples.push((parameter, objective(parameter)?));
+            ) else {
+                return Ok(None);
+            };
+            let parameter = parameter.get();
+            let Some(distance) = objective(parameter)? else {
+                return Ok(None);
+            };
+            samples.push((parameter, distance));
         }
         candidates.extend(samples.iter().copied());
         for index in 1..INVERSE_SAMPLE_COUNT {
             if samples[index].1 <= samples[index - 1].1 && samples[index].1 <= samples[index + 1].1
             {
-                candidates.push(golden_section_minimum(
+                let Some(minimum) = golden_section_minimum(
                     samples[index - 1].0,
                     samples[index + 1].0,
                     &mut objective,
-                )?);
+                )? else {
+                    return Ok(None);
+                };
+                candidates.push(minimum);
             }
         }
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 fn unique_inverse_parameter(
@@ -3392,24 +3429,28 @@ fn unique_inverse_parameter(
 fn nurbs_parameter_at_point(
     nurbs: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     target: cadmpeg_ir::math::Point3,
-) -> InverseResolution<f64> {
+) -> Result<InverseResolution<f64>, cadmpeg_core::decode::ResourceLimit> {
     let squared_distance = |parameter: f64| {
-        let point = nurbs_curve_point_at(nurbs, parameter).ok()?;
-        Some(
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(nurbs, parameter))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(
             (point.x - target.x).powi(2)
                 + (point.y - target.y).powi(2)
                 + (point.z - target.z).powi(2),
-        )
+        ))
     };
     let Some(domain) = nurbs_curve_parameter_domain(nurbs)
         .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
-    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance) else {
-        return InverseResolution::NoMatch;
+    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance)? else {
+        return Ok(InverseResolution::NoMatch);
     };
-    unique_inverse_parameter(
+    Ok(unique_inverse_parameter(
         candidates,
         inverse_coordinate_tolerance(
             nurbs
@@ -3419,7 +3460,7 @@ fn nurbs_parameter_at_point(
                 .chain(std::iter::once(target)),
         ),
         domain,
-    )
+    ))
 }
 
 fn quadratic_nurbs_has_constant_radius(
@@ -3952,7 +3993,7 @@ fn derive_nurbs_isoparametric_pcurves(
         };
         let (geometry, parameter_range, fit_tolerance, cache) = match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-                let Some(parameter_range) = nurbs_edge_parameter_range(edge, curve, endpoints)
+                let Some(parameter_range) = nurbs_edge_parameter_range(edge, curve, endpoints)?
                 else {
                     continue;
                 };
@@ -3990,8 +4031,8 @@ fn derive_nurbs_isoparametric_pcurves(
                 let origin = line_curve.origin().get();
                 let direction = *line_curve.direction().as_raw();
                 let resolution = resolve_axis_candidates([
-                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::U, origin, direction),
-                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::V, origin, direction),
+                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::U, origin, direction)?,
+                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::V, origin, direction)?,
                 ]);
                 match resolution {
                     InverseResolution::Unique(geometry) => (geometry, None, None, false),
@@ -5348,18 +5389,23 @@ fn nurbs_edge_parameter_range(
     edge: &Edge,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
-) -> Option<[f64; 2]> {
-    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
+) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(domain) = nurbs_curve_parameter_domain(curve) else {
+        return Ok(None);
+    };
+    let domain = domain.endpoints();
     let range = if let Some(range) = edge.param_range() {
         range.get()
     } else {
-        let [start, end] = endpoints?;
+        let Some([start, end]) = endpoints else {
+            return Ok(None);
+        };
         match (
-            nurbs_parameter_at_point(curve, start),
-            nurbs_parameter_at_point(curve, end),
+            nurbs_parameter_at_point(curve, start)?,
+            nurbs_parameter_at_point(curve, end)?,
         ) {
             (InverseResolution::Unique(start), InverseResolution::Unique(end)) => [start, end],
-            _ => return None,
+            _ => return Ok(None),
         }
     };
     if !range[0].is_finite()
@@ -5369,9 +5415,9 @@ fn nurbs_edge_parameter_range(
             .iter()
             .any(|parameter| *parameter < domain[0] || *parameter > domain[1])
     {
-        return None;
+        return Ok(None);
     }
-    Some([range[0].min(range[1]), range[0].max(range[1])])
+    Ok(Some([range[0].min(range[1]), range[0].max(range[1])]))
 }
 
 fn derive_nurbs_edge_pcurve(
@@ -5403,7 +5449,7 @@ fn ruled_surface_line_pcurve(
     fixed_axis: SurfaceParameterAxis,
     line_origin: cadmpeg_ir::math::Point3,
     line_direction: cadmpeg_ir::math::Vector3,
-) -> InverseResolution<PcurveGeometry> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let (uc, vc) = (surface.u_count(), surface.v_count());
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
@@ -5425,7 +5471,7 @@ fn ruled_surface_line_pcurve(
     };
     let (Some(&varying_min), Some(&varying_max)) = (varying_knots.get(1), varying_knots.get(2))
     else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
     if varying_degree != 1
         || varying_count != 2
@@ -5442,18 +5488,18 @@ fn ruled_surface_line_pcurve(
             })
         })
     {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let Some(fixed_degree) = usize::try_from(fixed_degree).ok() else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
     let (Some(&fixed_min), Some(&fixed_max)) =
         (fixed_knots.get(fixed_degree), fixed_knots.get(fixed_count))
     else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
     if !fixed_min.is_finite() || !fixed_max.is_finite() || fixed_min >= fixed_max {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let evaluate_ruling = |fixed: f64| {
         let parameters = |varying| match fixed_axis {
@@ -5462,16 +5508,23 @@ fn ruled_surface_line_pcurve(
         };
         let (u0, v0) = parameters(varying_min);
         let (u1, v1) = parameters(varying_max);
-        Some((
-            nurbs_surface_point(surface, u0, v0).ok()?,
-            nurbs_surface_point(surface, u1, v1).ok()?,
-        ))
+        let Some(first) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u0, v0))?
+        else {
+            return Ok(None);
+        };
+        let Some(second) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, u1, v1))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((first, second)))
     };
     let direction_squared = line_direction.x * line_direction.x
         + line_direction.y * line_direction.y
         + line_direction.z * line_direction.z;
     if direction_squared <= f64::EPSILON {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let perpendicular_squared = |point: cadmpeg_ir::math::Point3| {
         let relative = [
@@ -5488,12 +5541,14 @@ fn ruled_surface_line_pcurve(
             + (relative[2] - along * line_direction.z).powi(2)
     };
     let objective = |parameter: f64| {
-        let (a, b) = evaluate_ruling(parameter)?;
-        Some(perpendicular_squared(a.get()).max(perpendicular_squared(b.get())))
+        let Some((a, b)) = evaluate_ruling(parameter)? else {
+            return Ok(None);
+        };
+        Ok(Some(perpendicular_squared(a.get()).max(perpendicular_squared(b.get()))))
     };
-    let Some(candidates) = sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)
+    let Some(candidates) = sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)?
     else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
     let resolution = unique_inverse_parameter(
         candidates,
@@ -5508,16 +5563,16 @@ fn ruled_surface_line_pcurve(
     );
     let fixed = match resolution {
         InverseResolution::Unique(fixed) => fixed,
-        InverseResolution::NoMatch => return InverseResolution::NoMatch,
-        InverseResolution::Ambiguous => return InverseResolution::Ambiguous,
+        InverseResolution::NoMatch => return Ok(InverseResolution::NoMatch),
+        InverseResolution::Ambiguous => return Ok(InverseResolution::Ambiguous),
     };
-    let Some((a, b)) = evaluate_ruling(fixed) else {
-        return InverseResolution::NoMatch;
+    let Some((a, b)) = evaluate_ruling(fixed)? else {
+        return Ok(InverseResolution::NoMatch);
     };
     let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
     let delta_squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
     if delta_squared <= f64::EPSILON {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let project = |value: [f64; 3]| {
         (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / delta_squared
@@ -5529,17 +5584,17 @@ fn ruled_surface_line_pcurve(
     ]);
     let rate = project([line_direction.x, line_direction.y, line_direction.z]);
     if rate == 0.0 {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let domain = varying_max - varying_min;
-    InverseResolution::Unique(match fixed_axis {
+    Ok(InverseResolution::Unique(match fixed_axis {
         SurfaceParameterAxis::U => PcurveGeometry::Line(
             match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(fixed, varying_min + offset * domain),
                 cadmpeg_ir::math::Point2::new(0.0, rate * domain),
             ) {
                 Ok(payload) => payload,
-                Err(_) => return InverseResolution::NoMatch,
+                Err(_) => return Ok(InverseResolution::NoMatch),
             },
         ),
         SurfaceParameterAxis::V => PcurveGeometry::Line(
@@ -5548,10 +5603,10 @@ fn ruled_surface_line_pcurve(
                 cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
             ) {
                 Ok(payload) => payload,
-                Err(_) => return InverseResolution::NoMatch,
+                Err(_) => return Ok(InverseResolution::NoMatch),
             },
         ),
-    })
+    }))
 }
 
 fn solve_face_orientation(out: &mut Brep) {
@@ -7166,7 +7221,9 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
             cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        ) {
+        )
+        .expect("ruling evaluation")
+        {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("interior ruling did not match"),
             super::InverseResolution::Ambiguous => panic!("interior ruling was ambiguous"),
@@ -7493,7 +7550,9 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        ) {
+        )
+        .expect("ruling evaluation")
+        {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("transposed ruling did not match"),
             super::InverseResolution::Ambiguous => panic!("transposed ruling was ambiguous"),
@@ -7534,7 +7593,7 @@ mod tests {
                 cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ),
+            ).expect("ruling evaluation"),
             super::InverseResolution::Ambiguous
         ));
     }
@@ -7552,7 +7611,7 @@ mod tests {
             None,
         );
         assert!(matches!(
-            super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),),
+            super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),).expect("inverse evaluation"),
             super::InverseResolution::Ambiguous
         ));
     }
