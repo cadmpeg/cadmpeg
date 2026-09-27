@@ -80,6 +80,7 @@ const NURBS_SURFACE_BACKTRACK_STEPS: usize = 8;
 const NURBS_LINE_FACE_SAMPLES: [f64; 3] = [0.25, 0.5, 0.75];
 
 fn bind_consolidated_revolution_faces_and_seams(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     revolutions: &[ConsolidatedRevolutionBinding],
@@ -198,79 +199,63 @@ fn bind_consolidated_revolution_faces_and_seams(
         ))
     }
 
-    let point_positions = ir
-        .model
-        .points
-        .iter()
-        .map(|point| (point.id.clone(), point.position().get()))
-        .collect::<HashMap<_, _>>();
-    let vertex_positions = ir
-        .model
-        .vertices
-        .iter()
-        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
-        .collect::<HashMap<_, _>>();
-    let edge_indices = ir
-        .model
-        .edges
-        .iter()
-        .enumerate()
-        .map(|(index, edge)| (edge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let coedge_indices = ir
-        .model
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let loop_indices = ir
-        .model
-        .loops
-        .iter()
-        .enumerate()
-        .map(|(index, loop_)| (loop_.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let unknown_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| {
-            matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-            )
-        })
-        .map(|surface| surface.id.clone())
-        .collect::<HashSet<_>>();
-    let curve_indices = ir
-        .model
-        .curves
-        .iter()
-        .enumerate()
-        .map(|(index, curve)| (curve.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let mut point_positions = HashMap::new();
+    for point in &ir.model.points {
+        let id = crate::resource::copy_id(ctx, point.id.as_str(), PointId::mint, "catia_revolution_point_id_copy")?;
+        crate::resource::insert_map(ctx, &mut point_positions, id, point.position().get(), "catia_revolution_point_positions")?;
+    }
+    let mut vertex_positions = HashMap::new();
+    for vertex in &ir.model.vertices {
+        if let Some(&position) = point_positions.get(&vertex.point) {
+            let id = crate::resource::copy_id(ctx, vertex.id.as_str(), VertexId::mint, "catia_revolution_vertex_id_copy")?;
+            crate::resource::insert_map(ctx, &mut vertex_positions, id, position, "catia_revolution_vertex_positions")?;
+        }
+    }
+    let mut edge_indices = HashMap::new();
+    for (index, edge) in ir.model.edges.iter().enumerate() {
+        let id = crate::resource::copy_id(ctx, edge.id.as_str(), EdgeId::mint, "catia_revolution_edge_id_copy")?;
+        crate::resource::insert_map(ctx, &mut edge_indices, id, index, "catia_revolution_edge_indices")?;
+    }
+    let mut coedge_indices = HashMap::new();
+    for (index, coedge) in ir.model.coedges.iter().enumerate() {
+        let id = crate::resource::copy_id(ctx, coedge.id.as_str(), cadmpeg_ir::ids::CoedgeId::mint, "catia_revolution_coedge_id_copy")?;
+        crate::resource::insert_map(ctx, &mut coedge_indices, id, index, "catia_revolution_coedge_indices")?;
+    }
+    let mut loop_indices = HashMap::new();
+    for (index, loop_) in ir.model.loops.iter().enumerate() {
+        let id = crate::resource::copy_id(ctx, loop_.id.as_str(), LoopId::mint, "catia_revolution_loop_id_copy")?;
+        crate::resource::insert_map(ctx, &mut loop_indices, id, index, "catia_revolution_loop_indices")?;
+    }
+    let mut unknown_surfaces = HashSet::new();
+    for surface in &ir.model.surfaces {
+        if matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) {
+            let id = crate::resource::copy_id(ctx, surface.id.as_str(), SurfaceId::mint, "catia_revolution_unknown_surface_id_copy")?;
+            crate::resource::insert_set(ctx, &mut unknown_surfaces, id, "catia_revolution_unknown_surfaces")?;
+        }
+    }
+    let mut curve_indices = HashMap::new();
+    for (index, curve) in ir.model.curves.iter().enumerate() {
+        let id = crate::resource::copy_id(ctx, curve.id.as_str(), CurveId::mint, "catia_revolution_curve_id_copy")?;
+        crate::resource::insert_map(ctx, &mut curve_indices, id, index, "catia_revolution_curve_indices")?;
+    }
     let mut surface_bindings = HashMap::<SurfaceId, Option<usize>>::new();
     for face in &ir.model.faces {
         if !unknown_surfaces.contains(&face.surface) {
             continue;
         }
-        let face_edges = face
-            .loops
-            .iter()
+        let face_edges = face.loops.iter()
             .filter_map(|id| loop_indices.get(id))
             .flat_map(|index| ir.model.loops[*index].coedges())
             .filter_map(|id| coedge_indices.get(id))
-            .filter_map(|index| edge_indices.get(&ir.model.coedges[*index].edge))
-            .collect::<Vec<_>>();
-        let mut witnesses = Vec::with_capacity(3 * face_edges.len());
+            .filter_map(|index| edge_indices.get(&ir.model.coedges[*index].edge));
+        let mut witnesses = Vec::new();
         for index in face_edges {
             let edge = &ir.model.edges[*index];
-            witnesses.extend(
-                [&edge.start, &edge.end]
-                    .into_iter()
-                    .filter_map(|id| vertex_positions.get(id).copied()),
-            );
+            for id in [&edge.start, &edge.end] {
+                if let Some(&point) = vertex_positions.get(id) {
+                    crate::resource::push(ctx, &mut witnesses, point, "catia_revolution_face_witnesses")?;
+                }
+            }
             let Some(curve) = edge
                 .curve()
                 .and_then(|id| curve_indices.get(id))
@@ -284,7 +269,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             };
             let parameter = start.midpoint(end);
             if let Ok(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
-                witnesses.push(point.get());
+                crate::resource::push(ctx, &mut witnesses, point.get(), "catia_revolution_face_witnesses")?;
             }
         }
         if witnesses.len() < 2 {
@@ -305,19 +290,16 @@ fn bind_consolidated_revolution_faces_and_seams(
         if matches.next().is_some() {
             continue;
         }
-        surface_bindings
-            .entry(face.surface.clone())
-            .and_modify(|stored| {
-                if *stored != Some(binding) {
-                    *stored = None;
-                }
-            })
-            .or_insert(Some(binding));
+        if let Some(stored) = surface_bindings.get_mut(&face.surface) {
+            if *stored != Some(binding) {
+                *stored = None;
+            }
+        } else {
+            let id = crate::resource::copy_id(ctx, face.surface.as_str(), SurfaceId::mint, "catia_revolution_binding_surface_id_copy")?;
+            crate::resource::insert_map(ctx, &mut surface_bindings, id, Some(binding), "catia_revolution_surface_bindings")?;
+        }
     }
-    let surface_bindings = surface_bindings
-        .into_iter()
-        .filter_map(|(surface, binding)| binding.map(|index| (surface, index)))
-        .collect::<HashMap<_, _>>();
+    surface_bindings.retain(|_, binding| binding.is_some());
     for (surface_id, binding) in &surface_bindings {
         if let Some(surface) = ir
             .model
@@ -325,7 +307,8 @@ fn bind_consolidated_revolution_faces_and_seams(
             .iter_mut()
             .find(|surface| &surface.id == surface_id)
         {
-            surface.geometry = revolutions[*binding].geometry.clone();
+            let Some(binding) = *binding else { continue };
+            surface.geometry = revolutions[binding].geometry.clone();
             annotations
                 .derived(&surface.id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -344,8 +327,8 @@ fn bind_consolidated_revolution_faces_and_seams(
             else {
                 return None;
             };
-            let binding = *surface_bindings.get(first)?;
-            (surface_bindings.get(second) == Some(&binding)).then_some(binding)
+            let binding = (*surface_bindings.get(first)?)?;
+            (surface_bindings.get(second) == Some(&Some(binding))).then_some(binding)
         })();
         let Some(binding) = binding else {
             continue;
@@ -353,18 +336,22 @@ fn bind_consolidated_revolution_faces_and_seams(
         let Some(owner) = ir.model.procedural_curve_owner(&procedure.id) else {
             continue;
         };
-        procedural_bindings
-            .entry(owner.clone())
-            .and_modify(|stored| *stored = None)
-            .or_insert(Some(binding));
+        if let Some(stored) = procedural_bindings.get_mut(owner) {
+            *stored = None;
+        } else {
+            let id = crate::resource::copy_id(ctx, owner.as_str(), CurveId::mint, "catia_revolution_owner_id_copy")?;
+            crate::resource::insert_map(ctx, &mut procedural_bindings, id, Some(binding), "catia_revolution_procedural_bindings")?;
+        }
     }
-    let curve_edge_counts = ir.model.edges.iter().filter_map(|edge| edge.curve()).fold(
-        HashMap::<CurveId, usize>::new(),
-        |mut counts, curve| {
-            *counts.entry(curve.clone()).or_default() += 1;
-            counts
-        },
-    );
+    let mut curve_edge_counts = HashMap::<CurveId, usize>::new();
+    for curve in ir.model.edges.iter().filter_map(|edge| edge.curve()) {
+        if let Some(count) = curve_edge_counts.get_mut(curve) {
+            *count += 1;
+        } else {
+            let id = crate::resource::copy_id(ctx, curve.as_str(), CurveId::mint, "catia_revolution_count_curve_id_copy")?;
+            crate::resource::insert_map(ctx, &mut curve_edge_counts, id, 1, "catia_revolution_curve_edge_counts")?;
+        }
+    }
     let mut seam_count = 0usize;
     for edge in &mut ir.model.edges {
         let Some(curve_id) = edge.curve() else {
@@ -409,9 +396,11 @@ fn bind_consolidated_revolution_faces_and_seams(
             }
             carrier @ CurveGeometry::Solved(_) => *carrier = geometry,
         }
-        edge.carrier =
-            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(parameter_range))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+        let curve = edge.curve()
+            .map(|id| crate::resource::copy_id(ctx, id.as_str(), CurveId::mint, "catia_revolution_seam_curve_id_copy"))
+            .transpose()?;
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(parameter_range))
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -439,6 +428,38 @@ mod consolidated_revolution_binding_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn revolution_binding_refuses_point_index_before_allocation() {
+        let mut ir = CadIr::empty();
+        ir.model.points.push(Point::new(
+            PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            bind_consolidated_revolution_faces_and_seams(
+                ctx,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[],
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| {
+                bind_consolidated_revolution_faces_and_seams(
+                    ctx,
+                    &mut ir,
+                    &mut AnnotationBuilder::new(),
+                    &[],
+                )
+            })
+            .expect("service context admits one point"),
+            (0, 0)
+        );
+    }
 
     #[test]
     fn torus_binding_uses_a_finite_midpoint_across_a_wide_curve_range() {
@@ -553,7 +574,8 @@ mod consolidated_revolution_binding_tests {
             use_curve: None,
         });
 
-        let result = bind_consolidated_revolution_faces_and_seams(
+        let result = crate::test_support::with_service_context(|ctx| bind_consolidated_revolution_faces_and_seams(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[
@@ -566,7 +588,7 @@ mod consolidated_revolution_binding_tests {
                     profile_sweep: 0.5,
                 },
             ],
-        )
+        ))
         .expect("finite torus witnesses");
         assert_eq!(result, (1, 0));
         assert_eq!(ir.model.surfaces[0].geometry, expected);
@@ -707,14 +729,15 @@ mod consolidated_revolution_binding_tests {
             .expect("attach construction to its fixture carrier");
 
         assert_eq!(
-            bind_consolidated_revolution_faces_and_seams(
+            crate::test_support::with_service_context(|ctx| bind_consolidated_revolution_faces_and_seams(
+                ctx,
                 &mut ir,
                 &mut AnnotationBuilder::new(),
                 &[ConsolidatedRevolutionBinding {
                     geometry: geometry.clone(),
                     profile_sweep: 0.5,
                 }],
-            )
+            ))
             .expect("valid exactness fields"),
             (2, 1)
         );
@@ -2624,12 +2647,16 @@ fn try_decode_standard_population(
         }
     }
     let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =
-        bind_consolidated_revolution_faces_and_seams(
+        match bind_consolidated_revolution_faces_and_seams(
+            ctx,
             &mut ir,
             &mut annotations,
             &consolidated_revolutions,
-        )
-        .ok()?;
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
     let mut consolidated_curve_bindings = match append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
