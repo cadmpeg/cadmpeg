@@ -626,11 +626,8 @@ mod deltas_record_wire_tests {
 }
 
 /// One compact deletion in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidDeltasTombstoneWire",
-    into = "ParasolidDeltasTombstoneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidDeltasTombstoneWire")]
 pub(super) struct ParasolidDeltasTombstone {
     /// Globally unique event identity.
     pub(super) id: String,
@@ -642,6 +639,32 @@ pub(super) struct ParasolidDeltasTombstone {
     xmt: u32,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidDeltasTombstoneRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    family: &'static str,
+    kind: u16,
+    xmt: u32,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasTombstone {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidDeltasTombstoneRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            family: self.kind.name(),
+            kind: u16::from(self.kind.code()),
+            xmt: self.xmt,
+            byte_len: 6,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -662,6 +685,7 @@ struct ParasolidDeltasTombstoneWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
     fn from(value: ParasolidDeltasTombstone) -> Self {
         Self {
@@ -696,12 +720,35 @@ impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
     }
 }
 
+#[cfg(test)]
+mod tombstone_wire_tests {
+    use super::{ParasolidDeltasTombstone, ParasolidDeltasTombstoneWire};
+
+    #[test]
+    fn tombstone_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
+        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&ParasolidDeltasTombstoneWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn tombstone_native_limit_refuses_before_family_copy() {
+        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
+        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
+}
+
 /// BODY revision envelope in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "body_revision_wire::RevisionWire",
-    into = "body_revision_wire::RevisionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "body_revision_wire::RevisionWire")]
 pub(super) struct ParasolidDeltasBodyRevision {
     /// Globally unique revision identity.
     pub(super) id: String,
@@ -722,8 +769,8 @@ pub(super) struct ParasolidDeltasBodyRevision {
 }
 
 /// Parasolid transmit header at the start of a deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "TransmitHeaderWire", into = "TransmitHeaderWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "TransmitHeaderWire")]
 pub(super) struct ParasolidDeltasTransmitHeader {
     /// Globally unique header identity.
     pub(super) id: String,
@@ -1573,11 +1620,8 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
 }
 
 /// Complete typed source record for one Parasolid `term_use` endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidTermUseRecordWire",
-    into = "ParasolidTermUseRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ParasolidTermUseRecordWire")]
 pub(super) struct ParasolidTermUseRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -1593,6 +1637,34 @@ pub(super) struct ParasolidTermUseRecord {
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidTermUseRecordRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    count: u32,
+    form: crate::intersection::TermUseForm,
+    point: FiniteVector<3>,
+    framing: crate::intersection::TermUseFraming,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidTermUseRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidTermUseRecordRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            count: self.form.count(),
+            form: self.form,
+            point: self.point,
+            framing: self.framing,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1615,6 +1687,7 @@ struct ParasolidTermUseRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidTermUseRecord> for ParasolidTermUseRecordWire {
     fn from(value: ParasolidTermUseRecord) -> Self {
         Self {
@@ -1657,6 +1730,20 @@ mod term_use_wire_tests {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn term_use_native_limit_refuses_before_id_copy() {
+        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+        let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }
 
