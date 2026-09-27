@@ -68,7 +68,7 @@ pub(super) fn source_meta(
         insert_source_attribute(ctx, &mut attributes, "crv_array_count", c)?;
     }
     if let Some(unit) = &scan.framing.principal_unit {
-        insert_source_attribute(ctx, &mut attributes, "principal_unit", unit.token())?;
+        insert_source_attribute(ctx, &mut attributes, "principal_unit", unit)?;
         if let Some(scale) = unit.length_scale_mm().filter(|scale| scale.get() != 1.0) {
             insert_source_attribute(ctx, &mut attributes, "source_length_scale_mm", scale.get())?;
         }
@@ -1011,5 +1011,26 @@ mod tests {
             .expect("section attribute is admitted");
         assert_eq!(attributes["version_line"], "Creo 10");
         assert_eq!(attributes["section.0.name"], "MdlStatus");
+    }
+
+    #[test]
+    fn principal_unit_attribute_refuses_before_retaining_token() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = ("principal_unit".len() + "unknown:7".len() - 1) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let mut attributes = BTreeMap::new();
+        let error = insert_source_attribute(
+            &ctx,
+            &mut attributes,
+            "principal_unit",
+            crate::legacy::PrincipalUnitSystem::UnknownBinarySelector(7),
+        )
+        .expect_err("token needs one more retained byte");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "Creo source attribute value"));
+        assert!(attributes.is_empty());
     }
 }

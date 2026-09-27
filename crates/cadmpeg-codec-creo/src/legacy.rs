@@ -61,19 +61,6 @@ pub(crate) enum PrincipalUnitSystem {
 }
 
 impl PrincipalUnitSystem {
-    /// Stable source-metadata token.
-    pub(crate) fn token(self) -> String {
-        match self {
-            Self::MillimeterNewtonSecond => "mmNs".to_string(),
-            Self::MillimeterKilogramSecond => "mmKs".to_string(),
-            Self::InchPoundMassSecond => "inLbmS".to_string(),
-            Self::LegacyLengthScale(scale) => {
-                format!("legacy_length_scale_mm:{:.17}", scale.get())
-            }
-            Self::UnknownBinarySelector(value) => format!("unknown:{value}"),
-        }
-    }
-
     /// Scale from stored coordinate lengths to canonical millimeters.
     pub(crate) fn length_scale_mm(self) -> Option<cadmpeg_ir::scalar::PositiveReal> {
         match self {
@@ -83,6 +70,18 @@ impl PrincipalUnitSystem {
             Self::InchPoundMassSecond => cadmpeg_ir::scalar::PositiveReal::new(LEGACY_INCH_TO_MM),
             Self::LegacyLengthScale(scale) => Some(scale),
             Self::UnknownBinarySelector(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for PrincipalUnitSystem {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MillimeterNewtonSecond => formatter.write_str("mmNs"),
+            Self::MillimeterKilogramSecond => formatter.write_str("mmKs"),
+            Self::InchPoundMassSecond => formatter.write_str("inLbmS"),
+            Self::LegacyLengthScale(scale) => write!(formatter, "legacy_length_scale_mm:{:.17}", scale.get()),
+            Self::UnknownBinarySelector(value) => write!(formatter, "unknown:{value}"),
         }
     }
 }
