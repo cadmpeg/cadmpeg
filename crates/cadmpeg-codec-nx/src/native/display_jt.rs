@@ -408,18 +408,38 @@ pub(super) struct DisplayJtSegment {
 }
 
 /// Validated compressed-data envelope following a JT segment header.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressionWire",
-    into = "DisplayJtCompressionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtCompressionWire")]
 struct DisplayJtCompression {
     envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
     inflated_sha256: Sha256Hex,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct DisplayJtCompressionRef<'a> {
+    flag: u32,
+    compressed_data_byte_len: u32,
+    algorithm: u8,
+    compressed_byte_len: u32,
+    inflated_sha256: &'a Sha256Hex,
+}
+
+impl Serialize for DisplayJtCompression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtCompressionRef {
+            flag: 2,
+            compressed_data_byte_len: self.envelope.compressed_byte_len + 1,
+            algorithm: 2,
+            compressed_byte_len: self.envelope.compressed_byte_len,
+            inflated_sha256: &self.inflated_sha256,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressionWire {
     flag: u32,
     compressed_data_byte_len: u32,
@@ -473,8 +493,17 @@ impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_COMPRESSION_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_SHAPE_LOD_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<DisplayJtCompression> for DisplayJtCompressionWire {
     fn from(value: DisplayJtCompression) -> Self {
+        JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             flag: 2,
             compressed_data_byte_len: value.envelope.compressed_byte_len + 1,
@@ -486,11 +515,8 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
 }
 
 /// One length-bounded object element in a JT shape-LOD segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtShapeLodElementWire",
-    into = "DisplayJtShapeLodElementWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtShapeLodElementWire")]
 pub(super) struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
     pub(super) id: String,
@@ -510,7 +536,38 @@ pub(super) struct DisplayJtShapeLodElement {
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct DisplayJtShapeLodElementRef<'a> {
+    id: &'a str,
+    segment: &'a str,
+    ordinal: u32,
+    object_type_id: &'a [u8; 16],
+    object_base_type: u8,
+    object_id: u32,
+    body_byte_len: u32,
+    body_sha256: &'a Sha256Hex,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtShapeLodElement {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtShapeLodElementRef {
+            id: &self.id,
+            segment: &self.segment,
+            ordinal: self.ordinal,
+            object_type_id: &self.object_type_id,
+            object_base_type: 4,
+            object_id: self.object_id,
+            body_byte_len: self.body_byte_len,
+            body_sha256: &self.body_sha256,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtShapeLodElementWire {
     id: String,
     segment: String,
@@ -541,8 +598,10 @@ impl TryFrom<DisplayJtShapeLodElementWire> for DisplayJtShapeLodElement {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
     fn from(value: DisplayJtShapeLodElement) -> Self {
+        JT_SHAPE_LOD_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: value.id,
             segment: value.segment,
@@ -1235,10 +1294,7 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
 
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressedElementWire",
-    into = "DisplayJtCompressedElementWire"
-)]
+#[serde(try_from = "DisplayJtCompressedElementWire")]
 pub(super) struct DisplayJtCompressedElement {
     /// Globally unique element identity.
     pub(super) id: String,
@@ -1271,7 +1327,8 @@ impl DisplayJtCompressedElement {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressedElementWire {
     id: String,
     segment: String,
@@ -1310,8 +1367,10 @@ impl TryFrom<DisplayJtCompressedElementWire> for DisplayJtCompressedElement {
     }
 }
 
+#[cfg(test)]
 impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
     fn from(value: DisplayJtCompressedElement) -> Self {
+        JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: value.id,
             segment: value.segment,
@@ -5094,7 +5153,11 @@ mod tests {
             "compressed_byte_len": 3, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"hash")
         });
         let value: super::DisplayJtCompression = serde_json::from_value(valid.clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), valid);
+        assert_eq!(serde_json::to_value(&value).unwrap(), valid);
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::DisplayJtCompressionWire::from(value.clone())).unwrap()
+        );
         for (field, invalid) in [
             ("flag", 0),
             ("algorithm", 1),
@@ -5105,6 +5168,69 @@ mod tests {
             wire[field] = invalid.into();
             assert!(serde_json::from_value::<super::DisplayJtCompression>(wire).is_err());
         }
+    }
+
+    #[test]
+    fn jt_compression_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            compression: &'a super::DisplayJtCompression,
+        }
+        let value: super::DisplayJtCompression = serde_json::from_value(serde_json::json!({
+            "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
+            "compressed_byte_len": 3, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"hash")
+        }))
+        .unwrap();
+        let record = Record {
+            id: "nx:jt:compression#0",
+            compression: &value,
+        };
+        super::JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:jt:compression#0", "compression": value}),
+        );
+        super::JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
+    fn jt_shape_lod_element_borrowed_wire_and_native_limit() {
+        let wire = serde_json::json!({
+            "id": "nx:jt:shape-lod-element#0", "segment": "nx:jt:segment#0",
+            "ordinal": 0, "object_type_id": vec![7; 16], "object_base_type": 4,
+            "object_id": 9, "body_byte_len": 3,
+            "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"), "source_offset": 10
+        });
+        let value: super::DisplayJtShapeLodElement = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::DisplayJtShapeLodElementWire::from(value.clone())).unwrap()
+        );
+        super::JT_SHAPE_LOD_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
+        super::JT_SHAPE_LOD_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    }
+
+    #[test]
+    fn jt_compressed_element_borrowed_wire_and_native_limit() {
+        let wire = serde_json::json!({
+            "id": "nx:jt:compressed-element#0", "segment": "nx:jt:segment#0",
+            "segment_type": 7, "ordinal": 0, "object_type_id": vec![7; 16],
+            "object_base_type": 4, "object_id": 9, "body_byte_len": 3,
+            "body_sha256": cadmpeg_ir::hash::sha256_hex(b"body"),
+            "inflated_offset": 0, "source_offset": 10
+        });
+        let value: super::DisplayJtCompressedElement =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&super::DisplayJtCompressedElementWire::from(value.clone()))
+                .unwrap()
+        );
+        super::JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
+        super::JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 
     #[test]
