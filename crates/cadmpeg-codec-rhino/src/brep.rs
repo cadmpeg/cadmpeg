@@ -3037,14 +3037,18 @@ fn finish_anonymous_children(
     finish_anonymous_ranges(bytes, parent, chunk, child, &direct, warnings)
 }
 
-fn finish_anonymous_ranges(
+fn finish_anonymous_ranges<I>(
     bytes: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
     child: BoundedReader<'_>,
-    direct_ranges: &[Range<usize>],
+    direct_ranges: I,
     warnings: &mut Diagnostics,
-) -> Result<(), GeometryError> {
+) -> Result<(), GeometryError>
+where
+    I: Clone + IntoIterator,
+    I::Item: std::borrow::Borrow<Range<usize>>,
+{
     if child.remaining() != 0 {
         warnings.push(format!(
             "Brep anonymous chunk skipped {} trailing bytes",

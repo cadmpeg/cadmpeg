@@ -919,11 +919,15 @@ fn parse_attributes(
     Ok((result, checksum_children))
 }
 
-fn view_child_checksum_warning(
+fn view_child_checksum_warning<I>(
     data: &[u8],
     child: &crate::chunks::Chunk,
-    direct_ranges: &[std::ops::Range<usize>],
-) -> Result<Option<String>, FramingError> {
+    direct_ranges: I,
+) -> Result<Option<String>, FramingError>
+where
+    I: Clone + IntoIterator,
+    I::Item: std::borrow::Borrow<std::ops::Range<usize>>,
+{
     match verify_checksum_ranges(data, child, direct_ranges)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
