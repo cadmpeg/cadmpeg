@@ -1396,6 +1396,7 @@ pub(crate) fn bind_sketch_profiles(
 
 /// Decode the counted selection group named by each Extrude scope.
 pub(crate) fn decode_extrude_selection_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1424,7 +1425,7 @@ pub(crate) fn decode_extrude_selection_groups(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut group) = parse_extrude_selection_group(bytes, scope, ordinal, header) {
+            if let Some(mut group) = parse_extrude_selection_group(ctx, bytes, scope, ordinal, header)? {
                 group.id =
                     ids::native_design_extrude_selection_group_id(&entry.name, header.byte_offset);
                 out.push(group);
@@ -3029,11 +3030,13 @@ fn take_optional_tracking_identity(
 }
 
 fn parse_extrude_selection_group(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignExtrudeSelectionGroup> {
+) -> Result<Option<DesignExtrudeSelectionGroup>, CodecError> {
+    let wire = (|| -> Option<Result<crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -3049,15 +3052,32 @@ fn parse_extrude_selection_group(
     if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let mut members = Vec::with_capacity(member_count);
+    let count = match u64::try_from(member_count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("parse F3D extrude selection members", 0, u64::MAX))),
+    };
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    let members_operation = "parse F3D extrude selection members";
+    if let Err(error) = ctx.charge_collection_items(count, members_operation) {
+        return Some(Err(error));
+    }
+    if members.try_reserve(member_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit(members_operation, 0, count)));
+    }
+    let offsets_operation = "parse F3D extrude selection member offsets";
+    if let Err(error) = ctx.charge_collection_items(count, offsets_operation) {
+        return Some(Err(error));
+    }
+    if member_offsets.try_reserve(member_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit(offsets_operation, 0, count)));
+    }
     for _ in 0..member_count {
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(crate::records::identity::Located {
-            value: View::u32_le_at(bytes, position + 1)?,
-            offset: u64::try_from(position + 1).ok()?,
-        });
+        members.push(View::u32_le_at(bytes, position + 1)?);
+        member_offsets.push(u64::try_from(position + 1).ok()?);
         position = position.checked_add(11)?;
     }
     let opaque_index = View::u32_le_at(bytes, position)?;
@@ -3084,8 +3104,7 @@ fn parse_extrude_selection_group(
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
         return None;
     }
-    DesignExtrudeSelectionGroup::try_from(
-        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
+    Some(Ok(crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
             id: String::new(),
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
@@ -3093,8 +3112,8 @@ fn parse_extrude_selection_group(
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone().into(),
             member_count_offset: u64::try_from(start + 32).ok()?,
-            members: members.iter().map(|member| member.value).collect(),
-            member_offsets: members.iter().map(|member| member.offset).collect(),
+            members,
+            member_offsets,
             opaque_index,
             opaque_index_offset: u64::try_from(position).ok()?,
             opaque_scalar,
@@ -3102,9 +3121,17 @@ fn parse_extrude_selection_group(
             variant: bytes[position + 28] != 0,
             paired_class_tag,
             paired_byte_offset: u64::try_from(paired_at).ok()?,
-        },
-    )
-    .ok()
+        }))
+    })();
+    let Some(wire) = wire else {
+        return Ok(None);
+    };
+    let wire = wire?;
+    match DesignExtrudeSelectionGroup::from_wire_charged(ctx, wire) {
+        Ok(group) => Ok(Some(group)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Decode the fixed-width records named by Extrude selection groups.

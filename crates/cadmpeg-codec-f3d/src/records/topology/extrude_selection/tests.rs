@@ -1,9 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude selection groups: member runs, scalars and derived offsets.
 
-fn selection_group() -> super::DesignExtrudeSelectionGroup {
+fn selection_group_wire() -> super::DesignExtrudeSelectionGroupWire {
     let wire = r#"{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","member_count_offset":32,"members":[10,11],"member_offsets":[37,48],"opaque_index":1,"opaque_index_offset":58,"opaque_scalar":0.0,"opaque_scalar_offset":62,"variant":false,"paired_class_tag":"259","paired_byte_offset":111}"#;
     serde_json::from_str(wire).unwrap()
+}
+
+fn selection_group() -> super::DesignExtrudeSelectionGroup {
+    selection_group_wire().try_into().unwrap()
+}
+
+#[test]
+fn extrude_selection_member_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = super::DesignExtrudeSelectionGroup::from_wire_charged(&ctx, selection_group_wire())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D extrude selection members"));
+}
+
+#[test]
+fn extrude_selection_member_run_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap().0;
+    let error = super::DesignExtrudeSelectionGroup::from_wire_charged(&ctx, selection_group_wire())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D extrude selection members"));
 }
 
 fn selection_member() -> super::DesignExtrudeSelectionMember {
