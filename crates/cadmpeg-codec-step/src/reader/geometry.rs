@@ -1010,11 +1010,11 @@ pub(super) fn decode(
             if let Some(offset) = parameter_offset {
                 insert_geometry_map(&mut curve_parameter_offsets, id, offset, ctx, "step_geometry_curve_parameter_offsets")?;
             }
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry,
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
         } else {
             push_geometry_vec(&mut losses,
@@ -1031,11 +1031,11 @@ pub(super) fn decode(
             continue;
         }
         if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
         } else {
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
@@ -1116,11 +1116,11 @@ pub(super) fn decode(
                     transform,
                 },
             );
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(geometry),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             let _attached = ir.model.add_procedural_curve(curve, procedural);
             carrier_index.curves.insert(id, curve_index);
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
@@ -1221,11 +1221,11 @@ pub(super) fn decode(
                     }
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(geometry.clone()),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
 
             let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
 
@@ -1256,7 +1256,7 @@ pub(super) fn decode(
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             typed.extend(segments.iter().map(|(segment, _)| *segment));
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                     segments: match cadmpeg_ir::geometry::CompositeCurveSegments::try_from(
@@ -1277,7 +1277,7 @@ pub(super) fn decode(
                     self_intersect,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             carrier_index.curves.insert(id, curve_index);
             claim_geometry_typed(&mut typed, id, ctx)?;
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
@@ -1347,11 +1347,11 @@ pub(super) fn decode(
                     continue;
                 }
             };
-        ir.model.curves.push(Curve {
+        push_geometry_vec(&mut ir.model.curves, Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
-        });
+        }, ctx, "step_geometry_ir_curves")?;
         let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
         carrier_index.curves.insert(id, curve_index);
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
@@ -1366,7 +1366,7 @@ pub(super) fn decode(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
             )), ctx, "step_geometry_losses")?;
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
@@ -1376,7 +1376,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             entry.insert(curve_index);
         }
     }
@@ -1420,7 +1420,7 @@ pub(super) fn decode(
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
@@ -1430,7 +1430,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
@@ -1517,11 +1517,11 @@ pub(super) fn decode(
             }
         };
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-        ir.model.surfaces.push(Surface {
+        push_geometry_vec(&mut ir.model.surfaces, Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
-        });
+        }, ctx, "step_geometry_ir_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
@@ -1624,11 +1624,11 @@ pub(super) fn decode(
                 .map(SurfaceGeometry::Solved),
         };
         if let Some(geometry) = geometry {
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry,
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
         } else {
             push_geometry_vec(&mut losses,
@@ -1644,11 +1644,11 @@ pub(super) fn decode(
             continue;
         }
         if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
         } else {
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
@@ -1770,11 +1770,11 @@ pub(super) fn decode(
             };
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match (|| {
@@ -1872,11 +1872,11 @@ pub(super) fn decode(
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
@@ -1918,11 +1918,11 @@ pub(super) fn decode(
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
@@ -1977,11 +1977,11 @@ pub(super) fn decode(
             let geometry = SolvedSurfaceGeometry::Transformed(placed);
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
@@ -2010,7 +2010,7 @@ pub(super) fn decode(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
             )), ctx, "step_geometry_losses")?;
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2020,7 +2020,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             entry.insert(surface_index);
         }
     }
@@ -2054,7 +2054,7 @@ pub(super) fn decode(
         };
         if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
             let curve_index = CurveIndex(ir.model.curves.len());
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_step)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
@@ -2064,7 +2064,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_curves")?;
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded topology curve #{curve_step} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
@@ -2079,7 +2079,7 @@ pub(super) fn decode(
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2089,7 +2089,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred surface #{id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
@@ -2109,7 +2109,7 @@ pub(super) fn decode(
         };
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
-            ir.model.surfaces.push(Surface {
+            push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2119,7 +2119,7 @@ pub(super) fn decode(
                         .transpose()?,
                 }),
                 source_object: None,
-            });
+            }, ctx, "step_geometry_ir_surfaces")?;
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
@@ -2189,11 +2189,11 @@ pub(super) fn decode(
             )), ctx, "step_geometry_losses")?;
             continue;
         }
-        ir.model.pcurves.push(Pcurve {
+        push_geometry_vec(&mut ir.model.pcurves, Pcurve {
             id: PcurveId::from(ids::data(kind!("pcurve"), id)),
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-        });
+        }, ctx, "step_geometry_ir_pcurves")?;
         claim_geometry_typed(&mut typed, id, ctx)?;
         if let Some(representation) =
             named_parameter(record, "PCURVE", 2).and_then(Value::reference)
@@ -2362,11 +2362,11 @@ fn decode_tessellated_curve_sets(
             .ok() else {
                 continue;
             };
-            ir.model.curves.push(Curve {
+            push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
                 source_object: Some(super::step_source_association(id, source_name.clone())),
-            });
+            }, ctx, "step_geometry_ir_curves")?;
         }
         typed.extend([id, coordinates_id]);
     }

@@ -160,6 +160,9 @@ macro_rules! deferred_ids_refusal_test {
 
 deferred_ids_refusal_test!(deferred_curve_ids_refuse_collection_limit, "step_deferred_curve_ids");
 deferred_ids_refusal_test!(deferred_surface_ids_refuse_collection_limit, "step_deferred_surface_ids");
+deferred_ids_refusal_test!(geometry_ir_curves_refuse_collection_limit, "step_geometry_ir_curves");
+deferred_ids_refusal_test!(geometry_ir_surfaces_refuse_collection_limit, "step_geometry_ir_surfaces");
+deferred_ids_refusal_test!(geometry_ir_pcurves_refuse_collection_limit, "step_geometry_ir_pcurves");
 
 fn deferred_dependency_refusal(limit: u64, group: &'static str, member: &'static str) -> CodecError {
     let arena = DecodeArena::new();
