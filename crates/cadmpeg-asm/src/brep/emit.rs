@@ -597,7 +597,9 @@ fn emit_deformable_surface(
             discontinuity_flag,
         } => (None, discontinuities, discontinuity_flag),
         EmbeddedDeformableSurfaceLayout::Revision(form) => {
-            let discontinuities = form.discontinuities.clone();
+            let discontinuities = crate::nurbs::proc_surface::copy_revision_discontinuities(
+                ctx, &form.discontinuities,
+            )?;
             let flag = form.tail_flag;
             (Some(*form), discontinuities, flag)
         }
@@ -3028,7 +3030,14 @@ fn emit_carrier_curve(
     };
     if reversed_curve_refs.contains(&i) {
         if forward_curve_refs.contains(&i) {
-            let mut reversed = geometry.clone();
+            let mut reversed = match &geometry {
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                        curve.try_clone_for_decode(ctx, "ASM reversed carrier curve")?,
+                    ))
+                }
+                _ => geometry.clone(),
+            };
             reverse_curve_geometry(&mut reversed);
             charged_push!(ctx, out.curves, Curve {
                 id: brep_id!(format, CurveId, "entity", brep_key!(i, ":reversed")),

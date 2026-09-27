@@ -4179,17 +4179,28 @@ fn t_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Token], tabl
     }))
 }
 
-fn copy_revision_discontinuities(
+pub(crate) fn copy_revision_discontinuities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &[Vec<f64>; 6],
 ) -> Result<[Vec<f64>; 6], cadmpeg_core::CodecError> {
+    fn copy_lane(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        source: &[f64],
+    ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+        let count = u64::try_from(source.len())
+            .map_err(|_| ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX))?;
+        let bytes = count.checked_mul(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX))?;
+        ctx.charge_retained(bytes, "ASM revision discontinuities")?;
+        crate::decode_alloc::collect_vec(ctx, source.iter().copied(), "ASM revision discontinuities")
+    }
     Ok([
-        crate::decode_alloc::collect_vec(ctx, source[0].iter().copied(), "ASM revision discontinuities")?,
-        crate::decode_alloc::collect_vec(ctx, source[1].iter().copied(), "ASM revision discontinuities")?,
-        crate::decode_alloc::collect_vec(ctx, source[2].iter().copied(), "ASM revision discontinuities")?,
-        crate::decode_alloc::collect_vec(ctx, source[3].iter().copied(), "ASM revision discontinuities")?,
-        crate::decode_alloc::collect_vec(ctx, source[4].iter().copied(), "ASM revision discontinuities")?,
-        crate::decode_alloc::collect_vec(ctx, source[5].iter().copied(), "ASM revision discontinuities")?,
+        copy_lane(ctx, &source[0])?,
+        copy_lane(ctx, &source[1])?,
+        copy_lane(ctx, &source[2])?,
+        copy_lane(ctx, &source[3])?,
+        copy_lane(ctx, &source[4])?,
+        copy_lane(ctx, &source[5])?,
     ])
 }
 
@@ -4768,6 +4779,18 @@ mod reference_allocation_tests {
         let error = copy_revision_discontinuities(&ctx, &source)
             .expect_err("one discontinuity exceeds zero items");
         assert_refusal(error, ResourceDimension::CollectionItems, "ASM revision discontinuities");
+    }
+
+    #[test]
+    fn revision_discontinuity_copy_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let source = [vec![1.0], Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        let error = copy_revision_discontinuities(&ctx, &source)
+            .expect_err("one f64 exceeds seven retained bytes");
+        assert_refusal(error, ResourceDimension::RetainedBytes, "ASM revision discontinuities");
     }
 
     #[test]

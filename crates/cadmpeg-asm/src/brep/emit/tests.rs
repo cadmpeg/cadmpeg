@@ -24,6 +24,36 @@ fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
 }
 
 #[test]
+fn reversed_nurbs_carrier_copy_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::math::Point3;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).unwrap();
+    let mut carriers = Carriers::default();
+    carriers.curve_geo.insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
+    let error = emit_carrier_curve(
+        &ctx, &mut AsmBrep::default(), 4, &mut carriers,
+        &HashSet::from([4]), &HashSet::from([4]), crate::asm_format!("f3d"),
+    ).expect_err("four knots exceed three collection items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "ASM reversed carrier curve");
+}
+
+#[test]
 fn procedural_source_id_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
