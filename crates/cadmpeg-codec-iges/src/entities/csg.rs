@@ -6,6 +6,7 @@ use super::geometry::{
     ProjectionOutcome,
 };
 use super::pointer;
+use crate::decode_resource::{insert_optional_btree_map, insert_optional_btree_set, reserve_optional_vec};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -68,20 +69,22 @@ fn boolean_tree_is_valid(
     boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
     path: &mut BTreeSet<u32>,
     memo: &mut BTreeMap<u32, bool>,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let _depth = ctx.map(|ctx| ctx.enter_nested("iges boolean tree validation")).transpose()?;
     if let Some(valid) = memo.get(&sequence) {
-        return *valid;
+        return Ok(*valid);
     }
-    if !path.insert(sequence) {
-        return false;
+    if !insert_optional_btree_set(ctx, path, sequence, "iges boolean validation path")? {
+        return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
         path.remove(&sequence);
-        return false;
+        return Ok(false);
     };
     let Some(terms) = boolean_definitions.get(&sequence) else {
         path.remove(&sequence);
-        return false;
+        return Ok(false);
     };
     let has_direct_brep = terms.iter().any(|term| {
         matches!(
@@ -92,29 +95,31 @@ fn boolean_tree_is_valid(
                     .is_some_and(|target| target.entity_type == 186)
         )
     });
-    let operands_valid = terms.iter().all(|term| match term {
-        BooleanTerm::Operation => true,
-        BooleanTerm::Operand(target_sequence) => {
-            entries.get(target_sequence).is_some_and(|target| {
-                matches!(
-                    target.entity_type,
-                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
-                ) || (target.entity_type == 180
-                    && boolean_tree_is_valid(
-                        *target_sequence,
-                        entries,
-                        boolean_definitions,
-                        path,
-                        memo,
-                    ))
-                    || (entry.form == 1 && target.entity_type == 186)
-            })
+    let mut operands_valid = true;
+    for term in terms {
+        if let Some(ctx) = ctx {
+            ctx.charge_work(1, "iges boolean term validation")?;
         }
-    });
+        let valid = match term {
+            BooleanTerm::Operation => true,
+            BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
+                Some(target) if matches!(target.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430) => true,
+                Some(target) if target.entity_type == 180 => boolean_tree_is_valid(
+                    *target_sequence, entries, boolean_definitions, path, memo, ctx,
+                )?,
+                Some(target) => entry.form == 1 && target.entity_type == 186,
+                None => false,
+            },
+        };
+        if !valid {
+            operands_valid = false;
+            break;
+        }
+    }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    memo.insert(sequence, valid);
-    valid
+    insert_optional_btree_map(ctx, memo, sequence, valid, "iges boolean validity memo")?;
+    Ok(valid)
 }
 
 pub(super) fn project(
@@ -162,29 +167,33 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive placement is invalid"))?;
             continue;
         }
-        let dimensions = match entry.entity_type {
-            150 | 168 => (1..=3)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            152 => (1..=4)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            154 => (1..=2)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            156 => [record.number(1), record.number(2), record.number_or(3, 0.0)]
-                .into_iter()
-                .collect::<Option<Vec<_>>>(),
-            158 => record.number(1).map(|value| vec![value]),
-            160 => (1..=2)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            _ => None,
+        let dimension_count = match entry.entity_type {
+            150 | 156 | 168 => 3,
+            152 => 4,
+            154 | 160 => 2,
+            158 => 1,
+            _ => 0,
         };
-        let Some(dimensions) = dimensions else {
+        let mut dimensions = [0.0; 4];
+        let mut dimensions_present = true;
+        for (index, dimension) in dimensions.iter_mut().enumerate().take(dimension_count) {
+            let value = if entry.entity_type == 156 && index == 2 {
+                record.number_or(index + 1, 0.0)
+            } else {
+                record.number(index + 1)
+            };
+            if let Some(value) = value {
+                *dimension = value;
+            } else {
+                dimensions_present = false;
+                break;
+            }
+        }
+        if !dimensions_present {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive dimensions are not numeric"))?;
             continue;
-        };
+        }
+        let dimensions = &dimensions[..dimension_count];
         let dimensions_valid = match entry.entity_type {
             150 => dimensions
                 .iter()
@@ -355,8 +364,10 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix length is not greater than two"))?;
             continue;
         };
-        let terms = (0..count)
-            .map(|index| {
+        let mut terms = reserve_optional_vec(ctx, count, "iges Boolean postfix terms")?;
+        let mut terms_valid = true;
+        for index in 0..count {
+            let term = (|| {
                 let value = record.integer(2 + index)?;
                 if value < 0 {
                     let sequence = u32::try_from(value.checked_neg()?).ok()?;
@@ -366,9 +377,15 @@ pub(super) fn project(
                 } else {
                     None
                 }
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(terms) = terms else {
+            })();
+            if let Some(term) = term {
+                terms.push(term);
+            } else {
+                terms_valid = false;
+                break;
+            }
+        }
+        if !terms_valid {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix term is invalid"))?;
             continue;
         };
@@ -388,7 +405,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix stack is unbalanced"))?;
             continue;
         }
-        boolean_definitions.insert(entry.sequence, terms);
+        insert_optional_btree_map(ctx, &mut boolean_definitions, entry.sequence, terms, "iges Boolean definition nodes")?;
     }
     let mut visited = BTreeSet::new();
     let mut boolean_validity = BTreeMap::new();
@@ -400,7 +417,8 @@ pub(super) fn project(
             &boolean_definitions,
             &mut BTreeSet::new(),
             &mut boolean_validity,
-        );
+            ctx,
+        )?;
         let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
             boolean_definitions
                 .get(&sequence)
@@ -451,10 +469,8 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component Boolean tree pointer is invalid"))?;
             continue;
         };
-        let point = (2..=4)
-            .map(|index| record.number(index))
-            .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
+        let point_valid = (2..=4).all(|index| record.number(index).is_some());
+        if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component point or entity-use flag is invalid"))?;
             continue;
         }
