@@ -4544,6 +4544,7 @@ fn extend_related_design_records(
     )?;
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_record_headers,
