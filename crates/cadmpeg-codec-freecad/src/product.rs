@@ -62,8 +62,8 @@ pub(crate) fn transfer(
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?
             .flatten();
-        let placement = selected_placement(&owned)?;
-        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
+        let placement = selected_placement(ctx, &owned)?;
+        let local_transform = placement.map(|property| placement_matrix(ctx, property)).transpose()?.flatten();
         let link_transform = bool_property(&owned, "LinkTransform")?;
         let element_count = integer_property(&owned, "ElementCount")?
             .map(u64::try_from)
@@ -263,8 +263,8 @@ pub(crate) fn transfer_neutral(
     }
     let mut placements_by_object = HashMap::new();
     for (&owner, owned) in &properties_by_owner {
-        if let Some(property) = selected_placement(owned)? {
-            if let Some(placement) = placement_matrix(property)? {
+        if let Some(property) = selected_placement(ctx, owned)? {
+            if let Some(placement) = placement_matrix(ctx, property)? {
                 ctx.charge_collection_items(1, "fcstd product placements")?;
                 placements_by_object.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product placements"))?;
                 placements_by_object.insert(owner, placement.transform());
@@ -794,12 +794,13 @@ fn single_value<'a>(
 }
 
 fn selected_placement<'a>(
+    ctx: &DecodeContext<'_>,
     properties: &[&'a PropertyRecord],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
     let link_placement = sole_named_property("product", properties, "LinkPlacement")?;
     let placement = sole_named_property("product", properties, "Placement")?;
     for property in [link_placement, placement].into_iter().flatten() {
-        placement_matrix(property)?;
+        placement_matrix(ctx, property)?;
     }
     match (link_placement, placement) {
         (Some(link_placement), Some(placement)) => {

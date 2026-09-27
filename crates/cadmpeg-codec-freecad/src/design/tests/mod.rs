@@ -12,6 +12,41 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn sketch_placement_error_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "placement-property".into(),
+        owner: "sketch".into(),
+        name: "Placement".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let expected = "sketch Placement placement carrier has runtime type App::PropertyString";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::validate_sketch_placement(&ctx, &[&property]),
+        Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).expect("message length fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::validate_sketch_placement(&ctx, &[&property]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD sketch placement error"));
+    assert!(matches!(super::sketch_frame(&ctx, &[&property]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD sketch placement error"));
+}
+
+#[test]
 fn design_ordered_objects_refuse_at_caller_limit() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Body".into(),
