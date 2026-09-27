@@ -5645,37 +5645,38 @@ pub(super) fn mesh_face_endpoint_configurations(
 /// by `mesh_face_endpoint_configurations`; the checks below still compare
 /// them as unordered pairs so callers cannot depend on that representation.
 fn endpoint_configuration_boundary_cycle_viable(
+    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     pairs: &HashMap<usize, [usize; 2]>,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     if boundary.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let first = boundary.first()?;
-    let first_pair = *pairs.get(&first.edge)?;
-    let first_directions = if first_pair[0] == first_pair[1] {
-        vec![false]
-    } else {
-        vec![false, true]
+    let Some(first) = boundary.first() else {
+        return Ok(None);
     };
-    let mut states = first_directions
-        .into_iter()
-        .map(|direction| {
-            let start = if direction {
-                first_pair[1]
-            } else {
-                first_pair[0]
-            };
-            let current = if direction {
-                first_pair[0]
-            } else {
-                first_pair[1]
-            };
-            (start, current)
-        })
-        .collect::<Vec<_>>();
+    let Some(&first_pair) = pairs.get(&first.edge) else {
+        return Ok(None);
+    };
+    let mut states = Vec::new();
+    crate::resource::push(
+        ctx,
+        &mut states,
+        (first_pair[0], first_pair[1]),
+        "catia_endpoint_cycle_initial_states",
+    )?;
+    if first_pair[0] != first_pair[1] {
+        crate::resource::push(
+            ctx,
+            &mut states,
+            (first_pair[1], first_pair[0]),
+            "catia_endpoint_cycle_initial_states",
+        )?;
+    }
     for use_ in &boundary[1..] {
-        let pair = *pairs.get(&use_.edge)?;
+        let Some(&pair) = pairs.get(&use_.edge) else {
+            return Ok(None);
+        };
         let mut next = Vec::new();
         for (start, current) in states {
             for direction in [false, true] {
@@ -5685,54 +5686,85 @@ fn endpoint_configuration_boundary_cycle_viable(
                 let edge_start = if direction { pair[1] } else { pair[0] };
                 let edge_end = if direction { pair[0] } else { pair[1] };
                 if edge_start == current {
-                    next.push((start, edge_end));
+                    crate::resource::push(
+                        ctx,
+                        &mut next,
+                        (start, edge_end),
+                        "catia_endpoint_cycle_next_states",
+                    )?;
                 }
             }
         }
         states = next;
         if states.is_empty() {
-            return Some(false);
+            return Ok(Some(false));
         }
     }
-    Some(states.into_iter().any(|(start, current)| start == current))
+    Ok(Some(
+        states.into_iter().any(|(start, current)| start == current),
+    ))
 }
 
 fn endpoint_configuration_cycles_viable(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     configuration: &MeshFaceEndpointConfiguration,
-) -> Option<bool> {
-    let pairs = configuration.iter().copied().collect::<HashMap<_, _>>();
-    if pairs.len() != configuration.len() {
-        return None;
+) -> Result<Option<bool>, CodecError> {
+    let mut pairs = HashMap::new();
+    for &(edge, pair) in configuration {
+        crate::resource::insert_map(ctx, &mut pairs, edge, pair, "catia_endpoint_cycle_pair_map")?;
     }
-    Some(
-        !assignment.boundaries.is_empty()
-            && assignment.boundaries.iter().all(|boundary| {
-                endpoint_configuration_boundary_cycle_viable(boundary, &pairs)
-                    .is_some_and(|viable| viable)
-            }),
-    )
+    if pairs.len() != configuration.len() {
+        return Ok(None);
+    }
+    if assignment.boundaries.is_empty() {
+        return Ok(Some(false));
+    }
+    for boundary in &assignment.boundaries {
+        if endpoint_configuration_boundary_cycle_viable(ctx, boundary, &pairs)? != Some(true) {
+            return Ok(Some(false));
+        }
+    }
+    Ok(Some(true))
 }
 
 fn endpoint_configuration_for_assignment(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     edge_pairs: &[[usize; 2]],
-) -> Option<MeshFaceEndpointConfiguration> {
+) -> Result<Option<MeshFaceEndpointConfiguration>, CodecError> {
     let mut pairs = HashMap::<usize, [usize; 2]>::new();
     for use_ in assignment.boundaries.iter().flatten() {
-        let mut pair = *edge_pairs.get(use_.edge)?;
+        let Some(&pair) = edge_pairs.get(use_.edge) else {
+            return Ok(None);
+        };
+        let mut pair = pair;
         pair.sort_unstable();
         match pairs.get(&use_.edge) {
-            Some(previous) if *previous != pair => return None,
+            Some(previous) if *previous != pair => return Ok(None),
             Some(_) => {}
             None => {
-                pairs.insert(use_.edge, pair);
+                crate::resource::insert_map(
+                    ctx,
+                    &mut pairs,
+                    use_.edge,
+                    pair,
+                    "catia_endpoint_assignment_pair_map",
+                )?;
             }
         }
     }
-    let mut configuration = pairs.into_iter().collect::<Vec<_>>();
+    let mut configuration = Vec::new();
+    for pair in pairs {
+        crate::resource::push(
+            ctx,
+            &mut configuration,
+            pair,
+            "catia_endpoint_assignment_configuration",
+        )?;
+    }
     configuration.sort_unstable();
-    Some(configuration)
+    Ok(Some(configuration))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -6761,12 +6793,15 @@ where
             } else {
                 let mut viable = Vec::new();
                 for (assignment, assignment_value) in face_assignments[face].iter().enumerate() {
-                    let Some(configuration) =
-                        endpoint_configuration_for_assignment(assignment_value, &completed_pairs)
+                    let Some(configuration) = endpoint_configuration_for_assignment(
+                        ctx,
+                        assignment_value,
+                        &completed_pairs,
+                    )?
                     else {
                         continue;
                     };
-                    if endpoint_configuration_cycles_viable(assignment_value, &configuration)
+                    if endpoint_configuration_cycles_viable(ctx, assignment_value, &configuration)?
                         != Some(true)
                     {
                         continue;
@@ -6932,7 +6967,9 @@ fn collect_endpoint_relation_face_choices(
             let Some(face_assignment) = face_assignments.get(assignment) else {
                 return Ok(None);
             };
-            if endpoint_configuration_cycles_viable(face_assignment, configuration) != Some(true) {
+            if endpoint_configuration_cycles_viable(ctx, face_assignment, configuration)?
+                != Some(true)
+            {
                 continue;
             }
             let mut relation_configuration = crate::resource::copy_slice(
@@ -7677,7 +7714,8 @@ fn resolve_fixed_mesh_endpoint_pairs(
     let mut fixed_face_directions = Vec::with_capacity(selected.len());
     let mut direction_overflow = false;
     for assignment in selected {
-        let Some(configuration) = endpoint_configuration_for_assignment(assignment, &edge_pairs)
+        let Some(configuration) =
+            endpoint_configuration_for_assignment(ctx, assignment, &edge_pairs)?
         else {
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
         };
@@ -11009,6 +11047,102 @@ fn relation_coordinate_candidates_refuse_before_invalid_edge_result() {
         Err(CodecError::ResourceLimit(limit))
             if limit.operation == "catia_relation_coordinate_candidate_pairs"
     ));
+}
+
+#[test]
+fn endpoint_configuration_helpers_refuse_before_absent_results() {
+    let use_edge = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let invalid_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_edge(0), use_edge(1)]],
+    };
+    let assignment_result = |ctx: &DecodeContext<'_>| {
+        endpoint_configuration_for_assignment(ctx, &invalid_assignment, &[[0, 1]])
+    };
+    assert!(crate::test_support::with_service_context(assignment_result)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, assignment_result),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_endpoint_assignment_pair_map"
+    ));
+
+    let valid_assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_edge(0)]],
+    };
+    let duplicate_configuration = vec![(0, [0, 1]), (0, [0, 1])];
+    let cycle_result = |ctx: &DecodeContext<'_>| {
+        endpoint_configuration_cycles_viable(ctx, &valid_assignment, &duplicate_configuration)
+    };
+    assert!(crate::test_support::with_service_context(cycle_result)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, cycle_result),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_endpoint_cycle_pair_map"
+    ));
+
+    let pairs = HashMap::from([(0, [0, 1]), (1, [1, 0])]);
+    let invalid_boundary = vec![use_edge(0), use_edge(1), use_edge(2)];
+    let boundary_result = |ctx: &DecodeContext<'_>| {
+        endpoint_configuration_boundary_cycle_viable(ctx, &invalid_boundary, &pairs)
+    };
+    assert!(crate::test_support::with_service_context(boundary_result)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(2, boundary_result),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_endpoint_cycle_next_states"
+    ));
+}
+
+#[test]
+fn endpoint_configuration_helpers_charge_completed_collections() {
+    let use_edge = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 1,
+        reversed: None,
+    };
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![use_edge(0), use_edge(1)]],
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        let configuration =
+            endpoint_configuration_for_assignment(ctx, &assignment, &[[0, 1], [1, 0]])?
+                .expect("valid assignment");
+        endpoint_configuration_cycles_viable(ctx, &assignment, &configuration)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(true)
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..32 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(true)) => break,
+            _ => panic!("unexpected endpoint configuration result"),
+        }
+    }
+    for operation in [
+        "catia_endpoint_assignment_pair_map",
+        "catia_endpoint_assignment_configuration",
+        "catia_endpoint_cycle_pair_map",
+        "catia_endpoint_cycle_initial_states",
+        "catia_endpoint_cycle_next_states",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
