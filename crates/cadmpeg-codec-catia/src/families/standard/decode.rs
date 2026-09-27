@@ -4390,6 +4390,7 @@ fn attach_standard_topology(
                 center,
                 radius,
             } => standard_circle_endpoint_candidates(
+                ctx,
                 &ir.model.points,
                 center.get(),
                 radius.get(),
@@ -4407,7 +4408,7 @@ fn attach_standard_topology(
                             .and_then(|bounds| bounds[support.faces[1]]),
                     ),
                 ]),
-            ),
+            ).map_err(StandardTopologyError::Resource)?,
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
@@ -4450,8 +4451,10 @@ fn attach_standard_topology(
         };
         endpoint_candidates.push(candidates);
     }
-    let edge_classes = standard_curve_edge_classes(&supports);
-    let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
+    let edge_classes = standard_curve_edge_classes(ctx, &supports)
+        .map_err(StandardTopologyError::Resource)?;
+    let edge_geometry = standard_curve_geometry_gauge_keys(ctx, &supports)
+        .map_err(StandardTopologyError::Resource)?;
     let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
         .map_err(StandardTopologyError::Resource)?;
     let mut native_edges = topology_graph
@@ -5528,7 +5531,7 @@ fn attach_standard_topology(
                         selected.faces = *faces;
                         selected
                     }));
-                    let selected_edge_classes = standard_curve_edge_classes(&selected_supports);
+                    let selected_edge_classes = standard_curve_edge_classes(ctx, &selected_supports)?;
                     solve_mesh_candidate(
                         selected_edge_faces,
                         &selected_supports,
@@ -6365,9 +6368,11 @@ fn resolve_standard_endpoint_pairs(
 }
 
 fn standard_curve_edge_classes(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) -> Vec<usize> {
-    let mut classes = Vec::with_capacity(supports.len());
+) -> Result<Vec<usize>, CodecError> {
+    let mut classes = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut classes, supports.len(), "catia_standard_edge_classes")?;
     for (edge, support) in supports.iter().enumerate() {
         let class = supports[..edge]
             .iter()
@@ -6403,15 +6408,16 @@ fn standard_curve_edge_classes(
             .map_or(edge, |candidate| classes[candidate]);
         classes.push(class);
     }
-    classes
+    Ok(classes)
 }
 
 fn standard_curve_geometry_gauge_keys(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
-) -> Vec<MeshEdgeGeometry> {
-    supports
-        .iter()
-        .map(|support| match &support.geometry {
+) -> Result<Vec<MeshEdgeGeometry>, CodecError> {
+    let mut keys = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut keys, supports.len(), "catia_standard_geometry_gauge_keys")?;
+    keys.extend(supports.iter().map(|support| match &support.geometry {
             crate::families::standard::records::StandardCurveGeometry::Line => {
                 MeshEdgeGeometry::Line
             }
@@ -6425,11 +6431,12 @@ fn standard_curve_geometry_gauge_keys(
             crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 MeshEdgeGeometry::Bspline
             }
-        })
-        .collect()
+        }));
+    Ok(keys)
 }
 
 fn standard_circle_endpoint_candidates(
+    ctx: &DecodeContext<'_>,
     points: &[Point],
     center: Point3,
     radius: f64,
@@ -6439,11 +6446,9 @@ fn standard_circle_endpoint_candidates(
             Option<crate::families::standard::records::StandardFaceBounds>,
         ); 2],
     >,
-) -> Vec<usize> {
-    points
-        .iter()
-        .enumerate()
-        .filter_map(|(index, point)| {
+) -> Result<Vec<usize>, CodecError> {
+    let mut candidates = Vec::new();
+    for (index, point) in points.iter().enumerate() {
             let on_circle =
                 (point.position().get().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
             let incident = faces.is_none_or(|faces| {
@@ -6451,9 +6456,11 @@ fn standard_circle_endpoint_candidates(
                     point_on_standard_face(point.position().get(), surface, bounds)
                 })
             });
-            (on_circle && incident).then_some(index)
-        })
-        .collect()
+            if on_circle && incident {
+                crate::resource::push(ctx, &mut candidates, index, "catia_circle_endpoint_candidates")?;
+            }
+    }
+    Ok(candidates)
 }
 
 /// Resolve standard-row endpoints from equal standard and native edge identities.

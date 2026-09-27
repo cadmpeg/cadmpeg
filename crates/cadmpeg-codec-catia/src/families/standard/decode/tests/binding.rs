@@ -23,6 +23,8 @@ use crate::families::standard::decode::point_on_standard_face;
 use crate::families::standard::decode::same_cone_generator_pair;
 use crate::families::standard::decode::standard_analytic_curve_parameter_range;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
+use crate::families::standard::decode::standard_curve_edge_classes;
+use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
 use crate::families::standard::decode::standard_endpoint_pair_supports_topology;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_oriented_analytic_curve_parameter_range;
@@ -410,6 +412,10 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
 
 #[test]
 fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
@@ -425,13 +431,51 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
         ),
     ];
     assert_eq!(
-        standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0, None,),
+        standard_circle_endpoint_candidates(&ctx, &points, Point3::new(0.0, 0.0, 7.0), 5.0, None,).expect("service budget"),
         [0]
     );
 }
 
 #[test]
+fn standard_endpoint_and_edge_builders_refuse_before_collection_growth() {
+    use cadmpeg_core::CodecError;
+
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    };
+    let supports = [support];
+    let point = Point::new(
+        PointId::mint("catia:test:point#builder".to_string()).expect("identity grammar"),
+        FinitePoint3::new(Point3::new(3.0, 4.0, 0.0)).expect("finite point"),
+        None,
+    );
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_curve_edge_classes(ctx, &supports)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_edge_classes"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_curve_geometry_gauge_keys(ctx, &supports)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_geometry_gauge_keys"
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| standard_circle_endpoint_candidates(ctx, &[point], Point3::new(0.0, 0.0, 0.0), 5.0, None)),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_circle_endpoint_candidates"
+    ));
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(standard_curve_edge_classes(ctx, &supports).expect("service budget"), [0]);
+        assert_eq!(standard_curve_geometry_gauge_keys(ctx, &supports).expect("service budget").len(), 1);
+    });
+}
+
+#[test]
 fn standard_circle_endpoint_domain_requires_both_face_carriers() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
@@ -458,17 +502,22 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let right = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
         standard_circle_endpoint_candidates(
+            &ctx,
             &points,
             Point3::new(0.0, 0.0, 0.0),
             5.0,
             Some([(&left, None), (&right, None)]),
-        ),
+        ).expect("service budget"),
         [0]
     );
 }
 
 #[test]
 fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let points = [
         Point::new(
             PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
@@ -506,11 +555,12 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
 
     assert_eq!(
         standard_circle_endpoint_candidates(
+            &ctx,
             &points,
             Point3::new(0.0, 0.0, 0.0),
             5.0,
             Some([(&surface, Some(bounds)), (&surface, Some(bounds))]),
-        ),
+        ).expect("service budget"),
         [0]
     );
 }
