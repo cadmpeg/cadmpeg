@@ -1003,37 +1003,88 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
 
 /// Describe the decoded container without constructing its entry inventory.
 pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
-    let mut notes = vec![format!(
-        "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-         entry/entries, {} cache-cell(s), {} compound stream(s)",
-        scan.version,
-        scan.blocks.len(),
-        scan.directory.len(),
-        scan.cache_cells.len(),
-        scan.compound_streams.len()
-    )];
-    match active_parasolid_summary(scan) {
-        Some((name, size, sch)) => notes.push(format!(
+    let active = match active_parasolid_summary(scan) {
+        Some((name, size, sch)) => format!(
             "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
             name, size, sch.schema
-        )),
-        None => notes.push(
-            "no unique active Parasolid partition located; available B-rep sites remain decodable"
-                .to_string(),
         ),
-    }
-    notes.push(
+        None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
+    };
+    notes_with_active(scan, active)
+}
+
+const NO_ACTIVE_PARASOLID_NOTE: &str =
+    "no unique active Parasolid partition located; available B-rep sites remain decodable";
+
+fn notes_with_active(scan: &ContainerScan<'_>, active: String) -> Vec<String> {
+    vec![
+        format!(
+            "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
+         entry/entries, {} cache-cell(s), {} compound stream(s)",
+            scan.version,
+            scan.blocks.len(),
+            scan.directory.len(),
+            scan.cache_cells.len(),
+            scan.compound_streams.len()
+        ),
+        active,
         "Parasolid body streams supply the typed topology and analytic carriers used by decode"
             .to_string(),
-    );
-    notes
+    ]
+}
+
+pub(crate) fn notes_charged(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Vec<String>, CodecError> {
+    use std::fmt::Write;
+
+    let active = match active_parasolid_summary(scan) {
+        Some((name, size, sch)) => {
+            const PREFIX: &str = "active Parasolid B-rep candidate: ";
+            const MIDDLE: &str = " (";
+            const SUFFIX: &str = " bytes, schema ";
+            const CLOSE: &str = ")";
+            let schema = sch.schema.value();
+            let required = [
+                PREFIX.len(),
+                name.len(),
+                MIDDLE.len(),
+                size.to_string().len(),
+                SUFFIX.len(),
+                schema.len(),
+                CLOSE.len(),
+            ]
+            .into_iter()
+            .try_fold(0_usize, usize::checked_add)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
+            })?;
+            let mut active = String::new();
+            ctx.reserve_retained_string(
+                &mut active,
+                required,
+                "retain SLDPRT active site note",
+            )?;
+            write!(active, "{PREFIX}{name}{MIDDLE}{size}{SUFFIX}{schema}{CLOSE}").map_err(
+                |_| ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX),
+            )?;
+            active
+        }
+        None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
+    };
+    Ok(notes_with_active(scan, active))
 }
 
 pub(crate) fn active_parasolid_summary<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Option<(String, usize, &'a crate::parasolid::StreamHeader)> {
+) -> Option<(&'a str, usize, &'a crate::parasolid::StreamHeader)> {
     let selected = select_active_parasolid_site(scan)?;
-    Some((selected.name(), selected.payload.len(), selected.header))
+    Some((
+        selected.section.source_stream().as_str(),
+        selected.payload.len(),
+        selected.header,
+    ))
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
