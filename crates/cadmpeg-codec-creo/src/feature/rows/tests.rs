@@ -7,9 +7,7 @@ use crate::feature::entity::entity_graph;
 use crate::feature::entity::read_entries;
 use crate::feature::rows::loop_history_entries;
 use crate::feature::rows::loop_history_roster;
-use crate::feature::rows::replay_affected_ids;
 use crate::feature::rows::rows;
-use crate::feature::rows::surface_merge_replay_affected_ids;
 use crate::feature::rows::AffectedIdKind;
 use crate::feature::rows::FeatureAffectedIds;
 use crate::feature::rows::FeatureChoice;
@@ -45,6 +43,21 @@ fn geometry_tables(rows: &[FeatureRow]) -> Vec<super::FeatureGeometryTable> {
 fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<super::FeatureRoundReplayScalar> {
     crate::decode::with_test_decode_ctx(|ctx| super::round_replay_scalars(ctx, rows))
         .expect("round replay scalars are admitted")
+}
+
+fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<super::FeatureReplayAffectedIds> {
+    crate::decode::with_test_decode_ctx(|ctx| super::replay_affected_ids(ctx, rows))
+        .expect("replay affected ids are admitted")
+}
+
+fn surface_merge_replay_affected_ids(
+    rows: &[FeatureRow],
+    named: &[FeatureAffectedIds],
+) -> Vec<super::FeatureSurfaceMergeAffectedIds> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::surface_merge_replay_affected_ids(ctx, rows, named)
+    })
+    .expect("surface-merge affected ids are admitted")
 }
 
 fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {

@@ -1047,11 +1047,19 @@ fn skip_replay_position_reference(run: &[u8], cursor: usize) -> Option<usize> {
     (run.get(after) == Some(&psb::token::ARRAY_OPEN)).then_some(after)
 }
 
-fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, usize)> {
+fn replay_ids(
+    ctx: &DecodeContext<'_>,
+    run: &[u8],
+    count: u32,
+    mut cursor: usize,
+) -> Option<Result<(Vec<u32>, usize), CodecError>> {
     // Each id is a compact int of at least one byte, so the count cannot exceed
     // the unread bytes of the run.
-    bounded_len(u64::from(count), 1, run.len().saturating_sub(cursor))?;
-    let mut ids = Vec::with_capacity(count as usize);
+    let capacity = bounded_len(u64::from(count), 1, run.len().saturating_sub(cursor))?;
+    let mut ids = Vec::new();
+    if let Err(error) = ctx.try_reserve_items(&mut ids, capacity, "creo replay affected ids") {
+        return Some(Err(error));
+    }
     for _ in 0..count {
         let (id, after) = psb::compact_int(run, cursor);
         if after == cursor {
@@ -1060,7 +1068,7 @@ fn replay_ids(run: &[u8], count: u32, mut cursor: usize) -> Option<(Vec<u32>, us
         ids.push(id);
         cursor = after;
     }
-    Some((ids, cursor))
+    Some(Ok((ids, cursor)))
 }
 
 struct ReplayAffectedPair {
@@ -1071,28 +1079,42 @@ struct ReplayAffectedPair {
     consumed: usize,
 }
 
-fn replay_affected_pair(run: &[u8], extents: [Option<u32>; 2]) -> Option<ReplayAffectedPair> {
+fn replay_affected_pair(
+    ctx: &DecodeContext<'_>,
+    run: &[u8],
+    extents: [Option<u32>; 2],
+) -> Option<Result<ReplayAffectedPair, CodecError>> {
     let (geometry_count, geometry_extent, cursor) =
         replay_extent(run, 0, b"geoms_affected", extents[0])?;
-    let (geometry_ids, cursor) = replay_ids(run, geometry_count, cursor)?;
+    let (geometry_ids, cursor) = match replay_ids(ctx, run, geometry_count, cursor)? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
     let cursor = skip_replay_position_reference(run, cursor)?;
     let (edge_count, edge_extent, cursor) =
         replay_extent(run, cursor, b"edgs_affected", extents[1])?;
-    let (edge_ids, cursor) = replay_ids(run, edge_count, cursor)?;
-    Some(ReplayAffectedPair {
+    let (edge_ids, cursor) = match replay_ids(ctx, run, edge_count, cursor)? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(ReplayAffectedPair {
         geometry_ids,
         edge_ids,
         geometry_extent,
         edge_extent,
         consumed: cursor,
-    })
+    }))
 }
 
-fn explicit_replay_array(run: &[u8], opener: usize) -> Option<(Vec<u32>, usize)> {
+fn explicit_replay_array(
+    ctx: &DecodeContext<'_>,
+    run: &[u8],
+    opener: usize,
+) -> Option<Result<(Vec<u32>, usize), CodecError>> {
     (run.get(opener) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, cursor) = psb::compact_int(run, opener + 1);
     (cursor > opener + 1).then_some(())?;
-    replay_ids(run, count, cursor)
+    replay_ids(ctx, run, count, cursor)
 }
 
 fn replay_entity_reference_end(bytes: &[u8], cursor: usize) -> Option<usize> {
@@ -1140,48 +1162,54 @@ fn replay_array_trailer(bytes: &[u8]) -> bool {
 }
 
 fn explicit_replay_pair_before_suffix(
+    ctx: &DecodeContext<'_>,
     row: &FeatureRow,
     suffix: usize,
-) -> Option<(ReplayAffectedPair, usize)> {
-    let arrays = row.body[..suffix]
-        .iter()
-        .enumerate()
-        .filter_map(|(opener, byte)| {
-            (*byte == psb::token::ARRAY_OPEN)
-                .then(|| explicit_replay_array(&row.body[..suffix], opener))
-                .flatten()
-                .map(|(ids, end)| (opener, ids, end))
-        })
-        .collect::<Vec<_>>();
-    let [.., geometry, edges] = arrays.as_slice() else {
-        return None;
-    };
-    let pair_prefix = match arrays.len() {
-        2 => geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE,
-        _ => {
-            let preceding = &arrays[arrays.len() - 3];
-            replay_array_separator(&row.body[preceding.2..geometry.0])
+) -> Option<Result<(ReplayAffectedPair, usize), CodecError>> {
+    let mut arrays = Vec::new();
+    for (opener, &byte) in row.body[..suffix].iter().enumerate() {
+        if byte != psb::token::ARRAY_OPEN {
+            continue;
         }
+        let Some(decoded) = explicit_replay_array(ctx, &row.body[..suffix], opener) else {
+            continue;
+        };
+        let (ids, end) = match decoded {
+            Ok(decoded) => decoded,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Err(error) = ctx.try_reserve_items(&mut arrays, 1, "creo explicit replay arrays") {
+            return Some(Err(error));
+        }
+        arrays.push((opener, ids, end));
+    }
+    let edges = arrays.pop()?;
+    let geometry = arrays.pop()?;
+    let pair_prefix = if let Some(preceding) = arrays.last() {
+        replay_array_separator(&row.body[preceding.2..geometry.0])
+    } else {
+        geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE
     };
     pair_prefix.then_some(())?;
     replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
     replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
-    Some((
+    Some(Ok((
         ReplayAffectedPair {
-            geometry_ids: geometry.1.clone(),
-            edge_ids: edges.1.clone(),
+            geometry_ids: geometry.1,
+            edge_ids: edges.1,
             geometry_extent: ReplayExtentSource::Explicit,
             edge_extent: ReplayExtentSource::Explicit,
             consumed: suffix - geometry.0,
         },
         geometry.0,
-    ))
+    )))
 }
 
 fn unique_unanchored_replay_pair(
+    ctx: &DecodeContext<'_>,
     row: &FeatureRow,
     extents: [Option<u32>; 2],
-) -> Option<(ReplayAffectedPair, usize)> {
+) -> Option<Result<(ReplayAffectedPair, usize), CodecError>> {
     let mut candidates = Vec::new();
     for suffix in row
         .body
@@ -1218,7 +1246,15 @@ fn unique_unanchored_replay_pair(
         {
             continue;
         }
-        if let Some(pair) = explicit_replay_pair_before_suffix(row, suffix) {
+        if let Some(decoded) = explicit_replay_pair_before_suffix(ctx, row, suffix) {
+            let pair = match decoded {
+                Ok(pair) => pair,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) = ctx.try_reserve_items(&mut candidates, 1, "creo replay candidates")
+            {
+                return Some(Err(error));
+            }
             candidates.push(pair);
             continue;
         }
@@ -1226,16 +1262,25 @@ fn unique_unanchored_replay_pair(
             if row.body[start - 1] != psb::token::COMPOUND_CLOSE {
                 continue;
             }
-            let Some(pair) = replay_affected_pair(&row.body[start..suffix], extents) else {
+            let Some(decoded) = replay_affected_pair(ctx, &row.body[start..suffix], extents) else {
                 continue;
             };
+            let pair = match decoded {
+                Ok(pair) => pair,
+                Err(error) => return Some(Err(error)),
+            };
             if pair.consumed == suffix - start {
+                if let Err(error) =
+                    ctx.try_reserve_items(&mut candidates, 1, "creo replay candidates")
+                {
+                    return Some(Err(error));
+                }
                 candidates.push((pair, start));
             }
         }
     }
     (candidates.len() == 1).then_some(())?;
-    candidates.pop()
+    candidates.pop().map(Ok)
 }
 
 /// Decode the two affected-ID array positions in class-913 and class-914 replay rows.
@@ -1243,7 +1288,10 @@ fn unique_unanchored_replay_pair(
 /// Array extents are stateful within one `AllFeatur` stream and schema class.
 /// An omitted `f8` opener reuses the preceding extent at the same array
 /// position.
-pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
+pub(crate) fn replay_affected_ids(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureReplayAffectedIds>, CodecError> {
     const ANCHOR_PREFIX: &[u8] = &[0xf1, 0xf7, 0x42];
     const ANCHOR_SUFFIX: &[u8] = &[0x80, 0x01, 0xe3];
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
@@ -1261,24 +1309,28 @@ pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffec
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
         });
-        let state = extents
-            .entry((row.stream_offset, schema_class))
-            .or_default();
+        let state = match extents.entry((row.stream_offset, schema_class)) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo replay extent states")?;
+                entry.insert([None; 2])
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
         let (pair, source_offset) = if let Some(anchor) = anchor {
             let run_start = anchor + ANCHOR_LEN;
             let Some(term) = find_from(&row.body, TERMINATOR, run_start) else {
                 continue;
             };
             let run = &row.body[run_start..term];
-            let Some(pair) = replay_affected_pair(run, *state) else {
+            let Some(decoded) = replay_affected_pair(ctx, run, *state) else {
                 continue;
             };
-            (pair, anchor)
+            (decoded?, anchor)
         } else {
-            let Some(pair) = unique_unanchored_replay_pair(row, *state) else {
+            let Some(decoded) = unique_unanchored_replay_pair(ctx, row, *state) else {
                 continue;
             };
-            pair
+            decoded?
         };
         let ReplayAffectedPair {
             geometry_ids,
@@ -1287,8 +1339,15 @@ pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffec
             edge_extent,
             ..
         } = pair;
-        state[0] = Some(geometry_ids.len() as u32);
-        state[1] = Some(edge_ids.len() as u32);
+        let (Ok(geometry_count), Ok(edge_count)) = (
+            u32::try_from(geometry_ids.len()),
+            u32::try_from(edge_ids.len()),
+        ) else {
+            continue;
+        };
+        state[0] = Some(geometry_count);
+        state[1] = Some(edge_count);
+        ctx.try_reserve_items(&mut result, 1, "creo replay affected-id records")?;
         result.push(FeatureReplayAffectedIds {
             feature_id: row.feature_id,
             geometry_ids,
@@ -1299,7 +1358,7 @@ pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffec
         });
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 pub(crate) fn agreed_feature_affected_ids(
@@ -1336,30 +1395,38 @@ fn surface_merge_replay_suffix(bytes: &[u8]) -> bool {
 }
 
 fn positional_surface_merge_affected_ids(
+    ctx: &DecodeContext<'_>,
     row: &FeatureRow,
     extents: [Option<u32>; 3],
-) -> Option<FeatureSurfaceMergeAffectedIds> {
+) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
     const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
     const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
-    let anchors = row
+    let mut anchors = row
         .body
         .windows(ANCHOR.len())
         .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset))
-        .collect::<Vec<_>>();
-    let [anchor] = anchors.as_slice() else {
-        return None;
+        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset));
+    let anchor = anchors.next()?;
+    anchors.next().is_none().then_some(())?;
+    let (_, cursor) = match explicit_replay_array(ctx, &row.body, anchor + ANCHOR.len())? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
     };
-    let (_, cursor) = explicit_replay_array(&row.body, anchor + ANCHOR.len())?;
     if row.body.get(cursor..cursor + 2) != Some(&[0x01, psb::token::COMPOUND_CLOSE]) {
         return None;
     }
     let (geometry_count, geometry_extent, cursor) =
         replay_extent(&row.body, cursor + 2, b"geoms_affected", extents[0])?;
-    let (geometry_ids, cursor) = replay_ids(&row.body, geometry_count, cursor)?;
+    let (geometry_ids, cursor) = match replay_ids(ctx, &row.body, geometry_count, cursor)? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
     let (edge_count, edge_extent, cursor) =
         replay_extent(&row.body, cursor, b"edgs_affected", extents[1])?;
-    let (edge_ids, cursor) = replay_ids(&row.body, edge_count, cursor)?;
+    let (edge_ids, cursor) = match replay_ids(ctx, &row.body, edge_count, cursor)? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
     if row.body.get(cursor..cursor + QUILT_SEPARATOR.len()) != Some(QUILT_SEPARATOR) {
         return None;
     }
@@ -1369,17 +1436,22 @@ fn positional_surface_merge_affected_ids(
         b"qlts_affected",
         extents[2],
     )?;
-    let (quilt_ids, cursor) = replay_ids(&row.body, quilt_count, cursor)?;
-    surface_merge_replay_suffix(row.body.get(cursor..)?).then_some(FeatureSurfaceMergeAffectedIds {
-        feature_id: row.feature_id,
-        geometry_ids,
-        edge_ids,
-        quilt_ids,
-        geometry_extent,
-        edge_extent,
-        quilt_extent,
-        offset: row.body_offset + anchor,
-    })
+    let (quilt_ids, cursor) = match replay_ids(ctx, &row.body, quilt_count, cursor)? {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
+    surface_merge_replay_suffix(row.body.get(cursor..)?).then_some(Ok(
+        FeatureSurfaceMergeAffectedIds {
+            feature_id: row.feature_id,
+            geometry_ids,
+            edge_ids,
+            quilt_ids,
+            geometry_extent,
+            edge_extent,
+            quilt_extent,
+            offset: row.body_offset + anchor,
+        },
+    ))
 }
 
 /// Decode affected geometry, edge, and quilt arrays from class-946 replay rows.
@@ -1387,16 +1459,23 @@ fn positional_surface_merge_affected_ids(
 /// Positional rows inherit an omitted array extent from the preceding
 /// class-946 row in the same `AllFeatur` stream.
 pub(crate) fn surface_merge_replay_affected_ids(
+    ctx: &DecodeContext<'_>,
     rows: &[FeatureRow],
     named: &[FeatureAffectedIds],
-) -> Vec<FeatureSurfaceMergeAffectedIds> {
+) -> Result<Vec<FeatureSurfaceMergeAffectedIds>, CodecError> {
     let mut result = Vec::new();
     let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
     for row in rows {
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
-        let state = extents.entry(row.stream_offset).or_default();
+        let state = match extents.entry(row.stream_offset) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo surface merge extent states")?;
+                entry.insert([None; 3])
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
         let named_arrays = [
             agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
             agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
@@ -1413,9 +1492,10 @@ pub(crate) fn surface_merge_replay_affected_ids(
             *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
             continue;
         }
-        let Some(record) = positional_surface_merge_affected_ids(row, *state) else {
+        let Some(decoded) = positional_surface_merge_affected_ids(ctx, row, *state) else {
             continue;
         };
+        let record = decoded?;
         let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (
             u32::try_from(record.geometry_ids.len()),
             u32::try_from(record.edge_ids.len()),
@@ -1424,10 +1504,11 @@ pub(crate) fn surface_merge_replay_affected_ids(
             continue;
         };
         *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
+        ctx.try_reserve_items(&mut result, 1, "creo surface merge affected-id records")?;
         result.push(record);
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// Decode named `direction` and `direction2` compact integers inside
