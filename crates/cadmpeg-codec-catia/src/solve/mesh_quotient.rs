@@ -11906,6 +11906,163 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
         "catia_coordinate_closure_component_members",
         "catia_coordinate_closure_components",
         "catia_coordinate_closure_face_counts",
+        "catia_coordinate_closure_component_set",
+        "catia_coordinate_closure_local_index",
+        "catia_coordinate_closure_edge_ids",
+        "catia_coordinate_closure_component_points",
+        "catia_coordinate_closure_local_edges",
+        "catia_coordinate_closure_local_edge_index",
+        "catia_coordinate_closure_local_edge_faces",
+        "catia_coordinate_closure_face_edges",
+        "catia_coordinate_closure_face_edge_entries",
+        "catia_coordinate_closure_closed_faces",
+        "catia_coordinate_closure_local_domain_points",
+        "catia_coordinate_closure_local_domains",
+        "catia_coordinate_closure_root_edges",
+        "catia_coordinate_closure_root_edge_entries",
+        "catia_coordinate_closure_arc_domain_points",
+        "catia_coordinate_closure_arc_domains",
+        "catia_coordinate_closure_remaining_points",
+        "catia_coordinate_closure_completed_assignment",
+        "catia_coordinate_closure_fixed_domain_point",
+        "catia_coordinate_closure_assigned_point_roots",
+        "catia_coordinate_closure_scanned_roots",
+        "catia_coordinate_closure_supported_unused",
+        "catia_coordinate_closure_unused_point_keys",
+        "catia_coordinate_closure_unused_point_roots",
+        "catia_coordinate_closure_propagated",
+        "catia_coordinate_closure_affected_roots",
+        "catia_coordinate_closure_degree_entries",
+        "catia_coordinate_closure_degree_undo",
+        "catia_coordinate_closure_probe_degrees",
+        "catia_coordinate_closure_affected_faces",
+        "catia_coordinate_closure_complete_branch",
+        "catia_coordinate_closure_completed_degrees",
+        "catia_coordinate_closure_solutions",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn coordinate_root_closure_refuses_recursive_walk_depth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let boundary = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let boundary_domains = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+    ];
+    let mut quotient = MeshQuotient::new(
+        (0..4)
+            .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
+            .collect(),
+    );
+    quotient.merge(0, 2).expect("shared left endpoint");
+    quotient.merge(1, 3).expect("shared right endpoint");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    let result = quotient.coordinate_root_closure_outcome(
+        &ctx,
+        2,
+        &edge_candidates,
+        Some((&edge_faces, &boundary_domains)),
+        None,
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RecursionDepth
+                && limit.operation == "catia_coordinate_closure_walk"
+    ));
+}
+
+#[test]
+fn coordinate_root_closure_charges_matching_support_rows() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let boundary = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let boundary_domains = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+    ];
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut quotient =
+            MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
+        quotient.merge(0, 2).expect("shared left endpoint");
+        quotient.merge(1, 3).expect("shared right endpoint");
+        quotient.coordinate_root_closure_outcome(
+            ctx,
+            2,
+            &edge_candidates,
+            Some((&edge_faces, &boundary_domains)),
+            None,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        run(&service_ctx).expect("service resource budget"),
+        MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..1024 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                refused.insert(limit.operation);
+            }
+            Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))) => break,
+            other => panic!("unexpected closure outcome: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia_coordinate_closure_viable_domains",
+        "catia_coordinate_closure_point_supports",
+        "catia_coordinate_closure_support_domains",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
