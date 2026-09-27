@@ -611,7 +611,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_entity_reference",
         Exactness::ByteExact,
     )?;
-    let feature_entity_tables = feature_entity_table_records(scan);
+    let feature_entity_tables = feature_entity_table_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,

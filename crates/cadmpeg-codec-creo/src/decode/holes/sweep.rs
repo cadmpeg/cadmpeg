@@ -57,7 +57,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
+        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -95,8 +95,8 @@ fn has_exact_materialized_surface_roster(
     let expected_ids = expected_ids.into_iter().collect::<Vec<_>>();
     let expected_set = expected_ids.iter().copied().collect::<BTreeSet<_>>();
     expected_ids.len() == expected_set.len()
-        && table.surface_ids().len() == expected_set.len()
-        && table.surface_ids().iter().copied().collect::<BTreeSet<_>>() == expected_set
+        && table.surface_ids_iter().count() == expected_set.len()
+        && table.unique_surface_ids() == &expected_set
 }
 
 pub(in crate::decode) fn compact_simple_hole_cylinder_id(
@@ -129,7 +129,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                     let planes = pair
                         .iter()
                         .filter(|candidate| {
-                            table.surface_ids().contains(&candidate.entity_id)
+                            table.contains_surface_id(candidate.entity_id)
                                 && rows
                                     .iter()
                                     .filter(|row| row.id == candidate.entity_id)
@@ -150,7 +150,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                     pair.iter()
                         .filter(|candidate| Some(candidate.entity_id) != plane)
                         .all(|candidate| {
-                            !table.surface_ids().contains(&candidate.entity_id)
+                            !table.contains_surface_id(candidate.entity_id)
                                 && !rows.iter().any(|row| row.id == candidate.entity_id)
                         })
                         .then_some((index, plane))
@@ -165,7 +165,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                 .enumerate()
                 .filter(|(_, candidate)| {
                     candidate.source_entity_id() == Some(0)
-                        && !table.surface_ids().contains(&candidate.entity_id)
+                        && !table.contains_surface_id(candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
                 })
                 .collect::<Vec<_>>();
@@ -179,7 +179,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                 .filter(|(_, candidate)| {
                     candidate.class_id() == 200
                         && candidate.source_entity_id().is_none()
-                        && table.surface_ids().contains(&candidate.entity_id)
+                        && table.contains_surface_id(candidate.entity_id)
                         && rows
                             .iter()
                             .filter(|row| row.id == candidate.entity_id)
@@ -292,7 +292,7 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
+        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -301,8 +301,8 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         return None;
     };
     let (rowless_cap, cap_id) = match (
-        table.surface_ids().contains(&first_cap.entity_id),
-        table.surface_ids().contains(&second_cap.entity_id),
+        table.contains_surface_id(first_cap.entity_id),
+        table.contains_surface_id(second_cap.entity_id),
     ) {
         (true, false) => (second_cap, first_cap),
         (false, true) => (first_cap, second_cap),
@@ -417,7 +417,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == feature_id && !table.surface_ids().is_empty())
+        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
         .collect::<Vec<_>>();
     let [table] = tables.as_slice() else {
         return None;
@@ -452,7 +452,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
                 cylinder_entry.entity_id,
             ],
         )
-        || table.surface_ids().contains(&profile_entry.entity_id)
+        || table.contains_surface_id(profile_entry.entity_id)
         || !table
             .non_surface_entity_ids()
             .contains(&profile_entry.entity_id)

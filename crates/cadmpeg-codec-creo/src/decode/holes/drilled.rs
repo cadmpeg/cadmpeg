@@ -81,10 +81,9 @@ fn split_patch_table_is_counterbore(
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
     let surface_kinds = table
-        .surface_ids()
-        .iter()
+        .surface_ids_iter()
         .map(|surface_id| {
-            crate::surface::unique_surface_row(rows, *surface_id)
+            crate::surface::unique_surface_row(rows, surface_id)
                 .filter(|row| row.feature_id == feature_id)
                 .map(|row| row.kind)
         })
@@ -100,7 +99,7 @@ fn split_patch_table_is_counterbore(
         .iter()
         .filter(|kind| **kind == crate::surface::SurfaceKind::Plane)
         .count();
-    let unique_surface_count = table.surface_ids().iter().collect::<BTreeSet<_>>().len();
+    let unique_surface_count = table.unique_surface_ids().len();
     if surface_kinds.len() != 5
         || unique_surface_count != 5
         || cylinder_count != 4
@@ -110,7 +109,7 @@ fn split_patch_table_is_counterbore(
     }
     let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         table.non_surface_entity_ids().contains(&entry.entity_id)
-            && !table.surface_ids().contains(&entry.entity_id)
+            && !table.contains_surface_id(entry.entity_id)
     };
     if !table.entries.windows(2).any(|entries| {
         entries[0].class_id() == 204
@@ -121,13 +120,13 @@ fn split_patch_table_is_counterbore(
         return false;
     }
 
-    let surface_ids = table.surface_ids().iter().copied().collect::<BTreeSet<_>>();
+    let surface_ids = table.unique_surface_ids();
     let mut materialized_surface_ids = BTreeSet::new();
     let mut cylinder_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
     let mut plane_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
     let mut rowless_counts_by_source = BTreeMap::<u32, usize>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id() == 200) {
-        let materialized = table.surface_ids().contains(&entry.entity_id);
+        let materialized = table.contains_surface_id(entry.entity_id);
         let rowless = is_rowless(entry);
         if !materialized && !rowless {
             return false;
@@ -162,7 +161,7 @@ fn split_patch_table_is_counterbore(
                 .push(entry.entity_id);
         }
     }
-    if materialized_surface_ids != surface_ids {
+    if &materialized_surface_ids != surface_ids {
         return false;
     }
     let cylinder_id_count = cylinder_ids_by_source.values().map(Vec::len).sum::<usize>();
@@ -194,7 +193,7 @@ fn paired_hole_replay_surfaces_by_source(
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>> {
     let entry_kind = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
-        if table.surface_ids().contains(&entry.entity_id) {
+        if table.contains_surface_id(entry.entity_id) {
             Some(Some(
                 crate::surface::unique_surface_row(rows, entry.entity_id)
                     .filter(|row| row.feature_id == feature_id)?
@@ -202,7 +201,7 @@ fn paired_hole_replay_surfaces_by_source(
             ))
         } else {
             (table.non_surface_entity_ids().contains(&entry.entity_id)
-                && !table.surface_ids().contains(&entry.entity_id))
+                && !table.contains_surface_id(entry.entity_id))
             .then_some(None)
         }
     };
@@ -344,10 +343,9 @@ fn simple_drilled_hole_corner_envelopes(
 ) -> Option<[[[f64; 3]; 2]; 2]> {
     let feature_id = table.feature_id;
     let envelopes = table
-        .surface_ids()
-        .iter()
+        .surface_ids_iter()
         .filter_map(|surface_id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+            crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
@@ -365,10 +363,9 @@ fn simple_drilled_hole_cone_terminal_points(
 ) -> Option<[[f64; 3]; 2]> {
     let feature_id = table.feature_id;
     let points = table
-        .surface_ids()
-        .iter()
+        .surface_ids_iter()
         .filter_map(|surface_id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id)
+            crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
         })
@@ -412,9 +409,7 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let feature_id = table.feature_id;
     let cylinder_ids = table
-        .surface_ids()
-        .iter()
-        .copied()
+        .surface_ids_iter()
         .filter(|surface_id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
                 |row| {
