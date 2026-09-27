@@ -135,6 +135,22 @@ pub(crate) fn copy_retained_slice<T: Clone>(
     copy_slice(ctx, values, operation)
 }
 
+pub(crate) fn copy_id<T>(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let bytes = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(value.len())
+        .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
+    text.push_str(value);
+    construct(text).map_err(CodecError::malformed)
+}
+
 pub(crate) fn copy_retained_rows<T: Clone>(
     ctx: &DecodeContext<'_>,
     rows: &[Vec<T>],
@@ -450,8 +466,31 @@ pub(crate) fn temporary_queue<'a, T>(
 
 #[cfg(test)]
 mod tests {
-    use super::admit_map_entry;
+    use super::{admit_map_entry, copy_id};
     use std::collections::HashMap;
+
+    #[test]
+    fn copied_surface_identity_refuses_before_string_storage() {
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::ids::SurfaceId;
+
+        let id = SurfaceId::mint("catia:test:surface#copied".to_string())
+            .expect("valid fixture identity");
+        let copied = crate::test_support::with_service_context(|ctx| {
+            copy_id(ctx, id.as_str(), SurfaceId::mint, "catia_surface_id_copy")
+        })
+        .expect("service budget");
+        assert_eq!(copied, id);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits retained limit");
+        assert!(matches!(
+            copy_id(&ctx, id.as_str(), SurfaceId::mint, "catia_surface_id_copy"),
+            Err(CodecError::ResourceLimit(error)) if error.operation == "catia_surface_id_copy"
+        ));
+    }
 
     #[test]
     fn zero_entity_source_cache_refuses_before_vacant_map_entry() {

@@ -4344,7 +4344,9 @@ fn attach_standard_topology(
     }
     let mut surface_indices = HashMap::new();
     for (index, surface) in ir.model.surfaces.iter().enumerate() {
-        crate::resource::insert_map(ctx, &mut surface_indices, surface.id.clone(), index, "catia_standard_surface_indices")
+        let id = crate::resource::copy_id(ctx, surface.id.as_str(), SurfaceId::mint, "catia_standard_surface_id_copy")
+            .map_err(StandardTopologyError::Resource)?;
+        crate::resource::insert_map(ctx, &mut surface_indices, id, index, "catia_standard_surface_indices")
             .map_err(StandardTopologyError::Resource)?;
     }
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
@@ -4530,7 +4532,7 @@ fn attach_standard_topology(
     let mut native_supports_by_row = Vec::new();
     crate::resource::reserve_vec(ctx, &mut native_supports_by_row, native_support_edge_ids.len(), "catia_native_support_rows")
         .map_err(StandardTopologyError::Resource)?;
-    native_supports_by_row.extend(native_support_edge_ids.iter().map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned())));
+    native_supports_by_row.extend(native_support_edge_ids.iter().map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge))));
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
@@ -5865,7 +5867,7 @@ fn emit_standard_topology(
     edge_vertices: &[[usize; 2]],
     point_assignment: &[usize],
     topology: &crate::families::standard::topology::StandardTopology,
-    native_edge_supports: &[Option<StandardEdgeSupport>],
+    native_edge_supports: &[Option<&StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -5887,7 +5889,8 @@ fn emit_standard_topology(
                     Some([start_point, end_point]),
                 )
                 .is_some()
-            });
+            })
+            .copied();
         let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
