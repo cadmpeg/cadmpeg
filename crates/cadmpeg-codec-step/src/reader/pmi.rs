@@ -82,6 +82,7 @@ pub(super) fn decode(
             })
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
+            ctx,
             ir,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
@@ -97,7 +98,7 @@ pub(super) fn decode(
             targets([id]),
             None,
             PmiDefinition::Datum { identification },
-        );
+        )?;
         typed.insert(id);
     }
 
@@ -130,6 +131,7 @@ pub(super) fn decode(
             })
             .unwrap_or_else(|| format!("#{id}"));
         annotations.push(
+            ctx,
             ir,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
@@ -149,7 +151,7 @@ pub(super) fn decode(
                 identification,
                 basis: Vec::new(),
             },
-        );
+        )?;
         typed.insert(id);
     }
 
@@ -189,6 +191,7 @@ pub(super) fn decode(
             }
         };
         annotations.push(
+            ctx,
             ir,
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
@@ -212,7 +215,7 @@ pub(super) fn decode(
             PmiDefinition::DatumSystem {
                 references: datum_references,
             },
-        );
+        )?;
         typed.insert(id);
         typed.extend(datum_records);
     }
@@ -275,13 +278,14 @@ pub(super) fn decode(
             .flat_map(references)
             .filter(|reference| shape_aspects.contains(reference));
         annotations.push(
+            ctx,
             ir,
             id,
             name,
             targets(aspect_ids),
             None,
             PmiDefinition::Dimension(definition),
-        );
+        )?;
         typed.insert(id);
     }
 
@@ -516,6 +520,7 @@ pub(super) fn decode(
                     .then(|| annotation.id.clone())
             });
         annotations.push(
+            ctx,
             ir,
             id,
             named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
@@ -541,7 +546,7 @@ pub(super) fn decode(
                 datum_system,
                 modifiers: tolerance_modifiers(record),
             },
-        );
+        )?;
         typed.insert(id);
         typed.extend(refs.iter().copied().filter(|reference| {
             exchange
@@ -642,6 +647,7 @@ pub(super) fn decode(
                 .map(pmi_id),
         );
         annotations.push(
+            ctx,
             ir,
             id,
             named_parameter(record, name, 0)
@@ -666,7 +672,7 @@ pub(super) fn decode(
                 placement,
                 semantics,
             },
-        );
+        )?;
         typed.insert(id);
         typed.extend(text_records);
     }
