@@ -116,6 +116,81 @@ fn insert_topology_hash_set<T: Eq + Hash>(
     Ok(())
 }
 
+fn insert_topology_map<K: Ord, V>(
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.insert(key, value);
+    Ok(())
+}
+
+fn copy_topology_body_id(
+    body: &BodyId,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<BodyId, CodecError> {
+    let bytes = ctx.copy_retained(body.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    BodyId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_topology_body_ids(
+    bodies: &[BodyId],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut copies = Vec::new();
+    for body in bodies {
+        ctx.charge_collection_items(1, operation)?;
+        copies
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        copies.push(copy_topology_body_id(body, ctx, operation)?);
+    }
+    Ok(copies)
+}
+
+fn push_topology_body_group(
+    groups: &mut BTreeMap<u64, Vec<BodyId>>,
+    key: u64,
+    body: &BodyId,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    member_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, group_operation)?;
+    }
+    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
+}
+
+fn insert_topology_body_group(
+    groups: &mut BTreeMap<u64, BTreeSet<BodyId>>,
+    key: u64,
+    body: &BodyId,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    member_operation: &'static str,
+) -> Result<(), CodecError> {
+    if groups.get(&key).is_some_and(|bodies| bodies.contains(body)) {
+        return Ok(());
+    }
+    if !groups.contains_key(&key) {
+        ctx.charge_collection_items(1, group_operation)?;
+    }
+    ctx.charge_collection_items(1, member_operation)?;
+    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    groups.entry(key).or_default().insert(copy);
+    Ok(())
+}
+
 mod admissions;
 
 pub(super) struct TopologyData {
@@ -532,8 +607,9 @@ pub(super) fn decode(
             }
         if built_wire_models.contains(&model) {
             insert_topology_hash_set(&mut result.claims, representation, ctx, "step_topology_claims")?;
-            if let Some(body_ids) = result.body_by_root.get(&model).cloned() {
-                result.body_by_root.insert(representation, body_ids);
+            if let Some(body_ids) = result.body_by_root.get(&model) {
+                let copies = copy_topology_body_ids(body_ids, ctx, "step_topology_root_bodies")?;
+                insert_topology_map(&mut result.body_by_root, representation, copies, ctx, "step_topology_root_groups")?;
             }
             continue;
         }
@@ -558,11 +634,10 @@ pub(super) fn decode(
                 committed += 1;
                 insert_topology_set(&mut built_wire_models, model, ctx, "step_built_wire_models")?;
                 insert_topology_hash_set(&mut built.typed, representation, ctx, "step_wire_typed")?;
-                result
-                    .body_by_root
-                    .entry(model)
-                    .or_default()
-                    .push(built.body_id.clone());
+                push_topology_body_group(
+                    &mut result.body_by_root, model, &built.body_id, ctx,
+                    "step_topology_root_groups", "step_topology_root_bodies",
+                )?;
                 for typed in std::mem::take(&mut built.typed) {
                     insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
                 }
@@ -606,17 +681,15 @@ pub(super) fn decode(
             } else {
                 committed += 1;
                 for shell in &built.shell_sources {
-                    result
-                        .body_by_shell
-                        .entry(*shell)
-                        .or_default()
-                        .insert(built.body_id.clone());
+                    insert_topology_body_group(
+                        &mut result.body_by_shell, *shell, &built.body_id, ctx,
+                        "step_topology_shell_groups", "step_topology_shell_bodies",
+                    )?;
                 }
-                result
-                    .body_by_root
-                    .entry(model)
-                    .or_default()
-                    .push(built.body_id.clone());
+                push_topology_body_group(
+                    &mut result.body_by_root, model, &built.body_id, ctx,
+                    "step_topology_root_groups", "step_topology_root_bodies",
+                )?;
                 for typed in std::mem::take(&mut built.typed) {
                     insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
                 }
@@ -662,15 +735,17 @@ pub(super) fn decode(
             )), ctx, "step_topology_losses")?;
             continue;
         };
-        if let Some(root_built) = built_roots.get(&key).cloned() {
+        if let Some(root_built) = built_roots.get(&key) {
             insert_topology_hash_set(&mut result.claims, id, ctx, "step_topology_claims")?;
-            result.body_by_root.insert(id, root_built.body_ids.clone());
-            for (shell, body_ids) in root_built.body_by_shell {
-                result
-                    .body_by_shell
-                    .entry(shell)
-                    .or_default()
-                    .extend(body_ids);
+            let copies = copy_topology_body_ids(&root_built.body_ids, ctx, "step_topology_root_bodies")?;
+            insert_topology_map(&mut result.body_by_root, id, copies, ctx, "step_topology_root_groups")?;
+            for (&shell, body_ids) in &root_built.body_by_shell {
+                for body in body_ids {
+                    insert_topology_body_group(
+                        &mut result.body_by_shell, shell, body, ctx,
+                        "step_topology_shell_groups", "step_topology_shell_bodies",
+                    )?;
+                }
             }
             continue;
         }
@@ -712,17 +787,21 @@ pub(super) fn decode(
                 )?), ctx, "step_topology_losses")?;
             } else {
                 for shell in &built.shell_sources {
-                    result
-                        .body_by_shell
-                        .entry(*shell)
-                        .or_default()
-                        .insert(built.body_id.clone());
-                    body_by_shell
-                        .entry(*shell)
-                        .or_default()
-                        .insert(built.body_id.clone());
+                    insert_topology_body_group(
+                        &mut result.body_by_shell, *shell, &built.body_id, ctx,
+                        "step_topology_shell_groups", "step_topology_shell_bodies",
+                    )?;
+                    insert_topology_body_group(
+                        &mut body_by_shell, *shell, &built.body_id, ctx,
+                        "step_topology_built_shell_groups", "step_topology_built_shell_bodies",
+                    )?;
                 }
-                body_ids.push(built.body_id.clone());
+                push_topology_vec(
+                    &mut body_ids,
+                    copy_topology_body_id(&built.body_id, ctx, "step_topology_built_bodies")?,
+                    ctx,
+                    "step_topology_built_bodies",
+                )?;
                 for typed in std::mem::take(&mut built.typed) {
                     insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
                 }
@@ -743,14 +822,17 @@ pub(super) fn decode(
                     )), ctx, "step_topology_losses")?;
             }
         } else {
-            result.body_by_root.insert(id, body_ids.clone());
-            built_roots.insert(
+            let copies = copy_topology_body_ids(&body_ids, ctx, "step_topology_root_bodies")?;
+            insert_topology_map(&mut result.body_by_root, id, copies, ctx, "step_topology_root_groups")?;
+            insert_topology_map(&mut built_roots,
                 key,
                 RootBuilt {
                     body_ids,
                     body_by_shell,
                 },
-            );
+                ctx,
+                "step_topology_built_roots",
+            )?;
             if let Some(failures) = failures {
                 let detail = failure_message
                     .as_deref()
@@ -803,7 +885,10 @@ pub(super) fn decode(
             ctx,
             )?), ctx, "step_topology_losses")?;
         } else {
-            result.body_by_root.insert(id, vec![built.body_id.clone()]);
+            push_topology_body_group(
+                &mut result.body_by_root, id, &built.body_id, ctx,
+                "step_topology_root_groups", "step_topology_root_bodies",
+            )?;
             for typed in std::mem::take(&mut built.typed) {
                 insert_topology_hash_set(&mut result.claims, typed, ctx, "step_topology_claims")?;
             }
