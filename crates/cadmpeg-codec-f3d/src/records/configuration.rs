@@ -138,15 +138,22 @@ impl ConfigurationVariant {
         ))
         };
         let suppressed = match fields.remove("suppressed") {
-            Some(Value::Array(values)) => Some(
-                values
-                    .into_iter()
-                    .map(|value| match value {
-                        Value::String(value) => Ok(value),
-                        _ => Err(suppressed_error()),
-                    })
-                    .collect::<Result<_, _>>()?,
-            ),
+            Some(Value::Array(values)) => {
+                let mut suppressed = Vec::new();
+                for value in values {
+                    let Value::String(value) = value else {
+                        return Err(suppressed_error());
+                    };
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit suppressed configuration member")?;
+                        suppressed.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("admit suppressed configuration member", 0, 1)
+                        })?;
+                    }
+                    suppressed.push(value);
+                }
+                Some(suppressed)
+            }
             Some(_) => return Err(suppressed_error()),
             None => None,
         };
@@ -504,21 +511,40 @@ impl DesignConfiguration {
         };
         let variants = match variants {
             Some(variants) => {
-                let mut variants = variants
-                    .into_iter()
-                    .map(|(name, value)| {
-                        ConfigurationVariant::admit(ctx, &entry_name, &name, value)
-                            .map(|value| (name, value))
-                    })
-                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+                let mut admitted = BTreeMap::new();
+                for (name, value) in variants {
+                    let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "admit configuration variant")?;
+                    }
+                    admitted.insert(name, value);
+                }
+                let mut variants = admitted;
                 let explicit_order = !variant_order.is_empty();
                 let entries = if !explicit_order && variants.len() <= 1 {
-                    variants.into_iter().collect()
+                    let mut entries = Vec::new();
+                    for variant in variants {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
+                    entries
                 } else {
-                    let entries = variant_order
-                        .into_iter()
-                        .map(|name| variants.remove_entry(&name).ok_or_else(&invalid_order))
-                        .collect::<Result<_, _>>()?;
+                    let mut entries = Vec::new();
+                    for name in variant_order {
+                        let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "order configuration variants")?;
+                            entries.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
+                            })?;
+                        }
+                        entries.push(variant);
+                    }
                     if !variants.is_empty() {
                         return Err(invalid_order());
                     }

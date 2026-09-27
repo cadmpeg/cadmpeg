@@ -189,3 +189,99 @@ fn configuration_parameter_map_refuses_collection_limit() {
             if limit.operation == "admit configuration parameter"
     ));
 }
+
+#[test]
+fn configuration_suppressed_list_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {"suppressed": ["part"]}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit suppressed configuration member"
+    ));
+}
+
+#[test]
+fn configuration_variant_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit configuration variant"
+    ));
+}
+
+#[test]
+fn configuration_implicit_order_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "order configuration variants"
+    ));
+}
+
+#[test]
+fn configuration_explicit_order_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let payload = serde_json::json!({"configurations": {"variant": {}}});
+    let error = DesignConfiguration::try_new_charged(
+        &ctx,
+        "table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        vec!["variant".into()],
+        payload.as_object().unwrap().clone(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "order configuration variants"
+    ));
+}
