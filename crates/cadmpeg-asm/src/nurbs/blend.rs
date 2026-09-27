@@ -641,7 +641,7 @@ pub(super) fn rolling_ball_curve(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 }
 
 fn rolling_ball_third_side(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
-    let label = cur.take_str()?.to_string();
+    let label = propagate_resource!(crate::decode_alloc::copy_string(ctx, cur.take_str()?, "ASM rolling ball third-side label"));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -664,13 +664,13 @@ fn rolling_ball_third_side(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &
     }))
 }
 
-fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
+fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
     let saved = cur.pos();
     if let Some(value) = cur.take_str() {
-        return Some(value.to_string());
+        return Some(value);
     }
     cur.set_pos(saved);
-    cur.take_ident().map(str::to_string)
+    cur.take_ident()
 }
 
 fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
@@ -703,7 +703,7 @@ fn variable_blend_value(
     };
     let calibrated = cur.take_enum()?;
     let modern_flag = cur.take_bool()?;
-    let payload = match name.as_str() {
+    let payload = match name {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
             discriminator,
             parameters: [cur.take_f64()?, cur.take_f64()?],
@@ -731,7 +731,11 @@ fn variable_blend_value(
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(blend_value_name(cur)?)
+                VariableBlendTerminal::Text(propagate_resource!(crate::decode_alloc::copy_string(
+                    ctx,
+                    blend_value_name(cur)?,
+                    "ASM variable blend terminal text",
+                )))
             };
             VariableBlendValuePayload::Functional {
                 discriminator,
@@ -823,11 +827,59 @@ fn variable_blend_value(
 
 #[cfg(test)]
 mod variable_blend_value_tests {
-    use super::{variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
+    use super::{rolling_ball_third_side, variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::VariableBlendValuePayload;
+
+    #[test]
+    fn rolling_ball_third_side_label_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [Token::Str("label".into())];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
+        else {
+            panic!("label copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM rolling ball third-side label");
+    }
+
+    #[test]
+    fn variable_blend_terminal_text_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("functional".into()), Token::Enum(0), Token::True,
+            Token::Double(0.0), Token::Double(1.0),
+            Token::Ident("nubs".into()), Token::Long(1), Token::Enum(0), Token::Long(2),
+            Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1),
+            Token::Double(0.0), Token::Double(0.0), Token::Double(1.0), Token::Double(0.0),
+            Token::Str("terminal".into()),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("terminal text copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM variable blend terminal text");
+    }
 
     fn text(bytes: &mut Vec<u8>, value: &str) {
         bytes.push(0x07);
@@ -1334,13 +1386,13 @@ pub(super) fn var_blend_spl_sur(
 }
 
 fn vertex_blend_boundary(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cur: &mut Cur<'_>) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
-    let kind = cur.take_str()?.to_string();
+    let kind = cur.take_str()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_position()?;
     let u_smoothing = cur.take_bool()?;
     let v_smoothing = cur.take_bool()?;
     let fullness = cur.take_f64()?;
-    let geometry = match kind.as_str() {
+    let geometry = match kind {
         "circle" => {
             let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(curve_end);
@@ -1439,13 +1491,13 @@ fn revision_vertex_blend_boundary(
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
     let table = resolver?;
-    let kind = cur.take_ident()?.to_string();
+    let kind = cur.take_ident()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_vector3()?;
     let u_smoothing = cur.take_bool()?;
     let v_smoothing = cur.take_bool()?;
     let fullness = cur.take_f64()?;
-    let geometry = match kind.as_str() {
+    let geometry = match kind {
         "circle" => {
             let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
             let curve_endpoints = [
