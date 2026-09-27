@@ -2,6 +2,8 @@
 //! JT display-model record extractors and their record types.
 
 pub(crate) mod admission;
+#[cfg(test)]
+mod index_admission_tests;
 mod packet_role;
 mod version;
 
@@ -2834,49 +2836,125 @@ fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     ))
 }
 
+fn decimal_digits(mut value: usize) -> u64 {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
+
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
-pub(super) fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
+pub(super) fn display_jt_indices(
+    ctx: Option<&DecodeContext<'_>>,
+    container: &Container,
+) -> Result<Vec<DisplayJtIndex>, CodecError> {
     const JT_HEADER: &[u8] = b"Version ";
     let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
         let high = View::u32_le_at(bytes, 0)?;
         let low = View::u32_le_at(bytes, 4)?;
         Some((u64::from(high) << 32) | u64::from(low))
     };
-    container
+    let mut indices = Vec::new();
+    for (index_ordinal, entry) in container
         .entries
         .iter()
         .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
         .enumerate()
-        .filter_map(|(index_ordinal, entry)| {
-            let (source_offset, byte_len) = entry.file_span()?;
-            let payload = container.bounded_entry_bytes(source_offset, byte_len)?;
-            let version = View::u32_le_at(payload, 0)?;
-            let declared_count = View::u32_le_at(payload, 4)?;
-            let row_count = usize::try_from(declared_count).ok()?;
-            let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
-            (table_end <= payload.len()).then_some(())?;
+    {
+        let parsed = (|| -> Result<Option<DisplayJtIndex>, CodecError> {
+            let Some((source_offset, byte_len)) = entry.file_span() else {
+                return Ok(None);
+            };
+            let Some(payload) = container.bounded_entry_bytes(source_offset, byte_len) else {
+                return Ok(None);
+            };
+            let (Some(version), Some(declared_count)) =
+                (View::u32_le_at(payload, 0), View::u32_le_at(payload, 4))
+            else {
+                return Ok(None);
+            };
+            let Ok(row_count) = usize::try_from(declared_count) else {
+                return Ok(None);
+            };
+            let Some(table_end) = row_count
+                .checked_mul(16)
+                .and_then(|bytes| 8usize.checked_add(bytes))
+            else {
+                return Ok(None);
+            };
+            if table_end > payload.len() {
+                return Ok(None);
+            }
+            if row_count == 0 {
+                return Ok(None);
+            }
+            if let Some(ctx) = ctx {
+                let row_size =
+                    u64::try_from(std::mem::size_of::<DisplayJtIndexRow>()).map_err(|_| {
+                        ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
+                    })?;
+                ctx.charge_collection_items(
+                    u64::from(declared_count),
+                    "admit DisplayJT index rows",
+                )?;
+                ctx.charge_retained(
+                    u64::from(declared_count)
+                        .checked_mul(row_size)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
+                        })?,
+                    "retain DisplayJT index rows",
+                )?;
+            }
             let mut rows = Vec::new();
-            rows.try_reserve_exact(row_count).ok()?;
+            if rows.try_reserve_exact(row_count).is_err() {
+                return match ctx {
+                    Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT index rows", 0, 1)),
+                    None => Ok(None),
+                };
+            }
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
-                let value =
-                    NonZeroU64::new(word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?)?;
-                let header_offset =
-                    word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
+                let Some(value) = payload
+                    .get(row_offset..row_offset + 8)
+                    .and_then(word_swapped_u64)
+                    .and_then(NonZeroU64::new)
+                else {
+                    return Ok(None);
+                };
+                let Some(header_offset) = payload
+                    .get(row_offset + 8..row_offset + 16)
+                    .and_then(word_swapped_u64)
+                else {
+                    return Ok(None);
+                };
                 if header_offset > u64::from(u32::MAX) {
-                    return None;
+                    return Ok(None);
                 }
-                let header_offset_usize = usize::try_from(header_offset).ok()?;
+                let Ok(header_offset_usize) = usize::try_from(header_offset) else {
+                    return Ok(None);
+                };
                 if header_offset_usize < table_end
                     || !payload
                         .get(header_offset_usize..)
                         .is_some_and(|tail| tail.starts_with(JT_HEADER))
                     || previous_header_offset.is_some_and(|previous| header_offset <= previous)
                 {
-                    return None;
+                    return Ok(None);
                 }
                 previous_header_offset = Some(header_offset);
+                if let Some(ctx) = ctx {
+                    ctx.charge_retained(
+                        u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
+                            + decimal_digits(index_ordinal)
+                            + u64::try_from("-row-".len()).unwrap_or(u64::MAX)
+                            + decimal_digits(ordinal),
+                        "retain DisplayJT index row identity",
+                    )?;
+                }
                 rows.push(DisplayJtIndexRow {
                     id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
                     ordinal: ordinal as u32,
@@ -2885,15 +2963,38 @@ pub(super) fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
                     source_offset: source_offset + row_offset as u64,
                 });
             }
-            DisplayJtIndex::new(
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(
+                    u64::try_from("nx:display-jt:index#".len()).unwrap_or(u64::MAX)
+                        + decimal_digits(index_ordinal),
+                    "retain DisplayJT index identity",
+                )?;
+            }
+            Ok(DisplayJtIndex::new(
                 format!("nx:display-jt:index#{index_ordinal}"),
                 version,
                 rows,
                 source_offset,
             )
-            .ok()
-        })
-        .collect()
+            .ok())
+        })()?;
+        if let Some(index) = parsed {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "admit DisplayJT index")?;
+                let index_size = u64::try_from(std::mem::size_of::<DisplayJtIndex>())
+                    .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index", 0, u64::MAX))?;
+                ctx.charge_retained(index_size, "retain DisplayJT index")?;
+            }
+            if indices.try_reserve_exact(1).is_err() {
+                return match ctx {
+                    Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT indices", 0, 1)),
+                    None => Ok(Vec::new()),
+                };
+            }
+            indices.push(index);
+        }
+    }
+    Ok(indices)
 }
 
 /// Decode complete standard JT headers and tables of contents from an outer index.
@@ -5923,7 +6024,7 @@ mod tests {
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         };
-        let indices = super::display_jt_indices(&container);
+        let indices = super::display_jt_indices(None, &container).unwrap();
         assert_eq!(indices[0].version, 9);
         assert_eq!(indices[0].declared_count(), 1);
         assert_eq!(indices[0].rows.first().header_offset, 28);
@@ -6008,7 +6109,9 @@ mod tests {
 
         let mut malformed = container;
         malformed.data.to_mut()[28] = b'X';
-        assert!(super::display_jt_indices(&malformed).is_empty());
+        assert!(super::display_jt_indices(None, &malformed)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
