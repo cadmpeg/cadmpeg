@@ -1342,6 +1342,7 @@ fn texture_payload(minor: i32, suffix: &[u8]) -> Vec<u8> {
 fn light_scales_spatial_values_but_not_direction_or_angles() {
     let bytes = light_payload(0x1f, 0.8);
     let light = parse_light(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         crate::test_support::millimeter_scale(10.0),
@@ -1370,6 +1371,7 @@ fn light_scales_spatial_values_but_not_direction_or_angles() {
 fn light_preserves_unset_hotspot_for_exponent_interface() {
     let bytes = light_payload(0x12, -1.234_321_012_343_21e308);
     let light = parse_light(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         crate::settings::MillimeterScale::IDENTITY,

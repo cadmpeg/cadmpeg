@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    anonymous, legacy_text_style_bytes, model_attributes_status_chunk, modern_font_chunk,
-    object_rendering_with_negative_minor, texture_payload, utf16_bytes,
+    anonymous, legacy_text_style_bytes, light_payload, model_attributes_status_chunk,
+    modern_font_chunk, object_rendering_with_negative_minor, texture_payload, utf16_bytes,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
@@ -10,6 +10,7 @@ use crate::presentation::rendering_attributes;
 use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
+use std::collections::HashMap;
 
 #[test]
 fn legacy_component_name_refuses_retained_limit() {
@@ -156,6 +157,127 @@ fn disambiguated_group_id_refuses_retained_limit() {
         .expect_err("disambiguated ID exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino disambiguated group ID")
+    );
+}
+
+fn light_refusal(
+    retained_limit: u64,
+    collection_limit: u64,
+    link_order: Option<usize>,
+) -> FramingError {
+    let bytes = light_payload(0x1f, 0.8);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("light root admitted");
+    crate::presentation::parse_light(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        0,
+        link_order,
+    )
+    .expect_err("light value exceeds limit")
+}
+
+#[test]
+fn light_name_refuses_retained_limit() {
+    assert!(
+        matches!(light_refusal(0, u64::MAX, None), FramingError::Resource(refusal) if refusal.operation == "Rhino light name")
+    );
+}
+
+#[test]
+fn light_id_refuses_retained_limit() {
+    assert!(
+        matches!(light_refusal(3, u64::MAX, None), FramingError::Resource(refusal) if refusal.operation == "Rhino light ID")
+    );
+}
+
+#[test]
+fn light_source_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:light#55555555-5555-5555-5555-555555555555".len();
+    assert!(
+        matches!(light_refusal(u64::try_from(3 + id_len).expect("budget fits"), u64::MAX, None), FramingError::Resource(refusal) if refusal.operation == "Rhino light source UUID")
+    );
+}
+
+#[test]
+fn light_object_link_refuses_retained_limit() {
+    assert!(
+        matches!(light_refusal(3, u64::MAX, Some(7)), FramingError::Resource(refusal) if refusal.operation == "Rhino light object link")
+    );
+}
+
+#[test]
+fn light_links_refuse_collection_limit() {
+    assert!(
+        matches!(light_refusal(u64::MAX, 0, Some(7)), FramingError::Resource(refusal) if refusal.operation == "Rhino light links")
+    );
+}
+
+fn push_light_refusal(
+    collection_limit: u64,
+    materialized_limit: u64,
+    retained_limit: u64,
+    duplicate: bool,
+) -> cadmpeg_core::CodecError {
+    let bytes = light_payload(0x1f, 0.8);
+    let light = crate::presentation::parse_light(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        0,
+        None,
+    )
+    .expect("light fixture admitted");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_materialized_bytes = materialized_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut workspace = ctx
+        .reserve_scoped(0, "Rhino light identity workspace")
+        .expect("empty workspace admitted");
+    let mut indexes = HashMap::new();
+    if duplicate {
+        indexes.insert(Uuid::from_canonical([0x55; 16]), 0);
+    }
+    crate::presentation::push_light(&ctx, &mut workspace, &mut Vec::new(), &mut indexes, light)
+        .expect_err("light collection or identity exceeds limit")
+}
+
+#[test]
+fn light_identity_workspace_refuses_materialized_limit() {
+    assert!(
+        matches!(push_light_refusal(u64::MAX, 0, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino light identity workspace")
+    );
+}
+
+#[test]
+fn light_identity_index_refuses_collection_limit() {
+    assert!(
+        matches!(push_light_refusal(0, u64::MAX, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino light identity index")
+    );
+}
+
+#[test]
+fn light_collection_refuses_collection_limit() {
+    assert!(
+        matches!(push_light_refusal(1, u64::MAX, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino lights")
+    );
+}
+
+#[test]
+fn duplicate_light_id_refuses_retained_limit() {
+    assert!(
+        matches!(push_light_refusal(u64::MAX, u64::MAX, 0, true), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate light ID")
     );
 }
 
