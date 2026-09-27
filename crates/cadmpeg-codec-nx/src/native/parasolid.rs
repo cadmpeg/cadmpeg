@@ -59,8 +59,9 @@ use super::substrate::{ParsedStreams, StreamView};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "group_record::GroupWire", into = "group_record::GroupWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "group_record::GroupWire")]
 pub(super) struct ParasolidGroupRecord {
     /// Globally unique source-record identity.
     pub(super) id: String,
@@ -82,12 +83,33 @@ pub(super) struct ParasolidGroupRecord {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static GROUP_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidGroupRecord {
+    fn clone(&self) -> Self {
+        GROUP_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            origin: self.origin,
+            xmt: self.xmt,
+            node_id: self.node_id,
+            references: self.references,
+            selector: self.selector,
+            linked_reference_status: self.linked_reference_status,
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
 /// One topology member in a fully closed current Parasolid GROUP chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "group_member::MemberWire",
-    into = "group_member::MemberWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "group_member::MemberWire")]
 pub(super) struct ParasolidGroupMember {
     /// Globally unique membership identity.
     pub(super) id: String,
@@ -105,6 +127,28 @@ pub(super) struct ParasolidGroupMember {
     pub(super) member_xmt: u32,
     /// Member family with its required node and optional current identity.
     pub(super) target: GroupMemberTarget,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static GROUP_MEMBER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidGroupMember {
+    fn clone(&self) -> Self {
+        GROUP_MEMBER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            partition_stream_ordinal: self.partition_stream_ordinal,
+            group_xmt: self.group_xmt,
+            group_node_id: self.group_node_id,
+            ordinal: self.ordinal,
+            list_record_xmt: self.list_record_xmt,
+            member_xmt: self.member_xmt,
+            target: self.target,
+        }
+    }
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -2340,8 +2384,8 @@ pub(super) struct ParasolidEntity51StructuredUse {
 }
 
 /// Resolved registered class of one Parasolid type-81 attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(into = "ParasolidAttributeClassUseWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(super) struct ParasolidAttributeClassUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2357,6 +2401,49 @@ pub(super) struct ParasolidAttributeClassUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static ATTRIBUTE_CLASS_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidAttributeClassUse {
+    fn clone(&self) -> Self {
+        ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            stream_ordinal: self.stream_ordinal,
+            entity_51_record: self.entity_51_record.clone(),
+            definition_xmt: self.definition_xmt,
+            attribute_definition: self.attribute_definition.clone(),
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidAttributeClassUseRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    entity_51_record: &'a str,
+    definition_xmt: NonNullXmt,
+    attribute_definition: &'a str,
+}
+
+impl Serialize for ParasolidAttributeClassUse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidAttributeClassUseRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            entity_51_record: &self.entity_51_record,
+            definition_xmt: self.definition_xmt,
+            attribute_definition: &self.attribute_definition,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 #[derive(Serialize, Deserialize)]
 struct ParasolidAttributeClassUseWire {
     id: String,
@@ -2366,6 +2453,7 @@ struct ParasolidAttributeClassUseWire {
     attribute_definition: String,
 }
 
+#[cfg(test)]
 impl From<ParasolidAttributeClassUse> for ParasolidAttributeClassUseWire {
     fn from(value: ParasolidAttributeClassUse) -> Self {
         Self {
@@ -2419,8 +2507,9 @@ impl ParasolidAttributeFieldValueKind {
 }
 
 /// One uniquely typed type-81 field reference joined to its type-80 declaration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FieldUseWire", into = "FieldUseWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "FieldUseWire")]
 pub(super) struct ParasolidAttributeFieldUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2444,9 +2533,33 @@ pub(super) struct ParasolidAttributeFieldUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static ATTRIBUTE_FIELD_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidAttributeFieldUse {
+    fn clone(&self) -> Self {
+        ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            stream_ordinal: self.stream_ordinal,
+            attribute_class_use: self.attribute_class_use.clone(),
+            entity_51_record: self.entity_51_record.clone(),
+            attribute_definition: self.attribute_definition.clone(),
+            position: self.position,
+            value_kind: self.value_kind,
+            value_use: self.value_use.clone(),
+            value_record: self.value_record.clone(),
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
 /// Resolved class of one topology-owned Parasolid attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(into = "ParasolidTopologyAttributeClassUseWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(super) struct ParasolidTopologyAttributeClassUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2466,6 +2579,53 @@ pub(super) struct ParasolidTopologyAttributeClassUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidTopologyAttributeClassUse {
+    fn clone(&self) -> Self {
+        TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            topology_attribute_reference: self.topology_attribute_reference.clone(),
+            entity_51_record: self.entity_51_record.clone(),
+            attribute_class_use: self.attribute_class_use.clone(),
+            definition_xmt: self.definition_xmt,
+            attribute_definition: self.attribute_definition.clone(),
+            stream_ordinal: self.stream_ordinal,
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidTopologyAttributeClassUseRef<'a> {
+    id: &'a str,
+    topology_attribute_reference: &'a str,
+    entity_51_record: &'a str,
+    attribute_class_use: &'a str,
+    definition_xmt: NonNullXmt,
+    attribute_definition: &'a str,
+}
+
+impl Serialize for ParasolidTopologyAttributeClassUse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidTopologyAttributeClassUseRef {
+            id: &self.id,
+            topology_attribute_reference: &self.topology_attribute_reference,
+            entity_51_record: &self.entity_51_record,
+            attribute_class_use: &self.attribute_class_use,
+            definition_xmt: self.definition_xmt,
+            attribute_definition: &self.attribute_definition,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 #[derive(Serialize, Deserialize)]
 struct ParasolidTopologyAttributeClassUseWire {
     id: String,
@@ -2476,6 +2636,7 @@ struct ParasolidTopologyAttributeClassUseWire {
     attribute_definition: String,
 }
 
+#[cfg(test)]
 impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClassUseWire {
     fn from(value: ParasolidTopologyAttributeClassUse) -> Self {
         Self {
