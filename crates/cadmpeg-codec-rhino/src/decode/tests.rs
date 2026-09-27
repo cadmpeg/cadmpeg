@@ -190,7 +190,18 @@ fn point_cloud_vertices_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino point-cloud vertices"
     ));
-    with_transaction_limits(&scan, 5, None, |expand| {
+    let refusal = with_transaction_limits(&scan, 5, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .commit_geometry(0, cloud())
+            .expect_err("unknown-record link exceeds five collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino unknown record links"
+    ));
+    with_transaction_limits(&scan, 6, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         assert!(context
             .commit_geometry(0, cloud())
