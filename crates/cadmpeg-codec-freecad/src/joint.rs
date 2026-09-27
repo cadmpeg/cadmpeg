@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
-use crate::native::{malformed, sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
+use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
 use crate::resource::{collection_allocation_failed, collection_vec, materialized_bytes, reserve_vec_items, retained_string};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -38,10 +38,10 @@ pub(crate) fn transfer(
         let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
         let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_charged(ctx, format_args!(
                 "joint object {} carries both ObjectToGround and JointType",
                 object.id
-            )));
+            ), "fcstd joint diagnostic"));
         }
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
@@ -54,18 +54,18 @@ pub(crate) fn transfer(
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
             ) && !legacy_empty_sub
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::resource::malformed_charged(ctx, format_args!(
                     "joint property {} has the wrong runtime type for ObjectToGround",
                     property.id
-                )));
+                ), "fcstd joint diagnostic"));
             }
         }
         if let Some(property) = joint_type_property {
             if property.type_name != "App::PropertyEnumeration" {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::resource::malformed_charged(ctx, format_args!(
                     "joint property {} has the wrong runtime type for JointType",
                     property.id
-                )));
+                ), "fcstd joint diagnostic"));
             }
         }
         let joint_type = joint_type_property.map(|property| enumeration_value(ctx, property)).transpose()?;
@@ -377,103 +377,103 @@ fn enumeration_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Resu
     })?;
     let root = document.root_element();
     if !root.has_tag_name("Property") {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} has no Property root",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer"))
     else {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} requires one direct Integer value",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     };
     if integer.children().any(|value| value.is_element()) {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} has nested Integer values",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let custom_list = values.next();
     if values.next().is_some()
         || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
     {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} has extra direct value roots",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let custom = match integer.attribute("CustomEnum") {
         None => false,
         Some("true") => true,
         Some(_) => {
-            return Err(malformed(format!(
+            return Err(crate::resource::malformed_charged(ctx, format_args!(
                 "joint enumeration property {} has an invalid CustomEnum marker",
                 property.id
-            )));
+            ), "fcstd joint diagnostic"));
         }
     };
     if custom != custom_list.is_some() {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint enumeration property {} has inconsistent custom enumeration carriers",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let index = integer
         .attribute("value")
         .ok_or_else(|| {
-            malformed(format!(
+            crate::resource::malformed_charged(ctx, format_args!(
                 "joint enumeration property {} has no Integer value",
                 property.id
-            ))
+            ), "fcstd joint diagnostic")
         })?
         .parse::<usize>()
         .map_err(|_| {
-            malformed(format!(
+            crate::resource::malformed_charged(ctx, format_args!(
                 "joint enumeration property {} has an invalid Integer value",
                 property.id
-            ))
+            ), "fcstd joint diagnostic")
         })?;
     let selected = if let Some(custom_list) = custom_list {
         let count = custom_list
             .attribute("count")
             .ok_or_else(|| {
-                malformed(format!(
+                crate::resource::malformed_charged(ctx, format_args!(
                     "joint enumeration property {} CustomEnumList has no count",
                     property.id
-                ))
+                ), "fcstd joint diagnostic")
             })?
             .parse::<usize>()
             .map_err(|_| {
-                malformed(format!(
+                crate::resource::malformed_charged(ctx, format_args!(
                     "joint enumeration property {} CustomEnumList count is invalid",
                     property.id
-                ))
+                ), "fcstd joint diagnostic")
             })?;
         let values = custom_list.children().filter(roxmltree::Node::is_element);
         let found = values.clone().count();
         if found != count || values.clone().any(|value| !value.has_tag_name("Enum")) {
-            return Err(malformed(format!(
+            return Err(crate::resource::malformed_charged(ctx, format_args!(
                 "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
                 property.id,
                 found
-            )));
+            ), "fcstd joint diagnostic"));
         }
         let mut selected = None;
         for (position, value) in values.enumerate() {
             if value.children().any(|child| child.is_element()) {
-                return Err(malformed(format!(
+                return Err(crate::resource::malformed_charged(ctx, format_args!(
                     "joint enumeration property {} has nested Enum values",
                     property.id
-                )));
+                ), "fcstd joint diagnostic"));
             }
             let text = value.attribute("value").ok_or_else(|| {
-                malformed(format!(
+                crate::resource::malformed_charged(ctx, format_args!(
                     "joint enumeration property {} Enum has no value",
                     property.id
-                ))
+                ), "fcstd joint diagnostic")
             })?;
             if position == index {
                 selected = Some(text);
@@ -483,8 +483,11 @@ fn enumeration_value(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Resu
     } else {
         None
     };
-    selected.map(|value| retained_string(ctx, value, "fcstd joint enumeration value"))
-        .transpose().map(|value| value.unwrap_or_else(|| index.to_string()))
+    match selected {
+        Some(value) => retained_string(ctx, value, "fcstd joint enumeration value"),
+        None => crate::resource::retained_format(ctx, format_args!("{index}"),
+            "fcstd joint enumeration index"),
+    }
 }
 
 fn scalar_parameter(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<String>, CodecError> {
@@ -496,31 +499,31 @@ fn scalar_parameter(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Resul
         _ => return Ok(None),
     };
     if property.type_name != expected_type {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint parameter property {} has runtime type {}, expected {expected_type}",
             property.id, property.type_name
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let [value] = property.values() else {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint parameter property {} requires one {expected_tag} value",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     };
     if value.tag != expected_tag {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint parameter property {} requires a {expected_tag} value",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let value = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
+        crate::resource::malformed_charged(ctx, format_args!(
             "joint parameter property {} has no value",
             property.id
-        ))
+        ), "fcstd joint diagnostic")
     })?;
     crate::native::joint::validate_parameter_value(&property.name, value)
-        .map_err(|error| malformed(format!("joint parameter property {}: {error}", property.id)))?;
+        .map_err(|error| crate::resource::malformed_charged(ctx, format_args!("joint parameter property {}: {error}", property.id), "fcstd joint diagnostic"))?;
     Ok(Some(retained_string(ctx, value, "fcstd joint scalar parameter")?))
 }
 
@@ -530,33 +533,33 @@ fn connector(
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
     let Some(property) = sole_named_property(ctx, "joint", properties, name)? else {
-        return Err(malformed(format!("joint connector {name} is missing")));
+        return Err(crate::resource::malformed_charged(ctx, format_args!("joint connector {name} is missing"), "fcstd joint diagnostic"));
     };
     if !matches!(
         property.type_name.as_str(),
         "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden"
     ) {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint connector {} has runtime type {}, expected App::PropertyXLinkSub",
             property.id, property.type_name
-        )));
+        ), "fcstd joint diagnostic"));
     }
     if property
         .values()
         .first()
         .is_none_or(|value| value.tag != "XLink")
     {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint connector {} requires one XLink value",
             property.id
-        )));
+        ), "fcstd joint diagnostic"));
     }
     let [target] = property.links() else {
-        return Err(malformed(format!(
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
             "joint connector {} requires one target, found {}",
             property.id,
             property.links().len()
-        )));
+        ), "fcstd joint diagnostic"));
     };
     target.as_ref().map(|target| target.clone_with_context(ctx)).transpose()
 }
@@ -577,6 +580,187 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
+
+    fn diagnostic_property(name: &str, type_name: &str, xml: &str) -> crate::native::PropertyRecord {
+        crate::native::PropertyRecord {
+            id: "property".into(),
+            owner: "joint".into(),
+            name: name.into(),
+            type_name: type_name.into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Transient,
+            order: 0,
+            xml: crate::native::RetainedXml::from_text(xml.into(), 0)
+                .expect("valid retained span"),
+        }
+    }
+
+    fn diagnostic_context<'a>(
+        arena: &'a cadmpeg_core::decode::DecodeArena,
+        policy: &'a cadmpeg_core::decode::DecodePolicy,
+    ) -> cadmpeg_core::decode::DecodeContext<'a> {
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, policy)
+            .expect("empty root is within policy").0
+    }
+
+    fn scalar_property(type_name: &str, xml: &str) -> crate::native::PropertyRecord {
+        let mut property = diagnostic_property("Angle", type_name, xml);
+        let document = roxmltree::Document::parse(xml).expect("valid scalar property XML");
+        let values = document.root_element().children()
+            .filter(roxmltree::Node::is_element)
+            .enumerate()
+            .map(|(order, node)| crate::native::ValueRecord {
+                tag: node.tag_name().name().into(),
+                order,
+                attributes: node.attributes().map(|attribute|
+                    (attribute.name().into(), attribute.value().into())).collect(),
+                text: None,
+                raw_xml: xml[node.range()].into(),
+            })
+            .collect();
+        property.body = crate::native::PropertyBody::Persisted {
+            values,
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            dynamic: None,
+        };
+        property
+    }
+
+    #[test]
+    fn joint_enumeration_diagnostics_refuse_at_retained_limit() {
+        let cases = [
+            "<Wrapper/>",
+            "<Property/>",
+            "<Property><Integer><Child/></Integer></Property>",
+            "<Property><Integer value=\"0\"/><Extra/></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"bad\"/></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/></Property>",
+            "<Property><Integer/></Property>",
+            "<Property><Integer value=\"bad\"/></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList/></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"bad\"/></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"2\"><Enum value=\"A\"/></CustomEnumList></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\"><Enum value=\"A\"><Child/></Enum></CustomEnumList></Property>",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\"><Enum/></CustomEnumList></Property>",
+        ];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let ctx = diagnostic_context(&arena, &policy);
+        for xml in cases {
+            let property = diagnostic_property("JointType", "App::PropertyEnumeration", xml);
+            let error = super::enumeration_value(&ctx, &property)
+                .expect_err("diagnostic must be admitted");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "fcstd joint diagnostic"), "{xml}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn joint_enumeration_index_refuses_at_retained_limit() {
+        let property = diagnostic_property("JointType", "App::PropertyEnumeration",
+            "<Property><Integer value=\"10\"/></Property>");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let ctx = diagnostic_context(&arena, &policy);
+        let error = super::enumeration_value(&ctx, &property)
+            .expect_err("enumeration index text must be admitted");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "fcstd joint enumeration index"), "{error:?}");
+    }
+
+    #[test]
+    fn joint_scalar_diagnostics_refuse_at_retained_limit() {
+        let cases = [
+            ("App::PropertyBool", "<Property><Float value=\"1\"/></Property>"),
+            ("App::PropertyAngle", "<Property/>") ,
+            ("App::PropertyAngle", "<Property><Integer value=\"1\"/></Property>"),
+            ("App::PropertyAngle", "<Property><Float/></Property>"),
+            ("App::PropertyAngle", "<Property><Float value=\"bad\"/></Property>"),
+        ];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let ctx = diagnostic_context(&arena, &policy);
+        for (type_name, xml) in cases {
+            let property = scalar_property(type_name, xml);
+            let error = super::scalar_parameter(&ctx, &property)
+                .expect_err("diagnostic must be admitted");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "fcstd joint diagnostic"), "{xml}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn joint_connector_diagnostics_refuse_at_retained_limit() {
+        let cases = [
+            None,
+            Some(("App::PropertyString", "<Property/>")),
+            Some(("App::PropertyXLinkSub", "<Property/>")),
+            Some(("App::PropertyXLinkSub", "<Property><XLink/></Property>")),
+        ];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let ctx = diagnostic_context(&arena, &policy);
+        for case in cases {
+            let property = case.map(|(type_name, xml)| {
+                let mut property = scalar_property(type_name, xml);
+                property.name = "Reference1".into();
+                property
+            });
+            let properties = property.as_ref().into_iter().collect::<Vec<_>>();
+            let error = super::connector(&ctx, &properties, "Reference1")
+                .expect_err("diagnostic must be admitted");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "fcstd joint diagnostic"), "{case:?}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn joint_carrier_diagnostics_refuse_at_retained_limit() {
+        let object = crate::native::ObjectRecord {
+            id: "fcstd:native:object#Joint".into(),
+            name: "Joint".into(),
+            type_name: "App::FeaturePython".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: Default::default(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: 0,
+            data: None,
+        };
+        let cases = [
+            vec![
+                diagnostic_property("ObjectToGround", "App::PropertyLink", "<Property/>"),
+                diagnostic_property("JointType", "App::PropertyEnumeration", "<Property/>"),
+            ],
+            vec![diagnostic_property("ObjectToGround", "App::PropertyString", "<Property/>")],
+            vec![diagnostic_property("JointType", "App::PropertyString", "<Property/>")],
+        ];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        for mut properties in cases {
+            for property in &mut properties {
+                property.owner = object.id.clone();
+            }
+            let ctx = diagnostic_context(&arena, &policy);
+            let error = super::transfer(&ctx, std::slice::from_ref(&object), &properties)
+                .expect_err("diagnostic must be admitted");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "fcstd joint diagnostic"), "{error:?}");
+        }
+    }
 
     #[test]
     fn joint_invalid_enumeration_xml_diagnostic_refuses_at_retained_limit() {
