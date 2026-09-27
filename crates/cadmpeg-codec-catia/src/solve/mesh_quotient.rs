@@ -10401,6 +10401,84 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
 }
 
 #[test]
+fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let candidates = [vec![[0, 1]]];
+    let make_quotient = || {
+        let domain = Arc::new(HashSet::from([0, 1]));
+        MeshQuotient::new(vec![domain.clone(), domain])
+    };
+    catia_test_context!(service_ctx);
+    assert!(make_quotient()
+        .prepare_coordinate_root_domains(&service_ctx, 2, &candidates, None)
+        .expect("service resource budget")
+        .is_some());
+
+    let mut refused = HashSet::new();
+    for limit in 0..=128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match make_quotient().prepare_coordinate_root_domains(&ctx, 2, &candidates, None) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("two endpoint roots must retain a coordinate matching"),
+            Err(error) => panic!("unexpected coordinate preparation refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia_quotient_root_edges"));
+    assert!(refused.contains("catia_quotient_roots_by_point"));
+    assert!(refused.contains("catia_quotient_refine_roots"));
+}
+
+#[test]
+fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let domains = MeshCoordinateRootDomains {
+        domains: vec![vec![0, 1], vec![1, 2], vec![0, 2]],
+        edges: Arc::new(vec![[0, 1], [1, 2]]),
+        root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
+        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
+        coverage_matching: vec![0, 1, 2],
+        point_count: 3,
+    };
+    let refined_candidates = [vec![[1, 2]], vec![[1, 2], [0, 2]]];
+    catia_test_context!(service_ctx);
+    assert!(domains
+        .refine_candidates(&service_ctx, &refined_candidates, None)
+        .expect("service resource budget")
+        .is_some());
+
+    let mut refused = HashSet::new();
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match domains.refine_candidates(&ctx, &refined_candidates, None) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("local refinement must preserve the three-point matching"),
+            Err(error) => panic!("unexpected coordinate refinement refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia_quotient_refine_roots"));
+    assert!(refused.contains("catia_quotient_reached_roots"));
+    assert!(refused.contains("catia_quotient_reached_points"));
+}
+
+#[test]
 fn coordinate_root_preparation_budgets_independent_components_separately() {
     const COMPONENT_COUNT: usize = 8;
     catia_test_context!(ctx);
