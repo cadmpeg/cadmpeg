@@ -24,6 +24,117 @@ use crate::feature::rows::ReplayExtentSource;
 use std::collections::BTreeSet;
 
 use crate::psb;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+const SINGLE_ROW: &[u8] = &[40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
+
+fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SINGLE_ROW, &arena, &policy).expect("root row is admitted");
+    super::row_spans(&ctx, SINGLE_ROW, &BTreeSet::from([40]))
+}
+
+fn limited_rows(items: u64, bytes: u64) -> Result<Vec<FeatureRow>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = items;
+    policy.limits.max_retained_bytes = bytes;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SINGLE_ROW, &arena, &policy).expect("root row is admitted");
+    rows(&ctx, SINGLE_ROW, &BTreeSet::from([40]), 0)
+}
+
+fn assert_row_item_refusal(error: CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == operation));
+}
+
+#[test]
+fn feature_row_start_refuses_before_vec_growth() {
+    assert_eq!(limited_row_spans(5).expect("span admitted").len(), 1);
+    assert_row_item_refusal(
+        limited_row_spans(0).expect_err("start item"),
+        "creo feature row starts",
+    );
+}
+
+#[test]
+fn feature_row_seen_id_refuses_before_btree_insert() {
+    assert_row_item_refusal(
+        limited_row_spans(1).expect_err("seen id node"),
+        "creo feature row seen ids",
+    );
+}
+
+#[test]
+fn feature_row_schema_class_refuses_before_btree_insert() {
+    assert_row_item_refusal(
+        limited_row_spans(2).expect_err("schema class node"),
+        "creo feature row schema classes",
+    );
+}
+
+#[test]
+fn feature_row_retained_start_refuses_before_vec_growth() {
+    assert_row_item_refusal(
+        limited_row_spans(3).expect_err("retained start item"),
+        "creo feature retained starts",
+    );
+}
+
+#[test]
+fn feature_row_span_refuses_before_vec_growth() {
+    assert_row_item_refusal(
+        limited_row_spans(4).expect_err("span item"),
+        "creo feature row spans",
+    );
+}
+
+#[test]
+fn feature_row_output_refuses_before_vec_growth() {
+    assert_eq!(limited_rows(6, u64::MAX).expect("row admitted").len(), 1);
+    assert_row_item_refusal(
+        limited_rows(5, u64::MAX).expect_err("row item"),
+        "creo feature rows",
+    );
+}
+
+#[test]
+fn feature_row_body_refuses_before_retained_copy() {
+    let error = limited_rows(6, 7).expect_err("eight-byte body needs retention");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo feature row bodies"));
+}
+
+fn admitted_rows(
+    payload: &[u8],
+    feature_ids: &BTreeSet<u32>,
+    stream_offset: usize,
+) -> Vec<FeatureRow> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("root input is admitted");
+    rows(&ctx, payload, feature_ids, stream_offset).expect("feature rows are admitted")
+}
+
+fn admitted_entries(
+    payload: &[u8],
+    body_start: usize,
+    count: u32,
+) -> Option<Vec<crate::feature::entity::FeatureEntityTableEntry>> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root input is admitted");
+    read_entries(&ctx, payload, body_start, count).expect("table entries are admitted")
+}
 
 #[test]
 fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
@@ -33,7 +144,7 @@ fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids, 0);
+    let decoded = admitted_rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(
@@ -57,7 +168,7 @@ fn rows_suppress_repeated_same_class_candidates() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids, 0);
+    let decoded = admitted_rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(
@@ -75,7 +186,7 @@ fn rows_accept_an_unlisted_header_with_the_fixed_root_prefix() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids, 0);
+    let decoded = admitted_rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].body[..2], [0x88, 0x01]);
@@ -92,7 +203,7 @@ fn rows_require_the_root_marker_after_the_row_header() {
     let payload = [7, 0x88, 0x01, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
     let feature_ids = BTreeSet::from([7]);
 
-    assert!(rows(&payload, &feature_ids, 0).is_empty());
+    assert!(admitted_rows(&payload, &feature_ids, 0).is_empty());
 }
 
 #[test]
@@ -100,7 +211,7 @@ fn rows_accept_a_root_marker_immediately_after_the_header() {
     let payload = [40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
     let feature_ids = BTreeSet::from([40]);
 
-    assert_eq!(rows(&payload, &feature_ids, 0).len(), 1);
+    assert_eq!(admitted_rows(&payload, &feature_ids, 0).len(), 1);
 }
 
 #[test]
@@ -109,7 +220,7 @@ fn rows_accept_a_row_after_the_raw_section_header() {
     payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids, 0);
+    let decoded = admitted_rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].offset, b"#AllFeatur\n".len());
@@ -120,7 +231,7 @@ fn rows_construct_absolute_offsets_from_the_stream_origin() {
     let mut payload = b"#AllFeatur\n".to_vec();
     payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
     let feature_ids = BTreeSet::from([7]);
-    let decoded = rows(&payload, &feature_ids, 200);
+    let decoded = admitted_rows(&payload, &feature_ids, 200);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].stream_offset, 200);
@@ -137,7 +248,7 @@ fn rows_ignore_a_valid_prefix_inside_an_existing_row() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids, 0);
+    let decoded = admitted_rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].body[..2], [0xeb, 0x04]);
@@ -204,7 +315,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
 #[test]
 fn final_generated_entry_may_terminate_at_the_table_separator() {
     let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
-    let entries = read_entries(&payload, 0, 2).expect("complete generated table");
+    let entries = admitted_entries(&payload, 0, 2).expect("complete generated table");
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].source_entity_id(), Some(4));
@@ -216,7 +327,7 @@ fn final_generated_entry_may_terminate_at_the_table_separator() {
 #[test]
 fn generated_table_prototype_uses_its_prefixed_entry_class() {
     let payload = [0xf7, 30, 20, 0xe4, 0xe3, 11, 0x80, 200, 7, 1, 0xe3];
-    let entries = read_entries(&payload, 0, 2).expect("prototype and positional entry");
+    let entries = admitted_entries(&payload, 0, 2).expect("prototype and positional entry");
 
     assert_eq!(entries[0].entity_id, 20);
     assert_eq!(entries[0].class_id(), 30);
@@ -226,13 +337,13 @@ fn generated_table_prototype_uses_its_prefixed_entry_class() {
     assert_eq!(entries[1].source_entity_id(), Some(7));
 
     let misplaced = [10, 30, 0, 0xe3, 0xf7, 31, 20, 0xe4, 0xe3];
-    assert!(read_entries(&misplaced, 0, 2).is_none());
+    assert!(admitted_entries(&misplaced, 0, 2).is_none());
 }
 
 #[test]
 fn class_219_generated_entry_retains_its_related_entity() {
     let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xe3];
-    let entries = read_entries(&payload, 0, 1).expect("class-219 generated entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("class-219 generated entry");
 
     assert_eq!(entries[0].entity_id, 1466);
     assert_eq!(entries[0].class_id(), 219);
@@ -245,7 +356,7 @@ fn class_219_generated_entry_retains_its_related_entity() {
 #[test]
 fn final_class_219_entry_may_terminate_at_the_table_separator() {
     let payload = [0x85, 0xba, 0x80, 0xdb, 0x84, 0x97, 0, 0xf2, 0xf7];
-    let entries = read_entries(&payload, 0, 1).expect("terminal class-219 entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("terminal class-219 entry");
 
     assert_eq!(entries[0].related_entity_id(), Some(1175));
     assert_eq!(entries[0].end_offset, 7);
@@ -254,7 +365,7 @@ fn final_class_219_entry_may_terminate_at_the_table_separator() {
 #[test]
 fn class_2017_generated_entry_retains_related_entity_and_state() {
     let payload = [0x92, 0x56, 0x87, 0xe1, 0x92, 0x48, 1, 0xe3];
-    let entries = read_entries(&payload, 0, 1).expect("class-2017 generated entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("class-2017 generated entry");
 
     assert_eq!(entries[0].entity_id, 4694);
     assert_eq!(entries[0].class_id(), 2017);
@@ -266,7 +377,7 @@ fn class_2017_generated_entry_retains_related_entity_and_state() {
 #[test]
 fn final_class_2017_entry_may_terminate_at_the_table_separator() {
     let payload = [0x94, 0x92, 0x87, 0xe1, 0x94, 0x90, 1, 0xf2, 0xf7];
-    let entries = read_entries(&payload, 0, 1).expect("terminal class-2017 entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("terminal class-2017 entry");
 
     assert_eq!(entries[0].related_entity_id(), Some(5264));
     assert_eq!(entries[0].related_entity_state(), Some(1));
@@ -276,7 +387,7 @@ fn final_class_2017_entry_may_terminate_at_the_table_separator() {
 #[test]
 fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
     let payload = [0x85, 0xb7, 0x80, 0xd2, 0x85, 0x59, 0, 0xe3];
-    let entries = read_entries(&payload, 0, 1).expect("class-210 generated entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("class-210 generated entry");
 
     assert_eq!(entries[0].entity_id, 1463);
     assert_eq!(entries[0].class_id(), 210);
@@ -287,7 +398,7 @@ fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
 #[test]
 fn class_214_generated_entry_retains_its_related_entity() {
     let payload = [0x85, 0x49, 0x80, 0xd6, 0x80, 0xb8, 0, 0xe3];
-    let entries = read_entries(&payload, 0, 1).expect("class-214 generated entry");
+    let entries = admitted_entries(&payload, 0, 1).expect("class-214 generated entry");
 
     assert_eq!(entries[0].entity_id, 1353);
     assert_eq!(entries[0].class_id(), 214);
@@ -511,7 +622,7 @@ fn generated_entity_entries_accept_variable_schema_classes() {
         0xe4, 0xe3,
     ];
 
-    let entries = read_entries(&payload, 0, 2).expect("generated entity entries");
+    let entries = admitted_entries(&payload, 0, 2).expect("generated entity entries");
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].entity_id, 13);
     assert_eq!(entries[0].class_id(), 204);

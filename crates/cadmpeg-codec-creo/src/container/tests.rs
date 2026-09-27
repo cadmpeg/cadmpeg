@@ -19,6 +19,31 @@ use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
 #[test]
+fn feature_row_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let payload = crate::test_support::allfeatur_row(4, [0xeb, 0x04], 917, &[0xaa]);
+    let section =
+        container::Section::scan("AllFeatur".to_string(), 0, payload.len(), None, &payload)
+            .expect("bounded AllFeatur section");
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root row is admitted");
+        super::feature_rows(&ctx, std::slice::from_ref(&section), &BTreeSet::from([4]))
+    };
+    assert_eq!(run(7).expect("one aggregated row admitted").len(), 1);
+    let error = run(6).expect_err("aggregate row needs another Vec item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo feature row aggregation"));
+}
+
+#[test]
 fn section_result_collector_refuses_before_output_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

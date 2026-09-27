@@ -2812,7 +2812,13 @@ mod tests {
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
         let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.features.rows = crate::feature::rows::rows(&payload, &BTreeSet::from([1, 2]), 0);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root input is admitted");
+        scan.features.rows = crate::feature::rows::rows(&ctx, &payload, &BTreeSet::from([1, 2]), 0)
+            .expect("feature rows are admitted");
         let records = feature_row_records(&scan);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);

@@ -1905,13 +1905,7 @@ fn feature_entity_tables(
         sections
             .iter()
             .filter(|section| section.section.name() == "AllFeatur"),
-        |bytes| {
-            Ok(feature::entity::entity_tables(
-                bytes,
-                &feature_ids_set,
-                &surface_ids,
-            ))
-        },
+        |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
             for entry in &mut table.entries {
@@ -1923,22 +1917,24 @@ fn feature_entity_tables(
     )
 }
 
-fn feature_rows(sections: &[ScannedSection<'_>], feature_ids: &[u32]) -> Vec<FeatureRow> {
-    let feature_ids = feature_ids.iter().copied().collect();
+fn feature_rows(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+    feature_ids: &BTreeSet<u32>,
+) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.section.name() == "AllFeatur")
     {
         let section_bytes = section.region;
-        rows.extend(feature::rows::rows(
-            section_bytes,
-            &feature_ids,
-            section.section.offset(),
-        ));
+        let decoded =
+            feature::rows::rows(ctx, section_bytes, feature_ids, section.section.offset())?;
+        ctx.try_reserve_items(&mut rows, decoded.len(), "creo feature row aggregation")?;
+        rows.extend(decoded);
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 fn feature_entity_graph(
@@ -2594,10 +2590,7 @@ pub(crate) fn scan_bytes<'a>(
             .iter()
             .map(|reference| reference.feature_id),
     );
-    let mut feature_rows = feature_rows(
-        &sections,
-        &candidate_feature_ids.iter().copied().collect::<Vec<_>>(),
-    );
+    let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
     feature_rows.retain(|row| {
         feature_row_has_model_identity(
             row,

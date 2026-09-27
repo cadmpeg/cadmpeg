@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::{contains, find_from, find_in};
-use cadmpeg_core::decode::{bounded_len, index_from_u32};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::psb;
@@ -350,7 +351,11 @@ const CHOICE_LABELS: &[&[u8]] = &[
     b"misc_choice",
 ];
 
-pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usize, usize, u32)> {
+pub(super) fn row_spans(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    feature_ids: &BTreeSet<u32>,
+) -> Result<Vec<(usize, usize, u32)>, CodecError> {
     // The raw section header is present when the caller passes the complete
     // section extent instead of the payload after `#<name>\n`.
     let section_header_end = if payload.first() == Some(&b'#') {
@@ -378,6 +383,7 @@ pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usi
             && payload.get(after..after + 2).is_some()
             && row_root_schema_class(payload, offset, prefix_end).is_some()
         {
+            ctx.try_reserve_items(&mut starts, 1, "creo feature row starts")?;
             starts.push((offset, id));
         }
     }
@@ -386,29 +392,44 @@ pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usi
     // schema classes, but one identifier/class pair is one row.
     let mut seen_ids = BTreeSet::new();
     let mut seen_schema_classes = BTreeSet::new();
-    let retained_starts: Vec<(usize, u32)> = starts
-        .iter()
-        .enumerate()
-        .filter_map(|(index, &(start, id))| {
-            let candidate_end = starts
-                .get(index + 1)
-                .map_or(payload.len(), |&(next, _)| next);
-            let first_for_id = seen_ids.insert(id);
-            let has_new_schema_class = row_root_schema_class(payload, start, candidate_end)
-                .is_some_and(|schema_class| seen_schema_classes.insert((id, schema_class)));
-            (first_for_id || has_new_schema_class).then_some((start, id))
-        })
-        .collect();
-    retained_starts
-        .iter()
-        .enumerate()
-        .map(|(index, &(start, id))| {
-            let end = retained_starts
-                .get(index + 1)
-                .map_or(payload.len(), |&(next, _)| next);
-            (start, end, id)
-        })
-        .collect()
+    let mut retained_starts = Vec::new();
+    for (index, &(start, id)) in starts.iter().enumerate() {
+        let candidate_end = starts
+            .get(index + 1)
+            .map_or(payload.len(), |&(next, _)| next);
+        let first_for_id = if seen_ids.contains(&id) {
+            false
+        } else {
+            ctx.charge_collection_items(1, "creo feature row seen ids")?;
+            seen_ids.insert(id);
+            true
+        };
+        let has_new_schema_class =
+            if let Some(schema_class) = row_root_schema_class(payload, start, candidate_end) {
+                if seen_schema_classes.contains(&(id, schema_class)) {
+                    false
+                } else {
+                    ctx.charge_collection_items(1, "creo feature row schema classes")?;
+                    seen_schema_classes.insert((id, schema_class));
+                    true
+                }
+            } else {
+                false
+            };
+        if first_for_id || has_new_schema_class {
+            ctx.try_reserve_items(&mut retained_starts, 1, "creo feature retained starts")?;
+            retained_starts.push((start, id));
+        }
+    }
+    let mut spans = Vec::new();
+    for (index, &(start, id)) in retained_starts.iter().enumerate() {
+        let end = retained_starts
+            .get(index + 1)
+            .map_or(payload.len(), |&(next, _)| next);
+        ctx.try_reserve_items(&mut spans, 1, "creo feature row spans")?;
+        spans.push((start, end, id));
+    }
+    Ok(spans)
 }
 
 /// Read the fixed-prefix root schema class from one candidate row span.
@@ -430,26 +451,30 @@ fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<Sch
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
 /// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
 pub(crate) fn rows(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     feature_ids: &BTreeSet<u32>,
     stream_offset: usize,
-) -> Vec<FeatureRow> {
-    row_spans(payload, feature_ids)
-        .into_iter()
-        .filter_map(|(start, end, feature_id)| {
-            let (_, body_start) = psb::reference_id(payload, start).ok()?;
-            let body = payload.get(body_start..end)?;
-            let root_schema_class = row_root_schema_class(payload, start, end);
-            Some(FeatureRow {
-                feature_id,
-                root_schema_class,
-                stream_offset,
-                body: body.to_vec().try_into().ok()?,
-                body_offset: stream_offset + body_start,
-                offset: stream_offset + start,
-            })
-        })
-        .collect()
+) -> Result<Vec<FeatureRow>, CodecError> {
+    let mut decoded = Vec::new();
+    for (start, end, feature_id) in row_spans(ctx, payload, feature_ids)? {
+        let Ok((_, body_start)) = psb::reference_id(payload, start) else {
+            continue;
+        };
+        let Some(body) = payload.get(body_start..end).filter(|body| body.len() >= 2) else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut decoded, 1, "creo feature rows")?;
+        decoded.push(FeatureRow {
+            feature_id,
+            root_schema_class: row_root_schema_class(payload, start, end),
+            stream_offset,
+            body: FeatureRowBody(ctx.copy_retained(body, "creo feature row bodies")?),
+            body_offset: stream_offset + body_start,
+            offset: stream_offset + start,
+        });
+    }
+    Ok(decoded)
 }
 
 /// Decode the first short-form scalar in each bounded class-913 replay record.
