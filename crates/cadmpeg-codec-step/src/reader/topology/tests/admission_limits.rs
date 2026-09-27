@@ -511,3 +511,65 @@ fn oriented_edge_definitions_refuse_collection_limit() {
                 && refusal.operation == "step_oriented_edge_definitions"
     ));
 }
+
+fn edge_definition_refusal(collection_limit: u64, retained_limit: u64, depth_limit: u64) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid edge reference");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_recursion_depth = depth_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    super::super::edge_defs(&exchange, &ctx)
+        .err()
+        .expect("edge definitions exceed limit")
+}
+
+#[test]
+fn edge_definition_active_set_refuses_collection_limit() {
+    assert!(matches!(edge_definition_refusal(0, u64::MAX, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_edge_definition_active"));
+}
+
+#[test]
+fn edge_definition_cache_refuses_collection_limit() {
+    assert!(matches!(edge_definition_refusal(1, u64::MAX, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_edge_definition_cache"));
+}
+
+#[test]
+fn edge_definitions_refuse_collection_limit() {
+    assert!(matches!(edge_definition_refusal(2, u64::MAX, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_edge_definitions"));
+}
+
+#[test]
+fn edge_definition_node_refuses_retained_limit() {
+    assert!(matches!(edge_definition_refusal(u64::MAX, 0, u64::MAX),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_edge_definition_node"));
+}
+
+#[test]
+fn edge_definition_recursion_refuses_depth_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=SUBEDGE('',#1,#2,#4);#4=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid subedge reference");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    assert!(matches!(super::super::edge_defs(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_edge_definition_recursion"));
+}
