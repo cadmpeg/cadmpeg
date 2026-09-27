@@ -5773,14 +5773,17 @@ pub(crate) fn depdb_cross_section_rows(
     let positional_count = count - 1;
     // Each row consumes at least one payload byte past the topology cursor
     // before its terminator, so the row count cannot exceed the unread bytes.
-    let capacity = bounded_len(
-        positional_count as u64,
+    let Some(capacity) = bounded_len(
+        cadmpeg_core::decode::u64_from_index(positional_count),
         1,
-        payload.len().saturating_sub(cursor),
-    )
-    .unwrap_or(0);
-    ctx.charge_collection_items(capacity as u64, "creo cross-section curve rows")?;
-    let mut rows = Vec::with_capacity(capacity);
+        payload.len().checked_sub(cursor).unwrap_or(0),
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut rows = Vec::new();
+    ctx.try_collection(capacity, "creo cross-section curve rows", || {
+        rows.try_reserve(capacity)
+    })?;
     let mut boundaries = Vec::new();
     for (marker, length) in [
         (b"\xe1\xe3".as_slice(), 2),
@@ -5789,6 +5792,7 @@ pub(crate) fn depdb_cross_section_rows(
     ] {
         let mut search = cursor;
         while let Some(offset) = find(payload, marker, search) {
+            ctx.try_reserve_items(&mut boundaries, 1, "creo cross-section row boundaries")?;
             boundaries.push((offset, length));
             search = offset + marker.len();
         }

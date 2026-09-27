@@ -138,3 +138,42 @@ fn depdb_curve_scalar_cache_refuses_before_unique_image_growth() {
                 && limit.operation == "creo scalar cache unique images"
     ));
 }
+
+const ONE_DEPDB_CURVE_ROW: &[u8] = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
+
+fn depdb_rows_with_limit(limit: u64) -> Result<Vec<super::super::DepdbCurveRow>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(ONE_DEPDB_CURVE_ROW, &arena, &policy)
+        .expect("root input is admitted");
+    super::super::depdb_cross_section_rows(&ctx, ONE_DEPDB_CURVE_ROW)
+}
+
+#[test]
+fn depdb_curve_rows_refuse_before_fallible_reservation() {
+    assert_eq!(
+        depdb_rows_with_limit(100)
+            .expect("service admits one complete curve row")
+            .len(),
+        1
+    );
+    let error = depdb_rows_with_limit(0).expect_err("one row requires one collection item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo cross-section curve rows"
+    ));
+}
+
+#[test]
+fn depdb_curve_boundaries_refuse_before_vec_growth() {
+    let error = depdb_rows_with_limit(1).expect_err("boundary follows row reservation");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo cross-section row boundaries"
+    ));
+}
