@@ -305,6 +305,59 @@ fn feature_timeline_item_limit_refuses_before_counted_vector_allocation() {
 }
 
 #[test]
+fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::HashMap;
+
+    let stream = "Fusion% Asset:Name[Active]/Design1/BulkStream.dat";
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0, 1]);
+    bulk.extend_from_slice(&17_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0, 0]);
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    let arena = DecodeArena::new();
+    let prefix_len = crate::ids::native_scope(stream).len() as u64;
+    let suffix_len = ":design-feature-timeline#0".len() as u64;
+    for (allowance, operation) in [
+        (prefix_len - 1, "f3d native stream key"),
+        (prefix_len + suffix_len - 1, "retain F3D timeline identity"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = allowance;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::parse_feature_timeline_record(
+            &ctx,
+            &bulk,
+            stream,
+            0..bulk.len(),
+            ("256", 35),
+            0,
+            &HashMap::new(),
+        ).err().unwrap();
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == operation
+        ));
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let timeline = super::parse_feature_timeline_record(
+        &ctx,
+        &bulk,
+        stream,
+        0..bulk.len(),
+        ("256", 35),
+        0,
+        &HashMap::new(),
+    ).unwrap().unwrap();
+    let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
+    assert_eq!(timeline.id(), &expected_id);
+}
+
+#[test]
 fn timeline_collection_growth_refuses_at_map_child_and_output() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
