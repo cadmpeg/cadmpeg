@@ -9,7 +9,8 @@ use std::fmt::Write;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
+use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::ids::native_stream;
 use crate::records::{
@@ -295,7 +296,7 @@ pub(crate) fn decode_component_naming_spaces(
                 if !component_entities.contains(&component_record_index) {
                     continue;
                 }
-                let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                let Some((context_uuid, _)) = lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)? else {
                     continue;
                 };
                 let Ok(context_uuid) =
@@ -342,7 +343,7 @@ pub(crate) fn decode_component_naming_spaces(
             }) {
                 continue;
             }
-            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+            let Some((context_uuid, _)) = lp_utf16_bounded_charged(ctx, bytes, uuid_offset, 36..=36)? else {
                 continue;
             };
             let Ok(context_uuid) =
