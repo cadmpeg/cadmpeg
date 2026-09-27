@@ -111,6 +111,30 @@ fn knit_operand_surface_ids_with_service(
     .expect("service profile admits knit operand surfaces")
 }
 
+fn native_feature_dependency_ids_with_service(
+    affected_ids: &[crate::feature::rows::FeatureAffectedIds],
+    operations: &[crate::feature::operations::FeatureOperation],
+    entity_tables: &[crate::feature::entity::FeatureEntityTable],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+    prototype_dependencies: &[u32],
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        native_feature_dependency_ids(
+            ctx,
+            affected_ids,
+            operations,
+            entity_tables,
+            replay,
+            surface_rows,
+            feature_id,
+            prototype_dependencies,
+        )
+    })
+    .expect("service profile admits native feature dependencies")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -596,7 +620,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175]
     );
     assert_eq!(
-        native_feature_dependency_ids(
+        native_feature_dependency_ids_with_service(
             &[],
             &[],
             &[producer.clone(), consumer.clone()],
@@ -620,7 +644,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         ),
         None
     );
-    assert!(native_feature_dependency_ids(
+    assert!(native_feature_dependency_ids_with_service(
         &[],
         &[],
         &[producer.clone(), conflicting, consumer],

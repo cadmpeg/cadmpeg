@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    add_surface_prototype_feature_dependencies, feature_generated_dependencies,
-    reconciled_dependencies,
+    add_surface_prototype_feature_dependencies, feature_dependencies,
+    feature_generated_dependencies, native_feature_dependency_ids, reconciled_dependencies,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -13,6 +13,76 @@ use cadmpeg_ir::features::{
     FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
 };
 use std::collections::BTreeMap;
+
+fn feature_dependency_limit_error(
+    collection: Option<u64>,
+    retained: Option<u64>,
+    operation: &'static str,
+    native_only: bool,
+) {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_with_generated_dependency();
+    ir.model.features[0].id = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture feature ID");
+    let prototypes = BTreeMap::from([(17, vec![3])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = if native_only {
+        native_feature_dependency_ids(
+            &ctx,
+            &scan.features.affected_ids,
+            &scan.features.operations,
+            &scan.features.entity_tables,
+            &scan.features.surface_merge_replay_affected_ids,
+            &scan.surfaces.rows,
+            17,
+            &[3],
+        )
+        .map(|_| ())
+    } else {
+        feature_dependencies(&ctx, &scan, &ir, 17, &prototypes).map(|_| ())
+    }
+    .expect_err("one dependency exceeds the resource limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn native_feature_dependencies_refuse_collection_limit() {
+    feature_dependency_limit_error(Some(0), None, "creo native feature dependencies", true);
+}
+
+#[test]
+fn feature_dependency_id_refuses_retained_limit() {
+    feature_dependency_limit_error(None, Some(0), "creo feature dependency IDs", false);
+}
+
+#[test]
+fn feature_dependencies_refuse_collection_limit() {
+    feature_dependency_limit_error(Some(1), None, "creo feature dependencies", false);
+}
+
+#[test]
+fn feature_dependency_fixture_retains_source_order_under_service_policy() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = reconciliation_ir_with_generated_dependency();
+    ir.model.features[0].id = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture feature ID");
+    let dependencies = crate::decode::with_test_decode_ctx(|ctx| {
+        feature_dependencies(ctx, &scan, &ir, 17, &BTreeMap::from([(17, vec![3])]))
+    })
+    .expect("service profile admits one dependency");
+    assert_eq!(dependencies, vec![IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture feature ID")]);
+}
 
 fn dependency_result(limit: u64) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
     let arena = DecodeArena::new();

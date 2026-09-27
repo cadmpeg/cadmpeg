@@ -16,12 +16,14 @@ use cadmpeg_ir::features::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_dependencies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
-) -> Vec<IrFeatureId> {
-    native_feature_dependency_ids(
+) -> Result<Vec<IrFeatureId>, CodecError> {
+    let native = native_feature_dependency_ids(
+        ctx,
         &scan.features.affected_ids,
         &scan.features.operations,
         &scan.features.entity_tables,
@@ -31,20 +33,29 @@ pub(in super::super) fn feature_dependencies(
         prototype_dependencies
             .get(&feature_id)
             .map_or(&[], Vec::as_slice),
-    )
-    .into_iter()
-    .filter_map(|dependency| {
-        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, dependency);
-        ir.model
+    )?;
+    let mut dependencies = Vec::new();
+    for dependency in native {
+        let text = ctx.format_retained(
+            format_args!("creo:model:feature#{dependency}"),
+            "creo feature dependency IDs",
+        )?;
+        let id = IrFeatureId::mint(text)
+            .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
+        if ir.model
             .features
             .iter()
             .any(|feature| feature.id == id)
-            .then_some(id)
-    })
-    .collect()
+        {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo feature dependencies")?;
+            dependencies.push(id);
+        }
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn native_feature_dependency_ids(
+    ctx: &DecodeContext<'_>,
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
     operations: &[crate::feature::operations::FeatureOperation],
     entity_tables: &[crate::feature::entity::FeatureEntityTable],
@@ -52,8 +63,15 @@ pub(in super::super) fn native_feature_dependency_ids(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     prototype_dependencies: &[u32],
-) -> Vec<u32> {
-    agreed_feature_parent_ids(affected_ids, feature_id)
+) -> Result<Vec<u32>, CodecError> {
+    let transition_dependencies = surface_transition_dependencies(
+        ctx,
+        feature_id,
+        entity_tables,
+        surface_rows,
+    )?;
+    let mut dependencies = Vec::new();
+    for dependency in agreed_feature_parent_ids(affected_ids, feature_id)
         .into_iter()
         .chain(current_feature_recipe_parent(operations, feature_id))
         .chain(prototype_dependencies.iter().copied())
@@ -69,17 +87,14 @@ pub(in super::super) fn native_feature_dependency_ids(
             surface_rows,
             feature_id,
         ))
-        .chain(surface_transition_dependencies(
-            feature_id,
-            entity_tables,
-            surface_rows,
-        ))
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+        .chain(transition_dependencies)
+    {
+        if !dependencies.contains(&dependency) {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo native feature dependencies")?;
+            dependencies.push(dependency);
+        }
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn feature_output_surface_dependencies(
@@ -445,6 +460,7 @@ pub(in super::super) fn reconcile_feature_links(
             pending = updates.next();
         }
         let native_dependencies = native_feature_dependency_ids(
+            ctx,
             &scan.features.affected_ids,
             &scan.features.operations,
             &scan.features.entity_tables,
@@ -454,7 +470,7 @@ pub(in super::super) fn reconcile_feature_links(
             prototype_dependencies
                 .get(&feature_id)
                 .map_or(&[], Vec::as_slice),
-        )
+        )?
         .into_iter()
         .map(|dependency| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, dependency))
         .filter(|dependency| emitted.contains(dependency))

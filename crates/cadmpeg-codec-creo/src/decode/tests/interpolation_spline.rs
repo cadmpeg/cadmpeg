@@ -71,6 +71,28 @@ fn thicken_plane_offset_with_service(
     .expect("service profile admits thicken plane offsets")
 }
 
+fn feature_surface_transitions_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<Vec<(u32, u32)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        feature_surface_transitions(ctx, feature_id, tables, rows)
+    })
+    .expect("service profile admits surface transitions")
+}
+
+fn surface_transition_dependencies_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Vec<u32> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        surface_transition_dependencies(ctx, feature_id, tables, rows)
+    })
+    .expect("service profile admits transition dependencies")
+}
+
 const EPS_FULL_TURN: f64 = 1e-12;
 
 fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
@@ -782,13 +804,13 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
     assert_eq!(
-        feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions_with_service(17, std::slice::from_ref(&table), &rows),
         Some(vec![(11, 201), (12, 202)])
     );
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(feature_surface_transitions(17, &[partial], &rows), None);
+    assert_eq!(feature_surface_transitions_with_service(17, &[partial], &rows), None);
 
     let mut conflicting = table.clone();
     conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related {
@@ -796,7 +818,7 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         entity: 101,
         state: crate::feature::entity::RelatedState::Zero,
     };
-    assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
+    assert_eq!(feature_surface_transitions_with_service(17, &[conflicting], &rows), None);
     let mut wrong_predecessor_class = table.clone();
     wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related {
         class: crate::feature::entity::RelatedClass::Class219,
@@ -807,11 +829,11 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         .entries
         .push(entry(999, 214, Some(888)));
     assert_eq!(
-        feature_surface_transitions(17, &[wrong_predecessor_class], &rows),
+        feature_surface_transitions_with_service(17, &[wrong_predecessor_class], &rows),
         None
     );
     assert_eq!(
-        surface_transition_dependencies(17, std::slice::from_ref(&table), &rows),
+        surface_transition_dependencies_with_service(17, std::slice::from_ref(&table), &rows),
         [3, 4]
     );
 }

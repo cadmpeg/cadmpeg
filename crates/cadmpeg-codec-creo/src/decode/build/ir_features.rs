@@ -304,11 +304,12 @@ pub(super) fn emit_model_features(
         )?;
         retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
         let dependencies = feature_dependencies(
+            ctx,
             scan,
             ir,
             operation.feature_id,
             &prototype_feature_dependencies,
-        );
+        )?;
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
                 let parent =
@@ -520,11 +521,12 @@ pub(super) fn emit_model_features(
             ),
             suppressed: Some(false),
             dependencies: (feature_dependencies(
+                ctx,
                 scan,
                 ir,
                 feature_id,
                 &prototype_feature_dependencies,
-            ))
+            )?)
             .into_iter()
             .collect(),
             source_properties: cadmpeg_core::text::named_entries_checked(ctx,
