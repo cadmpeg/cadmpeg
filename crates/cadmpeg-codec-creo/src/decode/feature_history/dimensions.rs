@@ -58,6 +58,25 @@ fn dimension_expression(
         .map(|value| value.unwrap_or_default())
 }
 
+fn push_feature_source_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    content: &mut cadmpeg_ir::features::FeatureContent,
+    id: ParameterId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if content
+        .iter()
+        .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
+    {
+        return Err(cadmpeg_core::CodecError::Malformed(
+            "source_content repeats a parameter or child-feature reference".into(),
+        ));
+    }
+    ctx.try_collection(1, "creo feature source content", || content.try_reserve(1))?;
+    content
+        .push(FeatureSourceContent::Parameter(id))
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))
+}
+
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
@@ -366,10 +385,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 .iter_mut()
                 .filter(|feature| feature.id == owner_id),
         ) {
-            feature
-                .source_content
-                .push(FeatureSourceContent::Parameter(id))
-                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+            push_feature_source_parameter(ctx, &mut feature.source_content, id)?;
         }
     }
     Ok((transferred, relation_parameters))

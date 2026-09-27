@@ -2034,6 +2034,11 @@ impl FeatureContent {
         Ok(())
     }
 
+    /// Reserves capacity for additional ordered source-content entries.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), std::collections::TryReserveError> {
+        self.0.try_reserve(additional)
+    }
+
     /// Whether the sequence has no content.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
