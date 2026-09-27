@@ -21,6 +21,36 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn admission_loss_slots_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file_with_global(&crate::test_support::global_with_version_flag("1"));
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let mut parse =
+        super::PhysicalParse::run(&bytes, &parse_ctx, super::ParseMode::Inspect).unwrap();
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        parse.admission_losses(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges admission loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let losses = parse.admission_losses(&ctx).unwrap();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+}
+
+#[test]
 fn combined_summary_refuses_collection_limit_before_append() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
