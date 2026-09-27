@@ -881,23 +881,68 @@ struct ShutLiningCurveRecord {
     is_bump: bool,
 }
 
-fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
-    MeshModifiersRecord {
-        displacement: modifiers.displacement.as_ref().map(displacement_record),
+fn mesh_modifiers_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    modifiers: &crate::mesh_modifiers::MeshModifiers,
+) -> Result<MeshModifiersRecord, CodecError> {
+    Ok(MeshModifiersRecord {
+        displacement: modifiers
+            .displacement
+            .as_ref()
+            .map(|value| displacement_record(ctx, value))
+            .transpose()?,
         edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
         thickening: modifiers.thickening.as_ref().map(thickening_record),
         curve_piping: modifiers.curve_piping.as_ref().map(curve_piping_record),
-        shut_lining: modifiers.shut_lining.as_ref().map(shut_lining_record),
-    }
+        shut_lining: modifiers
+            .shut_lining
+            .as_ref()
+            .map(|value| shut_lining_record(ctx, value))
+            .transpose()?,
+    })
 }
 
 fn displacement_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     displacement: &crate::mesh_modifiers::DisplacementModifier,
-) -> DisplacementRecord {
-    DisplacementRecord {
+) -> Result<DisplacementRecord, CodecError> {
+    let mut sub_items = crate::wire::admitted_collection(
+        ctx,
+        displacement.sub_items.len(),
+        "Rhino projected displacement sub-items",
+    )?;
+    for item in &displacement.sub_items {
+        sub_items.push(DisplacementSubItemRecord {
+            face_index: item.face_index,
+            on: item.on,
+            texture: item
+                .texture
+                .map(|uuid| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{uuid}"),
+                        "Rhino projected displacement sub-item texture UUID",
+                    )
+                })
+                .transpose()?,
+            channel: item.channel,
+            black_point: item.black_point,
+            white_point: item.white_point,
+        });
+    }
+    Ok(DisplacementRecord {
         xml_version: displacement.xml_version,
         on: displacement.on,
-        texture: displacement.texture.map(|uuid| uuid.to_string()),
+        texture: displacement
+            .texture
+            .map(|uuid| {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("{uuid}"),
+                    "Rhino projected displacement texture UUID",
+                )
+            })
+            .transpose()?,
         channel: displacement.channel,
         black_point: displacement.black_point,
         white_point: displacement.white_point,
@@ -912,19 +957,8 @@ fn displacement_record(
         fairing_amount: displacement.fairing_amount,
         sub_object_count: displacement.sub_object_count,
         sweep_resolution_formula: displacement.sweep_resolution_formula,
-        sub_items: displacement
-            .sub_items
-            .iter()
-            .map(|item| DisplacementSubItemRecord {
-                face_index: item.face_index,
-                on: item.on,
-                texture: item.texture.map(|uuid| uuid.to_string()),
-                channel: item.channel,
-                black_point: item.black_point,
-                white_point: item.white_point,
-            })
-            .collect(),
-    }
+        sub_items,
+    })
 }
 
 fn edge_softening_record(
@@ -966,26 +1000,42 @@ fn curve_piping_record(
     }
 }
 
-fn shut_lining_record(shut_lining: &crate::mesh_modifiers::ShutLiningModifier) -> ShutLiningRecord {
-    ShutLiningRecord {
+fn shut_lining_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    shut_lining: &crate::mesh_modifiers::ShutLiningModifier,
+) -> Result<ShutLiningRecord, CodecError> {
+    let mut curves = crate::wire::admitted_collection(
+        ctx,
+        shut_lining.curves.len(),
+        "Rhino projected shut-lining curves",
+    )?;
+    for curve in &shut_lining.curves {
+        curves.push(ShutLiningCurveRecord {
+            uuid: curve
+                .uuid
+                .map(|uuid| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{uuid}"),
+                        "Rhino projected shut-lining curve UUID",
+                    )
+                })
+                .transpose()?,
+            radius: curve.radius,
+            profile: curve.profile,
+            enabled: curve.enabled,
+            pull: curve.pull,
+            is_bump: curve.is_bump,
+        });
+    }
+    Ok(ShutLiningRecord {
         xml_version: shut_lining.xml_version,
         on: shut_lining.on,
         faceted: shut_lining.faceted,
         auto_update: shut_lining.auto_update,
         force_update: shut_lining.force_update,
-        curves: shut_lining
-            .curves
-            .iter()
-            .map(|curve| ShutLiningCurveRecord {
-                uuid: curve.uuid.map(|uuid| uuid.to_string()),
-                radius: curve.radius,
-                profile: curve.profile,
-                enabled: curve.enabled,
-                pull: curve.pull,
-                is_bump: curve.is_bump,
-            })
-            .collect(),
-    }
+        curves,
+    })
 }
 
 impl Serialize for settings::LayerPerViewportSettings {
@@ -1256,7 +1306,7 @@ fn object_attributes_presentation(
     attribute_userdata: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
     source_offset: usize,
-    source_uuid: String,
+    source_uuid: Uuid,
     losses: &mut Vec<LossNote>,
 ) -> Result<ObjectAttributesPresentation, CodecError> {
     let rendering = match rendering_attributes(
@@ -1284,10 +1334,64 @@ fn object_attributes_presentation(
         source_offset,
         losses,
     )?;
+    let name =
+        crate::wire::copy_retained_string(ctx, &attributes.name, "Rhino projected object name")?;
+    let url =
+        crate::wire::copy_retained_string(ctx, &attributes.url, "Rhino projected object URL")?;
+    let mut group_indexes = crate::wire::admitted_collection(
+        ctx,
+        attributes.groups.len(),
+        "Rhino projected object groups",
+    )?;
+    group_indexes.extend_from_slice(&attributes.groups);
+    let mut display_materials = crate::wire::admitted_collection(
+        ctx,
+        attributes.display_materials.len(),
+        "Rhino projected display materials",
+    )?;
+    for (viewport, material) in &attributes.display_materials {
+        display_materials.push([
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{viewport}"),
+                "Rhino projected display viewport UUID",
+            )?,
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("{material}"),
+                "Rhino projected display material UUID",
+            )?,
+        ]);
+    }
+    let viewport_uuid = if attributes.viewport_id.is_nil() {
+        None
+    } else {
+        Some(crate::wire::admitted_format(
+            ctx,
+            format_args!("{}", attributes.viewport_id),
+            "Rhino projected active viewport UUID",
+        )?)
+    };
+    let mut clipping_plane_uuids = crate::wire::admitted_collection(
+        ctx,
+        attributes.clipping_plane_ids.len(),
+        "Rhino projected clipping plane UUIDs",
+    )?;
+    for id in &attributes.clipping_plane_ids {
+        clipping_plane_uuids.push(crate::wire::admitted_format(
+            ctx,
+            format_args!("{id}"),
+            "Rhino projected clipping plane UUID text",
+        )?);
+    }
     Ok(ObjectAttributesPresentation {
-        source_uuid,
-        name: attributes.name.clone(),
-        url: attributes.url.clone(),
+        source_uuid: crate::wire::admitted_format(
+            ctx,
+            format_args!("{source_uuid}"),
+            "Rhino projected source UUID",
+        )?,
+        name,
+        url,
         layer_index: attributes.layer_index,
         material_index: attributes.material_index,
         linetype_index: attributes.linetype_index,
@@ -1303,22 +1407,13 @@ fn object_attributes_presentation(
         plot_weight_source: attributes.plot_weight_source,
         plot_color: attributes.plot_color,
         plot_weight_mm: attributes.plot_weight,
-        group_indexes: attributes.groups.clone(),
-        display_materials: attributes
-            .display_materials
-            .iter()
-            .map(|(viewport, material)| [viewport.to_string(), material.to_string()])
-            .collect(),
+        group_indexes,
+        display_materials,
         active_space: attributes.active_space,
-        viewport_uuid: (!attributes.viewport_id.is_nil())
-            .then(|| attributes.viewport_id.to_string()),
+        viewport_uuid,
         display_order: attributes.display_order,
         clipping_proof: attributes.clipping_proof,
-        clipping_plane_uuids: attributes
-            .clipping_plane_ids
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+        clipping_plane_uuids,
         hatch_pattern_index: attributes.hatch_pattern_index,
         section_hatch_scale: attributes.section_hatch_scale,
         section_hatch_rotation: attributes.section_hatch_rotation,
@@ -1339,7 +1434,8 @@ fn object_attributes_presentation(
         mesh_modifiers: attributes
             .mesh_modifiers
             .as_ref()
-            .map(mesh_modifiers_record),
+            .map(|value| mesh_modifiers_record(ctx, value))
+            .transpose()?,
     })
 }
 
@@ -1907,7 +2003,7 @@ fn parse_light_record_attributes(
         &attributes_userdata,
         archive,
         record.range.start,
-        attributes.object_id.to_string(),
+        attributes.object_id,
         losses,
     )
     .map_err(FramingError::from)?;
@@ -4810,7 +4906,7 @@ pub(crate) fn install(
                 &object.attributes_userdata,
                 scan.archive,
                 object.range.start,
-                identity.object_id.to_string(),
+                identity.object_id,
                 &mut losses,
             )?;
             object_presentation.push(ObjectPresentationRecord {
