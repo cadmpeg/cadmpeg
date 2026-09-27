@@ -1051,8 +1051,13 @@ fn transition_profile_selection(
         };
         inserted_selections.push(selection);
     }
-    let inserted =
-        transition_inserted_profile_selection(sketch, entities, tolerance, inserted_selections);
+    let inserted = transition_inserted_profile_selection(
+        sketch,
+        entities,
+        tolerance,
+        inserted_selections,
+        resolution.ctx,
+    )?;
     if inserted.is_some() {
         return Ok(inserted);
     }
@@ -1438,12 +1443,13 @@ fn transition_inserted_profile_selection(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     selections: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
     let selections = selections.into_iter().flatten().collect::<Vec<_>>();
     if let Some(selection) = unique_resolved_selection(selections.iter().cloned().map(Some)) {
-        return Some(selection);
+        return Ok(Some(selection));
     }
     let loop_selections = selections
         .iter()
@@ -1454,7 +1460,7 @@ fn transition_inserted_profile_selection(
         .collect::<Vec<_>>();
     if let Some(first) = loop_selections.first() {
         if loop_selections.iter().all(|candidate| candidate == first) {
-            return Some(ResolvedProfileSelection::Loops(first.to_vec()));
+            return Ok(Some(ResolvedProfileSelection::Loops(first.to_vec())));
         }
     }
     if loop_selections.len() == selections.len() {
@@ -1467,8 +1473,10 @@ fn transition_inserted_profile_selection(
                 }
                 loops
             });
-        if !loops.is_empty() && profile_loops_are_independent(sketch, entities, &loops, tolerance) {
-            return Some(ResolvedProfileSelection::Loops(loops));
+        if !loops.is_empty()
+            && profile_loops_are_independent(sketch, entities, &loops, tolerance, ctx)?
+        {
+            return Ok(Some(ResolvedProfileSelection::Loops(loops)));
         }
     }
     let mut regions = selections.iter().filter_map(|selection| match selection {
@@ -1480,9 +1488,11 @@ fn transition_inserted_profile_selection(
         },
         ResolvedProfileSelection::Loops(_) => None,
     });
-    let (outer, holes) = regions.next()?;
+    let Some((outer, holes)) = regions.next() else {
+        return Ok(None);
+    };
     if regions.any(|candidate| candidate != (outer, holes)) {
-        return None;
+        return Ok(None);
     }
     let mut has_boundary_support = false;
     for selection in &selections {
@@ -1500,15 +1510,15 @@ fn transition_inserted_profile_selection(
             {
                 has_boundary_support = true;
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
     if !has_boundary_support {
-        return None;
+        return Ok(None);
     }
-    Some(ResolvedProfileSelection::Regions(vec![
-        SketchProfileRegion::loops(outer, holes.to_vec()).ok()?,
-    ]))
+    Ok(SketchProfileRegion::loops(outer, holes.to_vec())
+        .ok()
+        .map(|region| ResolvedProfileSelection::Regions(vec![region])))
 }
 
 pub(super) fn historical_face_points(
@@ -1915,7 +1925,7 @@ fn selection_containing_points(
         return Ok(None);
     }
     Ok(
-        region_containing_points(sketch, entities, points, tolerance)
+        region_containing_points(sketch, entities, points, tolerance, ctx)?
             .map(|region| ResolvedProfileSelection::Regions(vec![region])),
     )
 }

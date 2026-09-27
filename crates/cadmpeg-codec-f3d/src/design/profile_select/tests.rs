@@ -1056,7 +1056,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
-        region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            std::slice::from_ref(&entity),
+            &[point],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
@@ -1125,7 +1132,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         .try_push(sketch.profiles[0].clone())
         .unwrap();
     assert_eq!(
-        region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            std::slice::from_ref(&entity),
+            &[point],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
@@ -1705,8 +1719,9 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
     };
     let transition_selection = |selections| {
         crate::design::profile_select::transition_inserted_profile_selection(
-            &sketch, &entities, 1.0e-6, selections,
+            &sketch, &entities, 1.0e-6, selections, None,
         )
+        .unwrap()
     };
 
     assert_eq!(
