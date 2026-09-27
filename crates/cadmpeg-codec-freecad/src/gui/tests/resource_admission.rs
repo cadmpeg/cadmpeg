@@ -231,6 +231,49 @@ fn gui_presentation_assets_refuse_at_caller_limit() {
 }
 
 #[test]
+fn gui_asset_identity_refuses_at_retained_limit() {
+    let document_id = "fcstd:gui:document#0";
+    let graph = super::super::Graph {
+        documents: vec![crate::native::GuiDocumentRecord {
+            id: document_id.into(), schema_version: None,
+            attributes: std::collections::BTreeMap::new(),
+            states: vec![crate::native::GuiStateRecord {
+                id: "fcstd:gui:state#0".into(), kind: "Other".into(),
+                attributes: std::collections::BTreeMap::new(), values: Vec::new(),
+                side_entries: vec!["asset".into()],
+                xml: crate::native::RetainedXml::from_text("<Other/>".into(), 0).expect("valid state XML"),
+            }],
+        }],
+        ..Default::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = (document_id.len() + "Other".len()
+        + crate::native::native_id("entry", "asset").len() - 1) as u64;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
+        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native identity"));
+}
+
+#[test]
+fn gui_state_identity_refuses_at_retained_limit() {
+    let xml = "<Camera/>";
+    let document = roxmltree::Document::parse(xml).expect("GUI state XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = ("Camera".len() + xml.len() + "Camera:0".len()
+        + crate::native::native_id("gui-state", "Camera:0").len() - 1) as u64;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+        .expect("GUI state context");
+    assert!(matches!(super::super::gui_state(&ctx, xml, 0, document.root_element()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD native identity"));
+}
+
+#[test]
 fn gui_presentation_property_map_refuses_at_caller_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
