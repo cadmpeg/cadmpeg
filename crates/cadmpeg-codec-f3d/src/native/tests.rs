@@ -167,6 +167,30 @@ fn native_owner_groups_refuse_child_collection_limit() {
 }
 
 #[test]
+fn native_missing_owner_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::group_by_owner(
+        Some(&ctx),
+        vec![("child", "missing")],
+        &std::collections::HashMap::new(),
+        0,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "report F3D native missing owner"
+    ));
+}
+
+#[test]
 fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
     use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
     use crate::records::dimensions::DesignDimensionLocusPair;

@@ -115,6 +115,48 @@ fn group_by_owner<T>(
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
 ) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
+    fn invalid_owner(
+        ctx: Option<&DecodeContext<'_>>,
+        child: &str,
+        parent: &str,
+    ) -> cadmpeg_ir::NativeConvertError {
+        let args = format_args!(
+            "orphaned or ambiguously parented records: child {child} refers to missing parent {parent}"
+        );
+        let Some(ctx) = ctx else {
+            return cadmpeg_ir::NativeConvertError::InvalidOwner(args.to_string());
+        };
+        struct Length(usize);
+        impl std::fmt::Write for Length {
+            fn write_str(&mut self, value: &str) -> std::fmt::Result {
+                self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let operation = "report F3D native missing owner";
+        let mut length = Length(0);
+        if std::fmt::write(&mut length, args).is_err() {
+            return cadmpeg_ir::NativeConvertError::Resource(
+                ctx.refuse_codec_limit(operation, 0, u64::MAX),
+            );
+        }
+        let Ok(bytes) = u64::try_from(length.0) else {
+            return cadmpeg_ir::NativeConvertError::Resource(
+                ctx.refuse_codec_limit(operation, 0, u64::MAX),
+            );
+        };
+        if let Err(error) = ctx.charge_retained(bytes, operation) {
+            return cadmpeg_ir::NativeConvertError::Resource(error);
+        }
+        let mut text = String::new();
+        if text.try_reserve(length.0).is_err() || std::fmt::write(&mut text, args).is_err() {
+            return cadmpeg_ir::NativeConvertError::Resource(
+                ctx.refuse_codec_limit(operation, 0, bytes),
+            );
+        }
+        cadmpeg_ir::NativeConvertError::InvalidOwner(text)
+    }
+
     let mut grouped = Vec::new();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(owner_count as u64, "group F3D native owners")?;
@@ -131,12 +173,9 @@ fn group_by_owner<T>(
     }
     for record in records {
         let parent = owner(&record);
-        let ordinal = owners.get(parent).ok_or_else(|| {
-            cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "orphaned or ambiguously parented records: child {} refers to missing parent {parent}",
-                id(&record)
-            ))
-        })?;
+        let ordinal = owners
+            .get(parent)
+            .ok_or_else(|| invalid_owner(ctx, id(&record), parent))?;
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "attach F3D native owner child")?;
             grouped[*ordinal].try_reserve(1).map_err(|_| {
