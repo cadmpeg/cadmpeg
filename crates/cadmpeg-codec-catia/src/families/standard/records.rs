@@ -679,9 +679,10 @@ pub(crate) fn surface_prefixes(
 /// frame vector of its face-local trim packet. A tag is emitted only when one
 /// valid bounds record carries it.
 pub(super) fn plane_params<S: std::hash::BuildHasher>(
+    ctx: &DecodeContext<'_>,
     brep: &[u8],
     normals: &HashMap<u32, FiniteVector<3>, S>,
-) -> Vec<PlaneParams> {
+) -> Result<Vec<PlaneParams>, CodecError> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
@@ -703,21 +704,32 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             continue;
         };
         let target = u24_le(brep, pos - 3);
-        if !seen_targets.insert(target) {
-            duplicate_targets.insert(target);
+        if !crate::resource::insert_set(ctx, &mut seen_targets, target, "catia_plane_seen_targets")?
+        {
+            crate::resource::insert_set(
+                ctx,
+                &mut duplicate_targets,
+                target,
+                "catia_plane_duplicate_targets",
+            )?;
         }
         let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
         let [x, y, z] = bounds.sphere_center;
-        out.push(PlaneParams {
-            target,
-            origin: FinitePoint3::from_coordinates(x, y, z),
-            normal,
-        });
+        crate::resource::push(
+            ctx,
+            &mut out,
+            PlaneParams {
+                target,
+                origin: FinitePoint3::from_coordinates(x, y, z),
+                normal,
+            },
+            "catia_plane_params",
+        )?;
     }
     out.retain(|plane| !duplicate_targets.contains(&plane.target));
-    out
+    Ok(out)
 }
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
