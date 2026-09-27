@@ -7,6 +7,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::DecodeContext;
+use std::fmt::Write;
 
 use crate::bytes::{lp_ascii_strict, lp_utf16_bounded, take_reference};
 use crate::container::ContainerScan;
@@ -14,7 +15,7 @@ use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
 use crate::ids;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
@@ -40,7 +41,7 @@ use crate::records::mesh::{
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
     MeshAffineTransform,
 };
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
@@ -283,6 +284,7 @@ struct MeshCollectionOwnerRecord {
 impl MeshBody {
     /// Project one decoded container through its joined Design body record.
     fn from_container(
+        ctx: &DecodeContext<'_>,
         entry_name: &str,
         body_byte_offset: u64,
         transform: MeshAffineTransform,
@@ -299,24 +301,50 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = container;
+        let mut id = native_scope_charged(ctx, entry_name)?;
+        let mut digits = 1;
+        let mut quotient = body_byte_offset;
+        while quotient >= 10 {
+            quotient /= 10;
+            digits += 1;
+        }
+        let suffix_bytes = "mesh-body".len() + 2 + digits;
+        ctx.charge_retained(u64_from_index(suffix_bytes), "f3d mesh body identifier")?;
+        id.try_reserve(suffix_bytes).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh body identifier allocation", 0, 1)
+        })?;
+        write!(&mut id, ":mesh-body#{body_byte_offset}").map_err(|_| {
+            CodecError::Malformed("F3D mesh body identifier formatting failed".into())
+        })?;
+        ctx.charge_collection_items(u64_from_index(vertices.len()), "f3d placed mesh vertices")?;
+        let mut placed_vertices = Vec::new();
+        placed_vertices.try_reserve(vertices.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d placed mesh vertices allocation", 0, 1)
+        })?;
+        for point in vertices {
+            placed_vertices.push(transform.transform_point(point)?);
+        }
+        let placed_normals = if let Some(normals) = corner_normals {
+            ctx.charge_collection_items(u64_from_index(normals.len()), "f3d placed mesh normals")?;
+            let mut placed = Vec::new();
+            placed.try_reserve(normals.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d placed mesh normals allocation", 0, 1)
+            })?;
+            for normal in normals {
+                placed.push(transform.transform_normal(normal)?);
+            }
+            Some(placed)
+        } else {
+            None
+        };
         Ok(Self {
-            id: ids::native_mesh_body_id(entry_name, body_byte_offset),
-            vertices: vertices
-                .into_iter()
-                .map(|point| transform.transform_point(point))
-                .collect::<Result<_, _>>()?,
+            id,
+            vertices: placed_vertices,
             // Placement does not change indexing. Triangle tuples, feature
             // edges, and corner selectors remain in serialized order.
             triangles,
             feature_edges,
-            corner_normals: corner_normals
-                .map(|normals| {
-                    normals
-                        .into_iter()
-                        .map(|normal| transform.transform_normal(normal))
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
+            corner_normals: placed_normals,
             triangle_groups,
             texture_ids,
             attributes,
@@ -1585,6 +1613,7 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
             .and_then(decode_mesh_container)
         {
             Ok(container) => container,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 outcomes.push(MeshContainerOutcome::Failed {
                     entry_name: entry.name.clone(),
@@ -1607,12 +1636,14 @@ pub(crate) fn decode_mesh_bodies(ctx: &DecodeContext<'_>, scan: &ContainerScan) 
             .container_mesh_uuid = Some(container.mesh_uuid.clone());
         let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
         let projected = match MeshBody::from_container(
+            ctx,
             &entry.name,
             body.placement.record().byte_offset(),
             body.placement.transform(),
             container,
         ) {
             Ok(projected) => projected,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 outcomes.push(MeshContainerOutcome::Failed {
                     entry_name: entry.name.clone(),
@@ -3055,6 +3086,59 @@ mod tests {
     }
 
     #[test]
+    fn mesh_body_projection_refuses_identifier_and_collection_limits() {
+        let transform = crate::records::mesh::MeshAffineTransform::new([
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ])
+        .unwrap();
+        let container = || MeshContainer {
+            fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
+            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
+                "11111111-2222-4333-8444-555555555555".to_owned(),
+            )
+            .unwrap(),
+            vertices: vec![FinitePoint3::ZERO],
+            triangles: Vec::new(),
+            feature_edges: Vec::new(),
+            corner_normals: Some(vec![UnitVector3::Z_AXIS]),
+            triangle_groups: Vec::new(),
+            texture_ids: None,
+            attributes: Vec::new(),
+        };
+        let native_scope_bytes = crate::ids::native_scope("mesh.paramesh").len() as u64;
+        for (collection_limit, retained_limit, dimension, operation) in [
+            (0, u64::MAX, cadmpeg_core::decode::ResourceDimension::CollectionItems, "f3d placed mesh vertices"),
+            (1, u64::MAX, cadmpeg_core::decode::ResourceDimension::CollectionItems, "f3d placed mesh normals"),
+            (2, 0, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "f3d native stream key"),
+            (2, native_scope_bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "f3d mesh body identifier"),
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = collection_limit;
+            policy.limits.max_retained_bytes = retained_limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                MeshBody::from_container(&ctx, "mesh.paramesh", 100, transform, container()),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+        }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let body = MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container())
+                .unwrap();
+            assert_eq!(body.id, crate::ids::native_mesh_body_id("mesh.paramesh", 100));
+            assert_eq!(body.vertices.len(), 1);
+            assert_eq!(body.corner_normals.unwrap().len(), 1);
+        });
+    }
+
+    #[test]
     fn mesh_body_transform_applies_nonuniform_scale_and_translation() {
         let cells = [
             0.175, 0.0, 0.0, 0.4, 0.0, 0.06, 0.0, 0.7, 0.0, 0.0, 0.125, 0.3, 0.0, 0.0, 0.0, 1.0,
@@ -3105,8 +3189,10 @@ mod tests {
                 addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
             }],
         };
-        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
-            .expect("projected mesh");
+        let body = crate::design::test_support::with_test_decode_context(|ctx| {
+            MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
+        })
+        .expect("projected mesh");
 
         assert_eq!(
             body.vertices
@@ -3151,8 +3237,10 @@ mod tests {
             texture_ids: None,
             attributes: Vec::new(),
         };
-        let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
-            .expect("projected mesh");
+        let body = crate::design::test_support::with_test_decode_context(|ctx| {
+            MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
+        })
+        .expect("projected mesh");
         let geometric_normal = body.vertices[1]
             .get()
             .vector_from(body.vertices[0].get())
