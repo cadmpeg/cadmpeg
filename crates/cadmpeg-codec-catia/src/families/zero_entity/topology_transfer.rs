@@ -202,14 +202,19 @@ pub(super) fn transfer_closed_face_topology(
                     let oriented_endpoints = loop_record.oriented_model_endpoints[member_index];
                     let pcurve = match support.pcurve.as_ref() {
                         Some(pcurve) => {
-                            let geometry = super::records::zero_entity_neutral_pcurve(
+                            let geometry = match super::records::zero_entity_neutral_pcurve(
+                                admission.context(),
                                 surface_geometry,
                                 pcurve,
                                 &format_args!(
                                     "zero-entity support record #{support_record_ordinal}"
                                 ),
                                 refusal,
-                            )?;
+                            ) {
+                                Ok(Some(geometry)) => geometry,
+                                Ok(None) => return None,
+                                Err(error) => return Some(Err(error)),
+                            };
                             let parameter_range = pcurve_parameter_range(&geometry)?;
                             Some(OccurrencePcurve {
                                 id: PcurveId::compose(
