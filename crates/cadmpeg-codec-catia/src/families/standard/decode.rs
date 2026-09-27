@@ -4692,10 +4692,12 @@ fn attach_standard_topology(
             .collect::<Vec<_>>();
         if let Some(handle_face_candidates) = handle_face_candidates {
             missing_edge::refine_repeated_edge_face_candidates(
+                ctx,
                 &edge_faces,
                 &mut allowed_faces,
                 &handle_face_candidates,
             )
+            .map_err(StandardTopologyError::Resource)?
             .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
         }
         refine_repeated_face_domains_by_geometry_and_bounds(
