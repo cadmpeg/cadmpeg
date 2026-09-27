@@ -676,7 +676,8 @@ fn add_reference_fields(
                     role.as_str(),
                     target_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
@@ -694,11 +695,22 @@ fn note_ambiguous_target(
     role: &str,
     target_id: u64,
     identities: &BTreeSet<String>,
-) {
-    let identities = identities.iter().cloned().collect::<Vec<_>>().join(", ");
-    losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(format!(
-        "STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"
-    )));
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let identities = crate::decode_alloc::charged_join(
+        ctx,
+        "step_drawing_ambiguous_identities_text",
+        identities.iter().map(String::as_str),
+        ", ",
+    )?;
+    reserve_drawing_items(losses, 1, ctx, "step_drawing_losses")?;
+    let message = crate::decode_alloc::charged_format(
+        ctx,
+        "step_drawing_ambiguous_loss_text",
+        format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"),
+    )?;
+    losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));
+    Ok(())
 }
 
 fn add_sheet_revision_usages(
@@ -731,7 +743,8 @@ fn add_sheet_revision_usages(
                     "drawing_revision",
                     revision_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
@@ -767,7 +780,8 @@ fn add_sheet_revision_usages(
                     "sheet_revision",
                     sheet_id,
                     &identities,
-                ),
+                    target_context.ctx,
+                )?,
                 TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
@@ -814,7 +828,8 @@ fn add_draughting_model_associations(
                         "semantic_definition",
                         definition_id,
                         &identities,
-                    );
+                        target_context.ctx,
+                    )?;
                     complete = false;
                     None
                 }
@@ -858,7 +873,8 @@ fn add_draughting_model_associations(
                         "associated_items",
                         item_id,
                         &identities,
-                    );
+                        target_context.ctx,
+                    )?;
                     complete = false;
                 }
                 TargetResolution::Unresolved => {
@@ -887,7 +903,8 @@ fn add_draughting_model_associations(
                             "annotation_placeholder",
                             placeholder_id,
                             &identities,
-                        );
+                            target_context.ctx,
+                        )?;
                         complete = false;
                         None
                     }

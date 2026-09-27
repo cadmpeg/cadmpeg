@@ -185,3 +185,57 @@ fn drawing_native_arena_items_refuse_collection_limit() {
     let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
     drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_arena_items", &[3]);
 }
+
+#[test]
+fn drawing_ambiguous_identities_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+    assert!(matches!(
+        super::super::note_ambiguous_target(
+            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_ambiguous_identities_text"
+    ));
+}
+
+#[test]
+fn drawing_ambiguous_loss_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits retained policy");
+    let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+    assert!(matches!(
+        super::super::note_ambiguous_target(
+            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_drawing_ambiguous_loss_text"
+    ));
+}
+
+#[test]
+fn drawing_ambiguous_loss_slot_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+    assert!(matches!(
+        super::super::note_ambiguous_target(
+            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
+        ),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_drawing_losses"
+    ));
+}
