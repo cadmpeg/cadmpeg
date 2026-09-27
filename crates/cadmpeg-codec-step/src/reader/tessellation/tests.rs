@@ -46,14 +46,16 @@ fn decode_tessellation_under_policy(
     );
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
     let mut ir = CadIr::empty();
-let geometry = super::super::geometry::decode(&exchange, &mut ir).expect("resource allocation did not fail").value;
-    let index = super::super::index::CarrierIndex::from_ir(&ir);
     let topology_arena = DecodeArena::new();
     let (topology_ctx, _) = DecodeContext::from_root_bytes(
         source.as_bytes(),
         &topology_arena,
         &DecodePolicy::service(),
     )?;
+    let geometry = super::super::geometry::decode(&exchange, &mut ir, &topology_ctx)
+        .expect("resource allocation did not fail")
+        .value;
+    let index = super::super::index::CarrierIndex::from_ir(&ir, &topology_ctx)?;
     let topology = super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
         .expect("test topology decodes")
         .value;
