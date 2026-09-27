@@ -57,6 +57,78 @@ fn copy_string_charged(
     Ok(copy)
 }
 
+fn format_retained(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    struct Length(usize);
+
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut length = Length(0);
+    std::fmt::write(&mut length, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let bytes = u64::try_from(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut output = String::new();
+    output
+        .try_reserve(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    std::fmt::write(&mut output, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    Ok(output)
+}
+
+fn push_summary_note(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    args: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "collect F3D summary notes")?;
+    notes
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D summary notes", 0, 1))?;
+    notes.push(format_retained(ctx, "retain F3D summary note", args)?);
+    Ok(())
+}
+
+fn copy_summary_entries(
+    ctx: &DecodeContext<'_>,
+    entries: &[ContainerEntry],
+) -> Result<Vec<ContainerEntry>, CodecError> {
+    let count = u64::try_from(entries.len())
+        .map_err(|_| ctx.refuse_codec_limit("copy F3D summary entries", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "copy F3D summary entries")?;
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(entries.len())
+        .map_err(|_| ctx.refuse_codec_limit("copy F3D summary entries", 0, count))?;
+    for entry in entries {
+        let mut attributes = BTreeMap::new();
+        for (key, value) in &entry.attributes {
+            ctx.charge_collection_items(1, "copy F3D summary attributes")?;
+            attributes.insert(
+                copy_string_charged(ctx, key, "copy F3D summary attribute key")?,
+                copy_string_charged(ctx, value, "copy F3D summary attribute value")?,
+            );
+        }
+        copied.push(ContainerEntry {
+            name: copy_string_charged(ctx, &entry.name, "copy F3D summary entry name")?,
+            role: entry.role,
+            storage: entry.storage.clone(),
+            attributes,
+        });
+    }
+    Ok(copied)
+}
+
 fn insert_attribute(
     ctx: &DecodeContext<'_>,
     attributes: &mut BTreeMap<String, String>,
@@ -621,16 +693,17 @@ pub(crate) fn scan<'a>(
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP
 /// extension. Design body bindings perform the model selection during decode.
 pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     dialects: cadmpeg_core::dialect::DialectLayers,
-) -> ContainerSummary {
-    ContainerSummary::classified(
+) -> Result<ContainerSummary, CodecError> {
+    Ok(ContainerSummary::classified(
         dialects,
         cadmpeg_ir::ContainerKind::Zip,
-        scan.entries.clone(),
+        copy_summary_entries(ctx, &scan.entries)?,
         Vec::new(),
-        summary_notes(scan, SummaryScope::ContainerOnly),
-    )
+        summary_notes(ctx, scan, SummaryScope::ContainerOnly)?,
+    ))
 }
 
 /// Whether the caller transferred beyond container metadata.
@@ -643,50 +716,55 @@ pub(crate) enum SummaryScope {
 }
 
 /// Container notes shared by inspection and decode report construction.
-pub(crate) fn summary_notes(scan: &ContainerScan<'_>, scope: SummaryScope) -> Vec<String> {
+pub(crate) fn summary_notes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    scope: SummaryScope,
+) -> Result<Vec<String>, CodecError> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
-        notes.push(format!("Design asset folder (from manifests): {folder}"));
+        push_summary_note(ctx, &mut notes, format_args!("Design asset folder (from manifests): {folder}"))?;
     } else {
-        notes.push("outer F3Z archive; each F3D member selects its own Design asset".into());
+        push_summary_note(ctx, &mut notes, format_args!("outer F3Z archive; each F3D member selects its own Design asset"))?;
     }
     let design_brep_count = design_breps(scan).count();
-    notes.push(format!(
+    push_summary_note(ctx, &mut notes, format_args!(
         "{design_brep_count} ASM BREP stream(s); Design body-to-blob bindings select model geometry"
-    ));
+    ))?;
     if design_brep_count != scan.breps.len() {
-        notes.push(format!(
+        push_summary_note(ctx, &mut notes, format_args!(
             "{} ASM BREP stream(s) belong to non-Design assets",
             scan.breps.len() - design_brep_count
-        ));
+        ))?;
     }
-    let history_breps = history_breps(scan).collect::<Vec<_>>();
-    match history_breps.as_slice() {
-        [] => {
+    let history_brep_count = history_breps(scan).count();
+    match history_brep_count {
+        0 => {
             if design_brep_count != 0 {
-                notes.push("no BREP header declares a history partition".to_string());
+                push_summary_note(ctx, &mut notes, format_args!("no BREP header declares a history partition"))?;
             }
         }
-        [history] => {
-            notes.push(format!(
-                "history-bearing BREP: {} ({} bytes uncompressed)",
-                history.name, history.uncompressed_len
-            ));
+        1 => {
+            if let Some(history) = history_breps(scan).next() {
+                push_summary_note(ctx, &mut notes, format_args!(
+                    "history-bearing BREP: {} ({} bytes uncompressed)",
+                    history.name, history.uncompressed_len
+                ))?;
+            }
         }
-        history_breps => notes.push(format!(
+        count => push_summary_note(ctx, &mut notes, format_args!(
             "{} history-bearing BREPs; each history graph is decoded independently",
-            history_breps.len()
-        )),
+            count
+        ))?,
     }
     if scope == SummaryScope::ContainerOnly {
-        notes.push(
+        push_summary_note(ctx, &mut notes, format_args!(
             "container-level inspection only; run `decode` to resolve Design body bindings and build \
              each referenced BREP graph"
-                .to_string(),
-        );
+        ))?;
     }
 
-    notes
+    Ok(notes)
 }
 
 /// Root-level `*.f3d` member names, sorted by archive path.
