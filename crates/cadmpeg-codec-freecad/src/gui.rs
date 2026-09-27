@@ -611,8 +611,9 @@ fn transfer_schema_one(
         }
         reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
         plan.appearances.push(Appearance {
-            id: appearance_id.clone(),
-            name: Some(format!("{name} shape appearance")),
+            id: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI appearance identity copy")?,
+            name: Some(crate::resource::retained_format(ctx,
+                format_args!("{name} shape appearance"), "FCStd GUI appearance name")?),
             asset_guid: None,
             library_id: None,
             visual_guid: None,
@@ -628,8 +629,8 @@ fn transfer_schema_one(
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(ctx, format_args!("fcstd:appearance:binding#{provider_key}:{index}"))?,
                 target: AppearanceTarget::Body(body),
-                appearance: appearance_id.clone(),
-                source_entity_id: Some(object_id.to_owned()),
+                appearance: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI binding appearance identity")?,
+                source_entity_id: Some(retained_string(ctx, object_id, "FCStd GUI binding source identity")?),
                 object_type: Some("ViewProvider".into()),
                 visible: None,
                 channels: BTreeMap::new(),
@@ -828,18 +829,21 @@ fn transfer_neutral_presentation(
             object: provider
                 .object
                 .as_ref()
-                .map(|object| object.as_str().to_owned()),
+                .map(|object| retained_string(ctx, object.as_str(), "FCStd view object identity"))
+                .transpose()?,
             order: provider.order as u32,
             expanded: provider.expanded,
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
-                .map(str::to_owned),
+                .map(|value| retained_string(ctx, value, "FCStd view display mode"))
+                .transpose()?,
             selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
-                .map(str::to_owned),
+                .map(|value| retained_string(ctx, value, "FCStd view selection style"))
+                .transpose()?,
             line_width,
             point_size,
             properties: provider_properties,
-            native_ref: Some(provider.id.clone()),
+            native_ref: Some(retained_string(ctx, &provider.id, "FCStd view native reference")?),
         });
     }
     Ok(())
@@ -1127,13 +1131,15 @@ fn transfer_primitive_appearance(
     }
     reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
     plan.appearances.push(Appearance {
-        id: appearance_id.clone(),
-        name: Some(format!("{provider_name} {label} appearance")),
+        id: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI appearance identity copy")?,
+        name: Some(crate::resource::retained_format(ctx,
+            format_args!("{provider_name} {label} appearance"), "FCStd GUI appearance name")?),
         asset_guid: None,
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some(format!("FCStd ViewProvider {label} style")),
+        schema: Some(crate::resource::retained_format(ctx,
+            format_args!("FCStd ViewProvider {label} style"), "FCStd GUI appearance schema")?),
         category: None,
         base_color: Some(Color::from_rgba8(
             (packed_color >> 24) as u8,
@@ -1153,8 +1159,8 @@ fn transfer_primitive_appearance(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
             target,
-            appearance: appearance_id.clone(),
-            source_entity_id: Some(object_id.to_owned()),
+            appearance: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI binding appearance identity")?,
+            source_entity_id: Some(retained_string(ctx, object_id, "FCStd GUI binding source identity")?),
             object_type: Some(object_type.into()),
             visible: None,
             channels: [(
@@ -3540,10 +3546,10 @@ fn validate_gui_list_payloads(
                     })
                     .transpose()?
                     .unwrap_or(0);
-                material_lists.insert(
-                    property.id.clone(),
+                insert_hash_map(ctx, &mut material_lists,
+                    retained_string(ctx, &property.id, "FCStd GUI material list property identity")?,
                     parse_material_list(ctx, view, version, &property.id, requires_alpha_conversion)?,
-                );
+                    "FCStd GUI material lists")?;
             }
             "App::PropertyPlacementList" => {
                 parse_placement_list(ctx, view, entry_name)?;
@@ -3902,7 +3908,7 @@ fn transfer_shape_appearances(
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
                         property.xml.start(),
                     )
-                    .with_tag(property.id.clone()),
+                    .with_tag(retained_string(ctx, &property.id, "FCStd GUI material loss tag")?),
                 ),
                 );
                 continue;
@@ -3912,7 +3918,8 @@ fn transfer_shape_appearances(
             let appearance_id = shape_material_appearance_id(ctx, &provider_key, index)?;
             reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
             plan.appearances.push(material_appearance(
-                appearance_id.clone(),
+                ctx,
+                crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI appearance identity copy")?,
                 &provider.name,
                 index,
                 material,
@@ -3929,9 +3936,9 @@ fn transfer_shape_appearances(
                         id: binding_id(ctx, format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
-                        target: AppearanceTarget::Body(body.clone()),
-                        appearance: appearance_id.clone(),
-                        source_entity_id: Some(object_id.to_owned()),
+                        target: AppearanceTarget::Body(crate::resource::copied_identity(ctx, body.as_str(), "FCStd GUI binding body identity")?),
+                        appearance: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI binding appearance identity")?,
+                        source_entity_id: Some(retained_string(ctx, object_id, "FCStd GUI binding source identity")?),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
                         channels: BTreeMap::new(),
@@ -4046,6 +4053,7 @@ fn displayed_shape_group<'a>(
 }
 
 fn material_appearance(
+    ctx: &DecodeContext<'_>,
     id: AppearanceId,
     provider_name: &str,
     index: usize,
@@ -4057,8 +4065,11 @@ fn material_appearance(
     };
     Ok(Appearance {
         id,
-        name: Some(format!("{provider_name} face {} material", index + 1)),
-        asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
+        name: Some(crate::resource::retained_format(ctx,
+            format_args!("{provider_name} face {} material", index + 1), "FCStd GUI appearance name")?),
+        asset_guid: (!material.uuid.is_empty())
+            .then(|| retained_string(ctx, &material.uuid, "FCStd GUI material asset GUID"))
+            .transpose()?,
         library_id: None,
         visual_guid: None,
         physical_token: None,
@@ -4109,17 +4120,21 @@ fn bind_material_faces(
     for topology_id in group.names[material_index + 1]
         .iter()
         .flat_map(|name| &name.topology_ids)
-        .filter(|id| bound.insert((*id).clone()))
     {
+        if !insert_hash_set(ctx, &mut bound, topology_id.as_str(),
+            "FCStd GUI material face identities")? {
+            continue;
+        }
         let Some(face) = ir
             .model
             .faces
             .iter()
             .find(|face| face.id.as_str() == *topology_id)
-            .map(|face| face.id.clone())
         else {
             continue;
         };
+        let face = crate::resource::copied_identity(ctx, face.id.as_str(),
+            "FCStd GUI binding face identity")?;
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
@@ -4127,8 +4142,8 @@ fn bind_material_faces(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
             target: AppearanceTarget::Face(face),
-            appearance: appearance_id.clone(),
-            source_entity_id: Some(object_id.to_owned()),
+            appearance: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI binding appearance identity")?,
+            source_entity_id: Some(retained_string(ctx, object_id, "FCStd GUI binding source identity")?),
             object_type: Some("ViewProvider ShapeAppearance".into()),
             visible: None,
             channels: [(
@@ -4238,34 +4253,39 @@ fn transfer_topology_colors(
         for topology_id in uniform_names
             .chain(indexed_names)
             .flat_map(|name| &name.topology_ids)
-            .filter(|id| bound_topology.insert((*id).clone()))
-            .filter(|id| match kind {
+        {
+            if !insert_hash_set(ctx, &mut bound_topology, topology_id.as_str(),
+                "FCStd GUI colored topology identities")? {
+                continue;
+            }
+            if !match kind {
                 TopologyColorKind::Face => ir
                     .model
                     .faces
                     .iter()
-                    .any(|face| face.id.as_str() == id.as_str()),
+                    .any(|face| face.id.as_str() == topology_id.as_str()),
                 TopologyColorKind::Edge => ir
                     .model
                     .edges
                     .iter()
-                    .any(|edge| edge.id.as_str() == id.as_str()),
+                    .any(|edge| edge.id.as_str() == topology_id.as_str()),
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
-                    .any(|vertex| vertex.id.as_str() == id.as_str()),
-            })
-        {
+                    .any(|vertex| vertex.id.as_str() == topology_id.as_str()),
+            } {
+                continue;
+            }
             if !emitted_appearance {
                 reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
                 plan.appearances.push(Appearance {
-                    id: appearance_id.clone(),
-                    name: Some(format!(
+                    id: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI appearance identity copy")?,
+                    name: Some(crate::resource::retained_format(ctx, format_args!(
                         "{provider_name} {}{} appearance",
                         kind.name(),
                         index + 1
-                    )),
+                    ), "FCStd GUI appearance name")?),
                     asset_guid: None,
                     library_id: None,
                     visual_guid: None,
@@ -4283,28 +4303,36 @@ fn transfer_topology_colors(
                 });
                 emitted_appearance = true;
             }
-            let Some((target, topology_key)) = (match kind {
+            let target = match kind {
                 TopologyColorKind::Face => ir
                     .model
                     .faces
                     .iter()
                     .find(|face| face.id.as_str() == topology_id.as_str())
-                    .map(|face| (AppearanceTarget::Face(face.id.clone()), crate::native::id_key(face.id.as_str()))),
+                    .map(|face| crate::resource::copied_identity(ctx, face.id.as_str(),
+                        "FCStd GUI binding topology identity").map(AppearanceTarget::Face))
+                    .transpose()?,
                 TopologyColorKind::Edge => ir
                     .model
                     .edges
                     .iter()
                     .find(|edge| edge.id.as_str() == topology_id.as_str())
-                    .map(|edge| (AppearanceTarget::Edge(edge.id.clone()), crate::native::id_key(edge.id.as_str()))),
+                    .map(|edge| crate::resource::copied_identity(ctx, edge.id.as_str(),
+                        "FCStd GUI binding topology identity").map(AppearanceTarget::Edge))
+                    .transpose()?,
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
                     .find(|vertex| vertex.id.as_str() == topology_id.as_str())
-                    .map(|vertex| (AppearanceTarget::Vertex(vertex.id.clone()), crate::native::id_key(vertex.id.as_str()))),
-            }) else {
+                    .map(|vertex| crate::resource::copied_identity(ctx, vertex.id.as_str(),
+                        "FCStd GUI binding topology identity").map(AppearanceTarget::Vertex))
+                    .transpose()?,
+            };
+            let Some(target) = target else {
                 continue;
             };
+            let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
             plan.bindings.push(AppearanceBinding {
@@ -4313,8 +4341,8 @@ fn transfer_topology_colors(
                     index + 1,
                 ))?,
                 target,
-                appearance: appearance_id.clone(),
-                source_entity_id: Some(object_id.to_owned()),
+                appearance: crate::resource::copied_identity(ctx, appearance_id.as_str(), "FCStd GUI binding appearance identity")?,
+                source_entity_id: Some(retained_string(ctx, object_id, "FCStd GUI binding source identity")?),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
                 visible: None,
                 channels: [(

@@ -198,6 +198,93 @@ fn gui_primitive_target_identity_refuses_at_caller_retained_limit() {
             && failure.operation == "FCStd GUI primitive target identity"), "{error:?}");
 }
 
+fn assert_primitive_retained_refusal(operation: &str) {
+    let mut admitted = 0;
+    for _ in 0..24 {
+        let error = primitive_appearance_refusal(u64::MAX, admitted);
+        let cadmpeg_core::CodecError::ResourceLimit(failure) = error else {
+            panic!("expected retained refusal for {operation}: {error:?}");
+        };
+        assert_eq!(failure.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+        if failure.operation == operation {
+            assert!(failure.used + failure.additional > admitted);
+            return;
+        }
+        admitted = failure.used + failure.additional;
+    }
+    panic!("did not reach retained admission for {operation}");
+}
+
+#[test]
+fn gui_appearance_identity_copy_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI appearance identity copy");
+}
+
+#[test]
+fn gui_appearance_name_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI appearance name");
+}
+
+#[test]
+fn gui_appearance_schema_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI appearance schema");
+}
+
+#[test]
+fn gui_binding_appearance_identity_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI binding appearance identity");
+}
+
+#[test]
+fn gui_binding_source_identity_refuses_at_retained_limit() {
+    assert_primitive_retained_refusal("FCStd GUI binding source identity");
+}
+
+fn material_appearance_refusal(limit: u64) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let zero = cadmpeg_ir::scalar::FiniteBinary32::new(0.0).expect("finite zero");
+    let material = super::super::GuiMaterial {
+        ambient: 0,
+        diffuse: 0,
+        specular: 0,
+        emissive: 0,
+        shininess: zero,
+        transparency: zero,
+        image: String::new(),
+        image_path: String::new(),
+        uuid: "material-guid".into(),
+    };
+    super::super::material_appearance(
+        &ctx,
+        cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:shape-material#sample")
+            .expect("valid appearance identity"),
+        "Provider",
+        0,
+        &material,
+    ).expect_err("material appearance retained text must be admitted")
+}
+
+#[test]
+fn gui_material_appearance_name_refuses_at_retained_limit() {
+    let error = material_appearance_refusal(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI appearance name"), "{error:?}");
+}
+
+#[test]
+fn gui_material_asset_guid_refuses_at_retained_limit() {
+    let name = "Provider face 1 material";
+    let error = material_appearance_refusal(name.len() as u64);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI material asset GUID"), "{error:?}");
+}
+
 #[test]
 fn gui_planned_appearance_refuses_at_caller_limit() {
     let error = primitive_appearance_refusal(1, u64::MAX);
