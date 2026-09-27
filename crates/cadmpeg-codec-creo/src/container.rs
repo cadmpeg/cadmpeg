@@ -2051,30 +2051,33 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
 }
 
-fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition> {
+fn feature_definitions(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections.iter().filter(|section| {
         section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA"
     }) {
         let payload = section.region;
-        definitions.extend(
-            (if section.section.name() == "DEPDB_DATA" {
-                feature::definitions::depdb_definitions(payload)
-            } else {
-                feature::definitions::definitions(payload)
-            })
-            .into_iter()
-            .map(|mut definition| {
-                offset_feature_definition(&mut definition, section.section.offset());
-                definition
-            }),
-        );
+        let decoded = if section.section.name() == "DEPDB_DATA" {
+            feature::definitions::depdb_definitions(payload)
+        } else {
+            feature::definitions::definitions(payload)
+        };
+        ctx.try_reserve_items(&mut definitions, decoded.len(), "creo feature definitions")?;
+        definitions.extend(decoded.into_iter().map(|mut definition| {
+            offset_feature_definition(&mut definition, section.section.offset());
+            definition
+        }));
         if section.section.name() == "DEPDB_DATA" {
-            let recipe_operations = feature::operations::operations(payload)
+            let mut recipe_operations = feature::operations::operations(ctx, payload)?
                 .into_iter()
-                .filter(|operation| operation.recipe.resolved().is_some())
-                .collect::<Vec<_>>();
-            if let [operation] = recipe_operations.as_slice() {
+                .filter(|operation| operation.recipe.resolved().is_some());
+            if let Some(operation) = recipe_operations
+                .next()
+                .filter(|_| recipe_operations.next().is_none())
+            {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
                     payload,
                     Some(operation.feature_id),
@@ -2086,6 +2089,7 @@ fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition
                     {
                         *existing = definition;
                     } else {
+                        ctx.try_reserve_items(&mut definitions, 1, "creo feature definitions")?;
                         definitions.push(definition);
                     }
                 }
@@ -2093,7 +2097,7 @@ fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition
         }
     }
     definitions.sort_by_key(|definition| definition.offset);
-    definitions
+    Ok(definitions)
 }
 
 fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
@@ -2151,7 +2155,7 @@ fn feature_operations(
         sections.iter().filter(|section| {
             section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
         }),
-        |bytes| Ok(feature::operations::operations(bytes)),
+        |bytes| feature::operations::operations(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.state_offset += base;
@@ -2210,7 +2214,7 @@ fn feature_operation_states(
         sections.iter().filter(|section| {
             section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
         }),
-        |bytes| Ok(feature::operations::operation_states(bytes)),
+        |bytes| feature::operations::operation_states(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.state_offset += base;
@@ -2219,7 +2223,10 @@ fn feature_operation_states(
     )
 }
 
-fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Vec<FeatureRow> {
+fn depdb_recipe_rows(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureRow>, CodecError> {
     fn recipe_end(payload: &[u8], search_start: usize, recipe: FeatureRecipe) -> Option<usize> {
         let name = match recipe {
             FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
@@ -2236,27 +2243,30 @@ fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Vec<FeatureRow> {
         .filter(|section| section.section.name() == "DEPDB_DATA")
     {
         let payload = section.region;
-        let mut recipe_operations = feature::operations::operation_states(payload)
+        let recipe_operations = feature::operations::operation_states(ctx, payload)?
             .into_iter()
             .filter_map(|operation| {
                 operation
                     .recipe
                     .candidate()
                     .map(|recipe| (operation, recipe))
-            })
-            .collect::<Vec<_>>();
-        recipe_operations.sort_by_key(|(operation, _)| operation.offset);
+            });
         let mut body_start = 0;
-        for (operation, recipe) in &recipe_operations {
-            let Some(body_end) = recipe_end(payload, operation.offset, *recipe) else {
+        for (operation, recipe) in recipe_operations {
+            let Some(body_end) = recipe_end(payload, operation.offset, recipe) else {
                 continue;
             };
-            let Some(body) = payload
+            let Some(body_bytes) = payload
                 .get(body_start..body_end)
-                .and_then(|bytes| bytes.to_vec().try_into().ok())
+                .filter(|bytes| bytes.len() >= 2)
             else {
                 continue;
             };
+            let body = ctx
+                .copy_retained(body_bytes, "creo DEPDB recipe row body")?
+                .try_into()
+                .map_err(CodecError::malformed)?;
+            ctx.try_reserve_items(&mut rows, 1, "creo DEPDB recipe rows")?;
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 root_schema_class: operation.root_schema_class(),
@@ -2269,7 +2279,7 @@ fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Vec<FeatureRow> {
         }
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 fn geomlists_value(sections: &[ScannedSection<'_>], label: &[u8]) -> Option<u32> {
@@ -2615,7 +2625,7 @@ pub(crate) fn scan_bytes<'a>(
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(&feature_rows);
     let feature_choices = feature::rows::choices(&feature_rows);
     let feature_choice_fields = feature::rows::choice_fields(&feature_choices);
-    let depdb_recipe_rows = depdb_recipe_rows(&sections);
+    let depdb_recipe_rows = depdb_recipe_rows(ctx, &sections)?;
     let mut feature_geometry_tables = feature::rows::geometry_tables(&feature_rows);
     feature_geometry_tables.extend(feature::rows::geometry_tables(&depdb_recipe_rows));
     feature_geometry_tables.sort_by_key(|table| table.offset);
@@ -2629,7 +2639,7 @@ pub(crate) fn scan_bytes<'a>(
         feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::rows::loop_restore_directions(&feature_rows);
     let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
-    let feature_definitions = feature_definitions(&sections);
+    let feature_definitions = feature_definitions(ctx, &sections)?;
     let feature_definitions =
         feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
