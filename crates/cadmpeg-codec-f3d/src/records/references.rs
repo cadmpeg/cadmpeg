@@ -85,8 +85,9 @@ impl DesignClassTag {
 }
 
 /// A construction-history edge selection that Fusion could not re-resolve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "LostEdgeReferenceWire", into = "LostEdgeReferenceWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "LostEdgeReferenceWire")]
 pub(crate) struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -100,6 +101,58 @@ pub(crate) struct LostEdgeReference {
     pub(crate) next_class_tag: DesignClassTag,
     /// Record index of the following indexed record.
     pub(crate) next_record_index: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static LOST_EDGE_REFERENCE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for LostEdgeReference {
+    fn clone(&self) -> Self {
+        LOST_EDGE_REFERENCE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_byte_offset: self.record_byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            next_class_tag: self.next_class_tag.clone(),
+            next_record_index: self.next_record_index,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct LostEdgeReferenceWireRef<'a> {
+    id: &'a str,
+    record_byte_offset: u64,
+    class_tag_offset: u64,
+    class_tag: &'a str,
+    record_index: u32,
+    record_index_offset: u64,
+    byte_offset: u64,
+    next_byte_offset: u64,
+    next_class_tag: &'a str,
+    next_record_index: u32,
+}
+
+impl Serialize for LostEdgeReference {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LostEdgeReferenceWireRef {
+            id: &self.id,
+            record_byte_offset: self.record_byte_offset(),
+            class_tag_offset: self.class_tag_offset(),
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            record_index_offset: self.record_index_offset(),
+            byte_offset: self.byte_offset(),
+            next_byte_offset: self.next_byte_offset(),
+            next_class_tag: self.next_class_tag.as_str(),
+            next_record_index: self.next_record_index,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl LostEdgeReference {
@@ -142,7 +195,8 @@ impl LostEdgeReference {
 }
 
 /// A construction-history edge selection that Fusion could not re-resolve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct LostEdgeReferenceWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -199,6 +253,7 @@ impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
     }
 }
 
+#[cfg(test)]
 impl From<LostEdgeReference> for LostEdgeReferenceWire {
     fn from(record: LostEdgeReference) -> Self {
         Self {
@@ -269,11 +324,9 @@ impl DesignVisualToken {
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignMaterialAssignmentWire",
-    into = "DesignMaterialAssignmentWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignMaterialAssignmentWire")]
 pub(crate) struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -297,8 +350,79 @@ pub(crate) struct DesignMaterialAssignment {
     pub(crate) visual_preset: Option<RecordedValue<String>>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignMaterialAssignment {
+    fn clone(&self) -> Self {
+        DESIGN_MATERIAL_ASSIGNMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            asm_body_key: self.asm_body_key,
+            asm_body_key_offset: self.asm_body_key_offset,
+            entity_suffix_offset: self.entity_suffix_offset,
+            entity_id: self.entity_id.clone(),
+            entity_id_offset: self.entity_id_offset,
+            visual_guid: self.visual_guid.clone(),
+            visual_guid_offset: self.visual_guid_offset,
+            physical_token: self.physical_token.clone(),
+            visual_preset: self.visual_preset.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignMaterialAssignmentWireRef<'a> {
+    id: &'a str,
+    asm_body_key: u64,
+    asm_body_key_offset: u64,
+    entity_suffix_offset: u64,
+    entity_id: &'a str,
+    entity_id_offset: u64,
+    visual_guid: &'a DesignVisualToken,
+    visual_guid_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    physical_token: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    physical_token_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visual_preset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visual_preset_offset: Option<u64>,
+}
+
+impl Serialize for DesignMaterialAssignment {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignMaterialAssignmentWireRef {
+            id: &self.id,
+            asm_body_key: self.asm_body_key,
+            asm_body_key_offset: self.asm_body_key_offset,
+            entity_suffix_offset: self.entity_suffix_offset,
+            entity_id: &self.entity_id.text,
+            entity_id_offset: self.entity_id_offset,
+            visual_guid: &self.visual_guid,
+            visual_guid_offset: self.visual_guid_offset,
+            physical_token: self
+                .physical_token
+                .as_ref()
+                .map(|field| field.value.as_str()),
+            physical_token_offset: self.physical_token.as_ref().map(|field| field.offset),
+            visual_preset: self
+                .visual_preset
+                .as_ref()
+                .map(|field| field.value.as_str()),
+            visual_preset_offset: self.visual_preset.as_ref().map(|field| field.offset),
+        }
+        .serialize(serializer)
+    }
+}
+
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DesignMaterialAssignmentWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -373,6 +497,7 @@ impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     }
 }
 
+#[cfg(test)]
 impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
     fn from(value: DesignMaterialAssignment) -> Self {
         Self {
@@ -391,3 +516,6 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
