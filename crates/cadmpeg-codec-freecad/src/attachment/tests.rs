@@ -6,6 +6,94 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn diagnostic_property(type_name: &str, values: Vec<crate::native::ValueRecord>) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: "fcstd:native:property#Attachment:MapMode".into(),
+        owner: "fcstd:native:object#Attachment".into(),
+        name: "MapMode".into(),
+        type_name: type_name.into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted { values, links: Vec::new(),
+            side_entries: Vec::new(), dynamic: None },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("test XML span"),
+    }
+}
+
+fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {
+    crate::native::ValueRecord {
+        tag: tag.into(), order: 0,
+        attributes: value.map(|value| std::collections::BTreeMap::from([
+            ("value".into(), value.into())])).unwrap_or_default(),
+        text: None, raw_xml: "<Integer/>".into(),
+    }
+}
+
+#[test]
+fn attachment_support_type_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", Vec::new());
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment support type error",
+        |ctx| super::support_links(ctx, &property));
+}
+
+#[test]
+fn attachment_support_value_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyLinkSubList", Vec::new());
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment support value error",
+        |ctx| super::support_links(ctx, &property));
+}
+
+#[test]
+fn attachment_map_mode_type_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyString", Vec::new());
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment map-mode type error",
+        |ctx| super::map_mode_value(ctx, &property));
+}
+
+#[test]
+fn attachment_map_mode_value_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", Vec::new());
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment map-mode value error",
+        |ctx| super::map_mode_value(ctx, &property));
+}
+
+#[test]
+fn attachment_map_mode_tag_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("String", None)]);
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment map-mode tag error",
+        |ctx| super::map_mode_value(ctx, &property));
+}
+
+#[test]
+fn attachment_map_mode_missing_index_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("Integer", None)]);
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment missing map-mode index",
+        |ctx| super::map_mode_value(ctx, &property));
+}
+
+#[test]
+fn attachment_map_mode_invalid_index_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("Integer", Some("bad-index"))]);
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment invalid map-mode index",
+        |ctx| super::map_mode_value(ctx, &property));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test input");
+    let error = super::map_mode_value(&ctx, &property).expect_err("invalid index");
+    assert_eq!(error.to_string(),
+        "malformed container: attachment property fcstd:native:property#Attachment:MapMode: map_mode \"bad-index\" is not an index");
+}
+
+#[test]
+fn attachment_map_mode_outer_error_refuses_at_retained_limit() {
+    let property = diagnostic_property("App::PropertyEnumeration", vec![enum_value("Integer", Some("999"))]);
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD attachment map-mode error",
+        |ctx| super::map_mode_value(ctx, &property));
+}
+
 #[test]
 fn attachment_owner_lookup_refuses_on_collection_limit() {
     let property = crate::native::PropertyRecord {
