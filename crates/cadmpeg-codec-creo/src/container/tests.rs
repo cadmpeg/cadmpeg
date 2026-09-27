@@ -18,6 +18,64 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+fn feature_row_for_aggregate(body: &[u8]) -> crate::feature::rows::FeatureRow {
+    crate::feature::rows::FeatureRow {
+        feature_id: 7,
+        root_schema_class: None,
+        stream_offset: 10,
+        body: body.to_vec().try_into().expect("two-byte feature row"),
+        body_offset: 100,
+        offset: 98,
+    }
+}
+
+#[test]
+fn feature_geometry_table_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let body = b"\xe0\x00dtm_id_tab\0\xf2\xf8\x01\xf7\x57\xfb\xe2\
+        \xe0\x01dtm_id\0\x2a\xe0\x01dim_id\0\xf6";
+    let row = feature_row_for_aggregate(body);
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy)
+            .expect("root geometry table input is admitted");
+        super::feature_geometry_tables(&ctx, &[], std::slice::from_ref(&row))
+            .map(|tables| tables.len())
+    };
+    assert_eq!(run(5).expect("one aggregate table admitted"), 1);
+    let error = run(4).expect_err("aggregate table needs another item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo feature geometry table aggregation"));
+}
+
+#[test]
+fn feature_affected_id_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let body = b"\xe0\x01geoms_affected\0\xf8\x01\x2a";
+    let row = feature_row_for_aggregate(body);
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy)
+            .expect("root affected-id input is admitted");
+        super::feature_affected_ids(&ctx, &[], std::slice::from_ref(&row))
+            .map(|records| records.len())
+    };
+    assert_eq!(run(3).expect("one aggregate record admitted"), 1);
+    let error = run(2).expect_err("aggregate record needs another item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo affected-id aggregation"));
+}
+
 #[test]
 fn feature_definition_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

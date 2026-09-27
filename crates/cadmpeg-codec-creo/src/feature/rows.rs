@@ -765,7 +765,10 @@ pub(crate) fn choice_fields(
 }
 
 /// Decode generated-geometry table headers from known feature rows.
-pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
+pub(crate) fn geometry_tables(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureGeometryTable>, CodecError> {
     const FIELDS: &[(&[u8], FeatureGeometryTableKind)] = &[
         (b"edg_id_tab_ptr", FeatureGeometryTableKind::EdgeIds),
         (b"lo_id_tab_ptr", FeatureGeometryTableKind::LoopIds),
@@ -778,15 +781,19 @@ pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> 
     let mut datum_class_by_stream = BTreeMap::<usize, u32>::new();
     for row in rows {
         for (label, kind) in FIELDS {
-            let needle = [*label, b"\0"].concat();
             let mut from = 0;
-            while let Some(offset) = find_from(&row.body, &needle, from) {
-                from = offset + needle.len();
-                let Some((count, entity_class, decoded_kind)) =
-                    geometry_table_at(&row.body, offset + needle.len(), kind.clone())
-                else {
+            while let Some(offset) = find_from(&row.body, label, from) {
+                let label_end = offset + label.len();
+                if row.body.get(label_end) != Some(&0) {
+                    from = offset + 1;
+                    continue;
+                }
+                from = label_end + 1;
+                let Some(decoded) = geometry_table_at(ctx, &row.body, from, kind.clone()) else {
                     continue;
                 };
+                let (count, entity_class, decoded_kind) = decoded?;
+                ctx.try_reserve_items(&mut tables, 1, "creo feature geometry tables")?;
                 tables.push(FeatureGeometryTable {
                     feature_id: row.feature_id,
                     kind: decoded_kind,
@@ -795,7 +802,15 @@ pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> 
                     offset: row.body_offset + offset,
                 });
                 if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
-                    datum_class_by_stream.insert(row.stream_offset, entity_class);
+                    match datum_class_by_stream.entry(row.stream_offset) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            ctx.charge_collection_items(1, "creo datum class by stream")?;
+                            entry.insert(entity_class);
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            *entry.get_mut() = entity_class;
+                        }
+                    }
                 }
             }
         }
@@ -803,11 +818,13 @@ pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> 
             continue;
         };
         for cursor in 0..row.body.len() {
-            let Some((count, entry_ids)) =
-                positional_datum_geometry_table_at(&row.body, cursor, entity_class)
+            let Some(decoded) =
+                positional_datum_geometry_table_at(ctx, &row.body, cursor, entity_class)
             else {
                 continue;
             };
+            let (count, entry_ids) = decoded?;
+            ctx.try_reserve_items(&mut tables, 1, "creo feature geometry tables")?;
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
                 kind: FeatureGeometryTableKind::DatumIds(Some(entry_ids)),
@@ -818,14 +835,15 @@ pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> 
         }
     }
     tables.sort_by_key(|table| table.offset);
-    tables
+    Ok(tables)
 }
 
 fn positional_datum_geometry_table_at(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
     entity_class: u32,
-) -> Option<(u32, Vec<u32>)> {
+) -> Option<Result<(u32, Vec<u32>), CodecError>> {
     (body.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, after_count) = psb::compact_int(body, cursor + 1);
     (after_count > cursor + 1 && body.get(after_count) == Some(&psb::token::ENTITY_REF))
@@ -841,7 +859,11 @@ fn positional_datum_geometry_table_at(
 
     let capacity = bounded_len(u64::from(count), 1, body.len().saturating_sub(cursor))?;
     let entry_class = entity_class.checked_add(1)?;
-    let mut entry_ids = Vec::with_capacity(capacity);
+    let mut entry_ids = Vec::new();
+    if let Err(error) = ctx.try_reserve_items(&mut entry_ids, capacity, "creo positional datum ids")
+    {
+        return Some(Err(error));
+    }
     for index in 0..count {
         if index == 0 {
             (body.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -869,14 +891,15 @@ fn positional_datum_geometry_table_at(
             cursor = after_dimension;
         }
     }
-    Some((count, entry_ids))
+    Some(Ok((count, entry_ids)))
 }
 
 fn geometry_table_at(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     mut cursor: usize,
     mut kind: FeatureGeometryTableKind,
-) -> Option<(u32, u32, FeatureGeometryTableKind)> {
+) -> Option<Result<(u32, u32, FeatureGeometryTableKind), CodecError>> {
     if body
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -911,16 +934,22 @@ fn geometry_table_at(
                 entries.clear();
                 break;
             }
+            if let Err(error) = ctx.try_reserve_items(&mut entries, 1, "creo named datum ids") {
+                return Some(Err(error));
+            }
             entries.push(entry);
             entry_cursor = next;
         }
         *ids = (entries.len() == index_from_u32(count)).then_some(entries);
     }
-    Some((count, entity_class, kind))
+    Some(Ok((count, entity_class, kind)))
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.
-pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
+pub(crate) fn affected_ids(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureAffectedIds>, CodecError> {
     const FIELDS: &[(&[u8], AffectedIdKind)] = &[
         (b"geoms_affected", AffectedIdKind::Geometry),
         (b"edgs_affected", AffectedIdKind::Edges),
@@ -932,10 +961,14 @@ pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
     let mut result = Vec::new();
     for row in rows {
         for &(label, kind) in FIELDS {
-            let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, &needle, from) {
-                from = label_offset + needle.len();
+            while let Some(label_offset) = find_from(&row.body, label, from) {
+                let label_end = label_offset + label.len();
+                if row.body.get(label_end) != Some(&0) {
+                    from = label_offset + 1;
+                    continue;
+                }
+                from = label_end + 1;
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body.get(from) != Some(&psb::token::ARRAY_OPEN)
@@ -953,7 +986,8 @@ pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
                 else {
                     continue;
                 };
-                let mut ids = Vec::with_capacity(capacity);
+                let mut ids = Vec::new();
+                ctx.try_reserve_items(&mut ids, capacity, "creo affected ids")?;
                 for _ in 0..count {
                     let (id, next) = psb::compact_int(&row.body, cursor);
                     if next == cursor {
@@ -963,7 +997,8 @@ pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
                     ids.push(id);
                     cursor = next;
                 }
-                if ids.len() == count as usize {
+                if ids.len() == capacity {
+                    ctx.try_reserve_items(&mut result, 1, "creo affected-id records")?;
                     result.push(FeatureAffectedIds {
                         feature_id: row.feature_id,
                         kind,
@@ -975,7 +1010,7 @@ pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
         }
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 fn skip_replay_field_label(run: &[u8], cursor: usize, expected: &[u8]) -> Option<usize> {

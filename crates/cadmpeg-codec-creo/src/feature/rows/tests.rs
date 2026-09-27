@@ -5,7 +5,6 @@ use crate::feature::definitions::dimension_unit;
 use crate::feature::definitions::DimensionUnit;
 use crate::feature::entity::entity_graph;
 use crate::feature::entity::read_entries;
-use crate::feature::rows::geometry_tables;
 use crate::feature::rows::loop_history_entries;
 use crate::feature::rows::loop_history_roster;
 use crate::feature::rows::replay_affected_ids;
@@ -37,6 +36,11 @@ fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
 fn choice_fields(choices: &[FeatureChoice]) -> Vec<super::FeatureChoiceField> {
     crate::decode::with_test_decode_ctx(|ctx| super::choice_fields(ctx, choices))
         .expect("choice fields are admitted")
+}
+
+fn geometry_tables(rows: &[FeatureRow]) -> Vec<super::FeatureGeometryTable> {
+    crate::decode::with_test_decode_ctx(|ctx| super::geometry_tables(ctx, rows))
+        .expect("geometry tables are admitted")
 }
 
 fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {
