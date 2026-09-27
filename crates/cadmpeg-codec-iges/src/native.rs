@@ -2,7 +2,9 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::{CardScan, ScannedLine, Section};
-use crate::decode_resource::{format_retained, reserve_vec_growth};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, reserve_vec, reserve_vec_growth,
+};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
@@ -2142,6 +2144,79 @@ fn charge_native_entities(ctx: &DecodeContext<'_>, count: u64) -> Result<(), Cod
     ctx.charge_entities(count, "iges_native_entities")
 }
 
+struct NativeInputIndexes<'a> {
+    quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
+    quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
+    cards: Vec<NativeCard<'a>>,
+    by_directory: BTreeMap<u32, &'a ParameterRecord>,
+    entries: BTreeMap<u32, &'a DirectoryEntry>,
+}
+
+fn index_native_inputs<'a>(
+    scan: &'a CardScan<'_>,
+    directory: &'a [DirectoryEntry],
+    parameters: &'a [ParameterRecord],
+    quarantine: QuarantinedRecords<'a>,
+    ctx: &DecodeContext<'_>,
+) -> Result<NativeInputIndexes<'a>, CodecError> {
+    let mut quarantined_directory_records = reserve_vec(
+        ctx,
+        quarantine.directory.len(),
+        "iges native quarantined directory slots",
+    )?;
+    quarantined_directory_records.extend(
+        quarantine
+            .directory
+            .iter()
+            .map(NativeQuarantinedRecord::Directory),
+    );
+    let mut quarantined_parameter_records = reserve_vec(
+        ctx,
+        quarantine.parameters.len(),
+        "iges native quarantined parameter slots",
+    )?;
+    quarantined_parameter_records.extend(
+        quarantine
+            .parameters
+            .iter()
+            .map(NativeQuarantinedRecord::Parameter),
+    );
+    let mut cards = reserve_vec(ctx, scan.lines.len(), "iges native card slots")?;
+    cards.extend(
+        scan.lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| NativeCard { index, line }),
+    );
+    let mut by_directory = BTreeMap::new();
+    for record in parameters {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut by_directory,
+            record.directory_sequence,
+            record,
+            "iges native parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges native directory index",
+        )?;
+    }
+    Ok(NativeInputIndexes {
+        quarantined_directory_records,
+        quarantined_parameter_records,
+        cards,
+        by_directory,
+        entries,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn store(
     ir: &mut CadIr,
@@ -2159,30 +2234,13 @@ pub(crate) fn store(
     ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
     charge_native_entities(ctx, scan.lines.len() as u64)?;
-    let quarantined_directory_records = quarantine
-        .directory
-        .iter()
-        .map(NativeQuarantinedRecord::Directory)
-        .collect::<Vec<_>>();
-    let quarantined_parameter_records = quarantine
-        .parameters
-        .iter()
-        .map(NativeQuarantinedRecord::Parameter)
-        .collect::<Vec<_>>();
-    let cards = scan
-        .lines
-        .iter()
-        .enumerate()
-        .map(|(index, line)| NativeCard { index, line })
-        .collect::<Vec<_>>();
-    let by_directory = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let NativeInputIndexes {
+        quarantined_directory_records,
+        quarantined_parameter_records,
+        cards,
+        by_directory,
+        entries,
+    } = index_native_inputs(scan, directory, parameters, quarantine, ctx)?;
     let mut macro_definitions = Vec::new();
     for entry in directory.iter().filter(|entry| entry.entity_type == 306) {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
