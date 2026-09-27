@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Copious point, linear-path, and presentation tuple projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object};
-use super::presentation_loss;
+use super::geometry::{resolve_transform, source_object};
+use super::push_attributed_loss;
 use crate::decode_resource::{
     collect_optional_vec, collect_result_vec, insert_optional_btree_map, insert_optional_btree_set,
     reserve_vec, reserve_vec_growth,
@@ -23,8 +23,27 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
+
+fn push_copious_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        crate::loss::IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
+}
 
 pub(super) struct CopiousProjectionOutcome {
     decoded: BTreeSet<u32>,
@@ -208,23 +227,20 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
         if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
-            losses.push(entity_loss(
-                entry,
-                "Type 106 presentation forms require Entity Use Flag 01",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("Type 106 presentation forms require Entity Use Flag 01"))?;
             continue;
         }
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("Parameter Data record is missing"))?;
             continue;
         };
         let Some(interpretation) = record.integer(1) else {
-            losses.push(entity_loss(entry, "interpretation is invalid"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("interpretation is invalid"))?;
             continue;
         };
         let Some(raw_tuple_count) = record.integer(2) else {
-            losses.push(entity_loss(entry, "tuple count is invalid"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is invalid"))?;
             continue;
         };
         if let Some(observed) = u64::try_from(raw_tuple_count)
@@ -238,21 +254,15 @@ pub(super) fn project(
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
-            losses.push(entity_loss(entry, "tuple count is invalid"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is invalid"))?;
             continue;
         };
         if Some(interpretation) != expected_interpretation(entry.form) {
-            losses.push(entity_loss(
-                entry,
-                "interpretation flag disagrees with the entity form",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("interpretation flag disagrees with the entity form"))?;
             continue;
         }
         if tuple_count == 0 {
-            losses.push(entity_loss(
-                entry,
-                format!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"))?;
             continue;
         }
         if matches!(entry.form, 11..=13) {
@@ -262,34 +272,22 @@ pub(super) fn project(
                 2
             };
             if tuple_count < minimum_tuple_count {
-                losses.push(entity_loss(
-                    entry,
-                    format!(
-            "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
-                    ),
-                ));
+                push_copious_loss(ctx, &mut losses, entry, format_args!(
+                    "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
+                ))?;
                 continue;
             }
         }
         if entry.form == 63 && tuple_count < 2 {
-            losses.push(entity_loss(
-                entry,
-                "simple closed paths require at least two tuples",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed paths require at least two tuples"))?;
             continue;
         }
         if matches!(entry.form, 20 | 21 | 31..=38) && tuple_count % 2 != 0 {
-            losses.push(entity_loss(
-                entry,
-                "paired presentation form has an odd tuple count",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("paired presentation form has an odd tuple count"))?;
             continue;
         }
         if entry.form == 40 && (tuple_count < 3 || tuple_count % 2 == 0) {
-            losses.push(entity_loss(
-                entry,
-                "witness lines require an odd tuple count of at least three",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("witness lines require an odd tuple count of at least three"))?;
             continue;
         }
         let transform = match resolve_transform(
@@ -304,14 +302,14 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                losses.push(entity_loss(entry, message));
+                push_copious_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
         let (tuple_start, tuple_width, common_z) = match interpretation {
             1 => {
                 let Some(z) = record.number(3).and_then(FiniteReal::new) else {
-                    losses.push(entity_loss(entry, "common z coordinate is invalid"));
+                    push_copious_loss(ctx, &mut losses, entry, format_args!("common z coordinate is invalid"))?;
                     continue;
                 };
                 (4_usize, 2_usize, Some(z))
@@ -319,16 +317,16 @@ pub(super) fn project(
             2 => (3, 3, None),
             3 => (3, 6, None),
             _ => {
-                losses.push(entity_loss(entry, "copious-data interpretation is invalid"));
+                push_copious_loss(ctx, &mut losses, entry, format_args!("copious-data interpretation is invalid"))?;
                 continue;
             }
         };
         let Some(value_count) = tuple_count.checked_mul(tuple_width) else {
-            losses.push(entity_loss(entry, "tuple value count overflows"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple value count overflows"))?;
             continue;
         };
         let Some(tuple_end) = tuple_start.checked_add(value_count) else {
-            losses.push(entity_loss(entry, "tuple end offset overflows"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple end offset overflows"))?;
             continue;
         };
         let Some(values) = collect_optional_vec(
@@ -337,7 +335,7 @@ pub(super) fn project(
             "iges copious tuple values",
         )?
         else {
-            losses.push(entity_loss(entry, "tuple array is truncated or non-finite"));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple array is truncated or non-finite"))?;
             continue;
         };
         let definition_points = collect_result_vec(
@@ -363,17 +361,20 @@ pub(super) fn project(
             "iges copious positioned points",
         )?
         else {
-            losses.push(entity_loss(
-                entry,
-                "placement produces non-finite copious points",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("placement produces non-finite copious points"))?;
             continue;
         };
         if presentation_form(entry.form) {
-            losses.push(presentation_loss(
+            push_attributed_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "copious presentation tuples have no neutral display carrier",
-            ));
+                crate::loss::IgesLossCode::DisplayDataNotProjected,
+                format_args!(
+                    "IGES entity type {} form {} display data was not projected: copious presentation tuples have no neutral display carrier",
+                    entry.entity_type, entry.form
+                ),
+            )?;
             continue;
         }
         let projects_as_points = matches!(entry.form, 1..=3)
@@ -410,33 +411,25 @@ pub(super) fn project(
         })?;
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
-            losses.push(entity_loss(
-                entry,
-                "simple closed path endpoints disagree beyond the minimum resolution",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed path endpoints disagree beyond the minimum resolution"))?;
             continue;
         }
         if entry.form == 63 && has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
-            losses.push(entity_loss(
-                entry,
-                if points.len() == 2 {
-                    "simple closed path has no non-zero segment"
-                } else {
-                    "simple closed path has coincident non-endpoint points"
-                },
-            ));
+            let reason = if points.len() == 2 {
+                "simple closed path has no non-zero segment"
+            } else {
+                "simple closed path has coincident non-endpoint points"
+            };
+            push_copious_loss(ctx, &mut losses, entry, format_args!("{reason}"))?;
             continue;
         }
         if entry.form == 63 && has_form_63_self_intersection(&definition_points, ctx)? {
-            losses.push(entity_loss(
-                entry,
-                "simple closed path intersects itself away from shared endpoints",
-            ));
+            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed path intersects itself away from shared endpoints"))?;
             continue;
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                losses.push(entity_loss(entry, "topology tolerance must be finite"));
+                push_copious_loss(ctx, &mut losses, entry, format_args!("topology tolerance must be finite"))?;
                 continue;
             };
             Some(value)
