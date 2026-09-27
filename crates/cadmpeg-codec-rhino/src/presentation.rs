@@ -2832,11 +2832,12 @@ fn disambiguate_group_ids(
 }
 
 fn parse_light(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     scale: MillimeterScale,
     source_offset: usize,
-    link: Option<String>,
+    link_order: Option<usize>,
 ) -> Result<LightRecord, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
@@ -2861,7 +2862,7 @@ fn parse_light(
     let shadow_intensity = read_finite(&mut reader, "shadow intensity")?;
     let index = reader.i32()?;
     let id = uuid(&mut reader)?;
-    let name = utf16(&mut reader)?;
+    let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino light name")?;
     let mut length = [FiniteReal::ZERO; 3];
     let mut width = [FiniteReal::ZERO; 3];
     if packed & 0x0f >= 1 {
@@ -2885,15 +2886,36 @@ fn parse_light(
             })?;
         }
     }
-    let key = if id.is_nil() {
-        format!("record-{source_offset}")
-    } else {
-        id.to_string()
-    };
+    let mut links = Vec::new();
+    if let Some(order) = link_order {
+        let link = crate::wire::admitted_format(
+            ctx,
+            format_args!("rhino:object:record#{order:06}"),
+            "Rhino light object link",
+        )?;
+        crate::wire::reserve_collection(ctx, &mut links, 1, "Rhino light links")?;
+        links.push(link);
+    }
     Ok(LightRecord {
-        id: format!("rhino:presentation:light#{key}"),
+        id: if id.is_nil() {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:light#record-{source_offset}"),
+                "Rhino light ID",
+            )?
+        } else {
+            crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:presentation:light#{id}"),
+                "Rhino light ID",
+            )?
+        },
         source_offset: source_offset as u64,
-        source_uuid: id.to_string(),
+        source_uuid: crate::wire::admitted_format(
+            ctx,
+            format_args!("{id}"),
+            "Rhino light source UUID",
+        )?,
         archive_index: index,
         name,
         enabled,
@@ -2913,23 +2935,38 @@ fn parse_light(
         width,
         hotspot,
         attributes: None,
-        links: link.into_iter().collect(),
+        links,
     })
 }
 
 fn push_light(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     lights: &mut Vec<LightRecord>,
-    indexes: &mut BTreeMap<String, usize>,
+    indexes: &mut HashMap<Uuid, usize>,
     mut light: LightRecord,
-) {
-    if light.source_uuid != Uuid::nil().to_string() {
-        if indexes.contains_key(&light.source_uuid) {
-            light.id = format!("{}-offset-{}", light.id, light.source_offset);
+) -> Result<(), CodecError> {
+    let source_id = parse_uuid_text(&light.source_uuid)
+        .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
+    if !source_id.is_nil() {
+        if indexes.contains_key(&source_id) {
+            light.id = crate::wire::admitted_format(
+                ctx,
+                format_args!("{}-offset-{}", light.id, light.source_offset),
+                "Rhino duplicate light ID",
+            )?;
         } else {
-            indexes.insert(light.source_uuid.clone(), lights.len());
+            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                Uuid,
+                usize,
+            )>()))?;
+            crate::wire::reserve_hash_map(ctx, indexes, 1, "Rhino light identity index")?;
+            indexes.insert(source_id, lights.len());
         }
     }
+    crate::wire::reserve_collection(ctx, lights, 1, "Rhino lights")?;
     lights.push(light);
+    Ok(())
 }
 
 fn segments(
@@ -4789,7 +4826,8 @@ pub(crate) fn install(
     let mut groups = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
-    let mut light_indexes = BTreeMap::new();
+    let mut light_indexes = HashMap::new();
+    let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
     let mut dimension_styles = Vec::new();
@@ -4941,9 +4979,14 @@ pub(crate) fn install(
                     continue;
                 };
                 if let Ok(range) = class_data_prefix(scan.data, record, scan.archive, LIGHT) {
-                    if let Ok(mut light) =
-                        parse_light(scan.data, range, scale, record.range.start, None)
-                    {
+                    if let Some(mut light) = optional_malformed(parse_light(
+                        ctx,
+                        scan.data,
+                        range,
+                        scale,
+                        record.range.start,
+                        None,
+                    ))? {
                         match parse_light_record_attributes(
                             ctx,
                             scan.data,
@@ -4979,7 +5022,13 @@ pub(crate) fn install(
                                 });
                             }
                         }
-                        push_light(&mut lights, &mut light_indexes, light);
+                        push_light(
+                            ctx,
+                            &mut light_index_workspace,
+                            &mut lights,
+                            &mut light_indexes,
+                            light,
+                        )?;
                         parsed = true;
                     }
                 }
@@ -5248,15 +5297,24 @@ pub(crate) fn install(
         }
         if object.class_uuid == LIGHT {
             if let Some(scale) = physical_scale {
-                let link = format!("rhino:object:record#{source_order:06}");
                 match parse_light(
+                    ctx,
                     scan.data,
                     object.class_data_range.clone(),
                     scale,
                     object.range.start,
-                    Some(link),
+                    Some(source_order),
                 ) {
-                    Ok(light) => push_light(&mut lights, &mut light_indexes, light),
+                    Ok(light) => push_light(
+                        ctx,
+                        &mut light_index_workspace,
+                        &mut lights,
+                        &mut light_indexes,
+                        light,
+                    )?,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                     Err(error) => {
                         losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
                             "light object at offset {} could not be transferred: {error}",
