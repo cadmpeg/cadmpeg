@@ -4522,9 +4522,10 @@ pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
 }
 
 pub(crate) fn motif_port_points(
+    ctx: &DecodeContext<'_>,
     trims: &[TrimRecord],
     vertex_count: usize,
-) -> Option<HashMap<u32, usize>> {
+) -> Result<Option<HashMap<u32, usize>>, CodecError> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
         Some((
             [
@@ -4540,52 +4541,84 @@ pub(crate) fn motif_port_points(
             ],
         ))
     }
-    fn emit(seen: &mut HashMap<u32, usize>, handle: u32) {
-        let next = seen.len();
-        seen.entry(handle).or_insert(next);
+    fn emit(
+        ctx: &DecodeContext<'_>,
+        seen: &mut HashMap<u32, usize>,
+        handle: u32,
+    ) -> Result<(), CodecError> {
+        if !seen.contains_key(&handle) {
+            let next = seen.len();
+            crate::resource::insert_map(ctx, seen, handle, next, "catia_motif_port_points")?;
+        }
+        Ok(())
     }
-    fn emit_column(seen: &mut HashMap<u32, usize>, column: [u32; 2]) {
-        emit(seen, column[0]);
-        emit(seen, column[1]);
+    fn emit_column(
+        ctx: &DecodeContext<'_>,
+        seen: &mut HashMap<u32, usize>,
+        column: [u32; 2],
+    ) -> Result<(), CodecError> {
+        emit(ctx, seen, column[0])?;
+        emit(ctx, seen, column[1])
     }
 
     let mut seen = HashMap::new();
     let mut at = 0usize;
-    if trims.get(0..3)?.iter().all(|record| record.kind == 0x4a) {
-        let (first_a, first_b) = columns(&trims[0])?;
-        let (third_a, third_b) = columns(&trims[2])?;
+    let Some(first_three) = trims.get(0..3) else {
+        return Ok(None);
+    };
+    if first_three.iter().all(|record| record.kind == 0x4a) {
+        let Some((first_a, first_b)) = columns(&trims[0]) else {
+            return Ok(None);
+        };
+        let Some((third_a, third_b)) = columns(&trims[2]) else {
+            return Ok(None);
+        };
         for column in [third_a, first_b, first_a, third_b] {
-            emit_column(&mut seen, column);
+            emit_column(ctx, &mut seen, column)?;
         }
         at = 3;
     }
     if trims.get(at..at + 3).is_some_and(|records| {
         records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
     }) {
-        let (strip0_first, strip0_last) = columns(&trims[at])?;
-        let (quad_first, _) = columns(&trims[at + 1])?;
-        let (strip1_first, _) = columns(&trims[at + 2])?;
+        let Some((strip0_first, strip0_last)) = columns(&trims[at]) else {
+            return Ok(None);
+        };
+        let Some((quad_first, _)) = columns(&trims[at + 1]) else {
+            return Ok(None);
+        };
+        let Some((strip1_first, _)) = columns(&trims[at + 2]) else {
+            return Ok(None);
+        };
         for column in [strip0_last, strip0_first, quad_first, strip1_first] {
-            emit_column(&mut seen, column);
+            emit_column(ctx, &mut seen, column)?;
         }
         at += 3;
     }
     while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
-        let (first, last) = columns(&trims[at])?;
-        emit_column(&mut seen, first);
-        emit_column(&mut seen, last);
+        let Some((first, last)) = columns(&trims[at]) else {
+            return Ok(None);
+        };
+        emit_column(ctx, &mut seen, first)?;
+        emit_column(ctx, &mut seen, last)?;
         at += 1;
     }
     while at < trims.len() {
         if trims.get(at..at + 3).is_some_and(|records| {
             records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
         }) {
-            let ([a0, b0], [a1, b1]) = columns(&trims[at])?;
-            let ([c, d], [qa, qb]) = columns(&trims[at + 1])?;
-            let ([e, g], [sc, sd]) = columns(&trims[at + 2])?;
+            let Some(([a0, b0], [a1, b1])) = columns(&trims[at]) else {
+                return Ok(None);
+            };
+            let Some(([c, d], [qa, qb])) = columns(&trims[at + 1]) else {
+                return Ok(None);
+            };
+            let Some(([e, g], [sc, sd])) = columns(&trims[at + 2]) else {
+                return Ok(None);
+            };
             if [qa, qb] == [a0, b0] && [sc, sd] == [c, d] {
                 for handle in [a1, b1, b0, d, g, a0, c, e] {
-                    emit(&mut seen, handle);
+                    emit(ctx, &mut seen, handle)?;
                 }
                 at += 3;
                 continue;
@@ -4603,17 +4636,14 @@ pub(crate) fn motif_port_points(
                 trims[at].packet.handles()[3],
                 trims[at + 1].packet.handles()[1],
             ] {
-                emit(&mut seen, handle);
+                emit(ctx, &mut seen, handle)?;
             }
             at += 2;
             continue;
         }
-        return None;
+        return Ok(None);
     }
-    (at == trims.len()
-        && seen.len() == vertex_count
-        && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
-        .then_some(seen)
+    Ok((at == trims.len() && seen.len() == vertex_count).then_some(seen))
 }
 
 #[cfg(test)]
