@@ -6504,6 +6504,54 @@ fn propagate_endpoint_relation_domains(
     }
 }
 
+fn copy_endpoint_relation_selection(
+    ctx: &DecodeContext<'_>,
+    selection: &MeshEndpointRelationSelection,
+) -> Result<MeshEndpointRelationSelection, CodecError> {
+    match selection {
+        MeshEndpointRelationSelection::Deferred => Ok(MeshEndpointRelationSelection::Deferred),
+        MeshEndpointRelationSelection::Enumerated {
+            assignments,
+            edge_pairs,
+        } => Ok(MeshEndpointRelationSelection::Enumerated {
+            assignments: crate::resource::copy_slice(
+                ctx,
+                assignments,
+                "catia_endpoint_relation_copy_assignments",
+            )?,
+            edge_pairs: crate::resource::copy_slice(
+                ctx,
+                edge_pairs,
+                "catia_endpoint_relation_copy_edge_pairs",
+            )?,
+        }),
+    }
+}
+
+fn copy_endpoint_relation_domains(
+    ctx: &DecodeContext<'_>,
+    domains: &[Vec<MeshEndpointRelationChoice>],
+) -> Result<Vec<Vec<MeshEndpointRelationChoice>>, CodecError> {
+    let mut copy = Vec::new();
+    for choices in domains {
+        let mut row = Vec::new();
+        for choice in choices {
+            let selection = copy_endpoint_relation_selection(ctx, &choice.selection)?;
+            crate::resource::push(
+                ctx,
+                &mut row,
+                MeshEndpointRelationChoice {
+                    id: choice.id,
+                    selection,
+                },
+                "catia_endpoint_relation_copy_choices",
+            )?;
+        }
+        crate::resource::push(ctx, &mut copy, row, "catia_endpoint_relation_copy_faces")?;
+    }
+    Ok(copy)
+}
+
 // The recursive walk keeps branch-owned domains and shared memo state explicit;
 // a context object would hide which values are cloned for each branch.
 #[allow(clippy::too_many_arguments)]
@@ -6526,6 +6574,7 @@ fn walk_endpoint_relation_domains<F>(
 where
     F: FnMut(MeshEndpointRelationSelections, Vec<[usize; 2]>) -> Result<bool, CodecError>,
 {
+    let _depth = ctx.enter_nested("catia_endpoint_relation_walk_depth")?;
     if budget.exhausted() || !budget.charge() {
         return Ok(true);
     }
@@ -6556,25 +6605,34 @@ where
         .flatten()
         .all(|choice| !choice.selection.is_unconstrained())
     {
-        let mut possible_points = assigned
+        let mut possible_points = HashSet::new();
+        for point in assigned.iter().flatten().flatten().copied() {
+            crate::resource::insert_set(
+                ctx,
+                &mut possible_points,
+                point,
+                "catia_endpoint_relation_possible_points",
+            )?;
+        }
+        for point in domains
             .iter()
             .flatten()
-            .flatten()
+            .flat_map(|choice| {
+                choice
+                    .selection
+                    .edge_pairs()
+                    .iter()
+                    .flat_map(|(_, pair)| pair)
+            })
             .copied()
-            .collect::<HashSet<_>>();
-        possible_points.extend(
-            domains
-                .iter()
-                .flatten()
-                .flat_map(|choice| {
-                    choice
-                        .selection
-                        .edge_pairs()
-                        .iter()
-                        .flat_map(|(_, pair)| pair)
-                })
-                .copied(),
-        );
+        {
+            crate::resource::insert_set(
+                ctx,
+                &mut possible_points,
+                point,
+                "catia_endpoint_relation_possible_points",
+            )?;
+        }
         if possible_points.len() < point_count {
             return Ok(false);
         }
@@ -6611,9 +6669,40 @@ where
                 Some(raw_endpoint_relation_state_signature(&domains, &assigned))
             };
         if let Some(signature) = signature {
-            if !state_memo.insert(signature) {
+            if !crate::resource::insert_set(
+                ctx,
+                state_memo,
+                signature,
+                "catia_endpoint_relation_state_memo",
+            )? {
                 return Ok(false);
             }
+        }
+    }
+    let mut priority_counts = Vec::new();
+    if let Some(edges) = priority_edges.filter(|_| domains.iter().any(|choices| choices.len() > 1))
+    {
+        for choices in &domains {
+            let mut priority = HashSet::new();
+            for edge in choices
+                .iter()
+                .flat_map(|choice| choice.selection.edge_pairs().iter().map(|(edge, _)| *edge))
+            {
+                if edges.get(edge).copied().unwrap_or(false) {
+                    crate::resource::insert_set(
+                        ctx,
+                        &mut priority,
+                        edge,
+                        "catia_endpoint_relation_priority_edges",
+                    )?;
+                }
+            }
+            crate::resource::push(
+                ctx,
+                &mut priority_counts,
+                priority.len(),
+                "catia_endpoint_relation_priority_counts",
+            )?;
         }
     }
     // Visit a face touching a monotone preference-dependent edge before an
@@ -6624,14 +6713,7 @@ where
         .enumerate()
         .filter(|(_, choices)| choices.len() > 1)
         .min_by_key(|(face, choices)| {
-            let priority_count = priority_edges.map_or(0, |edges| {
-                choices
-                    .iter()
-                    .flat_map(|choice| choice.selection.edge_pairs().iter().map(|(edge, _)| *edge))
-                    .filter(|edge| edges.get(*edge).copied().unwrap_or(false))
-                    .collect::<HashSet<_>>()
-                    .len()
-            });
+            let priority_count = priority_counts.get(*face).copied().unwrap_or(0);
             (
                 priority_count == 0,
                 std::cmp::Reverse(priority_count),
@@ -6651,93 +6733,163 @@ where
                 }
             }
         }
-        let Some(edge_pairs) = edge_pairs.into_iter().collect::<Option<Vec<_>>>() else {
-            return Ok(false);
-        };
-        let selections = domains
-            .iter()
-            .enumerate()
-            .map(|(face, choices)| {
-                let choice = choices.first()?;
-                if let MeshEndpointRelationSelection::Enumerated { assignments, .. } =
-                    &choice.selection
-                {
-                    return Some(assignments.clone());
+        let mut completed_pairs = Vec::new();
+        for pair in edge_pairs {
+            let Some(pair) = pair else {
+                return Ok(false);
+            };
+            crate::resource::push(
+                ctx,
+                &mut completed_pairs,
+                pair,
+                "catia_endpoint_relation_completed_pairs",
+            )?;
+        }
+        let mut selections = Vec::new();
+        for (face, choices) in domains.iter().enumerate() {
+            let Some(choice) = choices.first() else {
+                return Ok(false);
+            };
+            let viable = if let MeshEndpointRelationSelection::Enumerated { assignments, .. } =
+                &choice.selection
+            {
+                crate::resource::copy_slice(
+                    ctx,
+                    assignments,
+                    "catia_endpoint_relation_selected_assignments",
+                )?
+            } else {
+                let mut viable = Vec::new();
+                for (assignment, assignment_value) in face_assignments[face].iter().enumerate() {
+                    let Some(configuration) =
+                        endpoint_configuration_for_assignment(assignment_value, &completed_pairs)
+                    else {
+                        continue;
+                    };
+                    if endpoint_configuration_cycles_viable(assignment_value, &configuration)
+                        != Some(true)
+                    {
+                        continue;
+                    }
+                    crate::resource::push(
+                        ctx,
+                        &mut viable,
+                        assignment,
+                        "catia_endpoint_relation_deferred_assignments",
+                    )?;
                 }
-                let viable = face_assignments[face]
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(assignment, assignment_value)| {
-                        let configuration =
-                            endpoint_configuration_for_assignment(assignment_value, &edge_pairs)?;
-                        endpoint_configuration_cycles_viable(assignment_value, &configuration)
-                            .is_some_and(|viable| viable)
-                            .then_some(assignment)
-                    })
-                    .collect::<Vec<_>>();
-                (!viable.is_empty()).then_some(viable)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(selections) = selections else {
-            return Ok(false);
-        };
-        return evaluate(selections, edge_pairs);
+                if viable.is_empty() {
+                    return Ok(false);
+                }
+                viable
+            };
+            crate::resource::push(
+                ctx,
+                &mut selections,
+                viable,
+                "catia_endpoint_relation_selection_faces",
+            )?;
+        }
+        return evaluate(selections, completed_pairs);
     };
-    let assigned_points = assigned
-        .iter()
-        .flatten()
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>();
+    let mut assigned_points = HashSet::new();
+    for point in assigned.iter().flatten().flatten().copied() {
+        crate::resource::insert_set(
+            ctx,
+            &mut assigned_points,
+            point,
+            "catia_endpoint_relation_assigned_points",
+        )?;
+    }
     let mut point_support = HashMap::<usize, usize>::new();
     for choices in &domains {
         for choice in choices {
-            let points = choice
+            let mut points = HashSet::new();
+            for point in choice
                 .selection
                 .edge_pairs()
                 .iter()
                 .flat_map(|(_, pair)| pair)
                 .copied()
-                .collect::<HashSet<_>>();
+            {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut points,
+                    point,
+                    "catia_endpoint_relation_support_choice_points",
+                )?;
+            }
             for point in points {
+                crate::resource::admit_map_entry(
+                    ctx,
+                    &mut point_support,
+                    &point,
+                    "catia_endpoint_relation_support_point_keys",
+                )?;
                 *point_support.entry(point).or_default() += 1;
             }
         }
     }
-    let mut branch_choices = choices.clone();
-    branch_choices.sort_unstable_by(|left, right| {
-        let score = |choice: &MeshEndpointRelationChoice| {
-            choice
-                .selection
-                .edge_pairs()
-                .iter()
-                .flat_map(|(_, pair)| pair)
-                .copied()
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .filter(|point| !assigned_points.contains(point))
-                .map(|point| {
-                    point_count
-                        .saturating_sub(point_support.get(&point).copied().unwrap_or(0))
-                        .saturating_add(1)
-                })
-                .sum::<usize>()
-        };
-        score(right)
-            .cmp(&score(left))
-            .then_with(|| left.id.cmp(&right.id))
+    let mut branch_order = Vec::new();
+    for (index, choice) in choices.iter().enumerate() {
+        let mut points = HashSet::new();
+        for point in choice
+            .selection
+            .edge_pairs()
+            .iter()
+            .flat_map(|(_, pair)| pair)
+            .copied()
+        {
+            crate::resource::insert_set(
+                ctx,
+                &mut points,
+                point,
+                "catia_endpoint_relation_score_points",
+            )?;
+        }
+        let score = points
+            .into_iter()
+            .filter(|point| !assigned_points.contains(point))
+            .map(|point| {
+                point_count
+                    .saturating_sub(point_support.get(&point).copied().unwrap_or(0))
+                    .saturating_add(1)
+            })
+            .sum::<usize>();
+        crate::resource::push(
+            ctx,
+            &mut branch_order,
+            (score, index),
+            "catia_endpoint_relation_branch_order",
+        )?;
+    }
+    branch_order.sort_unstable_by(|(left_score, left), (right_score, right)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| choices[*left].id.cmp(&choices[*right].id))
     });
-    for choice in branch_choices {
+    for (_, index) in branch_order {
         if budget.exhausted() {
             return Ok(true);
         }
-        let mut branch = domains.clone();
-        branch[face] = vec![choice];
+        let mut branch = copy_endpoint_relation_domains(ctx, &domains)?;
+        branch[face].clear();
+        let choice = &choices[index];
+        let selection = copy_endpoint_relation_selection(ctx, &choice.selection)?;
+        crate::resource::push(
+            ctx,
+            &mut branch[face],
+            MeshEndpointRelationChoice {
+                id: choice.id,
+                selection,
+            },
+            "catia_endpoint_relation_branch_choice",
+        )?;
         if walk_endpoint_relation_domains(
             ctx,
             branch,
             face_assignments,
-            assigned.clone(),
+            crate::resource::copy_slice(ctx, &assigned, "catia_endpoint_relation_branch_assigned")?,
             constraints,
             point_count,
             budget,
@@ -11829,6 +11981,93 @@ fn endpoint_relation_support_masks_propagate_collection_refusal() {
             assert!(refused.contains("catia_endpoint_relation_index_keys"));
             assert!(refused.contains("catia_endpoint_relation_index_values"));
         }
+    }
+}
+
+#[test]
+fn endpoint_relation_walk_charges_branch_copies_and_nested_sets() {
+    let choices = vec![
+        MeshEndpointRelationChoice {
+            id: 0,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1])],
+            },
+        },
+        MeshEndpointRelationChoice {
+            id: 1,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![1],
+                edge_pairs: vec![(0, [0, 1])],
+            },
+        },
+    ];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    };
+    let assignments = [vec![assignment.clone(), assignment]];
+    let constraints = MeshEndpointRelationConstraints {
+        arcs: vec![vec![]],
+        incoming: vec![vec![]],
+        choice_counts: vec![2],
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let mut memo = HashSet::new();
+        walk_endpoint_relation_domains(
+            ctx,
+            vec![choices.clone()],
+            &assignments,
+            vec![None],
+            &constraints,
+            2,
+            &budget,
+            &mut memo,
+            None,
+            Some(&[true]),
+            None,
+            None,
+            None,
+            &mut |_, _| Ok(false),
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(false) => break,
+            _ => panic!("unexpected endpoint relation walk result"),
+        }
+    }
+    for operation in [
+        "catia_endpoint_relation_possible_points",
+        "catia_endpoint_relation_state_memo",
+        "catia_endpoint_relation_priority_edges",
+        "catia_endpoint_relation_priority_counts",
+        "catia_endpoint_relation_assigned_points",
+        "catia_endpoint_relation_support_choice_points",
+        "catia_endpoint_relation_support_point_keys",
+        "catia_endpoint_relation_score_points",
+        "catia_endpoint_relation_branch_order",
+        "catia_endpoint_relation_copy_assignments",
+        "catia_endpoint_relation_copy_edge_pairs",
+        "catia_endpoint_relation_copy_choices",
+        "catia_endpoint_relation_copy_faces",
+        "catia_endpoint_relation_branch_choice",
+        "catia_endpoint_relation_branch_assigned",
+        "catia_endpoint_relation_completed_pairs",
+        "catia_endpoint_relation_selected_assignments",
+        "catia_endpoint_relation_selection_faces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
 
