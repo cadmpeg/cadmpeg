@@ -283,13 +283,22 @@ fn project_features_with_native_inputs(
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Result<FeatureProjection, cadmpeg_core::CodecError> {
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
+        &ctx,
         &mut histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
-    );
+    )?;
     let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
@@ -303,14 +312,6 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         None,
     );
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,

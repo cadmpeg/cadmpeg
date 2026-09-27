@@ -2382,6 +2382,7 @@ fn build_geometry_ir(
         form_padding,
     );
     crate::pmi::apply_to_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
@@ -3576,6 +3577,7 @@ fn build_metadata_ir(
         form_padding,
     );
     crate::pmi::apply_to_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
@@ -3892,11 +3894,12 @@ fn project_design_history(
         &scene_feature_classes,
     )?;
     crate::history::configuration::enrich_history_semantic(
+        ctx,
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
-    );
+    )?;
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection);
     crate::history::project::project_feature_model(&semantic_projection)?
@@ -3927,7 +3930,7 @@ fn project_design_history(
             &mut parameter_projection,
             lanes,
         );
-    crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
+    crate::pmi::enrich_history_parameters(ctx, &mut parameter_projection, pmi_dimensions)?;
     ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
     crate::history::configuration::project_configuration_design_states(
         ctx,

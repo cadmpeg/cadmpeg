@@ -89,11 +89,12 @@ pub(crate) fn enrich_history_parameters_values_only(
 /// revolution-input enrichments; the read path additionally applies
 /// hole-construction enrichment (selected by `mode`).
 pub(crate) fn enrich_history_semantic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(histories, lanes);
     crate::resolved_features::terminations::enrich_history_combine_selections(histories, lanes);
     crate::resolved_features::terminations::enrich_history_sweep_paths(histories, lanes);
@@ -116,10 +117,11 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
         histories, lanes,
     );
-    crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
+    crate::pmi::enrich_history_parameters(ctx, histories, pmi_dimensions)?;
     apply_evaluated_parameters(histories);
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
     crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
+    Ok(())
 }
 
 /// The shared compact/generated projection block, declared once for both codec
@@ -203,10 +205,11 @@ pub(crate) fn project_configuration_design_states(
         // incompatible native scalar candidates. Reapply afterward to add PMI
         // parameters that the lane does not carry without replacing overrides.
         crate::pmi::enrich_history_parameters_with_features(
+            ctx,
             &mut projection,
             pmi_dimensions,
             &ir.model.features,
-        );
+        )?;
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(
@@ -214,10 +217,11 @@ pub(crate) fn project_configuration_design_states(
                 scoped_lanes,
             );
         crate::pmi::enrich_history_parameters_with_features(
+            ctx,
             &mut projection,
             pmi_dimensions,
             &ir.model.features,
-        );
+        )?;
         ir.model.configurations[configuration_index].parameter_values =
             project_parameters(&projection)
                 .into_iter()
@@ -226,11 +230,12 @@ pub(crate) fn project_configuration_design_states(
 
         let mut projection = histories.to_vec();
         enrich_history_semantic(
+            ctx,
             &mut projection,
             scoped_lanes,
             pmi_dimensions,
             HistoryEnrichment::Write,
-        );
+        )?;
         let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
             &mut features,

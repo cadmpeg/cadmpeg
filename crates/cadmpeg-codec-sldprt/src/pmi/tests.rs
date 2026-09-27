@@ -17,7 +17,7 @@ use cadmpeg_ir::{
 };
 
 use super::{
-    apply_to_parameters, dimension_subtype, enrich_history_parameters, exact_count,
+    dimension_subtype, exact_count,
     neutral_parameter_is_count, patch_payload, patch_slots,
 };
 
@@ -233,7 +233,11 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     }];
     let record = dimension("Linear", 0.034);
 
-    apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[record]).unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression, "12mm");
@@ -262,7 +266,11 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[first, second]).unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -276,7 +284,11 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -322,7 +334,11 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
     second.guid = "guid-2".into();
     second.basic = true;
 
-    enrich_history_parameters(&mut history, &[first, second]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    super::enrich_history_parameters(&ctx, &mut history, &[first, second]).unwrap();
 
     assert!(history[0].features[0].parameters.is_empty());
 }
@@ -897,6 +913,59 @@ fn decode_bound_pmi_report_refuses_collection_limit() {
         options.policy.limits.max_collection_items = limit.used + limit.additional;
     }
     panic!("bound PMI report charge was not reached");
+}
+
+fn pmi_projection_collection_refusal(
+    container_only: bool,
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload(),
+    ));
+    let mut options = DecodeOptions {
+        container_only,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_collection_items = 0;
+    for _ in 0..1024 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect_err("collection limit must refuse the PMI projection route");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a collection resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        if limit.operation == operation {
+            assert_eq!(options.policy.limits.max_collection_items, limit.used);
+            return limit;
+        }
+        options.policy.limits.max_collection_items = limit.used + limit.additional;
+    }
+    panic!("PMI projection collection charge was not reached");
+}
+
+#[test]
+fn geometry_pmi_projection_refuses_collection_limit() {
+    let limit = pmi_projection_collection_refusal(false, "group SLDPRT PMI dimension names");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_pmi_projection_refuses_collection_limit() {
+    let limit = pmi_projection_collection_refusal(true, "group SLDPRT PMI dimension names");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]

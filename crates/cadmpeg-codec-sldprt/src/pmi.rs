@@ -88,29 +88,41 @@ fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
 
 /// Return one deterministic representative for each owner-qualified dimension
 /// whose retained records all agree semantically.
-fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDimension> {
+fn agreed_dimension_records<'a>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [PmiDimension],
+) -> Result<Vec<&'a PmiDimension>, CodecError> {
     let mut groups = BTreeMap::<&str, Vec<&PmiDimension>>::new();
     for record in records {
-        groups
-            .entry(record.cad_text.as_str())
-            .or_default()
-            .push(record);
+        let key = record.cad_text.as_str();
+        if !groups.contains_key(key) {
+            ctx.charge_collection_items(1, "group SLDPRT PMI dimension names")?;
+        }
+        let group = groups.entry(key).or_default();
+        ctx.reserve_collection_vec(group, 1, "group SLDPRT PMI dimension records")?;
+        group.push(record);
     }
 
-    let mut representatives = groups
-        .into_values()
-        .filter_map(|mut group| {
+    let mut representatives = Vec::new();
+    for mut group in groups.into_values() {
             group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
-            let canonical = *group.first()?;
-            (canonical.item_count == 1
+            let Some(&canonical) = group.first() else {
+                continue;
+            };
+            if canonical.item_count == 1
                 && group.iter().all(|record| {
                     record.item_count == 1 && equivalent_dimensions(canonical, record)
-                }))
-            .then_some(canonical)
-        })
-        .collect::<Vec<_>>();
+                }) {
+                ctx.reserve_collection_vec(
+                    &mut representatives,
+                    1,
+                    "collect SLDPRT PMI agreed dimensions",
+                )?;
+                representatives.push(canonical);
+            }
+    }
     representatives.sort_unstable_by(|left, right| left.id.cmp(&right.id));
-    representatives
+    Ok(representatives)
 }
 
 /// Count native semantic dimensions not represented by a bound record or one
@@ -140,28 +152,37 @@ pub(crate) fn unbound_dimension_count(
 
 /// Add uniquely owner-qualified PMI dimensions to a projection copy of history.
 pub(crate) fn enrich_history_parameters(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     records: &[PmiDimension],
-) {
-    enrich_history_parameters_with_features(histories, records, &[]);
+) -> Result<(), CodecError> {
+    enrich_history_parameters_with_features(ctx, histories, records, &[])
 }
 
 /// Add uniquely owner-qualified PMI dimensions with neutral owner context.
 pub(crate) fn enrich_history_parameters_with_features(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     records: &[PmiDimension],
     neutral_features: &[cadmpeg_ir::features::Feature],
-) {
+) -> Result<(), CodecError> {
     let mut owners = BTreeMap::<String, Vec<(usize, usize)>>::new();
     for (history_index, history) in histories.iter().enumerate() {
         for (feature_index, feature) in history.features.iter().enumerate() {
-            owners
-                .entry(feature.name.clone())
-                .or_default()
-                .push((history_index, feature_index));
+            if let Some(owner) = owners.get_mut(&feature.name) {
+                ctx.reserve_collection_vec(owner, 1, "collect SLDPRT PMI owner positions")?;
+                owner.push((history_index, feature_index));
+            } else {
+                ctx.charge_collection_items(1, "index SLDPRT PMI history owners")?;
+                let name = copy_pmi_text(ctx, &feature.name, "copy SLDPRT PMI owner name")?;
+                let mut owner = Vec::new();
+                ctx.reserve_collection_vec(&mut owner, 1, "collect SLDPRT PMI owner positions")?;
+                owner.push((history_index, feature_index));
+                owners.insert(name, owner);
+            }
         }
     }
-    for record in agreed_dimension_records(records) {
+    for record in agreed_dimension_records(ctx, records)? {
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
@@ -212,6 +233,7 @@ pub(crate) fn enrich_history_parameters_with_features(
             )
             .or_insert(expression);
     }
+    Ok(())
 }
 
 pub(crate) fn patch_payload(
@@ -343,6 +365,7 @@ fn patch_bytes(
 }
 
 pub(crate) fn apply_to_parameters(
+    ctx: &DecodeContext<'_>,
     parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
@@ -358,10 +381,15 @@ pub(crate) fn apply_to_parameters(
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
-            feature_names.entry(name).or_default().push(feature);
+            if !feature_names.contains_key(name) {
+                ctx.charge_collection_items(1, "index SLDPRT PMI feature names")?;
+            }
+            let group = feature_names.entry(name).or_default();
+            ctx.reserve_collection_vec(group, 1, "collect SLDPRT PMI named features")?;
+            group.push(feature);
         }
     }
-    for record in agreed_dimension_records(records) {
+    for record in agreed_dimension_records(ctx, records)? {
         let Some((name, owner_name)) = record.cad_text.split_once('@') else {
             continue;
         };
