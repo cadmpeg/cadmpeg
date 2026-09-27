@@ -604,3 +604,106 @@ fn surface_merge_record_refuses_before_vec_growth() {
         1
     );
 }
+
+#[test]
+fn loop_history_roster_refuses_before_counted_vec_growth() {
+    let body = [42, 1, 2, 3, 4, 0xe3];
+    item(
+        run(&body, 0, u64::MAX, |ctx| {
+            super::super::loop_history_roster(ctx, &body, 0, 1)
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("loop history roster"))
+                .map(|_| ())
+        })
+        .expect_err("one roster row needs one item"),
+        "creo loop history roster",
+    );
+    assert!(run(&body, 1, u64::MAX, |ctx| {
+        super::super::loop_history_roster(ctx, &body, 0, 1)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("loop history roster"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn loop_history_fields_refuse_before_each_retained_copy() {
+    let body = [42, 1, 2, 3, 4, 0xe3];
+    for admitted in 0..4 {
+        retained(
+            run(&body, 1, admitted, |ctx| {
+                super::super::loop_history_roster(ctx, &body, 0, 1)
+                    .transpose()?
+                    .ok_or_else(|| CodecError::malformed("loop history fields"))
+                    .map(|_| ())
+            })
+            .expect_err("one field byte needs retained admission"),
+            "creo loop history field bytes",
+        );
+    }
+}
+
+#[test]
+fn loop_history_trailing_field_refuses_before_retained_copy() {
+    let body = b"\x2a\x01\x02\x03\x04\x07\xe0\x00next\0";
+    retained(
+        run(body, 1, 4, |ctx| {
+            super::super::loop_history_roster(ctx, body, 0, 1)
+                .transpose()?
+                .ok_or_else(|| CodecError::malformed("loop history trailing field"))
+                .map(|_| ())
+        })
+        .expect_err("trailing field needs retained admission"),
+        "creo loop history trailing bytes",
+    );
+    assert!(run(body, 1, 5, |ctx| {
+        super::super::loop_history_roster(ctx, body, 0, 1)
+            .transpose()?
+            .ok_or_else(|| CodecError::malformed("loop history trailing field"))
+    })
+    .is_ok());
+}
+
+#[test]
+fn loop_history_result_refuses_before_vec_growth() {
+    let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
+                 \xe0\x01lo_hist\0\xf8\x06\x2a\x01\x02\x03\x04\xe3";
+    let row = FeatureRow {
+        feature_id: 7,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 10,
+        body: body.to_vec().try_into().expect("loop history row"),
+        body_offset: 1000,
+        offset: 998,
+    };
+    let table = super::super::FeatureGeometryTable {
+        feature_id: 7,
+        kind: super::super::FeatureGeometryTableKind::LoopIds,
+        count: 1,
+        entity_class: 96,
+        offset: 1000,
+    };
+    item(
+        run(body, 1, u64::MAX, |ctx| {
+            super::super::loop_history_entries(
+                ctx,
+                std::slice::from_ref(&row),
+                std::slice::from_ref(&table),
+            )
+        })
+        .expect_err("one result row needs another item"),
+        "creo loop history entries",
+    );
+    assert_eq!(
+        run(body, 2, u64::MAX, |ctx| {
+            super::super::loop_history_entries(
+                ctx,
+                std::slice::from_ref(&row),
+                std::slice::from_ref(&table),
+            )
+        })
+        .expect("one loop history result admitted")
+        .len(),
+        1
+    );
+}

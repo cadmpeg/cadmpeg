@@ -2681,7 +2681,7 @@ pub(crate) fn scan_bytes<'a>(
     let depdb_recipe_rows = depdb_recipe_rows(ctx, &sections)?;
     let feature_geometry_tables = feature_geometry_tables(ctx, &feature_rows, &depdb_recipe_rows)?;
     let feature_loop_history_entries =
-        feature::rows::loop_history_entries(&feature_rows, &feature_geometry_tables);
+        feature::rows::loop_history_entries(ctx, &feature_rows, &feature_geometry_tables)?;
     let feature_affected_ids = feature_affected_ids(ctx, &feature_rows, &depdb_recipe_rows)?;
     let feature_replay_affected_ids = feature::rows::replay_affected_ids(ctx, &feature_rows)?;
     let surface_merge_replay_affected_ids = feature::rows::surface_merge_replay_affected_ids(

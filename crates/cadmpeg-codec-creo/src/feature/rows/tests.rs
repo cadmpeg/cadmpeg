@@ -5,8 +5,6 @@ use crate::feature::definitions::dimension_unit;
 use crate::feature::definitions::DimensionUnit;
 use crate::feature::entity::entity_graph;
 use crate::feature::entity::read_entries;
-use crate::feature::rows::loop_history_entries;
-use crate::feature::rows::loop_history_roster;
 use crate::feature::rows::rows;
 use crate::feature::rows::AffectedIdKind;
 use crate::feature::rows::FeatureAffectedIds;
@@ -58,6 +56,25 @@ fn surface_merge_replay_affected_ids(
         super::surface_merge_replay_affected_ids(ctx, rows, named)
     })
     .expect("surface-merge affected ids are admitted")
+}
+
+fn loop_history_entries(
+    rows: &[FeatureRow],
+    tables: &[super::FeatureGeometryTable],
+) -> Vec<super::FeatureLoopHistoryEntry> {
+    crate::decode::with_test_decode_ctx(|ctx| super::loop_history_entries(ctx, rows, tables))
+        .expect("loop history entries are admitted")
+}
+
+fn loop_history_roster(
+    body: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<Vec<super::ParsedLoopHistoryEntry>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::loop_history_roster(ctx, body, cursor, count).transpose()
+    })
+    .expect("loop history roster is admitted")
 }
 
 fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {
