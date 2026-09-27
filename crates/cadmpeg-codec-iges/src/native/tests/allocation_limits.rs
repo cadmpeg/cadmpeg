@@ -441,3 +441,82 @@ fn native_solid_instance_slot_and_ids_refuse_limits() {
         assert_retained_refusal_at(&bytes, operation);
     }
 }
+
+#[test]
+fn native_subfigure_definition_members_and_instance_slots_refuse_limits() {
+    let bytes = owned_test_file(&[
+        native_entity(116, 0, "116,1,2,3,0;"),
+        native_entity(308, 0, "308,0,3HDEF,1,1;"),
+        native_entity(408, 0, "408,3,0,0,0,1;"),
+    ]);
+    assert_native_arena(&bytes, "subfigure_definitions");
+    assert_native_arena(&bytes, "subfigure_instances");
+    for operation in [
+        "iges native subfigure definition slots",
+        "iges native subfigure member slots",
+        "iges native subfigure instance slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native subfigure definition id",
+        "iges native subfigure definition source",
+        "iges native subfigure name",
+        "iges native subfigure member",
+        "iges native subfigure instance id",
+        "iges native subfigure instance source",
+        "iges native subfigure instance definition",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_network_definition_member_and_connect_point_slots_refuse_limits() {
+    let bytes = owned_test_file(&[
+        native_entity(116, 0, "116,1,2,3,0;"),
+        native_entity(132, 0, "132,0,0,0,0,0,0,0,0,0,0,0,0,0,0;"),
+        native_entity(320, 0, "320,0,3HNET,1,1,0,2HR1,0,1,3;"),
+    ]);
+    assert_native_arena(&bytes, "network_definitions");
+    for operation in [
+        "iges native network definition slots",
+        "iges native network member slots",
+        "iges native network connect point slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native network definition id",
+        "iges native network definition source",
+        "iges native network name",
+        "iges native network member",
+        "iges native network designator",
+        "iges native network connect point",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_network_instance_connect_point_slots_and_designator_refuse_limits() {
+    let bytes = owned_test_file(&[
+        native_entity(320, 0, "320,0,3HNET,0,0,2HR1,0,0;"),
+        native_entity(420, 0, "420,1,0,0,0,1,1,1,0,2HR1,0,1,0;"),
+    ]);
+    assert_native_arena(&bytes, "network_instances");
+    for operation in [
+        "iges native network instance slots",
+        "iges native network instance connect point slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native network instance id",
+        "iges native network instance source",
+        "iges native network instance definition",
+        "iges native network instance designator",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
