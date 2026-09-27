@@ -123,26 +123,32 @@ fn standard_collection_limit_operation(
     }
 }
 
-fn duplicate_face_slot_operation(max_collection_items: u64) -> &'static str {
+fn duplicate_face_slot_fixture(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
 
+    let rows = (0..3)
+        .map(|handle| EdgeRow {
+            kind: 0,
+            handles: vec![handle],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    complete_duplicate_face_slots(
+        ctx,
+        &rows,
+        &[[0, 1], [0, 1], [0, 0]],
+        &[[0, 1], [1, 2], [2, 0]],
+        2,
+        None,
+        None,
+    )
+}
+
+fn duplicate_face_slot_operation(max_collection_items: u64) -> &'static str {
     standard_collection_limit_operation(max_collection_items, |ctx| {
-        let rows = (0..3)
-            .map(|handle| EdgeRow {
-                kind: 0,
-                handles: vec![handle],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            })
-            .collect::<Vec<_>>();
-        complete_duplicate_face_slots(
-            ctx,
-            &rows,
-            &[[0, 1], [0, 1], [0, 0]],
-            &[[0, 1], [1, 2], [2, 0]],
-            2,
-            None,
-            None,
-        )?;
+        duplicate_face_slot_fixture(ctx)?;
         Ok(())
     })
 }
@@ -150,15 +156,39 @@ fn duplicate_face_slot_operation(max_collection_items: u64) -> &'static str {
 #[test]
 fn standard_endpoint_degrees_propagate_collection_refusal() {
     assert_eq!(
-        duplicate_face_slot_operation(0),
+        duplicate_face_slot_operation(4),
         "catia standard endpoint degrees"
     );
 }
 
 #[test]
+fn standard_duplicate_unresolved_edges_refuse_before_growth() {
+    assert_eq!(
+        duplicate_face_slot_operation(3),
+        "catia_standard_duplicate_unresolved_edges"
+    );
+}
+
+#[test]
+fn standard_endpoint_degree_entries_refuse_before_growth() {
+    use super::set_duplicate_degree;
+
+    let operation = standard_collection_limit_operation(0, |ctx| {
+        let mut row = Vec::new();
+        set_duplicate_degree(ctx, &mut row, 7, 1)
+    });
+    assert_eq!(operation, "catia_standard_endpoint_degree_entries");
+    crate::test_support::with_service_context(|ctx| {
+        let mut row = Vec::new();
+        set_duplicate_degree(ctx, &mut row, 7, 1).expect("service budget");
+        assert_eq!(row, [(7, 1)]);
+    });
+}
+
+#[test]
 fn standard_unresolved_assignment_propagates_collection_refusal() {
     assert_eq!(
-        duplicate_face_slot_operation(2),
+        duplicate_face_slot_operation(12),
         "catia standard unresolved edge assignment"
     );
 }
@@ -166,42 +196,212 @@ fn standard_unresolved_assignment_propagates_collection_refusal() {
 #[test]
 fn standard_unresolved_marks_propagate_collection_refusal() {
     assert_eq!(
-        duplicate_face_slot_operation(3),
+        duplicate_face_slot_operation(13),
         "catia standard unresolved edge marks"
     );
 }
 
 #[test]
-fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
+fn standard_duplicate_choices_refuse_before_search_branch() {
+    assert_eq!(
+        duplicate_face_slot_operation(14),
+        "catia_standard_duplicate_choices"
+    );
+}
+
+#[test]
+fn standard_duplicate_search_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        crate::test_support::with_service_context(duplicate_face_slot_fixture)
+            .expect("service resource budget"),
+        Some(vec![[0, 1], [0, 1], [0, 1]])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    assert!(matches!(
+        duplicate_face_slot_fixture(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "catia_standard_duplicate_choice_scan"
+    ));
+}
+
+#[test]
+fn standard_duplicate_search_refuses_recursion_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    assert!(matches!(
+        duplicate_face_slot_fixture(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RecursionDepth
+                && limit.operation == "catia_standard_duplicate_face_search"
+    ));
+}
+
+fn ambiguous_duplicate_face_fixture(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    edge_classes: Option<&[usize]>,
+    mesh_bytes: Option<&[u8]>,
+) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
     use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
 
-    let operation = standard_collection_limit_operation(7, |ctx| {
-        let rows = (0..4)
-            .map(|handle| EdgeRow {
-                kind: 0,
-                handles: vec![handle],
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            })
-            .collect::<Vec<_>>();
-        complete_duplicate_face_slots(
-            ctx,
-            &rows,
-            &[[0, 1], [0, 1], [2, 2], [2, 2]],
-            &[[0, 1], [1, 2], [2, 0], [0, 2]],
-            3,
-            Some(&[0, 1, 2, 2]),
-            None,
-        )?;
+    let rows = (0..4)
+        .map(|handle| EdgeRow {
+            kind: 0,
+            handles: vec![handle],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        })
+        .collect::<Vec<_>>();
+    complete_duplicate_face_slots(
+        ctx,
+        &rows,
+        &[[0, 1], [0, 1], [2, 2], [2, 2]],
+        &[[0, 1], [1, 2], [2, 0], [0, 2]],
+        3,
+        edge_classes,
+        mesh_bytes,
+    )
+}
+
+fn ambiguous_duplicate_face_operation(max_collection_items: u64) -> &'static str {
+    standard_collection_limit_operation(max_collection_items, |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
         Ok(())
-    });
-    assert_eq!(operation, "catia standard duplicate assignment marks");
+    })
+}
+
+#[test]
+fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    assert!(crate::test_support::with_service_context(|ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 3]), Some(&[]))
+    })
+    .expect("service resource budget")
+    .is_none());
+    let mut refused = HashSet::new();
+    for cap in 0..128 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 3]), Some(&[]))
+        });
+        if let Err(CodecError::ResourceLimit(limit)) = result {
+            refused.insert(limit.operation);
+        }
+    }
+    assert!(refused.contains("catia_standard_duplicate_mesh_edge_faces"));
+}
+
+#[test]
+fn standard_duplicate_solution_values_refuse_before_copy() {
+    assert_eq!(
+        ambiguous_duplicate_face_operation(24),
+        "catia_standard_duplicate_solution_values"
+    );
+}
+
+#[test]
+fn standard_duplicate_solutions_refuse_before_result_growth() {
+    assert_eq!(
+        ambiguous_duplicate_face_operation(26),
+        "catia_standard_duplicate_solutions"
+    );
+}
+
+#[test]
+fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
+    assert_eq!(
+        ambiguous_duplicate_face_operation(28),
+        "catia standard duplicate assignment marks"
+    );
+}
+
+#[test]
+fn standard_duplicate_face_comparison_refuses_nested_face_lists() {
+    use super::{duplicate_face_assignments_equivalent, EdgeBoundaryLayout, EdgeRow};
+    use cadmpeg_core::CodecError;
+
+    let rows = [
+        EdgeRow {
+            kind: 1,
+            handles: vec![10],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+        EdgeRow {
+            kind: 1,
+            handles: vec![10],
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        },
+    ];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        duplicate_face_assignments_equivalent(
+            ctx,
+            &[0, 1],
+            &rows,
+            &[[0, 0], [0, 0]],
+            &[[0, 1], [0, 1]],
+            None,
+            [&[0, 0], &[0, 1]],
+        )
+    };
+    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
+    for (cap, operation) in [
+        "catia_standard_duplicate_left_faces",
+        "catia_standard_duplicate_right_faces",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let result = crate::test_support::with_collection_limit(cap as u64 + 2, run);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn standard_duplicate_face_copy_refuses_before_completed_result() {
+    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+    use cadmpeg_core::CodecError;
+
+    let rows = [EdgeRow {
+        kind: 1,
+        handles: vec![10],
+        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+    }];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        complete_duplicate_face_slots(ctx, &rows, &[[0, 1]], &[[0, 1]], 2, None, None)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+    let refused = crate::test_support::with_collection_limit(0, run);
+    assert!(matches!(
+        refused,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_standard_duplicate_edge_faces"
+    ));
 }
 
 #[test]
 fn standard_face_edges_propagate_collection_refusal() {
     use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
 
-    let operation = standard_collection_limit_operation(0, |ctx| {
+    let operation = standard_collection_limit_operation(1, |ctx| {
         reconstruct_incidence(
             ctx,
             vec![EdgeRow {
@@ -223,7 +423,7 @@ fn standard_face_edges_propagate_collection_refusal() {
 fn standard_face_edge_entries_refuse_collection_limit() {
     use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
 
-    let operation = standard_collection_limit_operation(2, |ctx| {
+    let operation = standard_collection_limit_operation(3, |ctx| {
         reconstruct_incidence(
             ctx,
             vec![EdgeRow {
@@ -487,7 +687,7 @@ fn standard_vertex_point_domains_propagate_collection_refusal() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let error = topology
@@ -554,7 +754,7 @@ fn standard_vertex_point_domain_entries_refuse_collection_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
+    policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let result = topology.bind_vertex_points(&ctx, &[[3, 1], [1, 2]]);

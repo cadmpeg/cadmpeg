@@ -15,7 +15,44 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
+
+fn duplicate_degree(row: &[(usize, u8)], point: usize) -> Option<u8> {
+    row.binary_search_by_key(&point, |(key, _)| *key)
+        .ok()
+        .map(|index| row[index].1)
+}
+
+fn set_duplicate_degree(
+    ctx: &DecodeContext<'_>,
+    row: &mut Vec<(usize, u8)>,
+    point: usize,
+    degree: u8,
+) -> Result<(), CodecError> {
+    match row.binary_search_by_key(&point, |(key, _)| *key) {
+        Ok(index) => row[index].1 = degree,
+        Err(index) => {
+            crate::resource::push(
+                ctx,
+                row,
+                (point, degree),
+                "catia_standard_endpoint_degree_entries",
+            )?;
+            row[index..].rotate_right(1);
+        }
+    }
+    Ok(())
+}
+
+fn restore_duplicate_degree(row: &mut Vec<(usize, u8)>, point: usize, before: Option<u8>) {
+    if let Ok(index) = row.binary_search_by_key(&point, |(key, _)| *key) {
+        if let Some(degree) = before {
+            row[index].1 = degree;
+        } else {
+            row.remove(index);
+        }
+    }
+}
 
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
 /// face boundaries recovered from the trim-mesh triangle packets, plus the
@@ -732,24 +769,31 @@ pub(super) fn complete_duplicate_face_slots(
 
     fn search(
         inputs: &SearchInputs<'_, '_>,
-        degrees: &mut [BTreeMap<usize, u8>],
+        degrees: &mut [Vec<(usize, u8)>],
         assignment: &mut [usize],
         used: &mut [bool],
         solutions: &mut Vec<Vec<usize>>,
         operations: &mut usize,
         exhausted: &mut bool,
     ) -> Result<(), CodecError> {
+        let _depth = inputs
+            .ctx
+            .enter_nested("catia_standard_duplicate_face_search")?;
         if *exhausted || solutions.len() > 1 {
             return Ok(());
         }
         if used.iter().all(|value| *value) {
             let closed = degrees
                 .iter()
-                .all(|face| face.values().all(|degree| *degree == 2));
+                .all(|face| face.iter().all(|(_, degree)| *degree == 2));
             let mesh_valid = if !closed {
                 false
             } else if let Some(bytes) = inputs.mesh_bytes {
-                let mut completed = inputs.edge_faces.to_vec();
+                let mut completed = crate::resource::copy_slice(
+                    inputs.ctx,
+                    inputs.edge_faces,
+                    "catia_standard_duplicate_mesh_edge_faces",
+                )?;
                 for (&edge, &face) in inputs.unresolved.iter().zip(assignment.iter()) {
                     completed[edge][1] = face;
                 }
@@ -772,7 +816,17 @@ pub(super) fn complete_duplicate_face_slots(
                     true
                 };
                 if distinct {
-                    solutions.push(assignment.to_vec());
+                    let copy = crate::resource::copy_slice(
+                        inputs.ctx,
+                        assignment,
+                        "catia_standard_duplicate_solution_values",
+                    )?;
+                    crate::resource::push(
+                        inputs.ctx,
+                        solutions,
+                        copy,
+                        "catia_standard_duplicate_solutions",
+                    )?;
                 }
             }
             return Ok(());
@@ -780,35 +834,46 @@ pub(super) fn complete_duplicate_face_slots(
         let deficit = degrees.iter().enumerate().find_map(|(face, values)| {
             values
                 .iter()
-                .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
+                .find_map(|&(point, degree)| (degree == 1).then_some((face, point)))
         });
-        let unresolved = inputs
-            .unresolved
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !used[*index]);
-        let candidates: Box<dyn Iterator<Item = (usize, &usize)>> = match deficit {
-            Some((_, point)) => Box::new(unresolved.filter(move |(_, edge)| {
-                let [start, end] = inputs.edge_points[**edge];
-                start == point || end == point
-            })),
-            None => Box::new(unresolved.take(1)),
-        };
-        let choices = candidates
-            .flat_map(|(index, &edge)| {
-                let faces: Box<dyn Iterator<Item = usize>> = match deficit {
-                    Some((face, _)) => Box::new(std::iter::once(face)),
-                    None => Box::new(0..degrees.len()),
-                };
-                faces.map(move |face| (index, edge, face))
-            })
-            .filter(|(_, edge, face)| {
-                let [start, end] = inputs.edge_points[*edge];
-                degrees[*face].get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end)
+        let mut choices = Vec::new();
+        for (index, &edge) in inputs.unresolved.iter().enumerate() {
+            inputs
+                .ctx
+                .charge_work(1, "catia_standard_duplicate_choice_scan")?;
+            if used[index] {
+                continue;
+            }
+            let [start, end] = inputs.edge_points[edge];
+            if let Some((_, point)) = deficit {
+                if start != point && end != point {
+                    continue;
+                }
+            }
+            let faces = deficit.map_or(0..degrees.len(), |(face, _)| face..face + 1);
+            for face in faces {
+                inputs
+                    .ctx
+                    .charge_work(1, "catia_standard_duplicate_choice_scan")?;
+                if duplicate_degree(&degrees[face], start).unwrap_or_default()
+                    + 1
+                    + u8::from(start == end)
                     <= 2
-                    && (start == end || degrees[*face].get(&end).copied().unwrap_or_default() < 2)
-            })
-            .collect::<Vec<_>>();
+                    && (start == end
+                        || duplicate_degree(&degrees[face], end).unwrap_or_default() < 2)
+                {
+                    crate::resource::push(
+                        inputs.ctx,
+                        &mut choices,
+                        (index, edge, face),
+                        "catia_standard_duplicate_choices",
+                    )?;
+                }
+            }
+            if deficit.is_none() {
+                break;
+            }
+        }
         for (index, edge, face) in choices {
             if *operations == MAX_DUPLICATE_FACE_OPERATIONS {
                 *exhausted = true;
@@ -817,15 +882,25 @@ pub(super) fn complete_duplicate_face_slots(
             *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
-            let start_degree_before = degrees[face].get(&start).copied();
+            let start_degree_before = duplicate_degree(&degrees[face], start);
             let end_degree_before = if start == end {
                 None
             } else {
-                degrees[face].get(&end).copied()
+                duplicate_degree(&degrees[face], end)
             };
-            *degrees[face].entry(start).or_default() += start_add;
+            set_duplicate_degree(
+                inputs.ctx,
+                &mut degrees[face],
+                start,
+                start_degree_before.unwrap_or_default() + start_add,
+            )?;
             if start != end {
-                *degrees[face].entry(end).or_default() += 1;
+                set_duplicate_degree(
+                    inputs.ctx,
+                    &mut degrees[face],
+                    end,
+                    end_degree_before.unwrap_or_default() + 1,
+                )?;
             }
             assignment[index] = face;
             used[index] = true;
@@ -833,23 +908,9 @@ pub(super) fn complete_duplicate_face_slots(
                 inputs, degrees, assignment, used, solutions, operations, exhausted,
             )?;
             used[index] = false;
-            match start_degree_before {
-                Some(degree) => {
-                    degrees[face].insert(start, degree);
-                }
-                None => {
-                    degrees[face].remove(&start);
-                }
-            }
+            restore_duplicate_degree(&mut degrees[face], start, start_degree_before);
             if start != end {
-                match end_degree_before {
-                    Some(degree) => {
-                        degrees[face].insert(end, degree);
-                    }
-                    None => {
-                        degrees[face].remove(&end);
-                    }
-                }
+                restore_duplicate_degree(&mut degrees[face], end, end_degree_before);
             }
             if *exhausted || solutions.len() > 1 {
                 return Ok(());
@@ -865,18 +926,25 @@ pub(super) fn complete_duplicate_face_slots(
         return Ok(None);
     }
 
-    let mut completed = edge_faces.to_vec();
-    let mut unresolved = edge_faces
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
-        .collect::<Vec<_>>();
+    let mut completed =
+        crate::resource::copy_slice(ctx, edge_faces, "catia_standard_duplicate_edge_faces")?;
+    let mut unresolved = Vec::new();
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        if faces[0] == faces[1] {
+            crate::resource::push(
+                ctx,
+                &mut unresolved,
+                edge,
+                "catia_standard_duplicate_unresolved_edges",
+            )?;
+        }
+    }
     if unresolved.is_empty() {
         return Ok(Some(completed));
     }
     let mut degrees = ctx.alloc_filled(
         face_count,
-        BTreeMap::<usize, u8>::new(),
+        Vec::<(usize, u8)>::new(),
         "catia standard endpoint degrees",
     )?;
     for (edge, faces) in edge_faces.iter().enumerate() {
@@ -888,17 +956,19 @@ pub(super) fn complete_duplicate_face_slots(
             &incident[..]
         } {
             for &point in &edge_points[edge] {
-                let degree = degrees[face].entry(point).or_default();
-                let Some(next) = degree.checked_add(1) else {
+                let Some(next) = duplicate_degree(&degrees[face], point)
+                    .unwrap_or_default()
+                    .checked_add(1)
+                else {
                     return Ok(None);
                 };
-                *degree = next;
+                set_duplicate_degree(ctx, &mut degrees[face], point, next)?;
             }
         }
     }
     if degrees
         .iter()
-        .flat_map(BTreeMap::values)
+        .flat_map(|row| row.iter().map(|(_, degree)| degree))
         .any(|degree| *degree > 2)
     {
         return Ok(None);
@@ -908,8 +978,8 @@ pub(super) fn complete_duplicate_face_slots(
         degrees
             .iter()
             .filter(|face| {
-                face.get(&start).copied().unwrap_or_default() + 1 + u8::from(start == end) <= 2
-                    && (start == end || face.get(&end).copied().unwrap_or_default() < 2)
+                duplicate_degree(face, start).unwrap_or_default() + 1 + u8::from(start == end) <= 2
+                    && (start == end || duplicate_degree(face, end).unwrap_or_default() < 2)
             })
             .count()
     });
@@ -1034,8 +1104,18 @@ fn duplicate_face_assignments_equivalent(
                 && edge_faces[first_edge][0] == edge_faces[edge][0]
             {
                 classified[index] = true;
-                left_faces.push(left[index]);
-                right_faces.push(right[index]);
+                crate::resource::push(
+                    ctx,
+                    &mut left_faces,
+                    left[index],
+                    "catia_standard_duplicate_left_faces",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    &mut right_faces,
+                    right[index],
+                    "catia_standard_duplicate_right_faces",
+                )?;
             }
         }
         left_faces.sort_unstable();
