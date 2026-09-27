@@ -676,15 +676,47 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
         0x07, 0x0b, 0x21,
     ];
     let records = crate::wire::records::consolidated_records(&bytes);
-    let owned = crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-        &bytes, &records,
-    );
+    let owned = crate::test_support::with_service_context(|ctx| {
+        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+            ctx, &bytes, &records,
+        )
+    })
+    .expect("service context admits owned edge nodes");
     let [owned] = owned.as_slice() else {
         panic!("one owner-selected edge node")
     };
     assert_eq!(owned.owner_pos, 9);
     assert_eq!(owned.allocation_ordinal, 2);
     assert_eq!(owned.node.pos, 37);
+}
+
+#[test]
+fn consolidated_owned_edge_nodes_refuse_each_collection_boundary() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
+        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
+        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
+        0x07, 0x0b, 0x21,
+    ];
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refusals = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+                ctx, &bytes, &records,
+            )
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            refusals.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_owned_edge_record_indices",
+        "catia_owned_edge_nodes",
+        "catia_owned_edge_results",
+    ] {
+        assert!(refusals.contains(operation), "missing charge for {operation}");
+    }
 }
 
 #[test]

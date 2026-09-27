@@ -7,7 +7,8 @@
 
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
@@ -835,40 +836,55 @@ pub(crate) fn b2_reference_lists_from_records(
 #[cfg(test)]
 fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     let records = consolidated_records(data);
-    b2_counted_owners_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_counted_owners_from_records(ctx, data, &records)
+    })
+    .expect("service context admits counted owner packets")
 }
 
 pub(crate) fn b2_counted_owners_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2CountedOwner> {
-    b2_owner_frames(records)
-        .into_iter()
-        .filter_map(|(frame, source_index)| {
-            let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
-            if count == 0 {
-                return None;
-            }
-            let mut at = frame.payload + 1;
-            let references = (0..count)
-                .map(|_| allocation_reference(data, &mut at))
-                .collect::<Option<Vec<_>>>()?;
-            (at < frame.end).then(|| B2CountedOwner {
-                pos: frame.pos,
-                source_index,
-                header_token: frame.header_token,
-                reference_encodings: references
-                    .iter()
-                    .map(|reference| reference.encoding)
-                    .collect(),
-                references: references
-                    .into_iter()
-                    .map(|reference| reference.value)
-                    .collect(),
-                tail: data[at..frame.end].to_vec(),
-            })
-        })
-        .collect()
+) -> Result<Vec<B2CountedOwner>, CodecError> {
+    let mut owners = Vec::new();
+    for (frame, source_index) in b2_owner_frames(records) {
+        let Some(count) = data.get(frame.payload).and_then(|lead| lead.checked_sub(0x80)) else {
+            continue;
+        };
+        if count == 0 {
+            continue;
+        }
+        let mut at = frame.payload + 1;
+        let mut references = Vec::new();
+        let mut reference_encodings = Vec::new();
+        let mut valid = true;
+        for _ in 0..count {
+            let Some(reference) = allocation_reference(data, &mut at) else {
+                valid = false;
+                break;
+            };
+            crate::resource::push(ctx, &mut references, reference.value, "catia_b2_counted_owner_references")?;
+            crate::resource::push(ctx, &mut reference_encodings, reference.encoding, "catia_b2_counted_owner_encodings")?;
+        }
+        if !valid || at >= frame.end {
+            continue;
+        }
+        let tail = crate::resource::copy_retained_slice(
+            ctx,
+            &data[at..frame.end],
+            "catia_b2_counted_owner_tail",
+        )?;
+        crate::resource::push(ctx, &mut owners, B2CountedOwner {
+            pos: frame.pos,
+            source_index,
+            header_token: frame.header_token,
+            references,
+            reference_encodings,
+            tail,
+        }, "catia_b2_counted_owner_packets")?;
+    }
+    Ok(owners)
 }
 
 /// Decode fixed-nine class-`0x62` owner packets whose references and numeric
@@ -1564,38 +1580,44 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 #[cfg(test)]
 fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
-    b2_adjacent_face_counted_owners_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_adjacent_face_counted_owners_from_records(ctx, data, &records)
+    })
+    .expect("service context admits adjacent counted owners")
 }
 
 pub(crate) fn b2_adjacent_face_counted_owners_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2AdjacentFaceCountedOwner> {
-    let nodes = b2_face_nodes_5f_from_records(data, records)
+) -> Result<Vec<B2AdjacentFaceCountedOwner>, CodecError> {
+    let mut nodes = BTreeMap::new();
+    for value in b2_face_nodes_5f_from_records(data, records)
         .into_iter()
         .filter(|value| value.terminal == [0x03, 0x05])
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let owners = b2_counted_owners_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(2)
-        .filter_map(|window| {
-            let [link_record, owner_record] = window else {
-                return None;
-            };
-            let face_node = nodes.get(&link_record.byte_offset())?;
-            let owner = owners.get(&owner_record.byte_offset())?;
-            (face_node.target.checked_add(1) == owner.references.last().copied()).then(|| {
-                B2AdjacentFaceCountedOwner {
-                    face_node: *face_node,
-                    owner: owner.clone(),
-                }
-            })
-        })
-        .collect()
+    {
+        crate::resource::insert_btree_map(ctx, &mut nodes, value.pos, value, "catia_b2_counted_face_nodes")?;
+    }
+    let mut owners = BTreeMap::new();
+    for value in b2_counted_owners_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut owners, value.pos, value, "catia_b2_counted_owner_index")?;
+    }
+    let mut adjacent = Vec::new();
+    for window in records.windows(2) {
+        let [link_record, owner_record] = window else { continue };
+        let Some(face_node) = nodes.get(&link_record.byte_offset()) else { continue };
+        let owner_pos = owner_record.byte_offset();
+        let Some(owner) = owners.get(&owner_pos) else { continue };
+        if face_node.target.checked_add(1) != owner.references.last().copied() {
+            continue;
+        }
+        let Some(owner) = owners.remove(&owner_pos) else { continue };
+        crate::resource::push(ctx, &mut adjacent, B2AdjacentFaceCountedOwner {
+            face_node: *face_node,
+            owner,
+        }, "catia_b2_adjacent_counted_owners")?;
+    }
+    Ok(adjacent)
 }
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
