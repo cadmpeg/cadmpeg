@@ -2345,20 +2345,27 @@ pub(crate) fn project_geometry(
         let body = crate::ids::body(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let mut body_regions = reserve_vec(ctx, 1, "iges free wire body regions")?;
+        body_regions.push(region.clone());
+        reserve_vec_growth(ctx, &mut ir.model.bodies, 1, "iges free wire body slots")?;
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Wire,
-            regions: vec![region.clone()],
+            regions: body_regions,
             transform: None,
             name: Some("IGES free geometry".into()),
             color: None,
             visible: None,
         });
+        let mut region_shells = reserve_vec(ctx, 1, "iges free wire region shells")?;
+        region_shells.push(shell.clone());
+        reserve_vec_growth(ctx, &mut ir.model.regions, 1, "iges free wire region slots")?;
         ir.model.regions.push(Region {
             id: region.clone(),
             body,
-            shells: vec![shell.clone()],
+            shells: region_shells,
         });
+        reserve_vec_growth(ctx, &mut ir.model.shells, 1, "iges free wire shell slots")?;
         ir.model.shells.push(
             Shell::new(shell, region, Vec::new(), wire_edges, free_vertices)
                 .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
@@ -2372,6 +2379,7 @@ pub(crate) fn project_geometry(
     )?;
     let (trimming_projection, trimming_vertex_derivations) =
         super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
+    reserve_vec_growth(ctx, &mut boundary_vertex_derivations, trimming_vertex_derivations.len(), "iges merged boundary vertex derivations")?;
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;

@@ -125,6 +125,24 @@ fn point_flash_and_line_projection_refuse_neutral_slots() {
 }
 
 #[test]
+fn free_wire_topology_refuses_nested_lists_and_model_slots() {
+    let bytes = crate::test_support::test_curves_and_surfaces::line_file(0);
+    for operation in [
+        "iges free wire body regions",
+        "iges free wire body slots",
+        "iges free wire region shells",
+        "iges free wire region slots",
+        "iges free wire shell slots",
+    ] {
+        assert_geometry_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(service.ir().model.bodies.len(), 1);
+    assert_eq!(service.ir().model.regions.len(), 1);
+    assert_eq!(service.ir().model.shells.len(), 1);
+}
+
+#[test]
 fn projector_merges_refuse_decoded_loss_and_wire_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::loss::IgesLossCode;
