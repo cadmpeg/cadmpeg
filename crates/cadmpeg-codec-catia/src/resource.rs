@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{
@@ -56,6 +56,18 @@ pub(crate) fn push_back<T>(
 pub(crate) fn reserve_vec<T>(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(additional as u64, operation)?;
+    values
+        .try_reserve(additional)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+}
+
+pub(crate) fn reserve_heap<T: Ord>(
+    ctx: &DecodeContext<'_>,
+    values: &mut BinaryHeap<T>,
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
@@ -172,9 +184,32 @@ pub(crate) fn copy_knot_vector(
     let count = u64::try_from(knots.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(count, operation)?;
+    let bytes = count.checked_mul(std::mem::size_of::<f64>() as u64)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
     knots
         .try_clone()
         .map_err(|_| allocation_failed(0, 0, knots.len(), operation))
+}
+
+pub(crate) fn copy_nurbs_curve(
+    ctx: &DecodeContext<'_>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::nurbs::NurbsCurve, CodecError> {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+
+    let knots = copy_knot_vector(ctx, curve.knots(), operation)?;
+    let poles = match curve.pole_rows() {
+        NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+            points: copy_retained_slice(ctx, points, operation)?,
+        },
+        NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+            points: copy_retained_slice(ctx, points, operation)?,
+        },
+    };
+    NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())
+        .map_err(CodecError::malformed)
 }
 
 pub(crate) fn copy_nurbs_surface(
@@ -218,9 +253,34 @@ pub(crate) fn copy_nurbs_surface(
 
 #[cfg(test)]
 mod nurbs_copy_tests {
-    use super::copy_nurbs_surface;
-    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use super::{copy_nurbs_curve, copy_nurbs_surface};
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn nurbs_curve_copy_refuses_before_knot_and_pole_lanes() {
+        use cadmpeg_core::CodecError;
+
+        let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false)
+            .expect("valid line NURBS");
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(copy_nurbs_curve(ctx, &curve, "catia_nurbs_curve_copy").expect("service budget"), curve);
+        });
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, |ctx| copy_nurbs_curve(ctx, &curve, "catia_nurbs_curve_copy")),
+            Err(CodecError::ResourceLimit(error)) if error.operation == "catia_nurbs_curve_copy"
+        ));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits retained limit");
+        assert!(matches!(
+            copy_nurbs_curve(&ctx, &curve, "catia_nurbs_curve_copy"),
+            Err(CodecError::ResourceLimit(error)) if error.operation == "catia_nurbs_curve_copy"
+        ));
+    }
 
     #[test]
     fn nurbs_surface_copy_refuses_before_nested_lanes() {
