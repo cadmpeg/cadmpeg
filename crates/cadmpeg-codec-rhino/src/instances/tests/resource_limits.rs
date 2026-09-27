@@ -20,6 +20,42 @@ fn with_collection_limit<T>(
     f(&ctx)
 }
 
+fn with_retained_limit<T>(
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    f(&ctx)
+}
+
+fn assert_definition_retained_refusal(
+    archive: ArchiveVersion,
+    data: &[u8],
+    limit: u64,
+    operation: &str,
+) {
+    let chunk = chunk_at(data, 0, data.len(), archive, false).expect("definition record");
+    let record = Record::long(chunk.typecode, chunk.range(), chunk.body());
+    with_retained_limit(limit, |ctx| {
+        let error = crate::instances::parse_definitions(
+            ctx,
+            data,
+            std::slice::from_ref(&record),
+            archive,
+            0x1000_0021,
+        )
+        .expect_err("retained string exceeds limit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == operation),
+            "expected resource operation {operation}"
+        );
+    });
+}
+
 fn assert_resource(error: &FramingError, operation: &str) {
     assert!(
         matches!(error, FramingError::Resource(refusal) if refusal.operation == operation),
@@ -142,5 +178,91 @@ fn definition_member_uuids_refuse_collection_limit_without_opaque_fallback() {
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.operation == "Rhino instance member UUIDs"
         ));
+    });
+}
+
+fn v5_definition_with_path(linked: bool) -> Vec<u8> {
+    let archive = ArchiveVersion::V5;
+    let payload = v5_definition_payload(archive, 6, [7; 16], &[], linked);
+    definition_record(archive, &payload)
+}
+
+#[test]
+fn v5_definition_name_refuses_retained_limit() {
+    let data = v5_definition_with_path(false);
+    assert_definition_retained_refusal(ArchiveVersion::V5, &data, 0, "Rhino instance name");
+}
+
+#[test]
+fn definition_description_refuses_retained_limit() {
+    let data = v5_definition_with_path(false);
+    assert_definition_retained_refusal(
+        ArchiveVersion::V5,
+        &data,
+        "v5 definition".len() as u64,
+        "Rhino instance description",
+    );
+}
+
+#[test]
+fn definition_url_refuses_retained_limit() {
+    let data = v5_definition_with_path(false);
+    assert_definition_retained_refusal(
+        ArchiveVersion::V5,
+        &data,
+        ("v5 definition".len() + "description".len()) as u64,
+        "Rhino instance URL",
+    );
+}
+
+#[test]
+fn definition_url_tag_refuses_retained_limit() {
+    let data = v5_definition_with_path(false);
+    assert_definition_retained_refusal(
+        ArchiveVersion::V5,
+        &data,
+        ("v5 definition".len() + "description".len() + "https://example.test".len()) as u64,
+        "Rhino instance URL tag",
+    );
+}
+
+#[test]
+fn v5_linked_path_refuses_retained_limit() {
+    let data = v5_definition_with_path(true);
+    assert_definition_retained_refusal(
+        ArchiveVersion::V5,
+        &data,
+        ("v5 definition".len() + "description".len() + "https://example.test".len() + "tag".len())
+            as u64,
+        "Rhino instance linked path",
+    );
+}
+
+#[test]
+fn v6_component_name_refuses_retained_limit() {
+    let archive = ArchiveVersion::V8;
+    let payload = v6_definition_payload(archive, [7; 16], &[], 1, false, false);
+    let data = definition_record(archive, &payload);
+    assert_definition_retained_refusal(archive, &data, 0, "Rhino instance component name");
+}
+
+#[test]
+fn unit_detail_name_refuses_retained_limit() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 2_u32.to_le_bytes().to_vec();
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(crate::test_support::test_dump::utf16_bytes("retained name"));
+    let data = anonymous_chunk(archive, 0, &body);
+    with_retained_limit(0, |ctx| {
+        let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
+        let error = crate::instances::unit_detail(
+            ctx,
+            &data,
+            &mut reader,
+            archive,
+            &mut Diagnostics::new(),
+        )
+        .expect_err("unit name exceeds retained limit");
+        assert_resource(&error, "Rhino instance unit name");
     });
 }
