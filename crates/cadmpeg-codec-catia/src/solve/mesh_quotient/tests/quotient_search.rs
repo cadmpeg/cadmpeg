@@ -57,10 +57,61 @@ fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
             ]],
         },
     ]];
-    deduplicate_mesh_quotient_assignments(&mut faces);
+    crate::test_support::with_service_context(|ctx| {
+        deduplicate_mesh_quotient_assignments(ctx, &mut faces)
+    })
+    .expect("service resource budget");
     assert_eq!(faces[0].len(), 2);
     assert_eq!(faces[0][0].boundaries[0][0].edge, 0);
     assert_eq!(faces[0][1].boundaries[0][1].edge, 2);
+}
+
+#[test]
+fn quotient_assignment_deduplication_charges_cycle_signatures() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            },
+            MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 1,
+                end: 0,
+                reversed: None,
+            },
+        ]],
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut faces = vec![vec![assignment.clone(), assignment.clone()]];
+        deduplicate_mesh_quotient_assignments(ctx, &mut faces)?;
+        Ok::<_, cadmpeg_core::CodecError>(faces[0].len())
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        1
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(1) => break,
+            _ => panic!("unexpected quotient deduplication result"),
+        }
+    }
+    for operation in [
+        "catia_mesh_quotient_cycle_forward",
+        "catia_mesh_quotient_cycle_reverse",
+        "catia_mesh_quotient_canonical_cycle",
+        "catia_mesh_quotient_signature_boundaries",
+        "catia_mesh_quotient_seen_assignments",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
