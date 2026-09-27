@@ -67,6 +67,7 @@ use std::collections::HashMap;
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::entity_header::SegmentType],
@@ -415,7 +416,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             bind_component_pattern_occurrences(&mut scope, component_occurrences);
             {
-                let construction = exact_copy_paste_bodies_operation(bytes, &records, &scope);
+                let construction = exact_copy_paste_bodies_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
