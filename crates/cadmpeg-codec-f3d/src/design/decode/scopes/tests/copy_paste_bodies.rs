@@ -154,3 +154,48 @@ fn design_scope_reference_vectors_refuse_each_limit() {
         .is_some()
     );
 }
+
+#[test]
+fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, _) =
+        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &bytes,
+        &records,
+    )
+    .into_iter()
+    .find(|header| header.record_index == 1_400)
+    .unwrap();
+    let kind_len = "CopyPasteBodies".len() as u64;
+    for (materialized_cap, retained_cap, dimension, operation) in [
+        (Some(0), None, ResourceDimension::MaterializedBytes, "f3d Design temporary UTF-16 text"),
+        (None, Some(0), ResourceDimension::RetainedBytes, "f3d Design UTF-16 text"),
+        (None, Some(kind_len), ResourceDimension::RetainedBytes, "f3d Design scope kind storage"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if let Some(cap) = materialized_cap {
+            policy.limits.max_materialized_bytes = cap;
+        }
+        if let Some(cap) = retained_cap {
+            policy.limits.max_retained_bytes = cap;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &ctx,
+            &bytes,
+            &records,
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+    }
+}

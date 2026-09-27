@@ -41,7 +41,7 @@ use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
 use crate::bytes::lp_ascii_filtered;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
@@ -693,15 +693,20 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     let start = usize::try_from(byte_offset).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
     let (paired_class_tag, _) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
-    let mut candidates = Vec::new();
+        lp_ascii_filtered(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+    let mut fixed_candidate = None;
+    let mut fixed_ambiguous = false;
+    let mut named_candidate = None;
+    let mut named_ambiguous = false;
     let kind_scan_start = paired_at
         .saturating_sub(590 + 4 + 2 * 256)
         .max(start.checked_add(11)?);
     let kind_scan_end = paired_at.checked_sub(72)?;
     for at in kind_scan_start..kind_scan_end {
-        let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
-            continue;
+        let (kind, kind_end, _reservation) = match lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256) {
+            Ok(Some(decoded)) => decoded,
+            Ok(None) => continue,
+            Err(error) => return Some(Err(error)),
         };
         if !kind.chars().all(|character| !character.is_control()) {
             continue;
@@ -711,37 +716,55 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         };
         let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
         if fixed_tail && parameter_scope_tail_length_is_valid(&kind, tail_length) {
-            candidates.push((
-                at,
-                kind_end,
-                tail_length,
-                kind.clone(),
-                ScopeTailForm::Fixed,
-            ));
+            if fixed_candidate.replace((at, kind_end, tail_length, ScopeTailForm::Fixed)).is_some() {
+                fixed_ambiguous = true;
+            }
         }
-        let named_tail = (78..=590).contains(&tail_length)
+        let named_tail_possible = (78..=590).contains(&tail_length)
             && tail_length.is_multiple_of(2)
-            && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78)
-            && named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
-                .is_some_and(|valid| valid);
+            && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
+        let named_tail = if named_tail_possible {
+            match named_parameter_scope_tail_is_valid(ctx, bytes, kind_end, paired_at, tail_length) {
+                Ok(Some(valid)) => valid,
+                Ok(None) => false,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            false
+        };
         if named_tail {
-            candidates.push((at, kind_end, tail_length, kind, ScopeTailForm::Named));
+            if named_candidate.replace((at, kind_end, tail_length, ScopeTailForm::Named)).is_some() {
+                named_ambiguous = true;
+            }
         }
     }
-    if candidates
-        .iter()
-        .filter(|candidate| candidate.4 == ScopeTailForm::Named)
-        .count()
-        == 1
-    {
-        candidates.retain(|candidate| candidate.4 == ScopeTailForm::Named);
-    }
-    let [(kind_at, kind_end, tail_length, kind, tail_form)] = candidates.as_slice() else {
+    let candidate = if named_ambiguous {
+        None
+    } else if named_candidate.is_some() {
+        named_candidate
+    } else if fixed_ambiguous {
+        None
+    } else {
+        fixed_candidate
+    };
+    let Some((kind_at, kind_end, tail_length, tail_form)) = candidate else {
         return None;
     };
-    let kind_text = kind.clone();
-    let kind = scope::DesignFeatureKind::try_from(kind_text.clone()).ok()?;
-    let kind_end = *kind_end;
+    let (kind_text, confirmed_kind_end) = match lp_utf16_bounded_charged(ctx, bytes, kind_at, 1..=256) {
+        Ok(Some(decoded)) => decoded,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if confirmed_kind_end != kind_end {
+        return None;
+    }
+    if let Err(error) = ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(kind_text.len()),
+        "f3d Design scope kind storage",
+    ) {
+        return Some(Err(error));
+    }
+    let kind = scope::DesignFeatureKind::try_from(kind_text).ok()?;
     let reference_table_end = kind_at.checked_sub(4)?;
     let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
     let history_state_id_offset = reference_table_end;
@@ -750,9 +773,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
-        &kind_text,
-        *tail_length,
-        *tail_form,
+        kind.as_str(),
+        tail_length,
+        tail_form,
     ) {
         Some(offset) => Some(kind_end.checked_add(offset)?),
         None => None,
@@ -1044,13 +1067,19 @@ pub(in crate::design::decode) fn parse_parameter_scope(
 }
 
 fn named_parameter_scope_tail_is_valid(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
     tail_length: usize,
-) -> Option<bool> {
-    let label_at = kind_end.checked_add(8)?;
-    let (label, label_end) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
+) -> Result<Option<bool>, CodecError> {
+    let Some(label_at) = kind_end.checked_add(8) else {
+        return Ok(None);
+    };
+    let Some((label, label_end, _reservation)) = lp_utf16_bounded_scoped(ctx, bytes, label_at, 0..=256)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let label_code_units = label.encode_utf16().count();
     if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
         || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
@@ -1088,6 +1117,7 @@ fn named_parameter_scope_tail_is_valid(
                 .is_some_and(|field_id| *field_id != 0)
             && bytes.get(marker + 56..marker + 59)? == [0; 3],
     )
+    })())
 }
 
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
