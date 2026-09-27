@@ -1325,7 +1325,7 @@ impl NativeModel {
         );
         let store_headers = store_headers(container);
         let string_values = string_values(container);
-        let object_uuid_values = object_uuid_values(container);
+        let object_uuid_values = object_uuid_values(ctx, container)?;
         let object_references = object_references(container);
         let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(container);
