@@ -673,26 +673,36 @@ fn decode_exchange_mode(
         accounting.unclassified.to_string(),
     );
     if accounting.unclassified > 0 {
-        session
-            .body
-            .losses
-            .push(StepLossCode::ByteAccountingUnclassified.note(format!(
+        push_decode_loss(
+            &mut session.body.losses,
+            StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
-            )));
+            )),
+            session.ctx,
+        )?;
     }
-    session.body.notes.push(format!(
+    let accounting_note = format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
-    ));
-    session
-        .body
-        .losses
-        .extend(counts.into_iter().map(|(name, count)| {
-            StepLossCode::OpaqueRecordPreserved.note(format!(
-                "preserved {count} {name} instance(s) as named opaque STEP records"
-            ))
-        }));
+    );
+    session.ctx.charge_collection_items(1, "step_byte_accounting_note")?;
+    session.body.notes.try_reserve(1).map_err(|_| {
+        session.ctx.refuse_codec_limit("step_byte_accounting_note", 0, 1)
+    })?;
+    session.body.notes.push(accounting_note);
+    for (name, count) in counts {
+        let message = crate::decode_alloc::charged_format(
+            session.ctx,
+            "step_opaque_preservation_loss_text",
+            format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
+        )?;
+        push_decode_loss(
+            &mut session.body.losses,
+            StepLossCode::OpaqueRecordPreserved.note(message),
+            session.ctx,
+        )?;
+    }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok(session.into_result(source_fidelity, opaque_offsets))
 }

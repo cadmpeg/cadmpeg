@@ -1349,3 +1349,61 @@ fn stage_notes_refuse_collection_limit() {
         notes: vec!["stage note".into()],
     }));
 }
+
+#[test]
+fn byte_accounting_note_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            super::decode_exchange_mode(
+                source,
+                &mut exchange.clone(),
+                &diagnostics,
+                super::DecodeMode::Inspect,
+                &ctx,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_byte_accounting_note"
+        )
+    });
+    assert!(refused, "byte accounting note must charge its vector item");
+}
+
+#[test]
+fn opaque_preservation_loss_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=EXAMPLE_RECORD();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..8192).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::decode_exchange_mode(
+                source,
+                &mut exchange.clone(),
+                &diagnostics,
+                super::DecodeMode::Inspect,
+                &ctx,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_opaque_preservation_loss_text"
+        )
+    });
+    assert!(refused, "opaque loss text must charge retained bytes");
+}
