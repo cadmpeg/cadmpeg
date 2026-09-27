@@ -45,14 +45,24 @@ fn collect_pmi_set<T: Ord>(
 ) -> Result<BTreeSet<T>, CodecError> {
     let mut values = BTreeSet::new();
     for item in items {
-        if !values.contains(&item) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, operation)?;
-            }
-            values.insert(item);
-        }
+        insert_pmi_set(&mut values, item, ctx, operation)?;
     }
     Ok(values)
+}
+
+fn insert_pmi_set<T: Ord>(
+    values: &mut BTreeSet<T>,
+    item: T,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&item) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        values.insert(item);
+    }
+    Ok(())
 }
 
 fn insert_pmi_map<K: Ord, V>(
@@ -147,7 +157,7 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::default();
-    let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange);
+    let hidden_presentation_annotations = hidden_presentation_annotation_ids(exchange, ctx)?;
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -1445,7 +1455,10 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
     presentation_annotation_name(record).is_some()
 }
 
-fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
+fn hidden_presentation_annotation_ids(
+    exchange: &Exchange,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut hidden = BTreeSet::new();
     for record in exchange.records().values() {
         let Some(items) = record
@@ -1456,18 +1469,17 @@ fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
         else {
             continue;
         };
-        visit_references(items, &mut |target| {
+        for target in references(items) {
             if exchange
                 .records()
                 .get(&target)
                 .is_some_and(is_supported_invisibility_target)
             {
-                hidden.insert(target);
+                insert_pmi_set(&mut hidden, target, ctx, "step_pmi_hidden_annotation_ids")?;
             }
-            false
-        });
+        }
     }
-    hidden
+    Ok(hidden)
 }
 
 fn collect_typed_placement_candidates(

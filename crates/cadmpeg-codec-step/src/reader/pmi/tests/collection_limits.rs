@@ -67,6 +67,14 @@ fn pmi_typed_claims_refuse_collection_limit() {
     pmi_refuses("#1=DATUM('D');", "step_pmi_typed_claims");
 }
 
+#[test]
+fn pmi_hidden_annotation_ids_refuse_collection_limit() {
+    pmi_refuses(
+        "#1=ANNOTATION_TEXT_OCCURRENCE('note',());#2=INVISIBILITY((#1));",
+        "step_pmi_hidden_annotation_ids",
+    );
+}
+
 fn target_refusal(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
