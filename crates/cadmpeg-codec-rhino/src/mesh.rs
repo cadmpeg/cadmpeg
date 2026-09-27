@@ -213,7 +213,7 @@ pub(crate) enum MeshId {
 }
 
 impl MeshId {
-    fn into_string(
+    fn into_tessellation_id(
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
@@ -608,7 +608,7 @@ pub(crate) fn decode(
     }
     let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(expand.ctx(), &faces, &vertices, FinitePoint3::get)?;
-    let id = id.into_string(expand.ctx())?;
+    let id = id.into_tessellation_id(expand.ctx())?;
     Ok(DecodedMesh {
         tessellation: Tessellation::from_parts(
             id,

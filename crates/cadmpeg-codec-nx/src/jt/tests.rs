@@ -5,6 +5,137 @@
 
 use cadmpeg_ir::scalar::FiniteBinary32;
 
+fn with_context<T>(
+    bytes: &[u8],
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test decode context");
+    f(&ctx)
+}
+
+fn decode_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(Vec<i32>, usize)> {
+    with_context(bytes, |ctx| {
+        super::decode_int32_cdp2(ctx, bytes, depth).expect("service decode budget")
+    })
+}
+
+#[test]
+fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
+    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    assert_eq!(
+        decode_int32_cdp2(&packet, 0),
+        Some((vec![1, -1], packet.len()))
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_int32_cdp2(&ctx, &packet, 0)
+        .expect_err("two decoded integers exceed one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "nx JT decoded vector"
+    ));
+}
+
+#[test]
+fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
+    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_int32_cdp2(&ctx, &packet, 0)
+        .expect_err("two decoded integers exceed one work unit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bitlength symbols"
+    ));
+}
+
+fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
+    with_context(bytes, |ctx| {
+        super::frame_int32_cdp2(ctx, bytes, depth).expect("service decode budget")
+    })
+}
+
+fn decode_vertex_coordinates(
+    bytes: &[u8],
+    count: usize,
+    ranges: [super::QuantizedRange; 3],
+    bits: [u8; 3],
+) -> Option<(Vec<[FiniteBinary32; 3]>, u32, usize)> {
+    with_context(bytes, |ctx| {
+        super::decode_vertex_coordinates(ctx, bytes, count, ranges, bits)
+            .expect("service decode budget")
+            .map(|array| (array.values, array.hash, array.byte_len))
+    })
+}
+
+fn decode_vertex_texture_coordinates(
+    bytes: &[u8],
+    count: usize,
+    bits: u8,
+) -> Option<(Vec<Vec<FiniteBinary32>>, u32, usize)> {
+    with_context(bytes, |ctx| {
+        super::decode_vertex_texture_coordinates(ctx, bytes, count, bits)
+            .expect("service decode budget")
+            .map(|array| (array.values, array.hash, array.byte_len))
+    })
+}
+
+fn decode_vertex_colors(
+    bytes: &[u8],
+    count: usize,
+    bits: u8,
+) -> Option<(Vec<[FiniteBinary32; 4]>, u32, usize)> {
+    with_context(bytes, |ctx| {
+        super::decode_vertex_colors(ctx, bytes, count, bits)
+            .expect("service decode budget")
+            .map(|array| (array.values, array.hash, array.byte_len))
+    })
+}
+
+fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> {
+    with_context(bytes, |ctx| {
+        super::decode_vertex_flags(ctx, bytes, count).expect("service decode budget")
+    })
+}
+
+fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntry>, usize)> {
+    with_context(bytes, |ctx| super::parse_probability_context(ctx, bytes))
+}
+
+fn decode_arithmetic(
+    bytes: &[u8],
+    bits: usize,
+    count: usize,
+    entries: &[super::ProbabilityEntry],
+) -> Option<Vec<Option<i32>>> {
+    with_context(bytes, |ctx| {
+        super::decode_arithmetic(ctx, bytes, bits, count, entries)
+    })
+}
+
+fn unpack_predictor_residuals(residuals: &[i32], predictor: super::Predictor) -> Vec<i32> {
+    with_context(&[], |ctx| {
+        super::unpack_predictor_residuals(ctx, residuals, predictor)
+            .expect("service predictor budget")
+    })
+}
+
 const EPS_JT_NORMAL_RECONSTRUCTION: f32 = 1.0e-6;
 const EPS_JT_HSV_RECONSTRUCTION: f32 = 1.0e-6;
 
@@ -14,10 +145,7 @@ fn range(minimum: f32, maximum: f32) -> super::QuantizedRange {
 
 #[test]
 fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
-    assert_eq!(
-        super::decode_int32_cdp2(&[0, 0, 0, 0], 0),
-        Some((vec![], 4))
-    );
+    assert_eq!(decode_int32_cdp2(&[0, 0, 0, 0], 0), Some((vec![], 4)));
 
     let encode_packet = |bits: &[u8], value_count: u32| {
         let mut code_words = Vec::new();
@@ -49,7 +177,7 @@ fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
     field(&mut bits, 0, 2);
     let packet = encode_packet(&bits, 2);
     assert_eq!(
-        super::decode_int32_cdp2(&packet, 0),
+        decode_int32_cdp2(&packet, 0),
         Some((vec![1, -1], packet.len()))
     );
 
@@ -64,7 +192,7 @@ fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
     field(&mut bits, 3, 2);
     let packet = encode_packet(&bits, 2);
     assert_eq!(
-        super::decode_int32_cdp2(&packet, 0),
+        decode_int32_cdp2(&packet, 0),
         Some((vec![11, 9], packet.len()))
     );
 }
@@ -104,12 +232,12 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
     packet.extend_from_slice(&context);
     packet.extend_from_slice(&0_u32.to_le_bytes());
     assert_eq!(
-        super::decode_int32_cdp2(&packet, 0),
+        decode_int32_cdp2(&packet, 0),
         Some((vec![7, 7, 7], packet.len()))
     );
 
     packet.truncate(packet.len() - 4);
-    assert!(super::decode_int32_cdp2(&packet, 0).is_none());
+    assert!(decode_int32_cdp2(&packet, 0).is_none());
 }
 
 #[test]
@@ -135,7 +263,7 @@ fn jt_arithmetic_context_rejects_count_without_serialized_entry_span() {
         context.push(byte);
     }
 
-    assert!(super::parse_probability_context(&context).is_none());
+    assert!(parse_probability_context(&context).is_none());
 }
 
 #[test]
@@ -145,7 +273,7 @@ fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     let mut unsplit = vec![2, 0, 0, 0, 4, 0];
     unsplit.extend_from_slice(&nested);
     assert_eq!(
-        super::decode_int32_cdp2(&unsplit, 0),
+        decode_int32_cdp2(&unsplit, 0),
         Some((vec![1, -1], unsplit.len()))
     );
 
@@ -155,7 +283,7 @@ fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     split.extend_from_slice(&nested);
     split.extend_from_slice(&low_bits);
     assert_eq!(
-        super::decode_int32_cdp2(&split, 0),
+        decode_int32_cdp2(&split, 0),
         Some((vec![15, 7], split.len()))
     );
 }
@@ -165,21 +293,18 @@ fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
     let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     let mut packet = vec![2, 0, 0, 0, 4, 0];
     packet.extend_from_slice(&nested);
-    assert_eq!(
-        super::frame_int32_cdp2(&packet, 0),
-        Some((2, 4, packet.len()))
-    );
+    assert_eq!(frame_int32_cdp2(&packet, 0), Some((2, 4, packet.len())));
 
     packet[6] = 3;
-    assert!(super::frame_int32_cdp2(&packet, 0).is_none());
+    assert!(frame_int32_cdp2(&packet, 0).is_none());
 }
 
 #[test]
 fn jt_int32_cdp2_rejects_an_oversized_declared_count_before_allocation() {
     let mut packet = u32::MAX.to_le_bytes().to_vec();
     packet.extend_from_slice(&[1, 0, 0, 0, 0]);
-    assert!(super::decode_int32_cdp2(&packet, 0).is_none());
-    assert!(super::frame_int32_cdp2(&packet, 0).is_none());
+    assert!(decode_int32_cdp2(&packet, 0).is_none());
+    assert!(frame_int32_cdp2(&packet, 0).is_none());
 }
 
 #[test]
@@ -192,7 +317,7 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         };
         65
     ];
-    assert!(super::decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries,).is_none());
+    assert!(decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries,).is_none());
 }
 
 #[test]
@@ -216,12 +341,12 @@ fn jt_arithmetic_decode_rejects_normalization_past_declared_bits() {
     ];
     let code_word = 0x5555_0000_u32.to_le_bytes();
 
-    assert!(super::decode_arithmetic(&code_word, 16, 1, &entries).is_none());
+    assert!(decode_arithmetic(&code_word, 16, 1, &entries).is_none());
 }
 
 #[test]
 fn jt_predictors_reconstruct_primal_integers() {
-    use super::{unpack_predictor_residuals, Predictor};
+    use super::Predictor;
 
     let primers = [10, 20, 30, 40];
     let residuals = [10, 20, 30, 40, 5, -2];
@@ -238,7 +363,7 @@ fn jt_predictors_reconstruct_primal_integers() {
 
 #[test]
 fn jt_predictors_use_wrapping_i32_arithmetic() {
-    use super::{unpack_predictor_residuals, Predictor};
+    use super::Predictor;
 
     assert_eq!(
         unpack_predictor_residuals(&[0, 0, 0, i32::MAX, 1], Predictor::Lag1),
@@ -292,7 +417,7 @@ fn jt_quantized_coordinates_reject_negative_codes_at_thirty_two_bits() {
     }
     array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
 
-    assert!(super::decode_vertex_coordinates(&array, 4, [range(4.0, 4.0); 3], [32; 3]).is_none());
+    assert!(decode_vertex_coordinates(&array, 4, [range(4.0, 4.0); 3], [32; 3]).is_none());
 }
 
 #[test]
@@ -339,7 +464,7 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
 
     let (points, hash, consumed) =
-        super::decode_vertex_coordinates(&array, 4, [range(10.0, 20.0); 3], [2; 3])
+        decode_vertex_coordinates(&array, 4, [range(10.0, 20.0); 3], [2; 3])
             .expect("complete quantized coordinate array");
     assert_eq!(hash, 0x1234_5678);
     assert_eq!(consumed, array.len());
@@ -416,7 +541,7 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
     array.extend_from_slice(&packet);
     array.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
 
-    let (values, hash, consumed) = super::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
+    let (values, hash, consumed) = decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
     assert_eq!(hash, 0x8765_4321);
     assert_eq!(consumed, array.len());
     assert_eq!(
@@ -469,7 +594,7 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
         rgb.extend_from_slice(&packet);
     }
     rgb.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-    let (colors, hash, consumed) = super::decode_vertex_colors(&rgb, 4, 2).unwrap();
+    let (colors, hash, consumed) = decode_vertex_colors(&rgb, 4, 2).unwrap();
     assert_eq!(hash, 0x1234_5678);
     assert_eq!(consumed, rgb.len());
     assert_eq!(colors[0].map(FiniteBinary32::get), [-0.5; 4]);
@@ -481,7 +606,7 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
         hsv.extend_from_slice(&packet);
     }
     hsv.extend_from_slice(&0x8765_4321_u32.to_le_bytes());
-    let (colors, hash, consumed) = super::decode_vertex_colors(&hsv, 4, 2).unwrap();
+    let (colors, hash, consumed) = decode_vertex_colors(&hsv, 4, 2).unwrap();
     assert_eq!(hash, 0x8765_4321);
     assert_eq!(consumed, hsv.len());
     assert!(colors
@@ -520,11 +645,11 @@ fn jt_vertex_flags_require_a_complete_binary_value_packet() {
     array.extend_from_slice(&packet);
 
     assert_eq!(
-        super::decode_vertex_flags(&array, 3),
+        decode_vertex_flags(&array, 3),
         Some((vec![0, 1, 0], array.len()))
     );
-    assert!(super::decode_vertex_flags(&array, 2).is_none());
+    assert!(decode_vertex_flags(&array, 2).is_none());
     let last = array.len() - 1;
     array[last] |= 1;
-    assert!(super::decode_vertex_flags(&array, 3).is_none());
+    assert!(decode_vertex_flags(&array, 3).is_none());
 }
