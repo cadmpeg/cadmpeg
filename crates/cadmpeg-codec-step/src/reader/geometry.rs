@@ -1785,7 +1785,8 @@ pub(super) fn decode(
                 record_scale,
                 record_angle_scale,
                 &source_curve_parameter_scales,
-            ) else {
+                ctx,
+            )? else {
                 push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "RECTANGULAR_TRIMMED_SURFACE #{id} has no established support parameterization"
                 )), ctx, "step_geometry_losses")?;
@@ -2208,7 +2209,8 @@ pub(super) fn decode(
                 unit_scales.length([id]).get(),
                 unit_scales.angle([id]).get(),
                 &source_curve_parameter_scales,
-            ) {
+                ctx,
+            )? {
             insert_geometry_map(&mut surface_parameter_scales, id, scales, ctx, "step_surface_parameter_scales")?;
         }
     }
@@ -5103,7 +5105,8 @@ fn surface_parameter_scales_for_step(
     length_scale: f64,
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-) -> Option<[f64; 2]> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
     procedural_surface_parameter_scales(
         ir,
         surface_id,
@@ -5112,6 +5115,7 @@ fn surface_parameter_scales_for_step(
         angle_scale,
         source_curve_parameter_scales,
         &mut BTreeSet::new(),
+        ctx,
     )
 }
 
@@ -5123,19 +5127,25 @@ fn procedural_surface_parameter_scales(
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
-    if !active.insert(surface_id.clone()) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    if active.contains(surface_id) {
+        return Ok(None);
     }
-    let scales = surface_geometry_parameter_scales(
-        ir,
-        surface_id,
-        geometry.solved()?,
-        length_scale,
-        angle_scale,
-        source_curve_parameter_scales,
-        active,
-    );
+    let _depth = ctx.enter_nested("step_surface_parameter_scale_walk")?;
+    let key = crate::decode_alloc::charged_format(
+        ctx, "step_surface_scale_active_id", format_args!("{}", surface_id.as_str()),
+    )?;
+    let key = geometry_or_none!(SurfaceId::mint(key).ok());
+    insert_geometry_set(active, key, ctx, "step_surface_scale_active")?;
+    let scales = if let Some(solved) = geometry.solved() {
+        surface_geometry_parameter_scales(
+            ir, surface_id, solved, length_scale, angle_scale,
+            source_curve_parameter_scales, active, ctx,
+        )
+    } else {
+        Ok(None)
+    };
     active.remove(surface_id);
     scales
 }
@@ -5148,43 +5158,38 @@ fn surface_geometry_parameter_scales(
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let _depth = ctx.enter_nested("step_surface_geometry_scale_walk")?;
     match geometry {
-        SolvedSurfaceGeometry::Plane(_) => Some([length_scale, length_scale]),
+        SolvedSurfaceGeometry::Plane(_) => Ok(Some([length_scale, length_scale])),
         SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
-            Some([angle_scale, length_scale])
+            Ok(Some([angle_scale, length_scale]))
         }
         SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_) => {
-            Some([angle_scale, angle_scale])
+            Ok(Some([angle_scale, angle_scale]))
         }
-        SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
+        SolvedSurfaceGeometry::Nurbs(_) => Ok(Some([1.0, 1.0])),
         SolvedSurfaceGeometry::Transformed(placed) => surface_geometry_parameter_scales(
-            ir,
-            surface_id,
-            placed.basis(),
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
+            ir, surface_id, placed.basis(), length_scale, angle_scale,
+            source_curve_parameter_scales, active, ctx,
         ),
         SolvedSurfaceGeometry::Unknown { .. } => {
             let mut candidates = ir.model.procedural_surfaces.iter().filter(|procedural| {
                 ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
             });
-            let procedural = candidates.next()?;
+            let Some(procedural) = candidates.next() else {
+                return Ok(None);
+            };
             if candidates.next().is_some() {
-                return None;
+                return Ok(None);
             }
             procedural_definition_parameter_scales(
-                ir,
-                procedural.definition(),
-                length_scale,
-                angle_scale,
-                source_curve_parameter_scales,
-                active,
+                ir, procedural.definition(), length_scale, angle_scale,
+                source_curve_parameter_scales, active, ctx,
             )
         }
-        SolvedSurfaceGeometry::Polygonal(_) => None,
+        SolvedSurfaceGeometry::Polygonal(_) => Ok(None),
     }
 }
 
@@ -5195,99 +5200,73 @@ fn procedural_definition_parameter_scales(
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
-) -> Option<[f64; 2]> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
     let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
-        let carrier = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *support)?;
+        let Some(carrier) = ir.model.surfaces.iter().find(|surface| surface.id == *support) else {
+            return Ok(None);
+        };
         procedural_surface_parameter_scales(
-            ir,
-            support,
-            &carrier.geometry,
-            length_scale,
-            angle_scale,
-            source_curve_parameter_scales,
-            active,
+            ir, support, &carrier.geometry, length_scale, angle_scale,
+            source_curve_parameter_scales, active, ctx,
         )
     };
     match definition {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            Some([
-                directrix_parameter_scale(
-                    ir,
-                    directrix,
-                    length_scale,
-                    angle_scale,
-                    source_curve_parameter_scales,
-                )?,
+            Ok(Some([
+                geometry_or_none!(directrix_parameter_scale(
+                    ir, directrix, length_scale, angle_scale,
+                    source_curve_parameter_scales, ctx,
+                )?),
                 1.0,
-            ])
+            ]))
         }
-        ProceduralSurfaceDefinition::LinearSweep(definition_payload) => Some([
-            directrix_parameter_scale(
-                ir,
-                definition_payload.directrix(),
-                length_scale,
-                angle_scale,
-                source_curve_parameter_scales,
-            )?,
+        ProceduralSurfaceDefinition::LinearSweep(definition_payload) => Ok(Some([
+            geometry_or_none!(directrix_parameter_scale(
+                ir, definition_payload.directrix(), length_scale, angle_scale,
+                source_curve_parameter_scales, ctx,
+            )?),
             1.0,
-        ]),
-        ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => Some([
+        ])),
+        ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => Ok(Some([
             angle_scale,
-            directrix_parameter_scale(
-                ir,
-                definition_payload.directrix(),
-                length_scale,
-                angle_scale,
-                source_curve_parameter_scales,
-            )?,
-        ]),
+            geometry_or_none!(directrix_parameter_scale(
+                ir, definition_payload.directrix(), length_scale, angle_scale,
+                source_curve_parameter_scales, ctx,
+            )?),
+        ])),
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
-            let transposed = definition_payload.transposed();
-            {
-                let directrix = directrix_parameter_scale(
-                    ir,
-                    directrix,
-                    length_scale,
-                    angle_scale,
-                    source_curve_parameter_scales,
-                )?;
-                Some(if *transposed {
-                    [angle_scale, directrix]
-                } else {
-                    [directrix, angle_scale]
-                })
-            }
+            let directrix = geometry_or_none!(directrix_parameter_scale(
+                ir, definition_payload.directrix(), length_scale, angle_scale,
+                source_curve_parameter_scales, ctx,
+            )?);
+            Ok(Some(if *definition_payload.transposed() {
+                [angle_scale, directrix]
+            } else {
+                [directrix, angle_scale]
+            }))
         }
         ProceduralSurfaceDefinition::Offset(definition_payload) => {
-            let support = definition_payload.support();
-            support_scales(support, active)
+            support_scales(definition_payload.support(), active)
         }
         ProceduralSurfaceDefinition::ParallelOffset(definition_payload) => {
-            let support = definition_payload.support();
-            support_scales(support, active)
+            support_scales(definition_payload.support(), active)
         }
         ProceduralSurfaceDefinition::Subset(definition_payload) => {
-            let support = definition_payload.support();
-            support_scales(support, active)
+            support_scales(definition_payload.support(), active)
         }
         ProceduralSurfaceDefinition::SubSurface(definition_payload) => {
-            let support = definition_payload.support();
-            support_scales(support, active)
+            support_scales(definition_payload.support(), active)
         }
         ProceduralSurfaceDefinition::CurveBounded { support, .. } => {
             support_scales(support, active)
         }
-        ProceduralSurfaceDefinition::Replica {
-            source: support, ..
-        } => support_scales(support, active),
-        ProceduralSurfaceDefinition::DegenerateTorus { .. } => Some([angle_scale, angle_scale]),
-        _ => None,
+        ProceduralSurfaceDefinition::Replica { source: support, .. } => {
+            support_scales(support, active)
+        }
+        ProceduralSurfaceDefinition::DegenerateTorus { .. } => Ok(Some([angle_scale, angle_scale])),
+        _ => Ok(None),
     }
 }
 
@@ -5297,18 +5276,15 @@ fn directrix_parameter_scale(
     length_scale: f64,
     angle_scale: f64,
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
     if let Some(source_scale) =
         step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
     {
-        return Some(source_scale.get());
+        return Ok(Some(source_scale.get()));
     }
     directrix_parameter_scale_inner(
-        ir,
-        curve_id,
-        length_scale,
-        angle_scale,
-        &mut BTreeSet::new(),
+        ir, curve_id, length_scale, angle_scale, &mut BTreeSet::new(), ctx,
     )
 }
 
@@ -5318,18 +5294,26 @@ fn directrix_parameter_scale_inner(
     length_scale: f64,
     angle_scale: f64,
     active: &mut BTreeSet<CurveId>,
-) -> Option<f64> {
-    if !active.insert(curve_id.clone()) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    if active.contains(curve_id) {
+        return Ok(None);
     }
-    let scale = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .and_then(|curve| {
-            directrix_geometry_parameter_scale(curve.geometry.solved()?, length_scale, angle_scale)
-        });
+    let _depth = ctx.enter_nested("step_directrix_scale_walk")?;
+    let key = crate::decode_alloc::charged_format(
+        ctx, "step_directrix_scale_active_id", format_args!("{}", curve_id.as_str()),
+    )?;
+    let key = geometry_or_none!(CurveId::mint(key).ok());
+    insert_geometry_set(active, key, ctx, "step_directrix_scale_active")?;
+    let scale = if let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) {
+        if let Some(solved) = curve.geometry.solved() {
+            directrix_geometry_parameter_scale(solved, length_scale, angle_scale, ctx)
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    };
     active.remove(curve_id);
     scale
 }
@@ -5338,20 +5322,22 @@ fn directrix_geometry_parameter_scale(
     geometry: &SolvedCurveGeometry,
     length_scale: f64,
     angle_scale: f64,
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let _depth = ctx.enter_nested("step_directrix_geometry_scale_walk")?;
     match geometry {
-        SolvedCurveGeometry::Line(_) => Some(length_scale),
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Some(angle_scale),
+        SolvedCurveGeometry::Line(_) => Ok(Some(length_scale)),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(Some(angle_scale)),
         SolvedCurveGeometry::Parabola(_)
         | SolvedCurveGeometry::Hyperbola(_)
         | SolvedCurveGeometry::Nurbs(_)
-        | SolvedCurveGeometry::Polyline(_) => Some(1.0),
+        | SolvedCurveGeometry::Polyline(_) => Ok(Some(1.0)),
         SolvedCurveGeometry::Transformed(placed) => {
-            directrix_geometry_parameter_scale(placed.basis(), length_scale, angle_scale)
+            directrix_geometry_parameter_scale(placed.basis(), length_scale, angle_scale, ctx)
         }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
-        | SolvedCurveGeometry::Unknown { .. } => None,
+        | SolvedCurveGeometry::Unknown { .. } => Ok(None),
     }
 }
 

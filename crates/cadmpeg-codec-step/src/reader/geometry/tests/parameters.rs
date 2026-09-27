@@ -413,6 +413,12 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+
     let ir = CadIr::empty();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -455,7 +461,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([10.0, 10.0])
     );
     assert_eq!(
@@ -466,7 +473,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -477,7 +485,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([0.25, 0.25])
     );
     assert_eq!(
@@ -488,7 +497,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -499,13 +509,20 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         None
     );
 }
 
 #[test]
 fn procedural_surface_units_follow_the_evaluated_parameter_order() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -575,7 +592,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             length_scale,
             angle_scale,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([length_scale, 1.0])
     );
     assert_eq!(
@@ -586,13 +604,20 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             length_scale,
             angle_scale,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([angle_scale, length_scale])
     );
 }
 
 #[test]
 fn directrix_parameter_units_follow_step_curve_equations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
@@ -629,30 +654,39 @@ fn directrix_parameter_units_follow_step_curve_equations() {
         directrix_geometry_parameter_scale(
             parabola.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        ).expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
             hyperbola.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        ).expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
             polyline.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        ).expect("scale evaluation"),
         Some(1.0)
     );
 }
 
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -706,13 +740,20 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         None
     );
 }
 
 #[test]
 fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
@@ -757,7 +798,8 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        ).expect("scale evaluation"),
         Some([std::f64::consts::PI / 180.0, 10.0])
     );
 }
