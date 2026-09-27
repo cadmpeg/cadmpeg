@@ -24,7 +24,9 @@ fn plane_pcurve_lookup_set_refuses_collection_limit() {
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            plane,
+        )),
         source_object: None,
     });
     let scale = crate::test_support::millimeter_scale(25.4);
@@ -37,8 +39,12 @@ fn plane_pcurve_lookup_set_refuses_collection_limit() {
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "Rhino plane pcurve lookup IDs"
     ));
-    super::super::scale_plane_pcurves(&cadmpeg_test_support::service_decode_context(), &mut staged, scale)
-        .expect("service profile admits plane lookup");
+    super::super::scale_plane_pcurves(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut staged,
+        scale,
+    )
+    .expect("service profile admits plane lookup");
     assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
 }
 
@@ -109,7 +115,10 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         visible: None,
     });
     staged = staged
-        .free_carrier_fallback(&cadmpeg_test_support::service_decode_context(), "C2 failure")
+        .free_carrier_fallback(
+            &cadmpeg_test_support::service_decode_context(),
+            "C2 failure",
+        )
         .expect("service profile admits fallback IDs and warning");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
     assert!(staged.draft.model().bodies.is_empty());
@@ -170,7 +179,8 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     });
     let links = staged.links.clone();
     staged
-        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft
+        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit fallback carrier");
     append_record_links(&mut candidate, &unknown, &links);
     assert_eq!(
@@ -203,7 +213,8 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().curves.push(curve);
     assert!(staged
-        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft
+        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .is_err());
     assert_eq!(candidate, live);
     assert_eq!(live.model.curves.len(), 1);
@@ -300,7 +311,8 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         )
         .expect("required invariant");
     staged
-        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft
+        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
@@ -370,7 +382,8 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         )
         .expect("required invariant");
     staged
-        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft
+        .commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit Brep with an isolated vertex");
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
     assert!(report.is_ok(), "{report:?}");
@@ -836,15 +849,18 @@ fn staged_brep_retained_copies_refuse_before_allocation() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown: UnknownId = "rhino:object:record#plane".try_into().expect("valid identity");
+    let unknown: UnknownId = "rhino:object:record#plane"
+        .try_into()
+        .expect("valid identity");
     let mut witnessed = std::collections::BTreeSet::new();
     let mut limit = 0_u64;
     for _ in 0..512 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = limit;
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("source bytes fit root limit");
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                .expect("source bytes fit root limit");
         let result = stage_brep(BrepTransferInput {
             expand: crate::mesh::MeshExpand::new(&ctx, root),
             data: &data,
@@ -858,9 +874,14 @@ fn staged_brep_retained_copies_refuse_before_allocation() {
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         });
         match result {
-            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))) => {
+            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                refusal,
+            ))) => {
                 witnessed.insert(refusal.operation);
-                let next = refusal.used.checked_add(refusal.additional).expect("fixture budget fits");
+                let next = refusal
+                    .used
+                    .checked_add(refusal.additional)
+                    .expect("fixture budget fits");
                 assert!(next > limit, "retained refusal must advance the budget");
                 limit = next;
             }
@@ -873,7 +894,10 @@ fn staged_brep_retained_copies_refuse_before_allocation() {
         "Rhino staged Brep link text",
         "Rhino staged Brep derived ID text",
     ] {
-        assert!(witnessed.contains(operation), "missing refusal at {operation}");
+        assert!(
+            witnessed.contains(operation),
+            "missing refusal at {operation}"
+        );
     }
 }
 

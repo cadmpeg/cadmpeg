@@ -868,8 +868,10 @@ fn read_mesh_cache(
             &mut cache_reader,
             &item,
             item_reader,
-            std::slice::from_ref(&wrapper.range()),
-            "mesh-cache item",
+            AnonymousChecksum {
+                children: std::slice::from_ref(&wrapper.range()),
+                name: "mesh-cache item",
+            },
             warnings,
         )?;
         index = index
@@ -882,8 +884,10 @@ fn read_mesh_cache(
         reader,
         &cache,
         cache_reader,
-        &cache_children,
-        "extrusion mesh cache",
+        AnonymousChecksum {
+            children: &cache_children,
+            name: "extrusion mesh cache",
+        },
         warnings,
     )?;
     Ok(meshes)
@@ -977,18 +981,23 @@ fn anonymous_chunk(
     Ok(chunk)
 }
 
+#[derive(Clone, Copy)]
+struct AnonymousChecksum<'a> {
+    children: &'a [std::ops::Range<usize>],
+    name: &'a str,
+}
+
 fn finish_anonymous(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
     mut child: BoundedReader<'_>,
-    children: &[std::ops::Range<usize>],
-    name: &str,
+    checksum: AnonymousChecksum<'_>,
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), checksum.children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -996,7 +1005,10 @@ fn finish_anonymous(
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format_args!("{name} CRC mismatch at offset {}", chunk.header_start),
+            format_args!(
+                "{} CRC mismatch at offset {}",
+                checksum.name, chunk.header_start
+            ),
         )?;
     }
     parent.skip(chunk.next_offset() - parent.position())?;

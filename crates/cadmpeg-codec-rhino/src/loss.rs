@@ -144,7 +144,6 @@ impl Diagnostics {
         }
         Ok(())
     }
-
 }
 
 impl std::ops::Deref for Diagnostics {

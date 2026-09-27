@@ -1064,7 +1064,12 @@ fn object_reference_properties(
 
 struct CageJson<'a>(&'a crate::cage::Cage);
 
-struct MeshVertices<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+struct MeshVertices<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
 
 impl serde::Serialize for MeshVertices<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1102,26 +1107,47 @@ impl serde::Serialize for MeshVertices<'_> {
     }
 }
 
-struct MeshTriangles<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+struct MeshTriangles<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
 
 fn serialize_strip_triangles<S: serde::Serializer, V>(
     strips: &cadmpeg_ir::tessellation::Strips<V>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::{Error as _, SerializeSeq};
-    let count = strips.as_slice().iter().map(|strip| strip.triangle_count()).sum();
+    let count = strips
+        .as_slice()
+        .iter()
+        .map(cadmpeg_ir::tessellation::Strip::triangle_count)
+        .sum();
     let mut sequence = serializer.serialize_seq(Some(count))?;
     let mut base = 0_u32;
     for strip in strips.as_slice() {
         for index in 0..strip.triangle_count() {
             let index = u32::try_from(index).map_err(S::Error::custom)?;
-            let a = base.checked_add(index).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
-            let b = a.checked_add(1).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
-            let c = a.checked_add(2).ok_or_else(|| S::Error::custom("mesh index overflow"))?;
-            sequence.serialize_element(&if index.is_multiple_of(2) { [a, b, c] } else { [a, c, b] })?;
+            let a = base
+                .checked_add(index)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let b = a
+                .checked_add(1)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            let c = a
+                .checked_add(2)
+                .ok_or_else(|| S::Error::custom("mesh index overflow"))?;
+            sequence.serialize_element(&if index.is_multiple_of(2) {
+                [a, b, c]
+            } else {
+                [a, c, b]
+            })?;
         }
         let length = u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?;
-        base = base.checked_add(length).ok_or_else(|| S::Error::custom("mesh strip base overflow"))?;
+        base = base
+            .checked_add(length)
+            .ok_or_else(|| S::Error::custom("mesh strip base overflow"))?;
     }
     sequence.end()
 }
@@ -1133,7 +1159,8 @@ fn serialize_strip_lengths<S: serde::Serializer, V>(
     use serde::ser::{Error as _, SerializeSeq};
     let mut sequence = serializer.serialize_seq(Some(strips.as_slice().len()))?;
     for strip in strips.as_slice() {
-        sequence.serialize_element(&u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?)?;
+        sequence
+            .serialize_element(&u32::try_from(strip.vertices().len()).map_err(S::Error::custom)?)?;
     }
     sequence.end()
 }
@@ -1153,12 +1180,19 @@ impl serde::Serialize for MeshTriangles<'_> {
                 sequence.end()
             }
             TessellationMesh::Strips { strips } => serialize_strip_triangles(strips, serializer),
-            TessellationMesh::ShadedStrips { strips } => serialize_strip_triangles(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => {
+                serialize_strip_triangles(strips, serializer)
+            }
         }
     }
 }
 
-struct MeshStripLengths<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+struct MeshStripLengths<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
 
 impl serde::Serialize for MeshStripLengths<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1168,12 +1202,19 @@ impl serde::Serialize for MeshStripLengths<'_> {
             | TessellationMesh::ShadedList { .. }
             | TessellationMesh::CornerShadedList { .. } => ([] as [u32; 0]).serialize(serializer),
             TessellationMesh::Strips { strips } => serialize_strip_lengths(strips, serializer),
-            TessellationMesh::ShadedStrips { strips } => serialize_strip_lengths(strips, serializer),
+            TessellationMesh::ShadedStrips { strips } => {
+                serialize_strip_lengths(strips, serializer)
+            }
         }
     }
 }
 
-struct MeshNormals<'a>(&'a cadmpeg_ir::tessellation::TessellationMesh<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FiniteVector3>);
+struct MeshNormals<'a>(
+    &'a cadmpeg_ir::tessellation::TessellationMesh<
+        cadmpeg_ir::features::FinitePoint3,
+        cadmpeg_ir::features::FiniteVector3,
+    >,
+);
 
 impl serde::Serialize for MeshNormals<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1311,7 +1352,10 @@ impl serde::Serialize for MorphControlJson<'_> {
                 map.serialize_entry("kind", "surface")?;
                 map.serialize_entry("start", start)?;
             }
-            crate::morph::Control::Cage { start_transform, end } => {
+            crate::morph::Control::Cage {
+                start_transform,
+                end,
+            } => {
                 map.serialize_entry("end", &CageJson(end))?;
                 map.serialize_entry("kind", "cage")?;
                 map.serialize_entry("start_transform", start_transform)?;
@@ -1387,10 +1431,13 @@ impl serde::Serialize for HatchLoopJson<'_> {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_entry("curve", self.0.curve.reported_geometry())?;
-        map.serialize_entry("kind", match self.0.kind {
-            crate::hatch::LoopKind::Outer => "outer",
-            crate::hatch::LoopKind::Inner => "inner",
-        })?;
+        map.serialize_entry(
+            "kind",
+            match self.0.kind {
+                crate::hatch::LoopKind::Outer => "outer",
+                crate::hatch::LoopKind::Inner => "inner",
+            },
+        )?;
         map.end()
     }
 }
@@ -1418,12 +1465,15 @@ impl serde::Serialize for HatchPlaneJson<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let mut map = serializer.serialize_map(Some(5))?;
-        map.serialize_entry("equation", &[
-            self.plane.equation[0],
-            self.plane.equation[1],
-            self.plane.equation[2],
-            self.equation_constant.get(),
-        ])?;
+        map.serialize_entry(
+            "equation",
+            &[
+                self.plane.equation[0],
+                self.plane.equation[1],
+                self.plane.equation[2],
+                self.equation_constant.get(),
+            ],
+        )?;
         map.serialize_entry("origin", &self.origin)?;
         map.serialize_entry("xaxis", &self.plane.xaxis.get())?;
         map.serialize_entry("yaxis", &self.plane.yaxis.get())?;
@@ -1440,7 +1490,8 @@ struct HatchJson<'a> {
 impl serde::Serialize for HatchJson<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(Some(7 + usize::from(self.hatch.gradient.is_some())))?;
+        let mut map =
+            serializer.serialize_map(Some(7 + usize::from(self.hatch.gradient.is_some())))?;
         map.serialize_entry("basepoint", &self.hatch.basepoint)?;
         if let Some(gradient) = &self.hatch.gradient {
             map.serialize_entry("gradient", &crate::hatch::gradient_semantic(gradient))?;
@@ -1549,7 +1600,7 @@ fn extended_geometry_json(
             ),
             refusal,
         )?;
-        return embedded_json(expand.ctx(), &MeshJson(&mesh), refusal);
+        embedded_json(expand.ctx(), &MeshJson(&mesh), refusal)
     } else if crate::subd::supported_class(value.class_id) {
         let subd = match crate::subd::decode(
             expand.ctx(),
@@ -1570,18 +1621,29 @@ fn extended_geometry_json(
             Err(_) => return None,
         };
         match subd {
-            None => return embedded_json(expand.ctx(), &EmptySubdJson { empty: true, kind: "subd" }, refusal),
+            None => embedded_json(
+                expand.ctx(),
+                &EmptySubdJson {
+                    empty: true,
+                    kind: "subd",
+                },
+                refusal,
+            ),
             Some(crate::subd::DecodedSubd {
                 surface,
                 neutral_metadata,
                 enum_diagnostics,
                 ..
-            }) => return embedded_json(expand.ctx(), &SubdJson {
-                enum_diagnostics: SubdDiagnostics(&enum_diagnostics),
-                kind: "subd",
-                neutral_metadata: &neutral_metadata,
-                surface: &surface,
-            }, refusal),
+            }) => embedded_json(
+                expand.ctx(),
+                &SubdJson {
+                    enum_diagnostics: SubdDiagnostics(&enum_diagnostics),
+                    kind: "subd",
+                    neutral_metadata: &neutral_metadata,
+                    surface: &surface,
+                },
+                refusal,
+            ),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
@@ -1598,21 +1660,21 @@ fn extended_geometry_json(
             ),
             refusal,
         )?;
-        return embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal);
+        embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal)
     } else if value.class_id == crate::cage::CLASS {
         let cage = optional_geometry(
             crate::cage::decode(expand, value.class_data_range.clone(), scale, archive),
             refusal,
         )?;
-        return embedded_json(expand.ctx(), &CageJson(&cage), refusal);
+        embedded_json(expand.ctx(), &CageJson(&cage), refusal)
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
             crate::morph::decode(expand, value.class_data_range.clone(), scale, archive),
             refusal,
         )?;
-        return embedded_json(expand.ctx(), &MorphJson(&morph), refusal);
+        embedded_json(expand.ctx(), &MorphJson(&morph), refusal)
     } else if crate::brep::supported_class(value.class_id) {
-        return crate::decode::embedded_brep_json(
+        crate::decode::embedded_brep_json(
             expand,
             data,
             value.class_data_range.clone(),
@@ -1620,7 +1682,7 @@ fn extended_geometry_json(
             writer_version,
             scale,
             refusal,
-        );
+        )
     } else if value.class_id == crate::hatch::CLASS {
         let mut hatch = optional_geometry(
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive),
@@ -1676,16 +1738,24 @@ fn extended_geometry_json(
                 return None;
             }
         };
-        return embedded_json(expand.ctx(), &HatchJson {
-            hatch: &hatch,
-            plane: HatchPlaneJson { plane: &plane, origin, equation_constant },
-        }, refusal);
+        embedded_json(
+            expand.ctx(),
+            &HatchJson {
+                hatch: &hatch,
+                plane: HatchPlaneJson {
+                    plane: &plane,
+                    origin,
+                    equation_constant,
+                },
+            },
+            refusal,
+        )
     } else if value.class_id == crate::detail::CLASS {
         let detail = optional_geometry(
             crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive),
             refusal,
         )?;
-        return embedded_json(expand.ctx(), &DetailJson(&detail), refusal);
+        embedded_json(expand.ctx(), &DetailJson(&detail), refusal)
     } else if crate::dimensions::supported_class(value.class_id) {
         let dimension = match crate::dimensions::decode(
             expand.ctx(),
@@ -1728,7 +1798,7 @@ fn extended_geometry_json(
             )?;
             return None;
         }
-        return match crate::dimensions::semantic_json(expand.ctx(), &dimension) {
+        match crate::dimensions::semantic_json(expand.ctx(), &dimension) {
             Ok(semantic) => Some(semantic),
             Err(error @ CodecError::ResourceLimit(_)) => {
                 *refusal = Some(error);
@@ -1746,7 +1816,7 @@ fn extended_geometry_json(
                 )?;
                 None
             }
-        };
+        }
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
         let polyedge =
             match crate::polyedge::decode(expand, value.class_data_range.clone(), archive) {
@@ -1768,13 +1838,13 @@ fn extended_geometry_json(
                     return None;
                 }
             };
-        return match crate::polyedge::semantic_json(expand.ctx(), &polyedge) {
+        match crate::polyedge::semantic_json(expand.ctx(), &polyedge) {
             Ok(semantic) => semantic,
             Err(error) => {
                 *refusal = Some(error);
                 None
             }
-        };
+        }
     } else {
         None
     }
@@ -2372,7 +2442,7 @@ pub(crate) fn project(
         ctx.charge_work(comparison_work, "Rhino history dependency distinctness")
             .map_err(ProjectionError::Codec)?;
         let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(dependencies)
-            .map_err(|error| error.to_string())?;
+            .map_err(std::string::ToString::to_string)?;
         crate::wire::reserve_collection(
             ctx,
             &mut ir.model.features,

@@ -120,18 +120,23 @@ fn residual_dialect_loss_refuses_retained_limit() {
 fn archive_word_5_is_admitted_on_its_declared_narrow_chunk_grammar() {
     let matched = classify_word(5);
     assert_eq!(matched.admission(), &Admission::Admitted);
-    assert!(admission_loss(&cadmpeg_test_support::service_decode_context(), &matched)
-        .expect("service profile admits classification")
-        .is_none());
+    assert!(
+        admission_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+            .expect("service profile admits classification")
+            .is_none()
+    );
 }
 
 #[test]
 fn verified_rows_charge_no_admission_loss() {
     for (word, _) in ENUMERATED {
         assert!(
-            admission_loss(&cadmpeg_test_support::service_decode_context(), &classify_word(*word))
-                .expect("service profile admits classification")
-                .is_none(),
+            admission_loss(
+                &cadmpeg_test_support::service_decode_context(),
+                &classify_word(*word)
+            )
+            .expect("service profile admits classification")
+            .is_none(),
             "archive word {word}: verified rows do not charge a dialect loss"
         );
     }

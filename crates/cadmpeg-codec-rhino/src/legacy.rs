@@ -30,8 +30,8 @@ use serde::Serialize;
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
-use crate::wire::{admitted_format, admitted_loss, reserve_collection};
 use crate::settings::MillimeterScale;
+use crate::wire::{admitted_format, admitted_loss, reserve_collection};
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_RH_POINT: u32 = 0x0010_0001;
@@ -632,7 +632,11 @@ fn push_v1_diagnostic(
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     reserve_collection(ctx, diagnostics, 1, "Rhino V1 diagnostics")?;
-    diagnostics.push(admitted_format(ctx, message, "Rhino V1 diagnostic message")?);
+    diagnostics.push(admitted_format(
+        ctx,
+        message,
+        "Rhino V1 diagnostic message",
+    )?);
     Ok(())
 }
 
@@ -3193,7 +3197,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 color: None,
                 visible: None,
             });
-            push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
+            push_v1_record(
+                ctx,
+                &mut typed_source_records,
+                data,
+                &chunk,
+                &mut retained_bytes,
+            )?;
             decoded += 1;
         } else if matches!(
             chunk.typecode,
@@ -3212,7 +3222,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     ctx.charge_entities(1, "Rhino V1 direct record")?;
                     ctx.charge_retained(
                         u64::try_from(std::mem::size_of::<V1DirectRecord>()).map_err(|_| {
-                            CodecError::NotImplemented("Rhino V1 direct record exceeds address space".to_string())
+                            CodecError::NotImplemented(
+                                "Rhino V1 direct record exceeds address space".to_string(),
+                            )
                         })?,
                         "Rhino V1 direct record storage",
                     )?;
@@ -3234,11 +3246,21 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         decoded_nurbs_breps += 1;
                     }
                     direct_records.push(record);
-                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
+                    push_v1_record(
+                        ctx,
+                        &mut typed_source_records,
+                        data,
+                        &chunk,
+                        &mut retained_bytes,
+                    )?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 direct record at offset {offset}: {error}"))?;
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 direct record at offset {offset}: {error}"),
+                    )?;
                     count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
                     push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
@@ -3371,11 +3393,21 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         });
                         decoded_curves += 1;
                     }
-                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
+                    push_v1_record(
+                        ctx,
+                        &mut typed_source_records,
+                        data,
+                        &chunk,
+                        &mut retained_bytes,
+                    )?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 curve at offset {offset}: {error}"))?;
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 curve at offset {offset}: {error}"),
+                    )?;
                     count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
                     push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
@@ -3391,12 +3423,22 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )
             }) {
                 Ok(()) => {
-                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
+                    push_v1_record(
+                        ctx,
+                        &mut typed_source_records,
+                        data,
+                        &chunk,
+                        &mut retained_bytes,
+                    )?;
                     decoded_breps += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 Brep at offset {offset}: {error}"))?;
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 Brep at offset {offset}: {error}"),
+                    )?;
                     count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
                     push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
@@ -3413,12 +3455,22 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
                     admit_v1_values::<Tessellation>(ctx, 1, "Rhino V1 mesh storage")?;
                     ir.model.tessellations.push(mesh);
-                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
+                    push_v1_record(
+                        ctx,
+                        &mut typed_source_records,
+                        data,
+                        &chunk,
+                        &mut retained_bytes,
+                    )?;
                     decoded_meshes += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 mesh at offset {offset}: {error}"))?;
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 mesh at offset {offset}: {error}"),
+                    )?;
                     count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
                     push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
@@ -3465,7 +3517,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             )?
         });
     }
-    reserve_collection(ctx, &mut losses, tolerance_losses.len(), "Rhino V1 report losses")?;
+    reserve_collection(
+        ctx,
+        &mut losses,
+        tolerance_losses.len(),
+        "Rhino V1 report losses",
+    )?;
     losses.append(&mut tolerance_losses);
     let mut notes = Vec::new();
     reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
@@ -3499,12 +3556,21 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
         (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
         (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
-        (crate::coverage::LEGACY_V1_NURBS_CURVES, decoded_nurbs_curves),
-        (crate::coverage::LEGACY_V1_NURBS_SURFACES, decoded_nurbs_surfaces),
+        (
+            crate::coverage::LEGACY_V1_NURBS_CURVES,
+            decoded_nurbs_curves,
+        ),
+        (
+            crate::coverage::LEGACY_V1_NURBS_SURFACES,
+            decoded_nurbs_surfaces,
+        ),
         (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
     ] {
         ctx.charge_collection_items(1, "Rhino V1 coverage entries")?;
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(key.as_str().len()), "Rhino V1 coverage keys")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(key.as_str().len()),
+            "Rhino V1 coverage keys",
+        )?;
         coverage.record(key, count);
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
@@ -3519,7 +3585,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
+                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
+            ),
             coverage,
             losses,
             notes,
@@ -3652,7 +3720,14 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "Rhino V1 omitted typecodes"
         ));
-        assert_eq!(decode_v1(&data).expect("service profile admits the record").body.losses.len(), 1);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the record")
+                .body
+                .losses
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -3669,25 +3744,43 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "Rhino V1 diagnostics"
         ));
-        assert_eq!(decode_v1(&data).expect("service profile admits the diagnostic").body.notes.len(), 3);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the diagnostic")
+                .body
+                .notes
+                .len(),
+            3
+        );
     }
 
     #[test]
     fn v1_report_notes_and_coverage_refuse_collection_limit() {
         let data = archive(&[]);
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        for (limit, operation) in [(1, "Rhino V1 report notes"), (2, "Rhino V1 coverage entries")] {
+        for (limit, operation) in [
+            (1, "Rhino V1 report notes"),
+            (2, "Rhino V1 coverage entries"),
+        ] {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-                .expect("V1 input fits service input limit");
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                    .expect("V1 input fits service input limit");
             assert!(matches!(
                 super::decode_v1(&ctx, &data),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.operation == operation
             ));
         }
-        assert_eq!(decode_v1(&data).expect("service profile admits the report").body.coverage.len(), 8);
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the report")
+                .body
+                .coverage
+                .len(),
+            8
+        );
     }
 
     #[test]

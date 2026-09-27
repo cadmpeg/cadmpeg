@@ -10,8 +10,9 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{
-    de::DeserializeOwned, ser::{SerializeMap, SerializeSeq, SerializeStruct}, Deserialize,
-    Deserializer, Serialize, Serializer,
+    de::DeserializeOwned,
+    ser::{SerializeMap, SerializeSeq, SerializeStruct},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
@@ -670,8 +671,15 @@ impl Serialize for ProceduralSurfaceRows<'_> {
         }
         let mut sequence = serializer.serialize_seq(Some(self.0.procedural_surfaces.len()))?;
         for procedural in &self.0.procedural_surfaces {
-            let owner = self.0.procedural_surface_owner(&procedural.id).ok_or_else(||
-                serde::ser::Error::custom(format_args!("procedural surface {} has no unique owning surface", procedural.id)))?;
+            let owner = self
+                .0
+                .procedural_surface_owner(&procedural.id)
+                .ok_or_else(|| {
+                    serde::ser::Error::custom(format_args!(
+                        "procedural surface {} has no unique owning surface",
+                        procedural.id
+                    ))
+                })?;
             sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()
@@ -697,8 +705,15 @@ impl Serialize for ProceduralCurveRows<'_> {
         }
         let mut sequence = serializer.serialize_seq(Some(self.0.procedural_curves.len()))?;
         for procedural in &self.0.procedural_curves {
-            let owner = self.0.procedural_curve_owner(&procedural.id).ok_or_else(||
-                serde::ser::Error::custom(format_args!("procedural curve {} has no unique owning curve", procedural.id)))?;
+            let owner = self
+                .0
+                .procedural_curve_owner(&procedural.id)
+                .ok_or_else(|| {
+                    serde::ser::Error::custom(format_args!(
+                        "procedural curve {} has no unique owning curve",
+                        procedural.id
+                    ))
+                })?;
             sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()

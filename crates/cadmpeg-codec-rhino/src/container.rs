@@ -1086,7 +1086,11 @@ fn scan_with_record_limit<'a>(
         data.len(),
         archive,
     )? {
-        warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
     let mut tables = Vec::new();
     let mut offset = comment.range.end;
@@ -1217,10 +1221,13 @@ fn scan_with_record_limit<'a>(
                         record.typecode, chunk.typecode
                     )));
                 }
-                warnings.push_admitted(ctx, format_args!(
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
-                ))?;
+                ),
+                )?;
             }
             if let Some(note) = checksum_warning(
                 ctx,
@@ -1230,7 +1237,11 @@ fn scan_with_record_limit<'a>(
                 chunk.body().end,
                 archive,
             )? {
-                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{note}"),
+                )?;
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
@@ -1247,9 +1258,12 @@ fn scan_with_record_limit<'a>(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        warnings.push_admitted(ctx, format_args!(
-                            "bounded object record at {child_offset} is malformed: {error}"
-                        ))?;
+                        warnings.push_admitted(
+                            ctx,
+                            format_args!(
+                                "bounded object record at {child_offset} is malformed: {error}"
+                            ),
+                        )?;
                         degraded_object_record(ctx, &record, &error)?
                     }
                 };
@@ -1269,10 +1283,10 @@ fn scan_with_record_limit<'a>(
             child_offset = child.next_offset();
         }
         if !terminated {
-            warnings.push_admitted(ctx, format_args!(
-                "table {:#x} has no end-of-table marker",
-                chunk.typecode
-            ))?;
+            warnings.push_admitted(
+                ctx,
+                format_args!("table {:#x} has no end-of-table marker", chunk.typecode),
+            )?;
         }
         if let Some(note) = checksum_warning(
             ctx,
@@ -1282,7 +1296,11 @@ fn scan_with_record_limit<'a>(
             chunk.next_offset(),
             archive,
         )? {
-            warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::IntegrityFailure, format_args!("{note}"))?;
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
@@ -1359,7 +1377,8 @@ fn insert_summary_attribute(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "Rhino container summary attributes")?;
     let key = crate::wire::admitted_format(ctx, key, "Rhino container summary attribute key")?;
-    let value = crate::wire::admitted_format(ctx, value, "Rhino container summary attribute value")?;
+    let value =
+        crate::wire::admitted_format(ctx, value, "Rhino container summary attribute value")?;
     attributes.insert(key, value);
     Ok(())
 }
@@ -1383,12 +1402,37 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     let mut entries = Vec::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
-        insert_summary_attribute(ctx, &mut attributes, format_args!("offset"), format_args!("{}", table.range().start))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("size"), format_args!("{}", table.range().len()))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("body_offset"), format_args!("{}", table.body().start))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("record_count"), format_args!("{}", table.record_count))?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("offset"),
+            format_args!("{}", table.range().start),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("size"),
+            format_args!("{}", table.range().len()),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("body_offset"),
+            format_args!("{}", table.body().start),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("record_count"),
+            format_args!("{}", table.record_count),
+        )?;
         for (typecode, count) in &table.object_typecodes {
-            insert_summary_attribute(ctx, &mut attributes, format_args!("object_typecode_{typecode:#x}"), format_args!("{count}"))?;
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("object_typecode_{typecode:#x}"),
+                format_args!("{count}"),
+            )?;
         }
         let storage = table
             .body_bytes(scan.data)
@@ -1397,7 +1441,11 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             });
         crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: crate::wire::admitted_format(ctx, format_args!("table-{:#x}", table.typecode), "Rhino container entry name")?,
+            name: crate::wire::admitted_format(
+                ctx,
+                format_args!("table-{:#x}", table.typecode),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::Table,
             storage,
             attributes,
@@ -1416,25 +1464,57 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
     }
     for (class_uuid, (count, bytes)) in classes {
         let mut attributes = BTreeMap::new();
-        insert_summary_attribute(ctx, &mut attributes, format_args!("class_uuid"), format_args!("{class_uuid}"))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("nil_uuid"), format_args!("{}", class_uuid.is_nil()))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("count"), format_args!("{count}"))?;
-        insert_summary_attribute(ctx, &mut attributes, format_args!("total_record_bytes"), format_args!("{bytes}"))?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("class_uuid"),
+            format_args!("{class_uuid}"),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("nil_uuid"),
+            format_args!("{}", class_uuid.is_nil()),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("count"),
+            format_args!("{count}"),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("total_record_bytes"),
+            format_args!("{bytes}"),
+        )?;
         crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: crate::wire::admitted_format(ctx, format_args!("class-{class_uuid}"), "Rhino container entry name")?,
+            name: crate::wire::admitted_format(
+                ctx,
+                format_args!("class-{class_uuid}"),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::ObjectClass,
             storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,
         });
     }
     let mut notes = Vec::new();
-    push_container_note(ctx, &mut notes, format_args!("archive version {}", scan.archive.value()))?;
+    push_container_note(
+        ctx,
+        &mut notes,
+        format_args!("archive version {}", scan.archive.value()),
+    )?;
     for warning in scan.warnings.messages() {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
     for diagnostic in scan.definitions.diagnostics() {
-        push_container_note(ctx, &mut notes, format_args!("{}", diagnostic.diagnostic.message))?;
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("{}", diagnostic.diagnostic.message),
+        )?;
     }
     let matched = dialect_match(scan);
     let mut losses = Vec::new();
@@ -1498,16 +1578,41 @@ pub(crate) fn source_meta(
     let attributes = match detail {
         SourceMetaDetail::FlatLegacyArchive => {
             let mut attributes = BTreeMap::new();
-            insert_source_meta_attribute(ctx, &mut attributes, "archive_version", format_args!("1"))?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "archive_version",
+                format_args!("1"),
+            )?;
             attributes
         }
         SourceMetaDetail::ContainerOnly(scan) => {
             let mut attributes = BTreeMap::new();
             chunked_source_attributes(ctx, scan, &mut attributes)?;
-            insert_source_meta_attribute(ctx, &mut attributes, "comment_offset", format_args!("{}", scan.comment.range.start))?;
-            insert_source_meta_attribute(ctx, &mut attributes, "eof_offset", format_args!("{}", scan.eof_offset))?;
-            insert_source_meta_attribute(ctx, &mut attributes, "table_count", format_args!("{}", scan.tables.len()))?;
-            insert_source_meta_attribute(ctx, &mut attributes, "instance_definition_count", format_args!("{}", scan.definitions.definitions().len()))?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "comment_offset",
+                format_args!("{}", scan.comment.range.start),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "eof_offset",
+                format_args!("{}", scan.eof_offset),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "table_count",
+                format_args!("{}", scan.tables.len()),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "instance_definition_count",
+                format_args!("{}", scan.definitions.definitions().len()),
+            )?;
             attributes
         }
         SourceMetaDetail::Full {
@@ -1529,8 +1634,18 @@ fn chunked_source_attributes(
     scan: &Scan<'_>,
     attributes: &mut BTreeMap<NonBlankString, String>,
 ) -> Result<(), CodecError> {
-    insert_source_meta_attribute(ctx, attributes, "archive_version", format_args!("{}", scan.archive.value()))?;
-    insert_source_meta_attribute(ctx, attributes, "container_kind", format_args!("3dm-chunks"))?;
+    insert_source_meta_attribute(
+        ctx,
+        attributes,
+        "archive_version",
+        format_args!("{}", scan.archive.value()),
+    )?;
+    insert_source_meta_attribute(
+        ctx,
+        attributes,
+        "container_kind",
+        format_args!("3dm-chunks"),
+    )?;
     Ok(())
 }
 
@@ -1540,15 +1655,23 @@ pub(crate) fn container_only_result(
     scan: &Scan<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut notes = Vec::new();
-    push_container_note(ctx, &mut notes, format_args!("archive version {}", scan.archive.value()))?;
+    push_container_note(
+        ctx,
+        &mut notes,
+        format_args!("archive version {}", scan.archive.value()),
+    )?;
     for warning in scan.warnings.messages() {
         push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
     }
     for diagnostic in scan.definitions.diagnostics() {
-        push_container_note(ctx, &mut notes, format_args!("{}", diagnostic.diagnostic.message))?;
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("{}", diagnostic.diagnostic.message),
+        )?;
     }
     let mut losses = Vec::new();
-    for diagnostic in scan.warnings.iter() {
+    for diagnostic in &scan.warnings {
         crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(diagnostic.message.len()),
@@ -1570,7 +1693,11 @@ pub(crate) fn container_only_result(
         crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
         losses.push(loss);
     }
-    let ir = CadIr::decoded(source_meta(ctx, primary, SourceMetaDetail::ContainerOnly(scan))?);
+    let ir = CadIr::decoded(source_meta(
+        ctx,
+        primary,
+        SourceMetaDetail::ContainerOnly(scan),
+    )?);
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -1601,7 +1728,11 @@ pub(crate) fn inspect(
             losses.push(loss);
         }
         let mut notes = Vec::new();
-        push_container_note(ctx, &mut notes, format_args!("archive version {}", header.archive_version.value()))?;
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("archive version {}", header.archive_version.value()),
+        )?;
         return Ok(ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::of(matched),
             cadmpeg_ir::ContainerKind::ThreeDmChunks,

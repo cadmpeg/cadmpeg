@@ -1312,9 +1312,12 @@ fn read_user_string_records(
         Ok(entries) => user_string_records(ctx, entries),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
-            push_presentation_loss(ctx, losses, RhinoLossCode::ObjectDecodeDiagnostic, format_args!(
-                "{label} at offset {source_offset} could not be transferred: {error}"
-            ))?;
+            push_presentation_loss(
+                ctx,
+                losses,
+                RhinoLossCode::ObjectDecodeDiagnostic,
+                format_args!("{label} at offset {source_offset} could not be transferred: {error}"),
+            )?;
             Ok(Vec::new())
         }
     }
@@ -2094,7 +2097,9 @@ fn parse_light_record_attributes(
         push_presentation_loss(
             ctx,
             losses,
-            warning.code.unwrap_or(RhinoLossCode::ObjectDecodeDiagnostic),
+            warning
+                .code
+                .unwrap_or(RhinoLossCode::ObjectDecodeDiagnostic),
             format_args!(
                 "light record attributes at offset {}: {}",
                 record.range.start, warning.message
@@ -2164,10 +2169,12 @@ fn append_file_reference_diagnostics(
             cadmpeg_core::decode::u64_from_index("PRESENTATION/TEXTURE/FILE_REFERENCE".len()),
             "Rhino texture file-reference provenance tag",
         )?;
-        losses.push(loss.with_provenance(
-            SourceProvenance::root("rhino", source_offset as u64)
-                .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
-        ));
+        losses.push(
+            loss.with_provenance(
+                SourceProvenance::root("rhino", source_offset as u64)
+                    .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
+            ),
+        );
     }
     Ok(())
 }
@@ -5204,7 +5211,8 @@ pub(crate) fn install(
                         ))?;
                     }
                     let physically_based = if let Some(value) = userdata
-                        .iter().filter_map(UserdataDescriptor::known)
+                        .iter()
+                        .filter_map(UserdataDescriptor::known)
                         .find(|value| {
                             value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
                                 && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
@@ -5262,7 +5270,12 @@ pub(crate) fn install(
                             )?;
                             materials.push(material);
                             if material_requires_opaque {
-                                push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                                push_opaque_record(
+                                    ctx,
+                                    &mut opaque_records,
+                                    table.typecode,
+                                    record,
+                                )?;
                             }
                             parsed = true;
                         }
@@ -5311,7 +5324,12 @@ pub(crate) fn install(
                             Ok(attributes) => {
                                 if let Some(value) = attributes {
                                     if value.userdata_requires_opaque {
-                                        push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                                        push_opaque_record(
+                                            ctx,
+                                            &mut opaque_records,
+                                            table.typecode,
+                                            record,
+                                        )?;
                                     }
                                     light.attributes = Some(value);
                                 }
@@ -5324,7 +5342,12 @@ pub(crate) fn install(
                                         "light attributes at offset {} could not be transferred: {error}",
                                         record.range.start
                                     ))?;
-                                push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                                push_opaque_record(
+                                    ctx,
+                                    &mut opaque_records,
+                                    table.typecode,
+                                    record,
+                                )?;
                             }
                         }
                         push_light(
@@ -5478,7 +5501,12 @@ pub(crate) fn install(
                             )?;
                             dimension_styles.push(value);
                             if extra_requires_opaque {
-                                push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                                push_opaque_record(
+                                    ctx,
+                                    &mut opaque_records,
+                                    table.typecode,
+                                    record,
+                                )?;
                             }
                             parsed = true;
                         }
@@ -5579,10 +5607,15 @@ pub(crate) fn install(
                         )?;
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
-                            push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            push_presentation_loss(
+                                ctx,
+                                &mut losses,
+                                RhinoLossCode::PresentationRecordDropped,
+                                format_args!(
                                 "MappingCRCCache userdata at offset {} could not be transferred",
                                 record.range.start
-                            ))?;
+                            ),
+                            )?;
                             push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
                         }
                         parsed = true;
@@ -5637,10 +5670,15 @@ pub(crate) fn install(
                 }
             }
             if recognized && !parsed {
-                push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "record at offset {} in table {table_type:#x} could not be transferred",
-                    record.range.start
-                ))?;
+                push_presentation_loss(
+                    ctx,
+                    &mut losses,
+                    RhinoLossCode::PresentationRecordDropped,
+                    format_args!(
+                        "record at offset {} in table {table_type:#x} could not be transferred",
+                        record.range.start
+                    ),
+                )?;
                 push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
             }
         }
@@ -5694,10 +5732,15 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                            "light object at offset {} could not be transferred: {error}",
-                            object.range.start
-                        ))?;
+                        push_presentation_loss(
+                            ctx,
+                            &mut losses,
+                            RhinoLossCode::PresentationRecordDropped,
+                            format_args!(
+                                "light object at offset {} could not be transferred: {error}",
+                                object.range.start
+                            ),
+                        )?;
                     }
                 }
             } else {
@@ -5787,10 +5830,15 @@ pub(crate) fn install(
             Ok(rendering) => rendering,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "layer rendering attributes at offset {} could not be transferred: {error}",
-                    layer.source.range.start
-                ))?;
+                push_presentation_loss(
+                    ctx,
+                    &mut losses,
+                    RhinoLossCode::PresentationRecordDropped,
+                    format_args!(
+                        "layer rendering attributes at offset {} could not be transferred: {error}",
+                        layer.source.range.start
+                    ),
+                )?;
                 RenderingAttributesPresentation::default()
             }
         };
@@ -5895,9 +5943,14 @@ pub(crate) fn install(
     }
     for (index, count) in &group_index_counts {
         if *count > 1 {
-            push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                "group index {index} occurs {count} times; ambiguous member links were dropped"
-            ))?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                RhinoLossCode::PresentationRecordDropped,
+                format_args!(
+                    "group index {index} occurs {count} times; ambiguous member links were dropped"
+                ),
+            )?;
         }
     }
     let disambiguated_group_count = disambiguate_group_ids(ctx, &mut groups)?;

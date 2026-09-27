@@ -16,7 +16,10 @@ fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
         z: Nested,
         a: u32,
     }
-    let value = Root { z: Nested { z: 2, a: 1 }, a: 3 };
+    let value = Root {
+        z: Nested { z: 2, a: 1 },
+        a: 3,
+    };
     let service = cadmpeg_test_support::service_decode_context();
     let text = super::admitted_canonical_json(&service, &value, "Rhino canonical JSON")
         .expect("service policy admits JSON");
@@ -29,8 +32,10 @@ fn canonical_json_sorts_nested_keys_and_refuses_collection_limit() {
         .expect("empty root fits");
     let refusal = super::admitted_canonical_json(&ctx, &value, "Rhino canonical JSON")
         .expect_err("four JSON map entries exceed three collection items");
-    assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "Rhino canonical JSON"));
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "Rhino canonical JSON")
+    );
 }
 
 /// A non-finite value is refused at its own first byte, not after the read.

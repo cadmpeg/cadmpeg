@@ -472,8 +472,12 @@ struct CurvePoints<'a>(&'a NurbsPoles3<cadmpeg_ir::features::FinitePoint3>);
 impl fmt::Display for CurvePoints<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            NurbsPoles3::Polynomial { points } => write_points(f, points.iter().map(|point| point.get())),
-            NurbsPoles3::Rational { points } => write_points(f, points.iter().map(|pole| pole.point.get())),
+            NurbsPoles3::Polynomial { points } => {
+                write_points(f, points.iter().map(|point| point.get()))
+            }
+            NurbsPoles3::Rational { points } => {
+                write_points(f, points.iter().map(|pole| pole.point.get()))
+            }
         }
     }
 }
@@ -483,8 +487,12 @@ struct SurfacePoints<'a>(&'a NurbsPoleGrid<cadmpeg_ir::features::FinitePoint3>);
 impl fmt::Display for SurfacePoints<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            NurbsPoleGrid::Polynomial { rows } => write_points(f, rows.iter().flatten().map(|point| point.get())),
-            NurbsPoleGrid::Rational { rows } => write_points(f, rows.iter().flatten().map(|pole| pole.point.get())),
+            NurbsPoleGrid::Polynomial { rows } => {
+                write_points(f, rows.iter().flatten().map(|point| point.get()))
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                write_points(f, rows.iter().flatten().map(|pole| pole.point.get()))
+            }
         }
     }
 }
@@ -497,7 +505,11 @@ impl fmt::Display for CagePoints<'_> {
             if index > 0 {
                 f.write_str(";")?;
             }
-            write!(f, "{}", CommaList(point.iter().copied().map(FiniteReal::get)))?;
+            write!(
+                f,
+                "{}",
+                CommaList(point.iter().copied().map(FiniteReal::get))
+            )?;
         }
         Ok(())
     }
@@ -524,12 +536,37 @@ fn curve_properties(
     curve: &NurbsCurve,
     properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    insert_property(ctx, properties, format_args!("{prefix}_degree"), format_args!("{}", curve.degree()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_knots"), format_args!("{}", CommaList(curve.knots().iter().copied())))?;
-    insert_property(ctx, properties, format_args!("{prefix}_control_points"), format_args!("{}", CurvePoints(curve.pole_rows())))?;
-    insert_property(ctx, properties, format_args!("{prefix}_periodic"), format_args!("{}", curve.periodic()))?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_degree"),
+        format_args!("{}", curve.degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_knots"),
+        format_args!("{}", CommaList(curve.knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", CurvePoints(curve.pole_rows())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_periodic"),
+        format_args!("{}", curve.periodic()),
+    )?;
     if let NurbsPoles3::Rational { points } = curve.pole_rows() {
-        insert_property(ctx, properties, format_args!("{prefix}_weights"), format_args!("{}", CommaList(points.iter().map(|pole| pole.weight.get()))))?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!("{}", CommaList(points.iter().map(|pole| pole.weight.get()))),
+        )?;
     }
     Ok(())
 }
@@ -540,17 +577,70 @@ fn surface_properties(
     surface: &NurbsSurface,
     properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    insert_property(ctx, properties, format_args!("{prefix}_u_degree"), format_args!("{}", surface.u_degree()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_v_degree"), format_args!("{}", surface.v_degree()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_u_knots"), format_args!("{}", CommaList(surface.u_knots().iter().copied())))?;
-    insert_property(ctx, properties, format_args!("{prefix}_v_knots"), format_args!("{}", CommaList(surface.v_knots().iter().copied())))?;
-    insert_property(ctx, properties, format_args!("{prefix}_u_count"), format_args!("{}", surface.u_count()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_v_count"), format_args!("{}", surface.v_count()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_control_points"), format_args!("{}", SurfacePoints(surface.pole_grid())))?;
-    insert_property(ctx, properties, format_args!("{prefix}_u_periodic"), format_args!("{}", surface.u_periodic()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_v_periodic"), format_args!("{}", surface.v_periodic()))?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_degree"),
+        format_args!("{}", surface.u_degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_degree"),
+        format_args!("{}", surface.v_degree()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_knots"),
+        format_args!("{}", CommaList(surface.u_knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_knots"),
+        format_args!("{}", CommaList(surface.v_knots().iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_count"),
+        format_args!("{}", surface.u_count()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_count"),
+        format_args!("{}", surface.v_count()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", SurfacePoints(surface.pole_grid())),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_u_periodic"),
+        format_args!("{}", surface.u_periodic()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_v_periodic"),
+        format_args!("{}", surface.v_periodic()),
+    )?;
     if let NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
-        insert_property(ctx, properties, format_args!("{prefix}_weights"), format_args!("{}", CommaList(rows.iter().flatten().map(|pole| pole.weight.get()))))?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!(
+                "{}",
+                CommaList(rows.iter().flatten().map(|pole| pole.weight.get()))
+            ),
+        )?;
     }
     Ok(())
 }
@@ -561,16 +651,54 @@ fn cage_properties(
     cage: &Cage,
     properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    insert_property(ctx, properties, format_args!("{prefix}_dimension"), format_args!("{}", cage.dimension))?;
-    insert_property(ctx, properties, format_args!("{prefix}_rational"), format_args!("{}", cage.rational()))?;
-    insert_property(ctx, properties, format_args!("{prefix}_orders"), format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]))?;
-    insert_property(ctx, properties, format_args!("{prefix}_counts"), format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]))?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_dimension"),
+        format_args!("{}", cage.dimension),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_rational"),
+        format_args!("{}", cage.rational()),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_orders"),
+        format_args!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+    )?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_counts"),
+        format_args!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+    )?;
     for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
-        insert_property(ctx, properties, format_args!("{prefix}_{axis}_knots"), format_args!("{}", CommaList(knots.iter().copied().map(FiniteReal::get))))?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_{axis}_knots"),
+            format_args!("{}", CommaList(knots.iter().copied().map(FiniteReal::get))),
+        )?;
     }
-    insert_property(ctx, properties, format_args!("{prefix}_control_points"), format_args!("{}", CagePoints(&cage.control_points)))?;
+    insert_property(
+        ctx,
+        properties,
+        format_args!("{prefix}_control_points"),
+        format_args!("{}", CagePoints(&cage.control_points)),
+    )?;
     if let Some(weights) = &cage.weights {
-        insert_property(ctx, properties, format_args!("{prefix}_weights"), format_args!("{}", CommaList(weights.iter().copied().map(NonZeroReal::get))))?;
+        insert_property(
+            ctx,
+            properties,
+            format_args!("{prefix}_weights"),
+            format_args!(
+                "{}",
+                CommaList(weights.iter().copied().map(NonZeroReal::get))
+            ),
+        )?;
     }
     Ok(())
 }
@@ -608,23 +736,60 @@ pub(crate) fn project(
             end,
         } => {
             let mut properties = BTreeMap::new();
-            insert_property(ctx, &mut properties, format_args!("start_transform"), format_args!("{}", CommaList(start_transform.iter().copied())))?;
+            insert_property(
+                ctx,
+                &mut properties,
+                format_args!("start_transform"),
+                format_args!("{}", CommaList(start_transform.iter().copied())),
+            )?;
             cage_properties(ctx, "end", end, &mut properties)?;
             ("cage", properties)
         }
     };
     for (index, localizer) in morph.localizers.iter().enumerate() {
-        let prefix = crate::wire::admitted_format(ctx, format_args!("localizer_{index}"), "Rhino morph localizer prefix")?;
-        insert_property(ctx, &mut properties, format_args!("{prefix}_type"), format_args!("{}", localizer.kind))?;
-        insert_property(ctx, &mut properties, format_args!("{prefix}_point"), format_args!("{}", CommaList(localizer.point.into_iter())))?;
-        insert_property(ctx, &mut properties, format_args!("{prefix}_vector"), format_args!("{}", CommaList(localizer.vector.into_iter())))?;
-        insert_property(ctx, &mut properties, format_args!("{prefix}_interval"), format_args!("{}", CommaList(localizer.interval.into_iter())))?;
+        let prefix = crate::wire::admitted_format(
+            ctx,
+            format_args!("localizer_{index}"),
+            "Rhino morph localizer prefix",
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_type"),
+            format_args!("{}", localizer.kind),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_point"),
+            format_args!("{}", CommaList(localizer.point.into_iter())),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_vector"),
+            format_args!("{}", CommaList(localizer.vector.into_iter())),
+        )?;
+        insert_property(
+            ctx,
+            &mut properties,
+            format_args!("{prefix}_interval"),
+            format_args!("{}", CommaList(localizer.interval.into_iter())),
+        )?;
         if let Some(curve) = &localizer.curve {
-            let curve_prefix = crate::wire::admitted_format(ctx, format_args!("{prefix}_curve"), "Rhino morph localizer prefix")?;
+            let curve_prefix = crate::wire::admitted_format(
+                ctx,
+                format_args!("{prefix}_curve"),
+                "Rhino morph localizer prefix",
+            )?;
             curve_properties(ctx, &curve_prefix, curve, &mut properties)?;
         }
         if let Some(surface) = &localizer.surface {
-            let surface_prefix = crate::wire::admitted_format(ctx, format_args!("{prefix}_surface"), "Rhino morph localizer prefix")?;
+            let surface_prefix = crate::wire::admitted_format(
+                ctx,
+                format_args!("{prefix}_surface"),
+                "Rhino morph localizer prefix",
+            )?;
             surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }
@@ -637,16 +802,46 @@ pub(crate) fn project(
     );
     let ordinal = morph.source_range.start as u64;
     let mut parameters = BTreeMap::new();
-    insert_property(ctx, &mut parameters, format_args!("variant"), format_args!("{variant}"))?;
-    insert_property(ctx, &mut parameters, format_args!("captive_ids"), format_args!("{}", CommaList(morph.captive_ids.iter().copied())))?;
-    insert_property(ctx, &mut parameters, format_args!("tolerance"), format_args!("{}", morph.tolerance.get()))?;
-    insert_property(ctx, &mut parameters, format_args!("quick_preview"), format_args!("{}", morph.quick_preview))?;
-    insert_property(ctx, &mut parameters, format_args!("preserve_structure"), format_args!("{}", morph.preserve_structure))?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("variant"),
+        format_args!("{variant}"),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("captive_ids"),
+        format_args!("{}", CommaList(morph.captive_ids.iter().copied())),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("tolerance"),
+        format_args!("{}", morph.tolerance.get()),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("quick_preview"),
+        format_args!("{}", morph.quick_preview),
+    )?;
+    insert_property(
+        ctx,
+        &mut parameters,
+        format_args!("preserve_structure"),
+        format_args!("{}", morph.preserve_structure),
+    )?;
     for (index, id) in morph.captive_ids.iter().enumerate() {
         if let Some(record) = resolve_captive(*id)? {
-            let key = crate::wire::admitted_format(ctx, format_args!("captive_{index}_object"), "Rhino morph property key")?;
-            let key = cadmpeg_core::text::NonBlankString::new(key)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank generated Rhino morph key"))?;
+            let key = crate::wire::admitted_format(
+                ctx,
+                format_args!("captive_{index}_object"),
+                "Rhino morph property key",
+            )?;
+            let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("blank generated Rhino morph key")
+            })?;
             ctx.charge_collection_items(1, "Rhino morph property entries")?;
             parameters.insert(key, record);
         }
@@ -828,8 +1023,15 @@ mod tests {
         assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&cadmpeg_test_support::service_decode_context(), &morph, "test", None, "native".to_string(), |_| Ok(None))
-            .expect("the fixture states named properties");
+        let feature = project(
+            &cadmpeg_test_support::service_decode_context(),
+            &morph,
+            "test",
+            None,
+            "native".to_string(),
+            |_| Ok(None),
+        )
+        .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
@@ -838,9 +1040,14 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(&cadmpeg_test_support::service_decode_context(), &morph, "test", None, "native".to_string(), |_| {
-            Ok(Some("rhino:object:record#000007".to_string()))
-        })
+        let resolved = project(
+            &cadmpeg_test_support::service_decode_context(),
+            &morph,
+            "test",
+            None,
+            "native".to_string(),
+            |_| Ok(Some("rhino:object:record#000007".to_string())),
+        )
         .expect("the fixture states named properties");
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
@@ -890,12 +1097,9 @@ mod tests {
         ));
         let mut captive_policy = cadmpeg_core::decode::DecodePolicy::service();
         captive_policy.limits.max_collection_items = 13;
-        let (captive_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &captive_policy,
-        )
-        .expect("empty root admitted");
+        let (captive_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &captive_policy)
+                .expect("empty root admitted");
         let refusal = super::project(
             &captive_ctx,
             &morph,
