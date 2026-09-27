@@ -17,7 +17,7 @@ use crate::native::{
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
-use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
     ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -273,20 +273,14 @@ pub(crate) fn transfer_neutral(
     }
 
     let definition_id = |object: &str| -> Result<ProductDefinitionId, CodecError> {
-        Ok(ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "product_definition"),
-            crate::native::id_key_identity(object)
-                .map_err(CodecError::malformed)?
-                .colon(cadmpeg_ir::identity_key!("definition")),
-        ))
+        ProductDefinitionId::mint(crate::native::model_id_charged(
+            ctx, "product_definition", object, "definition",
+        )?).map_err(CodecError::malformed)
     };
     let container_occurrence_id = |object: &str| -> Result<OccurrenceId, CodecError> {
-        Ok(OccurrenceId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "occurrence"),
-            crate::native::id_key_identity(object)
-                .map_err(CodecError::malformed)?
-                .colon(cadmpeg_ir::identity_key!("container")),
-        ))
+        OccurrenceId::mint(crate::native::model_id_charged(
+            ctx, "occurrence", object, "container",
+        )?).map_err(CodecError::malformed)
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records
@@ -373,18 +367,14 @@ pub(crate) fn transfer_neutral(
                     })
                 })
                 .transpose()?;
+            let occurrence_id = if element {
+                crate::native::model_id_charged(ctx, "occurrence", &record.object, &index.to_string())?
+            } else {
+                crate::native::model_id_charged(ctx, "occurrence", &record.object, "instance")?
+            };
             reserve_vec_items(ctx, &mut occurrences, 1, "fcstd product occurrences")?;
             occurrences.push(Occurrence {
-                id: OccurrenceId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "occurrence"),
-                    crate::native::id_key_identity(&record.object)
-                        .map_err(CodecError::malformed)?
-                        .colon(if element {
-                            IdentityKey::from(index)
-                        } else {
-                            cadmpeg_ir::identity_key!("instance")
-                        }),
-                ),
+                id: OccurrenceId::mint(occurrence_id).map_err(CodecError::malformed)?,
                 prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
                         document: external_document_reference_charged(ctx, document.as_str(), document.attribute())?,
@@ -447,7 +437,7 @@ pub(crate) fn transfer_neutral(
     for payload in payloads {
         if let Some(owner) = property_owner.get(payload.property.as_str()) {
             reserve_vec_items(ctx, &mut body_owners, 1, "fcstd product body owners")?;
-            body_owners.push((crate::native::model_id("body", &payload.id, ""), *owner));
+            body_owners.push((crate::native::model_id_charged(ctx, "body", &payload.id, "")?, *owner));
         }
     }
     let mut definitions = collection_vec(ctx, component_objects.len(), "fcstd product definitions")?;
