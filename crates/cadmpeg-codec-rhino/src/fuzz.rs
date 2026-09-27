@@ -90,7 +90,15 @@ pub fn object_record(data: &[u8]) {
     }
     let record = Record::long(0x2000_8070, 1..data.len(), 1..data.len());
     let mut warnings = Diagnostics::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let Ok((ctx, _root)) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
     let _probe = crate::objects::parse_object_record(
+        &ctx,
         data,
         &record,
         selected_archive(data[0]),

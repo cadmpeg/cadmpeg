@@ -1188,6 +1188,7 @@ fn scan_with_record_limit<'a>(
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
                 let descriptor = match parse_object_record(
+                    ctx,
                     data,
                     &record,
                     archive,
@@ -1195,6 +1196,9 @@ fn scan_with_record_limit<'a>(
                     &mut warnings,
                 ) {
                     Ok(descriptor) => descriptor,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit))
+                    }
                     Err(error) => {
                         warnings.push(format!(
                             "bounded object record at {child_offset} is malformed: {error}"

@@ -1630,6 +1630,7 @@ fn resolve_identity(
 
 /// Parses one bounded object record and returns identity plus child ranges.
 pub(crate) fn parse_object_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1677,6 +1678,7 @@ pub(crate) fn parse_object_record(
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
+            crate::chunks::reserve_admitted_vec(ctx, &mut userdata, 1, "Rhino object userdata")?;
             userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
             offset = item.next_offset();
         } else {
@@ -1726,19 +1728,31 @@ pub(crate) fn parse_object_record(
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
                 let descriptor = parse_history(bytes, &item, archive)?;
-                let children = descriptor
-                    .header_range
-                    .iter()
-                    .chain(descriptor.data_range.iter())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if let Some(note) = checksum_warning_excluding(bytes, &item, &children)? {
+                let checksum = match (&descriptor.header_range, &descriptor.data_range) {
+                    (Some(header), Some(data)) => {
+                        checksum_warning_excluding(bytes, &item, &[header.clone(), data.clone()])?
+                    }
+                    (Some(header), None) => {
+                        checksum_warning_excluding(bytes, &item, std::slice::from_ref(header))?
+                    }
+                    (None, Some(data)) => {
+                        checksum_warning_excluding(bytes, &item, std::slice::from_ref(data))?
+                    }
+                    (None, None) => checksum_warning_excluding(bytes, &item, &[])?,
+                };
+                if let Some(note) = checksum {
                     warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
                 }
                 history = Some(descriptor);
                 phase = 3;
             }
             _ if !item.short() => {
+                crate::chunks::reserve_admitted_vec(
+                    ctx,
+                    &mut unknown_trailer,
+                    1,
+                    "Rhino object unknown trailer",
+                )?;
                 unknown_trailer.push(item.range());
                 phase = 3;
             }
@@ -1779,12 +1793,11 @@ pub(crate) fn parse_object_record(
             }
         });
     if let Some(item) = attributes_chunk.as_ref() {
-        let children = attributes
+        let rendering_range = attributes
             .parsed()
-            .and_then(|value| value.rendering_range.clone())
-            .into_iter()
-            .collect::<Vec<_>>();
-        if let Some(note) = checksum_warning_excluding(bytes, item, &children)? {
+            .and_then(|value| value.rendering_range.clone());
+        let children = rendering_range.as_slice();
+        if let Some(note) = checksum_warning_excluding(bytes, item, children)? {
             warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
         }
     }
