@@ -25,7 +25,6 @@ use crate::feature::definitions::ScalarLane;
 use crate::feature::operations::reference_names;
 use crate::feature::operations::FeatureRecipe;
 use crate::feature::operations::FeatureReferenceName;
-use crate::feature::rows::field_value;
 use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
@@ -40,6 +39,11 @@ fn operation_states(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOp
 fn operations(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperation> {
     crate::decode::with_test_decode_ctx(|ctx| crate::feature::operations::operations(ctx, payload))
         .expect("feature operations are admitted")
+}
+
+fn field_value(payload: &[u8]) -> crate::feature::rows::FeatureFieldValue {
+    crate::decode::with_test_decode_ctx(|ctx| crate::feature::rows::field_value(ctx, payload))
+        .expect("field value is admitted")
 }
 
 #[test]

@@ -574,14 +574,21 @@ fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usiz
 }
 
 /// Bound recognized procedural-choice labels within decoded feature rows.
-pub(crate) fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
+pub(crate) fn choices(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureChoice>, CodecError> {
     let mut result = Vec::new();
     for row in rows {
         let mut hits = Vec::new();
         for &label in CHOICE_LABELS {
-            let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, &needle, from) {
+            while let Some(label_offset) = find_from(&row.body, label, from) {
+                let label_end = label_offset + label.len();
+                if row.body.get(label_end) != Some(&0) {
+                    from = label_offset + 1;
+                    continue;
+                }
                 let (header_offset, type_byte) = if label_offset >= 2
                     && row.body[label_offset - 2] == psb::token::NAMED_RECORD
                 {
@@ -589,8 +596,9 @@ pub(crate) fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
                 } else {
                     (label_offset, None)
                 };
+                ctx.try_reserve_items(&mut hits, 1, "creo choice label hits")?;
                 hits.push((header_offset, label_offset, label, type_byte));
-                from = label_offset + label.len() + 1;
+                from = label_end + 1;
             }
         }
         hits.sort_by_key(|hit| hit.0);
@@ -608,23 +616,32 @@ pub(crate) fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
                 },
                 |hit| hit.0,
             );
+            let label = std::str::from_utf8(label)
+                .map_err(|_| CodecError::malformed("creo static choice label"))?;
+            let label = ctx.copy_retained_text(label, "creo feature choice label")?;
+            let payload =
+                ctx.copy_retained(&row.body[value..end], "creo feature choice payload")?;
+            ctx.try_reserve_items(&mut result, 1, "creo feature choices")?;
             result.push(FeatureChoice {
                 feature_id: row.feature_id,
-                label: String::from_utf8_lossy(label).into_owned(),
+                label,
                 type_byte,
-                payload: row.body[value..end].to_vec(),
+                payload,
                 payload_offset: row.body_offset + value,
                 offset: row.body_offset + header,
             });
         }
     }
     result.sort_by_key(|choice| choice.offset);
-    result
+    Ok(result)
 }
 
-pub(super) fn field_value(payload: &[u8]) -> FeatureFieldValue {
+pub(super) fn field_value(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<FeatureFieldValue, CodecError> {
     if payload.is_empty() {
-        return FeatureFieldValue::Empty;
+        return Ok(FeatureFieldValue::Empty);
     }
     if payload[0] == psb::token::SCALAR_BODY {
         let (dimensions, dimensions_end) = psb::compact_int(payload, 1);
@@ -638,25 +655,27 @@ pub(super) fn field_value(payload: &[u8]) -> FeatureFieldValue {
             scalar::admitted_scalar_body(payload, dimensions_end, values_start, slot_count)
                 .map(|remaining| (slot_count, remaining))
         }) else {
-            return FeatureFieldValue::Raw(payload.to_vec());
+            return Ok(FeatureFieldValue::Raw(
+                ctx.copy_retained(payload, "creo feature raw field")?,
+            ));
         };
-        let cache = scalar::ScalarCache::from_section(payload);
-        let decoded_values = decode_exact_scalars(remaining, slot_count, &cache);
-        return FeatureFieldValue::ScalarArray {
+        let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
+        let decoded_values = decode_exact_scalars(ctx, remaining, slot_count, &cache)?;
+        return Ok(FeatureFieldValue::ScalarArray {
             dimensions,
             count,
-            body: remaining.to_vec(),
+            body: ctx.copy_retained(remaining, "creo feature scalar field body")?,
             decoded_values,
-        };
+        });
     }
     if payload[0] == psb::token::ENTITY_REF {
         if let Ok((entity_id, end)) = psb::reference_id(payload, 1) {
             let terminated = end + 1 == payload.len() && payload[end] == psb::token::ARRAY_CLOSE;
             if end == payload.len() || terminated {
-                return FeatureFieldValue::EntityReference {
+                return Ok(FeatureFieldValue::EntityReference {
                     entity_id,
                     terminated,
-                };
+                });
             }
         }
     }
@@ -666,28 +685,36 @@ pub(super) fn field_value(payload: &[u8]) -> FeatureFieldValue {
         for _ in 0..count {
             let (value, next) = psb::compact_int(payload, cursor);
             if next == cursor {
-                return FeatureFieldValue::Raw(payload.to_vec());
+                return Ok(FeatureFieldValue::Raw(
+                    ctx.copy_retained(payload, "creo feature raw field")?,
+                ));
             }
+            ctx.try_reserve_items(&mut values, 1, "creo feature compact integer values")?;
             values.push(value);
             cursor = next;
         }
         if cursor == payload.len()
             || cursor + 1 == payload.len() && payload[cursor] == psb::token::ARRAY_CLOSE
         {
-            return FeatureFieldValue::CompactIntArray(values);
+            return Ok(FeatureFieldValue::CompactIntArray(values));
         }
     }
     let (value, end) = psb::compact_int(payload, 0);
     if end == payload.len() {
-        FeatureFieldValue::CompactInt(value)
+        Ok(FeatureFieldValue::CompactInt(value))
     } else {
-        FeatureFieldValue::Raw(payload.to_vec())
+        Ok(FeatureFieldValue::Raw(
+            ctx.copy_retained(payload, "creo feature raw field")?,
+        ))
     }
 }
 
 /// Decode named fields and their context-independent value wrappers inside
 /// procedural choice spans.
-pub(crate) fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField> {
+pub(crate) fn choice_fields(
+    ctx: &DecodeContext<'_>,
+    choices: &[FeatureChoice],
+) -> Result<Vec<FeatureChoiceField>, CodecError> {
     let mut fields = Vec::new();
     for choice in choices {
         let mut headers = Vec::new();
@@ -706,6 +733,7 @@ pub(crate) fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField
                 .iter()
                 .all(u8::is_ascii_graphic)
             {
+                ctx.try_reserve_items(&mut headers, 1, "creo choice field headers")?;
                 headers.push((offset, nul + 1));
             }
         }
@@ -716,19 +744,24 @@ pub(crate) fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField
             if value_start > end {
                 continue;
             }
+            let name = std::str::from_utf8(&choice.payload[header + 2..value_start - 1])
+                .map_err(|_| CodecError::malformed("creo ASCII choice field name"))?;
+            let label = ctx.copy_retained_text(&choice.label, "creo choice field label")?;
+            let name = ctx.copy_retained_text(name, "creo choice field name")?;
+            let value = field_value(ctx, &choice.payload[value_start..end])?;
+            ctx.try_reserve_items(&mut fields, 1, "creo choice fields")?;
             fields.push(FeatureChoiceField {
                 feature_id: choice.feature_id,
-                choice_label: choice.label.clone(),
-                name: String::from_utf8_lossy(&choice.payload[header + 2..value_start - 1])
-                    .into_owned(),
+                choice_label: label,
+                name,
                 type_byte: choice.payload[header + 1],
-                value: field_value(&choice.payload[value_start..end]),
+                value,
                 offset: choice.payload_offset + header,
             });
         }
     }
     fields.sort_by_key(|field| field.offset);
-    fields
+    Ok(fields)
 }
 
 /// Decode generated-geometry table headers from known feature rows.
