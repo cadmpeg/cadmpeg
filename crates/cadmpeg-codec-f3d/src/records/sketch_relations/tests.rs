@@ -4,6 +4,80 @@ mod constraint_state;
 
 use crate::records::sketch_relations::SketchRelation;
 
+fn charged_relation_error(
+    wire: super::SketchRelationSerde,
+    max_collection_items: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    SketchRelation::from_wire_charged(&ctx, wire).unwrap_err()
+}
+
+#[test]
+fn sketch_relation_auxiliary_run_refuses_collection_limit() {
+    let mut wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    wire.auxiliary_references.push(9);
+    wire.auxiliary_reference_offsets.push(12);
+    let error = charged_relation_error(wire, 0);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit sketch relation auxiliary references"
+    ));
+}
+
+#[test]
+fn sketch_relation_nonempty_resolution_run_refuses_collection_limit() {
+    let resolved = RELATION_WIRE.replace(
+        r#""resolved_members":[]"#,
+        r#""resolved_members":[{"kind":"point","record_index":1,"persistent_id":10},{"kind":"record","record_index":2}]"#,
+    );
+    let wire: super::SketchRelationSerde = serde_json::from_str(&resolved).unwrap();
+    let error = charged_relation_error(wire, 1);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit sketch relation resolutions"
+    ));
+}
+
+#[test]
+fn sketch_relation_ordinal_run_refuses_collection_limit() {
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let error = charged_relation_error(wire, 2);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit sketch relation ordinals"
+    ));
+}
+
+#[test]
+fn sketch_relation_member_run_refuses_collection_limit() {
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let error = charged_relation_error(wire, 4);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit sketch relation members"
+    ));
+}
+
+#[test]
+fn sketch_relation_return_member_run_refuses_collection_limit() {
+    let wire: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let error = charged_relation_error(wire, 8);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "admit sketch relation return members"
+    ));
+}
+
 #[test]
 fn sketch_relation_offset_padding_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
