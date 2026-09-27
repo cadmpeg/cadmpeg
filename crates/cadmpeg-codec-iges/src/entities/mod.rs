@@ -2,10 +2,13 @@
 //! Typed IGES entity accessors and neutral projection.
 
 use std::collections::BTreeSet;
+use std::fmt;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::decode_resource::{insert_optional_btree_set, reserve_optional_vec_growth};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_set, reserve_optional_vec_growth, reserve_vec_growth,
+};
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
@@ -15,6 +18,20 @@ use cadmpeg_ir::CadIr;
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
+
+fn push_attributed_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    reserve_vec_growth(ctx, losses, 1, "iges entity loss slots")?;
+    let message = format_retained(ctx, message, "iges entity loss message")?;
+    ctx.charge_retained(4 + code.code().len() as u64, "iges entity loss kind")?;
+    losses.push(code.note(message).with_provenance(entry.admitted_loss_provenance(ctx)?));
+    Ok(())
+}
 
 fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,

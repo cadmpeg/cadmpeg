@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
+use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid};
 use crate::decode_resource::{
     format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
 };
@@ -47,6 +47,24 @@ fn retained_utf8(
         return Ok(None);
     };
     Ok(Some(format_retained(ctx, format_args!("{value}"), operation)?))
+}
+
+fn push_presentation_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    entry: &DirectoryEntry,
+    reason: &str,
+) -> Result<(), CodecError> {
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::DisplayDataNotProjected,
+        format_args!(
+            "IGES entity type {} form {} display data was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
 }
 
 fn text_font_definition_pointer_valid(
@@ -283,10 +301,7 @@ pub(super) fn project(
         if target_valid && !cyclic {
             insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
-            losses.push(presentation_loss(
-                entry,
-                "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
         }
     }
 
@@ -295,7 +310,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
+            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let parameter_end = record.parameter_end();
@@ -321,10 +336,7 @@ pub(super) fn project(
         if directory_valid && fields_valid {
             insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
-            losses.push(presentation_loss(
-                entry,
-                "text-template metrics, font, orientation, placement, or Directory fields are invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
         }
     }
 
@@ -333,7 +345,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
+            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
@@ -358,10 +370,7 @@ pub(super) fn project(
         if levels_valid {
             insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
-            losses.push(presentation_loss(
-                entry,
-                "definition-level count, value, or uniqueness is invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "definition-level count, value, or uniqueness is invalid")?;
         }
     }
 
@@ -370,14 +379,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
+            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
-            losses.push(presentation_loss(
-                entry,
-                "line-font definition use flag or fallback pattern is invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "line-font definition use flag or fallback pattern is invalid")?;
             continue;
         }
         let valid = if entry.form == 1 {
@@ -419,10 +425,7 @@ pub(super) fn project(
         if valid {
             insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
-            losses.push(presentation_loss(
-                entry,
-                "line-font definition parameters are invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "line-font definition parameters are invalid")?;
         }
     }
 
@@ -431,17 +434,14 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
+            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let components = [1, 2, 3].map(|index| {
             record.number(index).filter(|value| (0.0..=100.0).contains(value))
         });
         let [Some(red), Some(green), Some(blue)] = components else {
-            losses.push(presentation_loss(
-                entry,
-                "RGB percentage is outside 0 through 100",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "RGB percentage is outside 0 through 100")?;
             continue;
         };
         let name = match record.value(4) {
@@ -458,10 +458,7 @@ pub(super) fn project(
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
-                losses.push(presentation_loss(
-                    entry,
-                    "optional color name is not a string",
-                ));
+                push_presentation_loss(ctx, &mut losses, entry, "optional color name is not a string")?;
                 continue;
             }
         };
@@ -469,10 +466,7 @@ pub(super) fn project(
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition)
             && matches!(entry.color, 0..=8);
         if !directory_valid {
-            losses.push(presentation_loss(
-                entry,
-                "color definition Directory fields are invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "color definition Directory fields are invalid")?;
             continue;
         }
         let Some(color) = Color::new(
@@ -481,10 +475,7 @@ pub(super) fn project(
             (blue / 100.0) as f32,
             1.0,
         ) else {
-            losses.push(presentation_loss(
-                entry,
-                "color definition components are outside [0, 100]",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "color definition components are outside [0, 100]")?;
             continue;
         };
         insert_optional_btree_map(
@@ -530,10 +521,7 @@ pub(super) fn project(
         entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
     }) {
         if resolve_color(entry.color).is_none() {
-            losses.push(presentation_loss(
-                entry,
-                "Directory color number or definition pointer is invalid",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "Directory color number or definition pointer is invalid")?;
         }
     }
     for entry in directory.iter().filter(|entry| entry.level < 0) {
@@ -544,20 +532,14 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 406 || target.form != 1)
         }) {
-            losses.push(presentation_loss(
-                entry,
-                "negative Directory level does not reference a decoded Definition Levels property",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "negative Directory level does not reference a decoded Definition Levels property")?;
         }
     }
     for entry in directory.iter().filter(|entry| {
         entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
-            losses.push(presentation_loss(
-                entry,
-                "line-weight number is outside the Global gradation range",
-            ));
+            push_presentation_loss(ctx, &mut losses, entry, "line-weight number is outside the Global gradation range")?;
         }
     }
 
@@ -646,13 +628,13 @@ pub(super) fn project(
         let first = names.next();
         if first.is_some_and(|first| names.any(|name| name != first)) {
             if let Some(entry) = entries.get(&sequence) {
-                losses.push(
-                    IgesLossCode::BodyNameAmbiguous
-                        .note(format!(
-                            "IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"
-                        ))
-                        .with_provenance(entry.loss_provenance()),
-                );
+                push_attributed_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    IgesLossCode::BodyNameAmbiguous,
+                    format_args!("IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"),
+                )?;
             }
         } else {
             body.name = match first {
