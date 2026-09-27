@@ -1654,13 +1654,25 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let choices = resolve_standard_endpoint_pairs(
+    for (limit, operation) in [
+        (0, "catia_standard_resolved_endpoint_rows"),
+        (1, "catia_standard_fallback_endpoint_pairs"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
+                ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[(0..138).collect()])),
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
+        ));
+    }
+    let choices = crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(
+        ctx,
         &ir,
         &bindings,
         &indices,
         &[support],
         &[(0..138).collect()],
-    )
+    ))
+    .expect("service budget")
     .expect("endpoint option pass");
     assert_eq!(choices[0].len(), 9_453);
     assert_eq!(choices[0].first(), Some(&[0, 1]));
@@ -1734,8 +1746,18 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
         geometry: StandardCurveGeometry::Bspline,
     };
 
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        match crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[vec![0, 1, 2, 3]])) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected planar endpoint result: {outcome:?}"),
+        }
+    }
+    assert!(operations.contains("catia_standard_line_singleton_pair"));
     let choices =
-        resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1, 2, 3]])
+        crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1, 2, 3]]))
+            .expect("service budget")
             .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 1]]]);
@@ -1800,8 +1822,20 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 5.0),
     };
 
+    for (limit, operation) in [
+        (0, "catia_standard_resolved_endpoint_rows"),
+        (1, "catia_standard_initial_endpoint_pair"),
+        (2, "catia_standard_circle_endpoint_pairs"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
+                ctx, &ir, &bindings, &indices, std::slice::from_ref(&support), &[vec![0, 1]])),
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
+        ));
+    }
     let choices =
-        resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1]])
+        crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]]))
+            .expect("service budget")
             .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
@@ -1872,13 +1906,27 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
         geometry: StandardCurveGeometry::Line,
     });
 
-    let choices = resolve_standard_endpoint_pairs(
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        match crate::test_support::with_collection_limit(limit, |ctx| resolve_standard_endpoint_pairs(
+            ctx, &ir, &bindings, &indices, &supports, &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]])) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected parallel line endpoint result: {outcome:?}"),
+        }
+    }
+    for operation in ["catia_standard_line_groups", "catia_standard_line_group_edges", "catia_standard_line_endpoint_pairs", "catia_standard_line_pair_copy"] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    let choices = crate::test_support::with_service_context(|ctx| resolve_standard_endpoint_pairs(
+        ctx,
         &ir,
         &bindings,
         &indices,
         &supports,
         &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
-    )
+    ))
+    .expect("service budget")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);

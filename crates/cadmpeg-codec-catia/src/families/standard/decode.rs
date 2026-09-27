@@ -4575,12 +4575,13 @@ fn attach_standard_topology(
             .map_err(StandardTopologyError::Resource)?;
     }
     let mut endpoint_options = resolve_standard_endpoint_pairs(
+        ctx,
         ir,
         bindings,
         &surface_indices,
         &supports,
         &endpoint_candidates,
-    );
+    ).map_err(StandardTopologyError::Resource)?;
     if let Some(options) = &mut endpoint_options {
         for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
             if bindings.is_empty() {
@@ -6217,22 +6218,25 @@ fn standard_native_support_endpoint_pair(
 }
 
 fn resolve_standard_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<usize>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
 
-    let mut resolved: Vec<Vec<[usize; 2]>> = candidates
-        .iter()
-        .map(|points| {
-            <[usize; 2]>::try_from(points.as_slice())
-                .map(|pair| vec![pair])
-                .unwrap_or_default()
-        })
-        .collect();
+    let mut resolved = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut resolved, candidates.len(), "catia_standard_resolved_endpoint_rows")?;
+    for points in candidates {
+        let row = if let Ok(pair) = <[usize; 2]>::try_from(points.as_slice()) {
+            ctx.alloc_filled(1, pair, "catia_standard_initial_endpoint_pair")?
+        } else {
+            Vec::new()
+        };
+        resolved.push(row);
+    }
     for (edge, support) in supports.iter().enumerate() {
         let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
             support.geometry
@@ -6271,11 +6275,12 @@ fn resolve_standard_endpoint_pairs(
                 false
             };
         let relation_count = count
-            .checked_mul(count.saturating_sub(1))
+            .checked_mul(count - 1)
             .and_then(|value| value.checked_div(2))
             .and_then(|value| value.checked_add(if include_full_circle_seams { count } else { 0 }));
-        if relation_count.is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE) {
-            let mut pairs = Vec::with_capacity(relation_count.unwrap_or_default());
+        if let Some(relation_count) = relation_count.filter(|relations| *relations <= MAX_PAIR_RELATIONS_PER_EDGE) {
+            let mut pairs = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut pairs, relation_count, "catia_standard_circle_endpoint_pairs")?;
             for (left, &start) in candidates[edge].iter().enumerate() {
                 let first_end = left + usize::from(!include_full_circle_seams);
                 for &end in &candidates[edge][first_end..] {
@@ -6304,12 +6309,13 @@ fn resolve_standard_endpoint_pairs(
             crate::families::standard::records::StandardCurveGeometry::Circle { .. } => false,
         };
         if line_like {
-            line_groups.entry(faces).or_default().push(edge);
+            crate::resource::admit_map_entry(ctx, &mut line_groups, &faces, "catia_standard_line_groups")?;
+            crate::resource::push(ctx, line_groups.entry(faces).or_default(), edge, "catia_standard_line_group_edges")?;
         }
     }
     for (faces, edges) in line_groups {
-        let surface0 = face_surface(ir, bindings, surface_indices, faces[0])?;
-        let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
+        let Some(surface0) = face_surface(ir, bindings, surface_indices, faces[0]) else { return Ok(None) };
+        let Some(surface1) = face_surface(ir, bindings, surface_indices, faces[1]) else { return Ok(None) };
         let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry);
         let same_cone_surface = matches!(
             (&surface0.geometry, &surface1.geometry),
@@ -6318,7 +6324,7 @@ fn resolve_standard_endpoint_pairs(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
             )
         ) && surface0.geometry == surface1.geometry;
-        let points = candidates.get(*edges.first()?)?;
+        let Some(points) = edges.first().and_then(|edge| candidates.get(*edge)) else { return Ok(None) };
         let relation_count = points
             .len()
             .checked_mul(points.len().saturating_sub(1))
@@ -6329,8 +6335,8 @@ fn resolve_standard_endpoint_pairs(
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
             for &end_index in &points[left + 1..] {
-                let start_point = ir.model.points.get(start)?.position().get();
-                let end_point = ir.model.points.get(end_index)?.position().get();
+                let Some(start_point) = ir.model.points.get(start).map(|point| point.position().get()) else { return Ok(None) };
+                let Some(end_point) = ir.model.points.get(end_index).map(|point| point.position().get()) else { return Ok(None) };
                 let segment = Vector3::new(
                     end_point.x - start_point.x,
                     end_point.y - start_point.y,
@@ -6364,7 +6370,7 @@ fn resolve_standard_endpoint_pairs(
                     && point_on_surface(midpoint, &surface0.geometry)
                     && point_on_surface(midpoint, &surface1.geometry)
                 {
-                    pairs.push([points[left], end_index]);
+                    crate::resource::push(ctx, &mut pairs, [points[left], end_index], "catia_standard_line_endpoint_pairs")?;
                 }
             }
         }
@@ -6378,10 +6384,10 @@ fn resolve_standard_endpoint_pairs(
         // binds the row; lexicographic row assignment can break a serialized
         // boundary even when the resulting analytic edge set is equivalent.
         if pairs.len() == edges.len() && edges.len() == 1 {
-            resolved[edges[0]] = vec![pairs[0]];
+            resolved[edges[0]] = ctx.alloc_filled(1, pairs[0], "catia_standard_line_singleton_pair")?;
         } else {
             for edge in edges {
-                resolved[edge].clone_from(&pairs);
+                resolved[edge] = crate::resource::copy_retained_slice(ctx, &pairs, "catia_standard_line_pair_copy")?;
             }
         }
     }
@@ -6401,13 +6407,14 @@ fn resolve_standard_endpoint_pairs(
             continue;
         };
         fallback_relation_budget -= relation_count;
-        *pairs = points
-            .iter()
-            .enumerate()
-            .flat_map(|(left, &start)| points[left + 1..].iter().map(move |&end| [start, end]))
-            .collect();
+        let mut fallback = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut fallback, relation_count, "catia_standard_fallback_endpoint_pairs")?;
+        for (left, &start) in points.iter().enumerate() {
+            fallback.extend(points[left + 1..].iter().map(|&end| [start, end]));
+        }
+        *pairs = fallback;
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 fn standard_curve_edge_classes(
