@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::object_rendering_with_negative_minor;
-use crate::chunks::{ArchiveVersion, FramingError};
-use crate::presentation::rendering_attributes;
+use super::{
+    anonymous, object_rendering_with_negative_minor, texture_payload, v2_v3_material_payload,
+};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::presentation::{
+    parse_material, rendering_attributes, texture_array, MaterialParseInput, TEXTURE,
+};
 use crate::settings;
 use crate::wire::Uuid;
 
@@ -322,5 +326,58 @@ fn projected_rendering_channels_refuse_collection_limit() {
         projected_rendering_collection_refusal(2),
         FramingError::Resource(refusal)
             if refusal.operation == "Rhino projected rendering channels"
+    ));
+}
+
+#[test]
+fn material_texture_array_refuses_collection_limit() {
+    let archive = ArchiveVersion::V8;
+    let texture = crate::test_support::test_dump::class_wrapper(
+        archive,
+        TEXTURE.to_wire(),
+        &texture_payload(0, &[]),
+    );
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(texture);
+    let bytes = anonymous(0, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
+    let error = texture_array(&ctx, &bytes, &mut reader, archive, &mut Vec::new())
+        .expect_err("texture exceeds collection limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal) if refusal.operation == "Rhino material textures"
+    ));
+}
+
+#[test]
+fn v2_v3_material_textures_refuse_collection_limit() {
+    let bytes = v2_v3_material_payload(1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = parse_material(
+        &ctx,
+        &bytes,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V2,
+            writer_version: None,
+            source_offset: 0,
+            physically_based: None,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("legacy texture exceeds collection limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino V2/V3 material textures"
     ));
 }
