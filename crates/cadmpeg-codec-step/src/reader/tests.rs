@@ -1283,3 +1283,69 @@ fn opaque_record_collections_refuse_caller_limits() {
         assert!(observed.contains(operation), "missing refusal at {operation}; observed {observed:?}");
     }
 }
+
+fn stage_refuses_at_collection_limit(
+    operation: &str,
+    make_stage: impl Fn() -> super::StageOutcome<()>,
+) -> bool {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("valid exchange");
+    let arena = DecodeArena::new();
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits collection policy");
+        let Ok(mut session) = super::StepDecodeSession::new(
+            &exchange,
+            &diagnostics,
+            &ctx,
+            super::DecodeMode::Inspect,
+        ) else {
+            continue;
+        };
+        let mut stage = make_stage();
+        if matches!(
+            session.absorb(&mut stage),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn stage_claims_refuse_collection_limit() {
+    assert!(stage_refuses_at_collection_limit("step_stage_claims", || super::StageOutcome {
+        value: (),
+        claims: HashSet::from([1]),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    }));
+}
+
+#[test]
+fn stage_losses_refuse_collection_limit() {
+    assert!(stage_refuses_at_collection_limit("step_stage_losses", || super::StageOutcome {
+        value: (),
+        claims: HashSet::new(),
+        losses: vec![StepLossCode::DecodeWarning.note("test")],
+        notes: Vec::new(),
+    }));
+}
+
+#[test]
+fn stage_notes_refuse_collection_limit() {
+    assert!(stage_refuses_at_collection_limit("step_stage_notes", || super::StageOutcome {
+        value: (),
+        claims: HashSet::new(),
+        losses: Vec::new(),
+        notes: vec!["stage note".into()],
+    }));
+}

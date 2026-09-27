@@ -226,10 +226,43 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         Ok(())
     }
 
-    fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) {
+    fn absorb<T>(&mut self, outcome: &mut StageOutcome<T>) -> Result<(), CodecError> {
+        let new_claims = outcome
+            .claims
+            .iter()
+            .filter(|id| !self.typed_records.contains(id))
+            .count();
+        self.ctx
+            .charge_collection_items(u64_from_index(new_claims), "step_stage_claims")?;
+        self.typed_records.try_reserve(new_claims).map_err(|_| {
+            self.ctx.refuse_codec_limit("step_stage_claims", 0, u64_from_index(new_claims))
+        })?;
         self.typed_records.extend(outcome.claims.drain());
+        self.ctx.charge_collection_items(
+            u64_from_index(outcome.losses.len()),
+            "step_stage_losses",
+        )?;
+        self.body.losses.try_reserve(outcome.losses.len()).map_err(|_| {
+            self.ctx.refuse_codec_limit(
+                "step_stage_losses",
+                0,
+                u64_from_index(outcome.losses.len()),
+            )
+        })?;
         self.body.losses.append(&mut outcome.losses);
+        self.ctx.charge_collection_items(
+            u64_from_index(outcome.notes.len()),
+            "step_stage_notes",
+        )?;
+        self.body.notes.try_reserve(outcome.notes.len()).map_err(|_| {
+            self.ctx.refuse_codec_limit(
+                "step_stage_notes",
+                0,
+                u64_from_index(outcome.notes.len()),
+            )
+        })?;
         self.body.notes.append(&mut outcome.notes);
+        Ok(())
     }
 
     fn into_result(
@@ -438,14 +471,14 @@ fn decode_exchange_mode(
 
     // Keep the established report order while every pass contributes through
     // the same accumulator.
-    session.absorb(&mut dependencies);
-    session.absorb(&mut presentation);
-    session.absorb(&mut product);
-    session.absorb(&mut tessellation);
-    session.absorb(&mut topology);
-    session.absorb(&mut geometry);
-    session.absorb(&mut pmi);
-    session.absorb(&mut validation);
+    session.absorb(&mut dependencies)?;
+    session.absorb(&mut presentation)?;
+    session.absorb(&mut product)?;
+    session.absorb(&mut tessellation)?;
+    session.absorb(&mut topology)?;
+    session.absorb(&mut geometry)?;
+    session.absorb(&mut pmi)?;
+    session.absorb(&mut validation)?;
 
     session.charge_stage("step_drawing_decode")?;
     let mut drawing = drawing::decode(
@@ -455,7 +488,7 @@ fn decode_exchange_mode(
         &product.value.product_definition_ids_by_shape,
         session.ctx,
     )?;
-    session.absorb(&mut drawing);
+    session.absorb(&mut drawing)?;
     let mut post_decode_losses = Vec::new();
     session.charge_stage("step_carrier_retention")?;
     retain_unowned_carriers(
@@ -465,6 +498,17 @@ fn decode_exchange_mode(
         &mut post_decode_losses,
         session.ctx,
     )?;
+    session.ctx.charge_collection_items(
+        u64_from_index(post_decode_losses.len()),
+        "step_carrier_retention_losses",
+    )?;
+    session.body.losses.try_reserve(post_decode_losses.len()).map_err(|_| {
+        session.ctx.refuse_codec_limit(
+            "step_carrier_retention_losses",
+            0,
+            u64_from_index(post_decode_losses.len()),
+        )
+    })?;
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
