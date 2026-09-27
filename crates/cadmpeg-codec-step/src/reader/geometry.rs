@@ -3744,6 +3744,8 @@ fn context_length_uncertainties(
         return Ok((Vec::new(), 0));
     };
     let mut measures = Vec::new();
+    let mut named_count = 0;
+    let mut named_value = None;
     let mut unresolved = 0;
     for uncertainty_id in references.iter().filter_map(Value::reference) {
         let Some(measure) = exchange.records().get(&uncertainty_id) else {
@@ -3772,24 +3774,23 @@ fn context_length_uncertainties(
                 .transpose()?
                 .flatten()
                 .is_some_and(|name| name.eq_ignore_ascii_case("distance_accuracy_value"));
-            measures.push((named_distance_accuracy, result));
+            if named_distance_accuracy {
+                named_count += 1;
+                named_value = Some(result);
+            }
+            push_geometry_vec(&mut measures, result, ctx, "step_uncertainty_context_measures")?;
         } else if unit_scale_radians(unit, exchange, &mut BTreeSet::new(), Some(ctx))?.is_none() {
             unresolved += 1;
         }
     }
 
-    let named = measures
-        .iter()
-        .filter(|(named, _)| *named)
-        .map(|(_, value)| *value)
-        .collect::<Vec<_>>();
-    if named.len() == 1 {
-        return Ok((named, unresolved));
+    if named_count == 1 {
+        measures.clear();
+        if let Some(value) = named_value {
+            measures.push(value);
+        }
     }
-    Ok((
-        measures.into_iter().map(|(_, value)| value).collect(),
-        unresolved,
-    ))
+    Ok((measures, unresolved))
 }
 
 /// The document projection of the per-context linear uncertainty candidates.
@@ -3822,22 +3823,22 @@ fn linear_uncertainty(
             // Exact equality: the candidates come from one file, so equal
             // declarations corroborate each other and are not a conflict.
             if !candidates.contains(&candidate) {
-                candidates.push(candidate);
+                push_geometry_vec(&mut candidates, candidate, ctx, "step_uncertainty_distinct_candidates")?;
             }
         }
     }
     candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
-    let mut candidates = candidates.into_iter();
-    Ok(match (candidates.next(), candidates.next()) {
-        (Some(first), Some(second)) => LinearUncertainty::Ambiguous {
-            first,
-            second,
-            rest: candidates.collect(),
-            unresolved,
-        },
-        (Some(value), None) => LinearUncertainty::Value(value),
-        (None, _) => LinearUncertainty::Empty { unresolved },
+    Ok(match candidates.len() {
+        0 => LinearUncertainty::Empty { unresolved },
+        1 => LinearUncertainty::Value(candidates[0]),
+        _ => {
+            ctx.charge_work(u64_from_index(candidates.len()), "step_uncertainty_projection")?;
+            let first = candidates.remove(0);
+            ctx.charge_work(u64_from_index(candidates.len()), "step_uncertainty_projection")?;
+            let second = candidates.remove(0);
+            LinearUncertainty::Ambiguous { first, second, rest: candidates, unresolved }
+        }
     })
 }
 
