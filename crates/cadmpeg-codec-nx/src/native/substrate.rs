@@ -32,10 +32,19 @@ pub(crate) fn topology_streams<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a Scan<'_>,
 ) -> Result<Vec<Cow<'a, [u8]>>, CodecError> {
-    Ok(prepare_topology_streams(ctx, scan, None)?
-        .into_iter()
-        .map(|stream| stream.bytes)
-        .collect())
+    let semantic = prepare_topology_streams(ctx, scan, None)?;
+    ctx.charge_collection_items(
+        u64::try_from(semantic.len()).unwrap_or(u64::MAX),
+        "nx topology byte views",
+    )?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(semantic.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx topology byte views", 0, 1))?;
+    for stream in semantic {
+        bytes.push(stream.bytes);
+    }
+    Ok(bytes)
 }
 
 fn prepare_topology_streams<'a>(
@@ -43,16 +52,28 @@ fn prepare_topology_streams<'a>(
     scan: &'a Scan<'_>,
     mut unmatched_tombstone_counts: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<TopologyStream<'a>>, CodecError> {
-    let mut semantic = scan
-        .streams
-        .iter()
-        .map(|stream| TopologyStream {
+    ctx.charge_collection_items(
+        u64::try_from(scan.streams.len()).unwrap_or(u64::MAX),
+        "nx prepared topology streams",
+    )?;
+    let mut semantic = Vec::new();
+    semantic
+        .try_reserve_exact(scan.streams.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx prepared topology streams", 0, 1))?;
+    for stream in &scan.streams {
+        semantic.push(TopologyStream {
             bytes: Cow::Borrowed(stream.inflated.as_slice()),
             delta_census: None,
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let pairs = paired_delta_streams(ctx, scan)?;
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    let mut paired_deltas = BTreeSet::new();
+    for delta in pairs.values().flatten().copied() {
+        if !paired_deltas.contains(&delta) {
+            ctx.charge_collection_items(1, "nx paired topology deltas")?;
+            paired_deltas.insert(delta);
+        }
+    }
     let mut merge = |partition: &[u8], deltas: &[u8], census: &Census| {
         if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
             let result =
@@ -216,13 +237,14 @@ impl StreamView {
     /// from the delta-extended semantic bytes, and `intersections` via the
     /// auxiliary-replacement scan when this stream has paired delta streams.
     fn parse_semantic(
+        ctx: &DecodeContext<'_>,
         graph: Rc<Graph>,
         topology_bytes: &[u8],
         semantic_bytes: &[u8],
         scan: &Scan,
         paired_deltas: Option<&Vec<usize>>,
         point_layout: crate::intersection::ChartPointLayout,
-    ) -> (Self, Rc<Graph>) {
+    ) -> Result<(Self, Rc<Graph>), CodecError> {
         let semantic_graph =
             (semantic_bytes != topology_bytes).then(|| Rc::new(Graph::parse(semantic_bytes)));
         let scan_graph = semantic_graph.as_deref().unwrap_or(&graph);
@@ -230,10 +252,17 @@ impl StreamView {
             .as_ref()
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
-            let replacement_streams = delta_indices
-                .iter()
-                .map(|delta| scan.streams[*delta].inflated.as_slice())
-                .collect::<Vec<_>>();
+            ctx.charge_collection_items(
+                u64::try_from(delta_indices.len()).unwrap_or(u64::MAX),
+                "nx auxiliary replacement views",
+            )?;
+            let mut replacement_streams = Vec::new();
+            replacement_streams
+                .try_reserve_exact(delta_indices.len())
+                .map_err(|_| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
+            for delta in delta_indices {
+                replacement_streams.push(scan.streams[*delta].inflated.as_slice());
+            }
             intersection::scan_with_auxiliary_replacements_and_graph(
                 semantic_bytes,
                 topology_bytes,
@@ -243,7 +272,7 @@ impl StreamView {
         } else {
             intersection::scan_with_graph(semantic_bytes, scan_graph, point_layout)
         };
-        (
+        Ok((
             StreamView {
                 offset_surfaces: scan_graph.offset_surfaces(),
                 blend_surfaces: scan_graph.blend_surfaces(),
@@ -253,7 +282,7 @@ impl StreamView {
                 graph,
             },
             nurbs_graph,
-        )
+        ))
     }
 }
 
@@ -304,13 +333,22 @@ impl<'a> ParsedStreams<'a> {
         let mut topology_streams =
             prepare_topology_streams(ctx, scan, Some(&mut unmatched_tombstone_counts))?;
         let delta_pairs = paired_delta_streams(ctx, scan)?;
-        let paired_deltas = delta_pairs
-            .values()
-            .flatten()
-            .copied()
-            .collect::<BTreeSet<_>>();
+        let mut paired_deltas = BTreeSet::new();
+        for delta in delta_pairs.values().flatten().copied() {
+            if !paired_deltas.contains(&delta) {
+                ctx.charge_collection_items(1, "nx parsed stream paired deltas")?;
+                paired_deltas.insert(delta);
+            }
+        }
 
-        let mut streams = Vec::with_capacity(scan.streams.len());
+        ctx.charge_collection_items(
+            u64::try_from(scan.streams.len()).unwrap_or(u64::MAX),
+            "nx parsed stream records",
+        )?;
+        let mut streams = Vec::new();
+        streams
+            .try_reserve_exact(scan.streams.len())
+            .map_err(|_| ctx.refuse_codec_limit("nx parsed stream records", 0, 1))?;
         for (si, stream) in scan.streams.iter().enumerate() {
             let mut semantic_bytes = std::mem::take(&mut topology_streams[si].bytes);
             let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
@@ -358,6 +396,7 @@ impl<'a> ParsedStreams<'a> {
                 let topology_for_auxiliary = paired.map(|_| semantic_bytes.clone());
                 semantic_bytes.to_mut().extend_from_slice(&residual);
                 let (semantic, nurbs_graph) = StreamView::parse_semantic(
+                    ctx,
                     graph,
                     topology_for_auxiliary
                         .as_deref()
@@ -366,7 +405,7 @@ impl<'a> ParsedStreams<'a> {
                     scan,
                     paired,
                     point_layout,
-                );
+                )?;
                 (Rc::new(semantic), nurbs_graph)
             };
             streams.push(StreamParse {
@@ -446,6 +485,129 @@ mod tests {
             stream(crate::parasolid::ParasolidSubtype::Partition, 0),
             stream(crate::parasolid::ParasolidSubtype::Deltas, 1),
         ]
+    }
+
+    fn scan_with_streams(streams: Vec<crate::parasolid::Stream>) -> crate::decode::Scan<'static> {
+        crate::decode::Scan {
+            container: crate::container::Container {
+                data: Vec::new().into(),
+                physical_size: 0,
+                layout: crate::container::test_modern_layout(0x06),
+                entries: Vec::new(),
+                fastload_table: None,
+                indexed_section_layouts: std::sync::OnceLock::new(),
+                om_section_cache: std::sync::OnceLock::new(),
+            },
+            streams,
+        }
+    }
+
+    fn with_collection_limit<T>(
+        max_collection_items: u64,
+        f: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        f(&ctx)
+    }
+
+    #[test]
+    fn topology_preparation_refuses_stream_slots_at_collection_limit() {
+        let scan = scan_with_streams(vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }]);
+        let error = with_collection_limit(0, |ctx| topology_streams(ctx, &scan))
+            .expect_err("the prepared stream needs one collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx prepared topology streams"
+        ));
+    }
+
+    #[test]
+    fn topology_views_refuse_output_slots_at_collection_limit() {
+        let scan = scan_with_streams(vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }]);
+        let error = with_collection_limit(1, |ctx| topology_streams(ctx, &scan))
+            .expect_err("the output view needs a second collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx topology byte views"
+        ));
+    }
+
+    #[test]
+    fn parsed_streams_refuse_record_slots_at_collection_limit() {
+        let scan = scan_with_streams(vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }]);
+        let error = with_collection_limit(1, |ctx| ParsedStreams::parse(ctx, &scan))
+            .err()
+            .expect("the parsed record needs a second collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx parsed stream records"
+        ));
+    }
+
+    #[test]
+    fn paired_topology_deltas_refuse_index_at_collection_limit() {
+        let scan = scan_with_streams(one_delta_pair());
+        let error = with_collection_limit(4, |ctx| topology_streams(ctx, &scan))
+            .expect_err("paired topology index needs a fifth collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx paired topology deltas"
+        ));
+    }
+
+    #[test]
+    fn parsed_streams_refuse_paired_index_at_collection_limit() {
+        let scan = scan_with_streams(one_delta_pair());
+        let error = with_collection_limit(7, |ctx| ParsedStreams::parse(ctx, &scan))
+            .err()
+            .expect("parsed paired index needs an eighth collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx parsed stream paired deltas"
+        ));
+    }
+
+    #[test]
+    fn auxiliary_replacement_views_refuse_slots_at_collection_limit() {
+        let scan = scan_with_streams(one_delta_pair());
+        let error = with_collection_limit(10, |ctx| ParsedStreams::parse(ctx, &scan))
+            .err()
+            .expect("replacement view needs an eleventh collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx auxiliary replacement views"
+        ));
     }
 
     fn pair_under_limits(collection_items: u64, work_units: u64) -> cadmpeg_core::CodecError {
