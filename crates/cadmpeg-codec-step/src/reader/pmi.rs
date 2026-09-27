@@ -2531,9 +2531,11 @@ fn measure_inner(
                 });
             let scale = match quantity {
                 PmiQuantity::Length => {
-                    if let Some(scale) = unit.and_then(|unit| {
-                        super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
-                    }) {
+                    let resolved = match unit {
+                        Some(unit) => super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)?,
+                        None => None,
+                    };
+                    if let Some(scale) = resolved {
                         scale.get()
                     } else {
                         push_pmi_vec(
@@ -2548,9 +2550,11 @@ fn measure_inner(
                     }
                 }
                 PmiQuantity::Angle => {
-                    if let Some(scale) = unit.and_then(|unit| {
-                        super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
-                    }) {
+                    let resolved = match unit {
+                        Some(unit) => super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)?,
+                        None => None,
+                    };
+                    if let Some(scale) = resolved {
                         scale.get()
                     } else {
                         push_pmi_vec(

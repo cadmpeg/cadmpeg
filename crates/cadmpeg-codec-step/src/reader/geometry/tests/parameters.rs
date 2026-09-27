@@ -876,12 +876,12 @@ ENDSEC;END-ISO-10303-21;",
     .expect("parse plane-angle units");
     let mut active = BTreeSet::new();
     assert_eq!(
-        unit_scale_radians(1, &exchange, &mut active).map(PositiveReal::get),
+        unit_scale_radians(1, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
         Some(1.0e-3)
     );
     assert!(active.is_empty());
     assert_eq!(
-        unit_scale_radians(2, &exchange, &mut active).map(PositiveReal::get),
+        unit_scale_radians(2, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
         Some(1.0)
     );
     assert!(active.is_empty());
@@ -902,12 +902,12 @@ ENDSEC;END-ISO-10303-21;",
     .expect("parse conversion-based plane-angle units");
     let mut active = BTreeSet::new();
     assert_eq!(
-        unit_scale_radians(3, &exchange, &mut active).map(PositiveReal::get),
+        unit_scale_radians(3, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
         Some(2.0e-3)
     );
     assert!(active.is_empty());
     assert_eq!(
-        unit_scale_radians(6, &exchange, &mut active).map(PositiveReal::get),
+        unit_scale_radians(6, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
         Some(2.0)
     );
     assert!(active.is_empty());
@@ -928,9 +928,9 @@ ENDSEC;END-ISO-10303-21;",
     )
     .expect("parse recursive failure graph");
     let mut active = BTreeSet::new();
-    assert!(unit_scale_mm(1, &exchange, &mut active).is_none());
+    assert!(unit_scale_mm(1, &exchange, &mut active, None).expect("unit scale evaluation").is_none());
     assert!(active.is_empty());
-    assert!(unit_scale_radians(1, &exchange, &mut active).is_none());
+    assert!(unit_scale_radians(1, &exchange, &mut active, None).expect("unit scale evaluation").is_none());
     assert!(active.is_empty());
 
     let mut losses = Vec::new();
