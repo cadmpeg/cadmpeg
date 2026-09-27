@@ -1048,7 +1048,8 @@ pub(super) fn decode(
     // curve constructors to a fixpoint so nested or forward references do not
     // disappear merely because their source record has a larger instance id.
     let mut carrier_index = CarrierIndex::from_ir(ir, ctx)?;
-    let deferred_ids = exchange
+    let mut deferred_ids = Vec::new();
+    for (id, _) in exchange
         .entities_any(&[
             "CURVE_REPLICA",
             "TRIMMED_CURVE",
@@ -1058,8 +1059,9 @@ pub(super) fn decode(
             "OFFSET_CURVE_3D",
         ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
-        .map(|(id, _)| id)
-        .collect::<Vec<_>>();
+    {
+        push_geometry_vec(&mut deferred_ids, id, ctx, "step_deferred_curve_ids")?;
+    }
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
     while let Some(id) = deferred_queue.pop_front() {
@@ -1083,7 +1085,7 @@ pub(super) fn decode(
                 continue;
             };
             let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
-                waiting_on.entry(parent_step).or_default().push(id);
+                defer_geometry_dependency(&mut waiting_on, parent_step, id, ctx, "step_deferred_curve_groups", "step_deferred_curve_members")?;
                 continue;
             };
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
@@ -1126,7 +1128,7 @@ pub(super) fn decode(
             }
             claim_geometry_typed(&mut typed, id, ctx)?;
             claim_geometry_typed(&mut typed, operator_step, ctx)?;
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
             continue;
         }
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
@@ -1139,7 +1141,7 @@ pub(super) fn decode(
                 continue;
             };
             if !carrier_index.curves.contains_key(&basis_step) {
-                waiting_on.entry(basis_step).or_default().push(id);
+                defer_geometry_dependency(&mut waiting_on, basis_step, id, ctx, "step_deferred_curve_groups", "step_deferred_curve_members")?;
                 continue;
             }
             let curve = CurveId::from(ids::data(kind!("curve"), id));
@@ -1232,7 +1234,7 @@ pub(super) fn decode(
                 insert_geometry_map(&mut curve_parameter_offsets, id, parameter_offset, ctx, "step_geometry_curve_parameter_offsets")?;
             }
             claim_geometry_typed(&mut typed, id, ctx)?;
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
             continue;
         }
         if composite_curve_parameters(record).is_some() {
@@ -1242,7 +1244,7 @@ pub(super) fn decode(
                 .collect::<Vec<_>>();
             if !missing.is_empty() {
                 for dependency in missing {
-                    waiting_on.entry(dependency).or_default().push(id);
+                    defer_geometry_dependency(&mut waiting_on, dependency, id, ctx, "step_deferred_curve_groups", "step_deferred_curve_members")?;
                 }
                 continue;
             }
@@ -1278,7 +1280,7 @@ pub(super) fn decode(
             });
             carrier_index.curves.insert(id, curve_index);
             claim_geometry_typed(&mut typed, id, ctx)?;
-            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
             continue;
         }
         let Some(parameters) = entity_parameters(record, "OFFSET_CURVE_3D") else {
@@ -1310,7 +1312,7 @@ pub(super) fn decode(
             continue;
         };
         if !carrier_index.curves.contains_key(&source_step) {
-            waiting_on.entry(source_step).or_default().push(id);
+            defer_geometry_dependency(&mut waiting_on, source_step, id, ctx, "step_deferred_curve_groups", "step_deferred_curve_members")?;
             continue;
         }
         let Some(geometry) = carrier_index
@@ -1356,7 +1358,7 @@ pub(super) fn decode(
             insert_geometry_map(&mut curve_parameter_offsets, id, offset, ctx, "step_geometry_curve_parameter_offsets")?;
         }
         claim_geometry_typed(&mut typed, id, ctx)?;
-        wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+        wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
     }
     for (id, _) in exchange.entities("CURVE_REPLICA") {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
@@ -1659,15 +1661,17 @@ pub(super) fn decode(
     // Resolve replicas in the same fixpoint as trims, bounded surfaces, and
     // offsets so a forward or nested replica cannot become an opaque carrier.
     carrier_index = CarrierIndex::from_ir(ir, ctx)?;
-    let deferred_surface_ids = exchange
+    let mut deferred_surface_ids = Vec::new();
+    for (id, _) in exchange
         .entities_any(&[
             "CURVE_BOUNDED_SURFACE",
             "OFFSET_SURFACE",
             "RECTANGULAR_TRIMMED_SURFACE",
             "SURFACE_REPLICA",
         ])
-        .map(|(id, _)| id)
-        .collect::<Vec<_>>();
+    {
+        push_geometry_vec(&mut deferred_surface_ids, id, ctx, "step_deferred_surface_ids")?;
+    }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
     let mut surface_waiting_on = HashMap::<u64, Vec<u64>>::new();
     while let Some(id) = deferred_surface_queue.pop_front() {
@@ -1722,7 +1726,7 @@ pub(super) fn decode(
                 .and_then(|index| ir.model.surfaces.get(index.0))
                 .and_then(|surface| surface.geometry.solved().cloned())
             else {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(&mut surface_waiting_on, support_step, id, ctx, "step_deferred_surface_groups", "step_deferred_surface_members")?;
                 continue;
             };
             let Some(parameter_scales) = surface_parameter_scales_for_step(
@@ -1826,7 +1830,7 @@ pub(super) fn decode(
                 continue;
             };
             let Some(support_index) = carrier_index.surfaces.get(&support_step).copied() else {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(&mut surface_waiting_on, support_step, id, ctx, "step_deferred_surface_groups", "step_deferred_surface_members")?;
                 continue;
             };
             let support = SurfaceId::from(ids::data(kind!("surface"), support_step));
@@ -1902,7 +1906,7 @@ pub(super) fn decode(
                 continue;
             };
             if !carrier_index.surfaces.contains_key(&support_step) {
-                surface_waiting_on.entry(support_step).or_default().push(id);
+                defer_geometry_dependency(&mut surface_waiting_on, support_step, id, ctx, "step_deferred_surface_groups", "step_deferred_surface_members")?;
                 continue;
             }
             let support = SurfaceId::from(ids::data(kind!("surface"), support_step));
@@ -1948,7 +1952,7 @@ pub(super) fn decode(
                 continue;
             };
             let Some(parent_index) = carrier_index.surfaces.get(&parent_step).copied() else {
-                surface_waiting_on.entry(parent_step).or_default().push(id);
+                defer_geometry_dependency(&mut surface_waiting_on, parent_step, id, ctx, "step_deferred_surface_groups", "step_deferred_surface_members")?;
                 continue;
             };
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
@@ -1997,7 +2001,7 @@ pub(super) fn decode(
             false
         };
         if resolved {
-            wake_deferred_dependents(id, &mut surface_waiting_on, &mut deferred_surface_queue);
+            wake_deferred_dependents(id, &mut surface_waiting_on, &mut deferred_surface_queue, ctx, "step_deferred_surface_queue")?;
         }
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
@@ -4162,14 +4166,38 @@ fn curve_parameter_at_point(
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
 
+fn defer_geometry_dependency(
+    waiting_on: &mut HashMap<u64, Vec<u64>>,
+    dependency: u64,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !waiting_on.contains_key(&dependency) {
+        ctx.charge_collection_items(1, group_operation)?;
+        waiting_on
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(group_operation, 0, 1))?;
+    }
+    let dependents = waiting_on.entry(dependency).or_default();
+    push_geometry_vec(dependents, id, ctx, item_operation)
+}
+
 fn wake_deferred_dependents(
     id: u64,
     waiting_on: &mut HashMap<u64, Vec<u64>>,
     queue: &mut VecDeque<u64>,
-) {
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     if let Some(dependents) = waiting_on.remove(&id) {
+        ctx.charge_collection_items(u64_from_index(dependents.len()), operation)?;
+        queue.try_reserve(dependents.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(dependents.len())))?;
         queue.extend(dependents);
     }
+    Ok(())
 }
 
 fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
