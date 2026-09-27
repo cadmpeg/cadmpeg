@@ -893,7 +893,20 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         }
         let mut solutions = Vec::new();
         for signs in 0..(1usize << component_distances.len()) {
-            let mut branched = component_equations.clone();
+            ctx.charge_work(1, "explore Creo section distance signs")?;
+            let mut branched = Vec::new();
+            ctx.try_reserve_items(
+                &mut branched,
+                component_equations.len(),
+                "creo section branch equation rows",
+            )?;
+            for equation in &component_equations {
+                ctx.charge_collection_items(
+                    equation.terms.len() as u64,
+                    "creo section branch equation terms",
+                )?;
+                branched.push(equation.clone());
+            }
             for (index, &(first, second, coordinate, magnitude)) in
                 component_distances.iter().enumerate()
             {
@@ -902,6 +915,11 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 } else {
                     -magnitude
                 };
+                ctx.try_reserve_items(&mut branched, 1, "creo section signed equation rows")?;
+                ctx.charge_collection_items(
+                    if first == second { 1 } else { 2 },
+                    "creo section signed equation terms",
+                )?;
                 branched.push(SectionCoordinateEquation::point_difference(
                     first, second, coordinate, delta,
                 ));
@@ -1688,6 +1706,91 @@ mod tests {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo section component equation terms"),
             "{error:?}"
+        );
+    }
+
+    fn unsigned_branch_with_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        with_collection_limit(limit, |ctx| {
+            super::solve_unsigned_dimension_coordinates(
+                ctx,
+                &equations,
+                &BTreeMap::new(),
+                &[(1, 2, SectionAxis::U, 1.0)],
+            )
+        })
+        .expect_err("the selected branch exceeds its collection allowance")
+    }
+
+    #[test]
+    fn unsigned_branch_equation_rows_refuse_before_vector_reserve() {
+        let error = unsigned_branch_with_collection_limit(22);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section branch equation rows")
+        );
+    }
+
+    #[test]
+    fn unsigned_branch_equation_terms_refuse_before_tree_clone() {
+        let error = unsigned_branch_with_collection_limit(24);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section branch equation terms")
+        );
+    }
+
+    #[test]
+    fn unsigned_signed_equation_rows_refuse_before_vector_growth() {
+        let error = unsigned_branch_with_collection_limit(25);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section signed equation rows")
+        );
+    }
+
+    #[test]
+    fn unsigned_signed_equation_terms_refuse_before_tree_creation() {
+        let error = unsigned_branch_with_collection_limit(27);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section signed equation terms")
+        );
+    }
+
+    #[test]
+    fn unsigned_signed_branch_charges_work_before_expansion() {
+        let equations = [SectionCoordinateEquation::point_difference(
+            1,
+            2,
+            SectionAxis::U,
+            1.0,
+        )];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("small input fits the policy");
+        let error = super::solve_unsigned_dimension_coordinates(
+            &ctx,
+            &equations,
+            &BTreeMap::new(),
+            &[(1, 2, SectionAxis::U, 1.0)],
+        )
+        .expect_err("the first signed branch needs one work unit");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "explore Creo section distance signs")
         );
     }
 
