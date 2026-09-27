@@ -5084,7 +5084,8 @@ fn c2_curve_to_nurbs_join(
             end_parameter,
             ..
         } => {
-            let mut segments = Vec::with_capacity(children.len());
+            let mut segments =
+                crate::curves::charged_vec(ctx, children.len(), "Rhino C2 joined segments")?;
             let mut warnings = Diagnostics::new();
             let mut children = children.into_iter().peekable();
             while let Some((start, child)) = children.next() {
@@ -5099,6 +5100,7 @@ fn c2_curve_to_nurbs_join(
                 let joined = c2_curve_to_nurbs_join(ctx, child, offset)?;
                 warnings.extend(joined.warnings);
                 segments.push(crate::curves::remap_nurbs_domain(
+                    ctx,
                     joined.curve,
                     target,
                     offset,
