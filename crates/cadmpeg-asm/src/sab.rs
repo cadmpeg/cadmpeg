@@ -519,6 +519,18 @@ fn reserve_framed_vec<T>(
     values.try_reserve(1).map_err(|_| refuse_size(ctx, operation))
 }
 
+fn copy_framed_string(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, StreamFailure> {
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| refuse_size(ctx, operation))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 fn charge_retained(
     ctx: Option<&DecodeContext<'_>>,
     bytes: u64,
@@ -673,13 +685,13 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB name part")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
                     reserve_framed_vec(ctx, &mut name_parts, "frame SAB name part")?;
-                    name_parts.push(s.to_owned());
+                    name_parts.push(copy_framed_string(ctx, s, "frame SAB name part")?);
                 }
                 Lexed::Ident(s) if !name_done => {
                     charge_items(ctx, 1, "frame SAB name part")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
                     reserve_framed_vec(ctx, &mut name_parts, "frame SAB name part")?;
-                    name_parts.push(s.to_owned());
+                    name_parts.push(copy_framed_string(ctx, s, "frame SAB name part")?);
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
@@ -708,14 +720,14 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Ident(identifier.to_owned()));
+                    tokens.push(Token::Ident(copy_framed_string(ctx, identifier, "frame SAB identifier")?));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::SubIdent(identifier.to_owned()));
+                    tokens.push(Token::SubIdent(copy_framed_string(ctx, identifier, "frame SAB subidentifier")?));
                 }
                 Lexed::Str(value) => {
                     payload_start = false;
@@ -723,7 +735,7 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Str(value.to_owned()));
+                    tokens.push(Token::Str(copy_framed_string(ctx, value, "frame SAB string")?));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
@@ -795,7 +807,17 @@ fn frame_impl(
         let name = if embedded_history_edge {
             "edge".to_owned()
         } else {
-            name_parts.join("-")
+            let mut joined = String::new();
+            joined
+                .try_reserve(name_bytes)
+                .map_err(|_| refuse_size(ctx, "SAB record name"))?;
+            for (index, part) in name_parts.iter().enumerate() {
+                if index != 0 {
+                    joined.push('-');
+                }
+                joined.push_str(part);
+            }
+            joined
         };
 
         let token_bytes = tokens
