@@ -177,6 +177,41 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
 }
 
 #[test]
+fn construction_tracking_path_borrowed_wire_matches_owned_wire_bytes() {
+    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94"#;
+    for (fields, end) in [
+        ("", 114),
+        (",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122", 130),
+    ] {
+        let wire = format!("{prefix}{fields},\"following_record_index\":302,\"following_byte_offset\":{end},\"following_class_tag\":\"363\"}}");
+        let path: DesignConstructionTrackingPath = serde_json::from_str(&wire).unwrap();
+        let owned = super::DesignConstructionTrackingPathWire::from(path.clone());
+        assert_eq!(serde_json::to_vec(&path).unwrap(), serde_json::to_vec(&owned).unwrap());
+    }
+}
+
+#[test]
+fn construction_tracking_path_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionTrackingPath,
+    }
+    let wire = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94,"following_record_index":302,"following_byte_offset":114,"following_class_tag":"363"}"#;
+    let path: DesignConstructionTrackingPath = serde_json::from_str(wire).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:tracking-path#0",
+        value: &path,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(|count| count.set(0)),
+        || super::CONSTRUCTION_TRACKING_PATH_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 // Fixture fields are appended from the bounded table of explicit test cases.
 #[allow(clippy::format_push_string)]
 fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
