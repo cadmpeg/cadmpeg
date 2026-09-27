@@ -956,7 +956,7 @@ pub(in super::super) fn transfer_sketches(
                 ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
             };
-            source_carriers.admit_feature(ir, feature)?;
+            source_carriers.admit_feature(ctx, ir, feature)?;
         }
     }
     Ok(coverage)

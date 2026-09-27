@@ -364,6 +364,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             });
         ctx.charge_entities(1, "admit Creo model parameters")?;
         source_carriers.admit_parameter(
+            ctx,
             ir,
             DesignParameter {
                 id: id.clone(),

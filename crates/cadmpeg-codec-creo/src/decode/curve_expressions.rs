@@ -775,6 +775,7 @@ pub(super) fn transfer_curve_expression_features(
                 }),
             };
             source_carriers.admit_parameter(
+                ctx,
                 ir,
                 DesignParameter {
                     id: parameter_id.clone(),
@@ -918,6 +919,7 @@ pub(super) fn transfer_curve_expression_features(
         };
         ctx.charge_entities(1, "admit Creo model features")?;
         source_carriers.admit_feature(
+            ctx,
             ir,
             Feature {
                 id: feature_id,

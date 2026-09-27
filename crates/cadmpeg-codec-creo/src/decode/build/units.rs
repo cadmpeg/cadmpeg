@@ -1234,8 +1234,9 @@ mod tests {
         let mut ir = CadIr::empty();
         let carriers =
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_feature(
+                ctx,
                 &mut ir,
                 Feature {
                     id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
@@ -1287,10 +1288,11 @@ mod tests {
                     ),
                     native_ref: None,
                 },
-            )
+            ))
             .expect("feature admission");
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_parameter(
+                ctx,
                 &mut ir,
                 cadmpeg_ir::features::DesignParameter {
                     id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
@@ -1308,7 +1310,7 @@ mod tests {
                     pmi: None,
                     native_ref: None,
                 },
-            )
+            ))
             .expect("parameter admission");
         let FeatureDefinition::Operation(FeatureOperation::Extrude {
             start: ExtrudeStart::OffsetProfilePlane { offset },
