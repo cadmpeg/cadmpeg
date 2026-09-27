@@ -8,6 +8,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_drawing_and_trimming::{
+    associativity_definition_file, bounded_associativity_forms_file,
+    flow_associativity_forms_file, legacy_associativity_forms_file,
+    recalculable_dimension_associativity_file,
+};
 use crate::IgesCodec;
 
 fn native_entity(entity_type: i64, form: i64, parameters: &str) -> OwnedTestEntity {
@@ -42,6 +47,7 @@ fn assert_collection_refusal_at(bytes: &[u8], operation: &str) {
                 assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
                 cap = next;
             }
+            Ok(_) => panic!("did not reach {operation} at collection cap {cap}: decode succeeded"),
             other => panic!("did not reach {operation} at collection cap {cap}: {other:?}"),
         }
     }
@@ -70,6 +76,7 @@ fn assert_retained_refusal_at(bytes: &[u8], operation: &str) {
                 assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
                 cap = next;
             }
+            Ok(_) => panic!("did not reach {operation} at retained cap {cap}: decode succeeded"),
             other => panic!("did not reach {operation} at retained cap {cap}: {other:?}"),
         }
     }
@@ -617,4 +624,87 @@ fn native_group_outer_and_member_slots_refuse_limits() {
     ] {
         assert_retained_refusal_at(&bytes, operation);
     }
+}
+
+#[test]
+fn native_associativity_definition_classes_and_item_types_refuse_limits() {
+    let bytes = associativity_definition_file();
+    for operation in [
+        "iges native associativity definition slots",
+        "iges native associativity classes",
+        "iges native associativity class item types",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    assert_retained_refusal_at(&bytes, "iges native associativity definition id");
+}
+
+#[test]
+fn native_bounded_associativity_nested_lists_refuse_limits() {
+    let bytes = bounded_associativity_forms_file();
+    for operation in [
+        "iges native associativities",
+        "iges native label placement slots",
+        "iges native single-parent child slots",
+        "iges native external index entries",
+        "iges native dimension geometry slots",
+        "iges native planar entity slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native associativity id",
+        "iges native associativity source",
+        "iges native label placement view",
+        "iges native label placement leader",
+        "iges native external index name",
+        "iges native associativity link",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_legacy_associativity_nested_values_refuse_limits() {
+    let bytes = legacy_associativity_forms_file();
+    for operation in [
+        "iges native signal connection slots",
+        "iges native signal geometry slots",
+        "iges native signal name slots",
+        "iges native text node geometry slots",
+        "iges native connect node point slots",
+        "iges native connect node data slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native signal name",
+        "iges native signal connection",
+        "iges native signal geometry",
+        "iges native text node geometry",
+        "iges native connect node point",
+        "iges native token value bytes",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_flow_and_recalculable_dimension_lists_refuse_limits() {
+    let flow = flow_associativity_forms_file();
+    let linked_flow = owned_test_file(&[native_entity(402, 18, "402,2,1,0,0,0,0,0,1,2,1;")]);
+    assert_collection_refusal_at(&linked_flow, "iges native flow link slots");
+    for operation in [
+        "iges native flow connection slots",
+        "iges native flow join slots",
+        "iges native flow name slots",
+        "iges native flow name display slots",
+        "iges native flow continuation slots",
+    ] {
+        assert_collection_refusal_at(&flow, operation);
+    }
+    assert_retained_refusal_at(&flow, "iges native flow name");
+    let dimension = recalculable_dimension_associativity_file();
+    assert_collection_refusal_at(&dimension, "iges native recalculable geometry slots");
+    assert_retained_refusal_at(&dimension, "iges native recalculable dimension");
 }
