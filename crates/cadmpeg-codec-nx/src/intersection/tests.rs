@@ -156,7 +156,7 @@ fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoint
         .position(|window| window == [0, 38, 0, 12])
         .expect("intersection record");
     put_ref(&mut stream, intersection + 25, 1);
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert_eq!(scan.constructions.len(), 1);
     assert_eq!(scan.curves.len(), 1);
     assert_eq!(
@@ -179,7 +179,7 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
         .expect("chart record");
     put_f64(&mut stream, chart + 60, 0.005);
 
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert_eq!(scan.constructions.len(), 1);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
@@ -198,15 +198,15 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 
     let mut chart = charted_intersection_curve_topology_partition_stream();
     append_record(&mut chart, &[0, 40, 0, 0, 0, 2, 0, 20], 108);
-    let scan = crate::intersection::scan(&chart, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &chart, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
     assert_eq!(
-        crate::intersection::scan_with_auxiliary_replacements(
+        crate::test_support::with_decode_context(|ctx| crate::intersection::scan_with_auxiliary_replacements(ctx,
             &chart,
             &chart[..chart.len() - 108],
             &[&chart[chart.len() - 108..]],
-        )
+        )).unwrap()
         .curves
         .len(),
         1
@@ -216,15 +216,15 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut term = base_term.clone();
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
     assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
-    let scan = crate::intersection::scan(&term, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &term, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
     assert_eq!(
-        crate::intersection::scan_with_auxiliary_replacements(
+        crate::test_support::with_decode_context(|ctx| crate::intersection::scan_with_auxiliary_replacements(ctx,
             &term,
             &base_term,
             &[&term[base_term.len()..]],
-        )
+        )).unwrap()
         .curves
         .len(),
         1
@@ -233,7 +233,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut uv = charted_intersection_curve_topology_partition_stream();
     append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);
     assert!(crate::intersection::support_uv_records(&uv).is_empty());
-    let [curve] = crate::intersection::scan(&uv, crate::intersection::ChartPointLayout::Xyz3)
+    let [curve] = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &uv, crate::intersection::ChartPointLayout::Xyz3)).unwrap()
         .curves
         .try_into()
         .unwrap();
@@ -255,7 +255,7 @@ fn intersection_rejection_census_requires_resolved_supports() {
     put_ref(&mut stream, intersection + 21, 999);
     put_ref(&mut stream, intersection + 23, 997);
 
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert!(scan.constructions.is_empty());
     assert!(scan.curves.is_empty());
     assert_eq!(
@@ -273,7 +273,7 @@ fn intersection_chart_rejects_unresolved_support_relation() {
         .expect("intersection record");
     put_ref(&mut stream, intersection + 19, 998);
 
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert!(scan.constructions.is_empty());
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_support, 1);
@@ -322,7 +322,7 @@ fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
     semantic.extend_from_slice(&crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(ctx, &replacement)).unwrap());
 
     let scan =
-        crate::intersection::scan_with_auxiliary_replacements(&semantic, &base, &[&replacement]);
+        crate::test_support::with_decode_context(|ctx| crate::intersection::scan_with_auxiliary_replacements(ctx, &semantic, &base, &[&replacement])).unwrap();
 
     let [construction] = scan.source_constructions.as_slice() else {
         panic!("expected one current intersection construction");
@@ -350,7 +350,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         put_ref(&mut stream, intersection + offset, 1);
     }
 
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     let [uncharted] = scan.uncharted.as_slice() else {
         panic!("one bounded uncharted intersection");
     };
@@ -371,7 +371,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         .expect("edge record");
     stream[edge + 10..edge + 18].copy_from_slice(&f64::NAN.to_be_bytes());
     assert!(
-        crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3)
+        crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap()
             .uncharted
             .is_empty()
     );
@@ -390,7 +390,7 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
     let mut stream = base.clone();
     stream.extend_from_slice(&complement);
     let [curve] =
-        crate::intersection::scan_with_auxiliary_replacements(&stream, &base, &[&complement])
+        crate::test_support::with_decode_context(|ctx| crate::intersection::scan_with_auxiliary_replacements(ctx, &stream, &base, &[&complement])).unwrap()
             .curves
             .try_into()
             .expect("complemented curve");
@@ -410,10 +410,10 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
     let duplicate_chart = base[base_chart..base_chart_end].to_vec();
     let mut duplicate_stream = base.clone();
     duplicate_stream.extend_from_slice(&duplicate_chart);
-    let scan = crate::intersection::scan(
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx,
         &duplicate_stream,
         crate::intersection::ChartPointLayout::Xyz3,
-    );
+    )).unwrap();
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
 }
@@ -565,7 +565,7 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
         .expect("chart record");
     put_f64(&mut stream, chart + 28, f64::MAX);
     assert!(
-        crate::intersection::curves(&stream, crate::intersection::ChartPointLayout::Xyz3)
+        crate::test_support::with_decode_context(|ctx| crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap()
             .is_empty()
     );
 }
@@ -619,7 +619,7 @@ fn intersection_support_order_follows_type_38_values_marker() {
         .expect("support UV record");
     stream[uv + 8] = 3;
 
-    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     let [curve] = scan.curves.as_slice() else {
         panic!("one charted intersection");
     };

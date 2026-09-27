@@ -82,34 +82,58 @@ fn with_geometry_context(data: &[u8], parse: impl FnOnce(&DecodeContext<'_>)) {
 
 /// Exercise NX surface-intersection chart decoding.
 pub fn intersection(data: &[u8]) {
-    for curve in crate::intersection::curves(data, crate::intersection::ChartPointLayout::Xyz3) {
-        let _ = (curve.references, curve.pos);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    if let Ok(curves) = crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3) {
+        for curve in curves {
+            // discarded-value: fuzz decoded curve fields without using their values.
+            let _ = (curve.references, curve.pos);
+        }
     }
 }
 
 /// Exercise NX NURBS curve extraction.
 pub fn nurbs_curves(data: &[u8]) {
-    let _ = crate::nurbs::curves(data);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        drop(crate::nurbs::curves(&ctx, data));
+    }
 }
 
 /// Exercise NX NURBS surface extraction.
 pub fn nurbs_surfaces(data: &[u8]) {
-    let _ = crate::nurbs::surfaces(data);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) {
+        drop(crate::nurbs::surfaces(&ctx, data));
+    }
 }
 
 /// Exercise NX Parasolid topology parsing.
 pub fn topology(data: &[u8]) {
-    let graph = crate::topology::Graph::parse(data);
-    for node in graph.of_kind(NodeKind::Body) {
-        let _ = node.byte_at(0);
-        let _ = node.f64_at(0);
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
+        return;
+    };
+    if let Ok(graph) = crate::topology::Graph::parse(&ctx, data) {
+        for node in graph.of_kind(NodeKind::Body) {
+            // discarded-value: fuzz this bounded node read without using its value.
+            let _ = node.byte_at(0);
+            // discarded-value: fuzz this bounded scalar read without using its value.
+            let _ = node.f64_at(0);
+        }
     }
-    let _ = crate::topology::composite_curves(data);
+    drop(crate::topology::composite_curves(&ctx, data));
     let _ = crate::topology::intersection_data_curves(data);
-    let _ = crate::topology::blend_surfaces(data);
-    let _ = crate::topology::offset_surfaces(data);
-    let _ = crate::topology::surface_curves(data);
-    let _ = crate::topology::trimmed_curves(data);
+    drop(crate::topology::blend_surfaces(&ctx, data));
+    drop(crate::topology::offset_surfaces(&ctx, data));
+    drop(crate::topology::surface_curves(&ctx, data));
+    drop(crate::topology::trimmed_curves(&ctx, data));
 }
 
 /// Exercise NX Parasolid stream extraction.

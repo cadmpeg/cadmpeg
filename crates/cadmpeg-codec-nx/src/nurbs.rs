@@ -18,7 +18,8 @@ pub(crate) mod curve_references;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis},
@@ -61,14 +62,14 @@ pub(crate) struct Pcurve {
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
+pub(crate) fn surfaces(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Surface>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
-    let graph = Graph::parse(bytes);
+    let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
     let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
-    (surfaces, refusals)
+    Ok((surfaces, refusals))
 }
 
 fn decode_surfaces(
@@ -192,14 +193,14 @@ fn decode_surfaces(
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
 #[cfg(test)]
-pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
+pub(crate) fn pcurves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Pcurve>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
-    let graph = Graph::parse(bytes);
+    let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
     let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
-    (pcurves, refusals)
+    Ok((pcurves, refusals))
 }
 
 fn decode_pcurves(
@@ -289,14 +290,14 @@ fn decode_pcurves(
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
+pub(crate) fn curves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Curve>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
-    let graph = Graph::parse(bytes);
+    let graph = Graph::parse(ctx, bytes)?;
     let mut refusals = Vec::new();
     let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
-    (curves, refusals)
+    Ok((curves, refusals))
 }
 
 fn decode_curves(

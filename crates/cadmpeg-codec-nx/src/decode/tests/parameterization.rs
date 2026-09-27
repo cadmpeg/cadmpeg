@@ -363,7 +363,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
 #[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
-    assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &stream)).unwrap().len(), 1);
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
@@ -392,22 +392,22 @@ fn decode_tracks_fully_extended_offset_common_header() {
 fn decode_tracks_fully_extended_compact_geometry_headers() {
     let mut blend = blend_surface_topology_partition_stream();
     fully_extend_common_header(&mut blend, [0, 56, 0, 12]);
-    assert_eq!(crate::topology::blend_surfaces(&blend).len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(ctx, &blend)).unwrap().len(), 1);
 
     let mut intersection = intersection_curve_topology_partition_stream();
     fully_extend_common_header(&mut intersection, [0, 38, 0, 12]);
-    assert_eq!(crate::topology::composite_curves(&intersection).len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| crate::topology::composite_curves(ctx, &intersection)).unwrap().len(), 1);
 
     let mut surface_curve = surface_curve_topology_partition_stream();
     fully_extend_common_header(&mut surface_curve, [0, 137, 0, 12]);
-    let surface_curves = crate::topology::surface_curves(&surface_curve);
+    let surface_curves = crate::test_support::with_decode_context(|ctx| crate::topology::surface_curves(ctx, &surface_curve)).unwrap();
     assert_eq!(surface_curves.len(), 1);
     assert_eq!(surface_curves[0].xmt, 12);
     assert_eq!(surface_curves[0].state.pcurve(), 9);
 
     let mut trimmed = trimmed_topology_partition_stream();
     fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);
-    let trims = crate::topology::trimmed_curves(&trimmed);
+    let trims = crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(ctx, &trimmed)).unwrap();
     assert_eq!(trims.len(), 1);
     assert_eq!(trims[0].state.parameters(), [0.000_25, 0.000_75]);
 
@@ -806,7 +806,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
     );
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
-    let graph = crate::topology::Graph::parse(&[]);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &[])).unwrap();
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
 
     crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(

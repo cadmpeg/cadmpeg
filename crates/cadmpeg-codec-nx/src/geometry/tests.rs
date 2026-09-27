@@ -74,17 +74,17 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
         .position(|window| window == [0, 60, 0, 12])
         .expect("offset record");
     put_f64(&mut stream, offset + 23, 1_001.0);
-    let surfaces = crate::topology::offset_surfaces(&stream);
+    let surfaces = crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &stream)).unwrap();
     let [surface] = surfaces.as_slice() else {
         panic!("offset surface")
     };
     assert_eq!(surface.state.distance().get(), 1_001_000.0);
 
     put_f64(&mut stream, offset + 23, f64::INFINITY);
-    assert!(crate::topology::offset_surfaces(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &stream)).unwrap().is_empty());
 
     put_f64(&mut stream, offset + 23, f64::MAX);
-    assert!(crate::topology::offset_surfaces(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(ctx, &stream)).unwrap().is_empty());
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
     put_vec3(&mut point, 16, [0.001, 0.002, 0.003]);
     stream.extend(point);
 
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert_eq!(
         graph
             .get(NodeKind::OffsetSurface, 12)
@@ -115,14 +115,14 @@ fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
         .expect("blend record");
     put_f64(&mut stream, blend + 26, 0.0);
     put_f64(&mut stream, blend + 34, 0.0);
-    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(ctx, &stream)).unwrap().is_empty());
 
     put_f64(&mut stream, blend + 26, 0.5e-9);
-    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(ctx, &stream)).unwrap().is_empty());
 
     put_f64(&mut stream, blend + 26, f64::MAX);
     put_f64(&mut stream, blend + 34, f64::MAX);
-    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(ctx, &stream)).unwrap().is_empty());
 }
 
 #[test]
@@ -133,10 +133,10 @@ fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
         .position(|window| window == [0, 133, 0, 12])
         .expect("trimmed curve");
     put_f64(&mut stream, trim + 21, f64::NAN);
-    assert!(crate::topology::trimmed_curves(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(ctx, &stream)).unwrap().is_empty());
 
     put_f64(&mut stream, trim + 21, f64::MAX);
-    assert!(crate::topology::trimmed_curves(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(ctx, &stream)).unwrap().is_empty());
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     put_vec3(&mut stream, point + 16, [1_001.0, f64::from_bits(1), 0.0]);
 
     assert_eq!(analytic_points(&stream).len(), 1);
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
@@ -260,7 +260,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     );
 
     put_vec3(&mut stream, point + 16, [f64::INFINITY, 0.0, 0.0]);
-    assert!(crate::topology::Graph::parse(&stream)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap()
         .get(NodeKind::Point, 11)
         .is_none());
 }
