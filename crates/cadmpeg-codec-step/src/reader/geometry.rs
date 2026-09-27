@@ -45,6 +45,15 @@ const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
+macro_rules! geometry_or_none {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 fn push_geometry_vec<T>(
     values: &mut Vec<T>,
     value: T,
@@ -897,7 +906,8 @@ pub(super) fn decode(
                     &mut losses,
                     &mut BTreeSet::new(),
                     0,
-                ) {
+                    ctx,
+                )? {
                 decoded_count += 1;
                 decoded = Some((curve, geometry));
             }
@@ -1034,13 +1044,13 @@ pub(super) fn decode(
                         )))
                     },
                 ),
-            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
+            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses, ctx)?
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
             LeafCurveEntity::BSplineWithKnots
             | LeafCurveEntity::UniformCurve
             | LeafCurveEntity::QuasiUniformCurve
-            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses)
+            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses, ctx)?
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
         };
@@ -1068,7 +1078,7 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses, ctx)? {
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -1658,7 +1668,7 @@ pub(super) fn decode(
             LeafSurfaceEntity::BSplineWithKnots
             | LeafSurfaceEntity::UniformSurface
             | LeafSurfaceEntity::QuasiUniformSurface
-            | LeafSurfaceEntity::BezierSurface => nurbs_surface(id, record, &points, &mut losses)
+            | LeafSurfaceEntity::BezierSurface => nurbs_surface(id, record, &points, &mut losses, ctx)?
                 .map(SolvedSurfaceGeometry::Nurbs)
                 .map(SurfaceGeometry::Solved),
         };
@@ -1682,7 +1692,7 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses, ctx)? {
             push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
@@ -4456,14 +4466,23 @@ fn periodic_value(
     field: &str,
     record_id: u64,
     losses: &mut Vec<LossNote>,
-) -> Option<bool> {
-    match logical_value(value?).ok()? {
-        Some(value) => Some(value),
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<bool>, CodecError> {
+    let Some(value) = value.and_then(|value| logical_value(value).ok()) else {
+        return Ok(None);
+    };
+    match value {
+        Some(value) => Ok(Some(value)),
         None => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
-            )));
-            Some(false)
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "{field} #{record_id} has UNKNOWN periodicity; decoded as non-periodic"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(Some(false))
         }
     }
 }
@@ -4601,39 +4620,45 @@ fn nurbs_curve_definition(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     periodicity_field: &str,
-) -> Option<NurbsCurveDefinition> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurveDefinition>, CodecError> {
     let (base, offset) = if record.partials.len() > 1 {
-        (record.partial("B_SPLINE_CURVE")?, 0)
+        (geometry_or_none!(record.partial("B_SPLINE_CURVE")), 0)
     } else {
-        let base = [
+        let base = geometry_or_none!([
             "B_SPLINE_CURVE_WITH_KNOTS",
             "UNIFORM_CURVE",
             "QUASI_UNIFORM_CURVE",
             "BEZIER_CURVE",
         ]
         .into_iter()
-        .find_map(|name| record.partial(name))?;
+        .find_map(|name| record.partial(name)));
         (base, 1)
     };
-    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let control_points = references(base.parameters.get(offset + 1)?)?;
-    if usize::try_from(degree).ok()? >= control_points.len() {
-        return None;
+    let degree = geometry_or_none!(base.parameters.get(offset)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let control_points = geometry_or_none!(references(
+        geometry_or_none!(base.parameters.get(offset + 1)), ctx
+    )?);
+    if usize::try_from(degree).ok().is_none_or(|degree| degree >= control_points.len()) {
+        return Ok(None);
     }
-    let periodic = periodic_value(
-        base.parameters.get(offset + 3),
-        periodicity_field,
-        id,
-        losses,
-    )?;
-    let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
+    let periodic = geometry_or_none!(periodic_value(
+        base.parameters.get(offset + 3), periodicity_field, id, losses, ctx
+    )?);
+    let degree_usize = geometry_or_none!(usize::try_from(degree).ok());
+    let expected_knots = geometry_or_none!(control_points.len()
+        .checked_add(degree_usize)
+        .and_then(|count| count.checked_add(1)));
     let knots = if let Some(knot_leaf) = record.partial("B_SPLINE_CURVE_WITH_KNOTS") {
-        let tail = knot_leaf.parameters.len().checked_sub(3)?;
-        expand_knots(
-            knot_leaf.parameters.get(tail)?,
-            knot_leaf.parameters.get(tail + 1)?,
+        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(3));
+        geometry_or_none!(expand_knots(
+            geometry_or_none!(knot_leaf.parameters.get(tail)),
+            geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
             expected_knots,
-        )?
+            ctx,
+        )?)
     } else {
         let kind = if record.partial("UNIFORM_CURVE").is_some() {
             DefaultNurbsKnotKind::Uniform
@@ -4642,79 +4667,84 @@ fn nurbs_curve_definition(
         } else if record.partial("BEZIER_CURVE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return None;
+            return Ok(None);
         };
-        default_nurbs_knots(control_points.len(), degree, kind)?
+        geometry_or_none!(default_nurbs_knots(control_points.len(), degree, kind, ctx)?)
     };
     if knots.len() != expected_knots {
-        return None;
+        return Ok(None);
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
-        Some(numbers(leaf.parameters.first()?)?)
+        Some(geometry_or_none!(numbers(geometry_or_none!(leaf.parameters.first()), ctx)?))
     } else {
         None
     };
-    Some(NurbsCurveDefinition {
+    Ok(Some(NurbsCurveDefinition {
         degree,
         control_points,
         knots,
         weights,
         periodic,
-    })
+    }))
 }
 
 fn default_nurbs_knots(
     control_point_count: usize,
     degree: u32,
     kind: DefaultNurbsKnotKind,
-) -> Option<KnotVector> {
-    let degree = usize::try_from(degree).ok()?;
-    let expected = control_point_count.checked_add(degree)?.checked_add(1)?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<KnotVector>, CodecError> {
+    let degree = geometry_or_none!(usize::try_from(degree).ok());
+    let expected = geometry_or_none!(control_point_count.checked_add(degree).and_then(|count| count.checked_add(1)));
     let mut knots = Vec::new();
-    knots.try_reserve_exact(expected).ok()?;
     match kind {
         DefaultNurbsKnotKind::Uniform => {
-            knots.extend((0..expected).map(|index| index as f64 - degree as f64));
+            for index in 0..expected {
+                let knot = geometry_or_none!(FiniteReal::new(index as f64 - degree as f64));
+                push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
+            }
         }
         DefaultNurbsKnotKind::QuasiUniform => {
-            let distinct_count = control_point_count.checked_sub(degree)?.checked_add(1)?;
+            let distinct_count = geometry_or_none!(control_point_count.checked_sub(degree).and_then(|count| count.checked_add(1)));
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    degree.checked_add(1)?
+                    geometry_or_none!(degree.checked_add(1))
                 } else {
                     1
                 };
-                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                for _ in 0..multiplicity {
+                    push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
+                }
             }
         }
         DefaultNurbsKnotKind::Bezier => {
             if degree == 0 {
-                return None;
+                return Ok(None);
             }
-            let segment_count = control_point_count.checked_sub(1)?;
+            let segment_count = geometry_or_none!(control_point_count.checked_sub(1));
             if segment_count % degree != 0 {
-                return None;
+                return Ok(None);
             }
             let segment_count = segment_count / degree;
-            let distinct_count = segment_count.checked_add(1)?;
+            let distinct_count = geometry_or_none!(segment_count.checked_add(1));
             for index in 0..distinct_count {
                 let multiplicity = if index == 0 || index + 1 == distinct_count {
-                    degree.checked_add(1)?
+                    geometry_or_none!(degree.checked_add(1))
                 } else {
                     degree
                 };
-                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                for _ in 0..multiplicity {
+                    push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
+                }
             }
         }
     }
-    (knots.len() == expected).then_some(())?;
-    KnotVector::from_finite_lanes(
-        knots
-            .into_iter()
-            .map(FiniteReal::new)
-            .collect::<Option<Vec<_>>>()?,
-    )
-    .ok()
+    if knots.len() != expected {
+        return Ok(None);
+    }
+    Ok(KnotVector::from_finite_lanes(knots).ok())
 }
 
 fn nurbs_curve(
@@ -4722,28 +4752,29 @@ fn nurbs_curve(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-) -> Option<NurbsCurve> {
-    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE")?;
-    let control_points = definition
-        .control_points
-        .into_iter()
-        .map(|id| points.get(&id).copied())
-        .collect::<Option<Vec<_>>>()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let definition = geometry_or_none!(nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE", ctx)?);
+    let mut control_points = Vec::new();
+    for id in definition.control_points {
+        let point = geometry_or_none!(points.get(&id).copied());
+        push_geometry_vec(&mut control_points, point, ctx, "step_nurbs_curve_control_points")?;
+    }
     let curve = NurbsPoles3::from_lanes(control_points, definition.weights).and_then(|poles| {
-        NurbsCurve::new(
-            definition.degree,
-            definition.knots,
-            poles,
-            definition.periodic,
-        )
+        NurbsCurve::new(definition.degree, definition.knots, poles, definition.periodic)
     });
     match curve {
-        Ok(curve) => Some(curve),
+        Ok(curve) => Ok(Some(curve)),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
-            )));
-            None
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -4753,29 +4784,29 @@ fn nurbs_pcurve(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
     losses: &mut Vec<LossNote>,
-) -> Option<PcurveGeometry> {
-    let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE pcurve")?;
-    let control_points = definition
-        .control_points
-        .into_iter()
-        .map(|id| points.get(&id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    let pcurve =
-        PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
-            PcurveNurbs::new(
-                definition.degree,
-                definition.knots,
-                poles,
-                definition.periodic,
-            )
-        });
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    let definition = geometry_or_none!(nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE pcurve", ctx)?);
+    let mut control_points = Vec::new();
+    for id in definition.control_points {
+        let point = geometry_or_none!(points.get(&id).copied());
+        push_geometry_vec(&mut control_points, point, ctx, "step_nurbs_pcurve_control_points")?;
+    }
+    let pcurve = PcurveNurbsPoles::from_lanes(control_points, definition.weights).and_then(|poles| {
+        PcurveNurbs::new(definition.degree, definition.knots, poles, definition.periodic)
+    });
     match pcurve {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
-            )));
-            None
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -4792,13 +4823,17 @@ fn decode_pcurve_geometry(
     losses: &mut Vec<LossNote>,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<(PcurveGeometry, BTreeSet<u64>)> {
-    if depth >= 256 || !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(PcurveGeometry, BTreeSet<u64>)>, CodecError> {
+    if depth >= 256 || active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| {
-        let record = exchange.records().get(&id)?;
-        let mut records = BTreeSet::from([id]);
+    let _depth = ctx.enter_nested("step_pcurve_geometry_walk")?;
+    insert_geometry_set(active, id, ctx, "step_pcurve_geometry_active")?;
+    let result = (|| -> Result<Option<_>, CodecError> {
+        let record = geometry_or_none!(exchange.records().get(&id));
+        let mut records = BTreeSet::new();
+        insert_geometry_set(&mut records, id, ctx, "step_pcurve_source_records")?;
         let geometry = if record.partials.iter().any(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -4808,202 +4843,157 @@ fn decode_pcurve_geometry(
                     | "BEZIER_CURVE"
             )
         }) {
-            nurbs_pcurve(id, record, points, losses)?
+            geometry_or_none!(nurbs_pcurve(id, record, points, losses, ctx)?)
         } else {
-            let curve_type = entity_type(
+            let curve_type = geometry_or_none!(entity_type(
                 record,
                 &[
-                    "LINE",
-                    "CIRCLE",
-                    "ELLIPSE",
-                    "PARABOLA",
-                    "HYPERBOLA",
-                    "POLYLINE",
-                    "CURVE_REPLICA",
-                    "TRIMMED_CURVE",
-                    "OFFSET_CURVE_2D",
-                    "UNIFORM_CURVE",
-                    "QUASI_UNIFORM_CURVE",
-                    "BEZIER_CURVE",
+                    "LINE", "CIRCLE", "ELLIPSE", "PARABOLA", "HYPERBOLA", "POLYLINE",
+                    "CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_2D", "UNIFORM_CURVE",
+                    "QUASI_UNIFORM_CURVE", "BEZIER_CURVE",
                 ],
-            )?;
+            ));
             match curve_type {
                 "LINE" => {
-                    let origin = named_parameter(record, "LINE", 1)?
-                        .reference()
-                        .and_then(|point| points.get(&point).copied())?;
-                    let direction = named_parameter(record, "LINE", 2)?
-                        .reference()
-                        .and_then(|vector| vectors.get(&vector).copied())?;
-                    PcurveGeometry::Line(
-                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction)
-                            .ok()?,
-                    )
+                    let origin = geometry_or_none!(named_parameter(record, "LINE", 1)
+                        .and_then(Value::reference)
+                        .and_then(|point| points.get(&point).copied()));
+                    let direction = geometry_or_none!(named_parameter(record, "LINE", 2)
+                        .and_then(Value::reference)
+                        .and_then(|vector| vectors.get(&vector).copied()));
+                    PcurveGeometry::Line(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).ok()
+                    ))
                 }
                 "CIRCLE" => {
-                    let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
-                    records.insert(placement);
-                    PcurveGeometry::Circle(cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
-                        cadmpeg_ir::units::FinitePoint2::new(center)?,
-                        cadmpeg_ir::units::FinitePoint2::from(x_axis),
-                        cadmpeg_ir::units::FinitePoint2::from(y_axis),
-                        cadmpeg_ir::scalar::PositiveReal::new(radius)?,
-                    )?)
+                    let placement = geometry_or_none!(named_parameter(record, "CIRCLE", 1).and_then(Value::reference));
+                    let (center, x_axis, y_axis) = geometry_or_none!(placements.get(&placement).copied());
+                    let radius = geometry_or_none!(named_parameter(record, "CIRCLE", 2).and_then(Value::number));
+                    insert_geometry_set(&mut records, placement, ctx, "step_pcurve_source_records")?;
+                    PcurveGeometry::Circle(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::CirclePcurve::from_parts(
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
+                            cadmpeg_ir::units::FinitePoint2::from(x_axis),
+                            cadmpeg_ir::units::FinitePoint2::from(y_axis),
+                            geometry_or_none!(PositiveReal::new(radius)),
+                        )
+                    ))
                 }
                 "ELLIPSE" => {
-                    let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius =
-                        named_parameter(record, "ELLIPSE", 2).and_then(Value::number)?;
-                    let minor_radius =
-                        named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
-                    records.insert(placement);
-                    PcurveGeometry::Ellipse(
+                    let placement = geometry_or_none!(named_parameter(record, "ELLIPSE", 1).and_then(Value::reference));
+                    let (center, x_axis, y_axis) = geometry_or_none!(placements.get(&placement).copied());
+                    let major_radius = geometry_or_none!(named_parameter(record, "ELLIPSE", 2).and_then(Value::number));
+                    let minor_radius = geometry_or_none!(named_parameter(record, "ELLIPSE", 3).and_then(Value::number));
+                    insert_geometry_set(&mut records, placement, ctx, "step_pcurve_source_records")?;
+                    PcurveGeometry::Ellipse(geometry_or_none!(
                         cadmpeg_ir::geometry::pcurve::EllipsePcurve::from_parts(
-                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
                             cadmpeg_ir::units::FinitePoint2::from(x_axis),
                             cadmpeg_ir::units::FinitePoint2::from(y_axis),
-                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
-                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
-                        )?,
-                    )
+                            geometry_or_none!(PositiveReal::new(major_radius)),
+                            geometry_or_none!(PositiveReal::new(minor_radius)),
+                        )
+                    ))
                 }
                 "PARABOLA" => {
-                    let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
-                    let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let focal_distance =
-                        named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
-                    records.insert(placement);
-                    PcurveGeometry::Parabola(
+                    let placement = geometry_or_none!(named_parameter(record, "PARABOLA", 1).and_then(Value::reference));
+                    let (vertex, x_axis, y_axis) = geometry_or_none!(placements.get(&placement).copied());
+                    let focal_distance = geometry_or_none!(named_parameter(record, "PARABOLA", 2).and_then(Value::number));
+                    insert_geometry_set(&mut records, placement, ctx, "step_pcurve_source_records")?;
+                    PcurveGeometry::Parabola(geometry_or_none!(
                         cadmpeg_ir::geometry::pcurve::ParabolaPcurve::from_parts(
-                            cadmpeg_ir::units::FinitePoint2::new(vertex)?,
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(vertex)),
                             cadmpeg_ir::units::FinitePoint2::from(x_axis),
                             cadmpeg_ir::units::FinitePoint2::from(y_axis),
-                            cadmpeg_ir::scalar::PositiveReal::new(focal_distance)?,
-                        )?,
-                    )
+                            geometry_or_none!(PositiveReal::new(focal_distance)),
+                        )
+                    ))
                 }
                 "HYPERBOLA" => {
-                    let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
-                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                    let major_radius =
-                        named_parameter(record, "HYPERBOLA", 2).and_then(Value::number)?;
-                    let minor_radius =
-                        named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
-                    records.insert(placement);
-                    PcurveGeometry::Hyperbola(
+                    let placement = geometry_or_none!(named_parameter(record, "HYPERBOLA", 1).and_then(Value::reference));
+                    let (center, x_axis, y_axis) = geometry_or_none!(placements.get(&placement).copied());
+                    let major_radius = geometry_or_none!(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number));
+                    let minor_radius = geometry_or_none!(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number));
+                    insert_geometry_set(&mut records, placement, ctx, "step_pcurve_source_records")?;
+                    PcurveGeometry::Hyperbola(geometry_or_none!(
                         cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::from_parts(
-                            cadmpeg_ir::units::FinitePoint2::new(center)?,
+                            geometry_or_none!(cadmpeg_ir::units::FinitePoint2::new(center)),
                             cadmpeg_ir::units::FinitePoint2::from(x_axis),
                             cadmpeg_ir::units::FinitePoint2::from(y_axis),
-                            cadmpeg_ir::scalar::PositiveReal::new(major_radius)?,
-                            cadmpeg_ir::scalar::PositiveReal::new(minor_radius)?,
-                        )?,
-                    )
-                }
-                "POLYLINE" => polyline_pcurve(id, record, points, losses)?,
-                "CURVE_REPLICA" => {
-                    let basis_id = named_parameter(record, "CURVE_REPLICA", 1)?.reference()?;
-                    let operator_id = named_parameter(record, "CURVE_REPLICA", 2)?.reference()?;
-                    let (basis, basis_records) = decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        losses,
-                        active,
-                        depth + 1,
-                    )?;
-                    let transform = transformations.get(&operator_id).copied()?;
-                    records.extend(basis_records);
-                    records.insert(operator_id);
-                    PcurveGeometry::Transformed(
-                        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
-                            Box::new(basis),
-                            transform,
+                            geometry_or_none!(PositiveReal::new(major_radius)),
+                            geometry_or_none!(PositiveReal::new(minor_radius)),
                         )
-                        .ok()?,
-                    )
+                    ))
+                }
+                "POLYLINE" => geometry_or_none!(polyline_pcurve(id, record, points, losses, ctx)?),
+                "CURVE_REPLICA" => {
+                    let basis_id = geometry_or_none!(named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference));
+                    let operator_id = geometry_or_none!(named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference));
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id, exchange, points, vectors, placements, transformations,
+                        angle_scale, losses, active, depth + 1, ctx,
+                    )?);
+                    let transform = geometry_or_none!(transformations.get(&operator_id).copied());
+                    for record in basis_records {
+                        insert_geometry_set(&mut records, record, ctx, "step_pcurve_source_records")?;
+                    }
+                    insert_geometry_set(&mut records, operator_id, ctx, "step_pcurve_source_records")?;
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Transformed(geometry_or_none!(
+                        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(Box::new(basis), transform).ok()
+                    ))
                 }
                 "TRIMMED_CURVE" => {
-                    let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
-                    let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
-                    let (basis, basis_records) = decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        losses,
-                        active,
-                        depth + 1,
-                    )?;
-                    let scale = if matches!(
-                        basis,
-                        PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_)
-                    ) {
+                    let basis_id = geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 1).and_then(Value::reference));
+                    let sense = geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 4).and_then(Value::logical));
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id, exchange, points, vectors, placements, transformations,
+                        angle_scale, losses, active, depth + 1, ctx,
+                    )?);
+                    let scale = if matches!(basis, PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_)) {
                         angle_scale
                     } else {
                         1.0
                     };
-                    let start =
-                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?.get()
-                            * scale;
-                    let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
-                        .get()
-                        * scale;
-                    records.extend(basis_records);
+                    let start = geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 2)
+                        .and_then(pcurve_trim_parameter)).get() * scale;
+                    let end = geometry_or_none!(named_parameter(record, "TRIMMED_CURVE", 3)
+                        .and_then(pcurve_trim_parameter)).get() * scale;
+                    for record in basis_records {
+                        insert_geometry_set(&mut records, record, ctx, "step_pcurve_source_records")?;
+                    }
                     let (parameter_range, same_sense) =
                         trimmed_pcurve_parameterization(&basis, start, end, sense);
-                    PcurveGeometry::Trimmed(
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Trimmed(geometry_or_none!(
                         cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
-                            parameter_range,
-                            same_sense,
-                            Box::new(basis),
-                        )
-                        .ok()?,
-                    )
+                            parameter_range, same_sense, Box::new(basis)
+                        ).ok()
+                    ))
                 }
                 "OFFSET_CURVE_2D" => {
-                    let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
-                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?
-                        .number()
-                        .and_then(FiniteReal::new)?;
-                    named_parameter(record, "OFFSET_CURVE_2D", 3)?.logical()?;
-                    let (basis, basis_records) = decode_pcurve_geometry(
-                        basis_id,
-                        exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
-                        losses,
-                        active,
-                        depth + 1,
-                    )?;
-                    records.extend(basis_records);
-                    PcurveGeometry::Offset(
+                    let basis_id = geometry_or_none!(named_parameter(record, "OFFSET_CURVE_2D", 1).and_then(Value::reference));
+                    let distance = geometry_or_none!(named_parameter(record, "OFFSET_CURVE_2D", 2)
+                        .and_then(Value::number).and_then(FiniteReal::new));
+                    geometry_or_none!(named_parameter(record, "OFFSET_CURVE_2D", 3).and_then(Value::logical));
+                    let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
+                        basis_id, exchange, points, vectors, placements, transformations,
+                        angle_scale, losses, active, depth + 1, ctx,
+                    )?);
+                    for record in basis_records {
+                        insert_geometry_set(&mut records, record, ctx, "step_pcurve_source_records")?;
+                    }
+                    ctx.charge_collection_items(1, "step_pcurve_nested_geometry")?;
+                    PcurveGeometry::Offset(geometry_or_none!(
                         cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_finite_parts(
-                            distance,
-                            Box::new(basis),
-                        )
-                        .ok()?,
-                    )
+                            distance, Box::new(basis)
+                        ).ok()
+                    ))
                 }
-                _ => {
-                    return None;
-                }
+                _ => return Ok(None),
             }
         };
-        Some((geometry, records))
+        Ok(Some((geometry, records)))
     })();
     active.remove(&id);
     result
@@ -5419,28 +5409,36 @@ fn polyline_pcurve(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
     losses: &mut Vec<LossNote>,
-) -> Option<PcurveGeometry> {
-    let control_points = record
-        .parameter(1)?
-        .list()?
-        .iter()
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
-        .collect::<Option<Vec<_>>>()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PcurveGeometry>, CodecError> {
+    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut control_points = Vec::new();
+    for value in values {
+        let point = geometry_or_none!(value.reference().and_then(|id| points.get(&id).copied()));
+        push_geometry_vec(&mut control_points, point, ctx, "step_polyline_pcurve_points")?;
+    }
     if control_points.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let last = (control_points.len() - 1) as f64;
-    let mut knots = Vec::with_capacity(control_points.len() + 2);
-    knots.push(0.0);
-    knots.extend((0..control_points.len()).map(|index| index as f64));
-    knots.push(last);
+    let mut knots = Vec::new();
+    push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_pcurve_knots")?;
+    for index in 0..control_points.len() {
+        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_pcurve_knots")?;
+    }
+    push_geometry_vec(&mut knots, last, ctx, "step_polyline_pcurve_knots")?;
     match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
-            )));
-            None
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -5450,33 +5448,38 @@ fn polyline(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-) -> Option<NurbsCurve> {
-    let control_points = record
-        .parameter(1)?
-        .list()?
-        .iter()
-        .map(|value| {
-            value
-                .reference()
-                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CodecError> {
+    let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
+    let mut control_points = Vec::new();
+    for value in values {
+        let point = geometry_or_none!(value
+            .reference()
+            .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+        push_geometry_vec(&mut control_points, point, ctx, "step_polyline_points")?;
+    }
     if control_points.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let last = (control_points.len() - 1) as f64;
-    let mut knots = Vec::with_capacity(control_points.len() + 2);
-    knots.push(0.0);
-    knots.extend((0..control_points.len()).map(|index| index as f64));
-    knots.push(last);
+    let mut knots = Vec::new();
+    push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_knots")?;
+    for index in 0..control_points.len() {
+        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_knots")?;
+    }
+    push_geometry_vec(&mut knots, last, ctx, "step_polyline_knots")?;
     match NurbsCurve::from_lanes(1, knots, control_points, None, false) {
-        Ok(curve) => Some(curve),
+        Ok(curve) => Ok(Some(curve)),
         Err(error) => {
-            losses.push(
-                StepLossCode::DecodeWarning
-                    .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
-            );
-            None
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "POLYLINE #{id} is not a curve carrier: {error}"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -5486,50 +5489,53 @@ fn nurbs_surface(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
-) -> Option<NurbsSurface> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsSurface>, CodecError> {
     let (base, offset) = if record.partials.len() > 1 {
-        (record.partial("B_SPLINE_SURFACE")?, 0)
+        (geometry_or_none!(record.partial("B_SPLINE_SURFACE")), 0)
     } else {
-        let base = [
+        let base = geometry_or_none!([
             "B_SPLINE_SURFACE_WITH_KNOTS",
             "UNIFORM_SURFACE",
             "QUASI_UNIFORM_SURFACE",
             "BEZIER_SURFACE",
         ]
         .into_iter()
-        .find_map(|name| record.partial(name))?;
+        .find_map(|name| record.partial(name)));
         (base, 1)
     };
-    let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let v_degree = u32::try_from(base.parameters.get(offset + 1)?.integer()?).ok()?;
-    let rows = base
-        .parameters
-        .get(offset + 2)?
-        .list()?
-        .iter()
-        .map(Value::list)
-        .collect::<Option<Vec<_>>>()?;
-    let u_count = u32::try_from(rows.len()).ok()?;
-    let v_count = u32::try_from(rows.first()?.len()).ok()?;
+    let u_degree = geometry_or_none!(base.parameters.get(offset)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let v_degree = geometry_or_none!(base.parameters.get(offset + 1)
+        .and_then(Value::integer)
+        .and_then(|degree| u32::try_from(degree).ok()));
+    let rows = geometry_or_none!(base.parameters.get(offset + 2).and_then(Value::list));
+    if !rows.iter().all(|row| row.list().is_some()) {
+        return Ok(None);
+    }
+    let u_count = geometry_or_none!(u32::try_from(rows.len()).ok());
+    let v_count = geometry_or_none!(rows.first()
+        .and_then(Value::list)
+        .and_then(|row| u32::try_from(row.len()).ok()));
     if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
-        || rows.iter().any(|row| row.len() != v_count as usize)
+        || rows.iter().any(|row| row.list().is_none_or(|row| row.len() != v_count as usize))
     {
-        return None;
+        return Ok(None);
     }
-    let control_points = rows
-        .into_iter()
-        .map(|row| {
-            row.iter()
-                .map(|value| {
-                    value
-                        .reference()
-                        .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let mut control_points = Vec::new();
+    for row in rows {
+        let mut decoded_row = Vec::new();
+        for value in geometry_or_none!(row.list()) {
+            let point = geometry_or_none!(value
+                .reference()
+                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
+            push_geometry_vec(&mut decoded_row, point, ctx, "step_nurbs_surface_control_points")?;
+        }
+        push_geometry_vec(&mut control_points, decoded_row, ctx, "step_nurbs_surface_rows")?;
+    }
     let surface_name = [
         "B_SPLINE_SURFACE_WITH_KNOTS",
         "UNIFORM_SURFACE",
@@ -5539,40 +5545,41 @@ fn nurbs_surface(
     .into_iter()
     .find(|name| record.partial(name).is_some())
     .unwrap_or("B_SPLINE_SURFACE");
-    let u_periodic = periodic_value(
+    let u_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 4),
         &format!("{surface_name} U direction"),
         id,
         losses,
-    )?;
-    let v_periodic = periodic_value(
+        ctx,
+    )?);
+    let v_periodic = geometry_or_none!(periodic_value(
         base.parameters.get(offset + 5),
         &format!("{surface_name} V direction"),
         id,
         losses,
-    )?;
-    let expected_u = usize::try_from(u_count)
-        .ok()?
-        .checked_add(usize::try_from(u_degree).ok()?)?
-        .checked_add(1)?;
-    let expected_v = usize::try_from(v_count)
-        .ok()?
-        .checked_add(usize::try_from(v_degree).ok()?)?
-        .checked_add(1)?;
-    let (u_knots, v_knots) = if let Some(knot_leaf) = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")
-    {
-        let tail = knot_leaf.parameters.len().checked_sub(5)?;
+        ctx,
+    )?);
+    let expected_u = geometry_or_none!(usize::try_from(u_count).ok()
+        .and_then(|count| usize::try_from(u_degree).ok().and_then(|degree| count.checked_add(degree)))
+        .and_then(|count| count.checked_add(1)));
+    let expected_v = geometry_or_none!(usize::try_from(v_count).ok()
+        .and_then(|count| usize::try_from(v_degree).ok().and_then(|degree| count.checked_add(degree)))
+        .and_then(|count| count.checked_add(1)));
+    let (u_knots, v_knots) = if let Some(knot_leaf) = record.partial("B_SPLINE_SURFACE_WITH_KNOTS") {
+        let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(5));
         (
-            expand_knots(
-                knot_leaf.parameters.get(tail)?,
-                knot_leaf.parameters.get(tail + 2)?,
+            geometry_or_none!(expand_knots(
+                geometry_or_none!(knot_leaf.parameters.get(tail)),
+                geometry_or_none!(knot_leaf.parameters.get(tail + 2)),
                 expected_u,
-            )?,
-            expand_knots(
-                knot_leaf.parameters.get(tail + 1)?,
-                knot_leaf.parameters.get(tail + 3)?,
+                ctx,
+            )?),
+            geometry_or_none!(expand_knots(
+                geometry_or_none!(knot_leaf.parameters.get(tail + 1)),
+                geometry_or_none!(knot_leaf.parameters.get(tail + 3)),
                 expected_v,
-            )?,
+                ctx,
+            )?),
         )
     } else {
         let kind = if record.partial("UNIFORM_SURFACE").is_some() {
@@ -5582,26 +5589,26 @@ fn nurbs_surface(
         } else if record.partial("BEZIER_SURFACE").is_some() {
             DefaultNurbsKnotKind::Bezier
         } else {
-            return None;
+            return Ok(None);
         };
         (
-            default_nurbs_knots(usize::try_from(u_count).ok()?, u_degree, kind)?,
-            default_nurbs_knots(usize::try_from(v_count).ok()?, v_degree, kind)?,
+            geometry_or_none!(default_nurbs_knots(geometry_or_none!(usize::try_from(u_count).ok()), u_degree, kind, ctx)?),
+            geometry_or_none!(default_nurbs_knots(geometry_or_none!(usize::try_from(v_count).ok()), v_degree, kind, ctx)?),
         )
     };
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
-        return None;
+        return Ok(None);
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
-        let rows = leaf.parameters.first()?.list()?;
+        let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
         let mut values = Vec::new();
         for row in rows {
-            values.push(
-                row.list()?
-                    .iter()
-                    .map(Value::number)
-                    .collect::<Option<Vec<_>>>()?,
-            );
+            let mut decoded_row = Vec::new();
+            for value in geometry_or_none!(row.list()) {
+                let number = geometry_or_none!(value.number());
+                push_geometry_vec(&mut decoded_row, number, ctx, "step_nurbs_surface_weight_values")?;
+            }
+            push_geometry_vec(&mut values, decoded_row, ctx, "step_nurbs_surface_weight_rows")?;
         }
         Some(values)
     } else {
@@ -5616,40 +5623,55 @@ fn nurbs_surface(
         )
     });
     match surface {
-        Ok(surface) => Some(surface),
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
-            )));
-            None
+            push_geometry_vec(
+                losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
+                )),
+                ctx,
+                "step_geometry_losses",
+            )?;
+            Ok(None)
         }
     }
 }
 
-fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<KnotVector> {
-    let multiplicities = multiplicities.list()?;
-    let distinct = distinct.list()?;
+fn expand_knots(
+    multiplicities: &Value,
+    distinct: &Value,
+    expected: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<KnotVector>, CodecError> {
+    let multiplicities = geometry_or_none!(multiplicities.list());
+    let distinct = geometry_or_none!(distinct.list());
     if multiplicities.len() != distinct.len() {
-        return None;
+        return Ok(None);
     }
     let mut knots = Vec::new();
-    knots.try_reserve_exact(expected).ok()?;
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
-        let count = usize::try_from(multiplicity.integer()?).ok()?;
-        let knot = knot.number().and_then(FiniteReal::new)?;
-        if count == 0 {
-            return None;
+        let count = geometry_or_none!(multiplicity.integer().and_then(|count| usize::try_from(count).ok()));
+        let knot = geometry_or_none!(knot.number().and_then(FiniteReal::new));
+        if count == 0 || knots.len().checked_add(count).is_none_or(|len| len > expected) {
+            return Ok(None);
         }
-        if knots.len().checked_add(count)? > expected {
-            return None;
-        }
+        ctx.charge_collection_items(u64_from_index(count), "step_expanded_nurbs_knots")?;
+        knots.try_reserve(count)
+            .map_err(|_| ctx.refuse_codec_limit("step_expanded_nurbs_knots", 0, u64_from_index(count)))?;
         knots.extend(std::iter::repeat_n(knot, count));
     }
-    KnotVector::from_finite_lanes(knots).ok()
+    Ok(KnotVector::from_finite_lanes(knots).ok())
 }
 
-fn references(value: &Value) -> Option<Vec<u64>> {
-    value.list()?.iter().map(Value::reference).collect()
+fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {
+    let values = geometry_or_none!(value.list());
+    let mut references = Vec::new();
+    for value in values {
+        let id = geometry_or_none!(value.reference());
+        push_geometry_vec(&mut references, id, ctx, "step_nurbs_control_point_ids")?;
+    }
+    Ok(Some(references))
 }
 
 pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
@@ -5666,8 +5688,14 @@ pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> 
     }
 }
 
-fn numbers(value: &Value) -> Option<Vec<f64>> {
-    value.list()?.iter().map(Value::number).collect()
+fn numbers(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<f64>>, CodecError> {
+    let values = geometry_or_none!(value.list());
+    let mut numbers = Vec::new();
+    for value in values {
+        let number = geometry_or_none!(value.number());
+        push_geometry_vec(&mut numbers, number, ctx, "step_nurbs_weight_values")?;
+    }
+    Ok(Some(numbers))
 }
 
 pub(super) fn normalize(vector: Vector3) -> Option<UnitVector3> {
