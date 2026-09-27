@@ -68,9 +68,9 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.push(
+            push_presentation_vec(&mut losses,
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            );
+                ctx, "step_presentation_losses")?;
             continue;
         };
         let mut supported = true;
@@ -119,9 +119,9 @@ pub(super) fn decode(
                 }
             }
             if !target_supported || !hidden {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{id} targets unsupported item #{target}"
-                )));
+                )), ctx, "step_presentation_losses")?;
                 supported = false;
             }
         }
@@ -138,15 +138,15 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
-            )));
+            )), ctx, "step_presentation_losses")?;
             continue;
         };
         if assigned_items.is_empty() {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
-            )));
+            )), ctx, "step_presentation_losses")?;
             continue;
         }
         let Some(name) =
@@ -164,9 +164,9 @@ pub(super) fn decode(
             .transpose()?
             .flatten()
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-            )));
+            )), ctx, "step_presentation_losses")?;
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -228,10 +228,10 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.push(
+            push_presentation_vec(&mut losses,
                 StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            );
+                ctx, "step_presentation_losses")?;
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -265,10 +265,10 @@ pub(super) fn decode(
                     format!("#{context_style_id} in {context}")
                 })
                 .collect::<Vec<_>>();
-            losses.push(StepLossCode::ContextDependentStyleUnresolved.note(format!(
+            push_presentation_vec(&mut losses, StepLossCode::ContextDependentStyleUnresolved.note(format!(
                 "STYLED_ITEM #{style_id} has context-dependent style assignments {}; no presentation context is selected by the neutral model; those source branches remain opaque",
                 contexts.join(", ")
-            )));
+            )), ctx, "step_presentation_losses")?;
             continue;
         }
         let color =
@@ -305,17 +305,17 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.push(StepLossCode::ConflictingScalarColors.note(format!(
+                push_presentation_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
-                )));
+                )), ctx, "step_presentation_losses")?;
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                    push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "STYLED_ITEM #{style_id} has no resolved surface color"
-                    )));
+                    )), ctx, "step_presentation_losses")?;
                 }
                 continue;
             }
@@ -372,9 +372,9 @@ pub(super) fn decode(
                 &body_indices,
             );
             if targets.is_empty() {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"
-                )));
+                )), ctx, "step_presentation_losses")?;
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
@@ -439,9 +439,9 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{style_id}"
-                )));
+                )), ctx, "step_presentation_losses")?;
                 supported = false;
             }
         }
@@ -456,9 +456,9 @@ pub(super) fn decode(
                 }
             }
             if !matched {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
+                push_presentation_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "INVISIBILITY #{invisibility_id} targets unsupported item #{layer_id}"
-                )));
+                )), ctx, "step_presentation_losses")?;
                 supported = false;
             }
         }
@@ -498,11 +498,11 @@ pub(super) fn decode(
                 .iter()
                 .map(|(style_id, _)| format!("#{style_id}"))
                 .collect::<Vec<_>>();
-            losses.push(StepLossCode::ConflictingScalarColors.note(format!(
-                    "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
-                    style_ids.join(", "),
-                    target,
-                )));
+            push_presentation_vec(&mut losses, StepLossCode::ConflictingScalarColors.note(format!(
+                "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
+                style_ids.join(", "),
+                target,
+            )), ctx, "step_presentation_losses")?;
         }
     }
     Ok(StageOutcome {
@@ -1215,12 +1215,14 @@ fn find_color(
     if !active.insert(id) {
         return Ok(None);
     }
-    let transparency = (domain == StyleDomain::Surface)
-        .then(|| surface_transparency(id, record, exchange, losses))
-        .flatten();
+    let transparency = if domain == StyleDomain::Surface {
+        surface_transparency(id, record, exchange, losses, ctx)?
+    } else {
+        None
+    };
     let result = (|| -> Result<CachedColor, CodecError> {
         let side_rank = if domain == StyleDomain::Surface {
-            let Some(rank) = surface_side_rank(id, record, losses, invalid_surface_sides) else {
+            let Some(rank) = surface_side_rank(id, record, losses, invalid_surface_sides, ctx)? else {
                 return Ok(None);
             };
             rank
@@ -1400,41 +1402,74 @@ fn find_color(
     Ok(result)
 }
 
+struct TransparencyDetails<'a>(&'a [(u64, Fraction)]);
+
+impl std::fmt::Display for TransparencyDetails<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (property_id, transparency)) in self.0.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "#{property_id}={}", transparency.get())?;
+        }
+        Ok(())
+    }
+}
+
 fn surface_transparency(
     id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> Option<Fraction> {
-    let candidates = record
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Fraction>, CodecError> {
+    let mut candidates = Vec::new();
+    for property_id in record
         .partials
         .iter()
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
         .flat_map(|partial| partial.parameters.iter().flat_map(references))
-        .filter_map(|property_id| {
-            let property = exchange.records().get(&property_id)?;
-            let transparency = property
-                .partials
-                .iter()
-                .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
-                .and_then(|partial| partial.parameters.first())
-                .and_then(ValueExt::number)?;
-            Fraction::new(transparency).map(|transparency| (property_id, transparency))
-        })
-        .collect::<Vec<_>>();
+    {
+        let Some(property) = exchange.records().get(&property_id) else {
+            continue;
+        };
+        let Some(transparency) = property
+            .partials
+            .iter()
+            .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(ValueExt::number)
+            .and_then(Fraction::new)
+        else {
+            continue;
+        };
+        push_presentation_vec(
+            &mut candidates,
+            (property_id, transparency),
+            ctx,
+            "step_presentation_transparency_candidates",
+        )?;
+    }
     match candidates.as_slice() {
-        [] => None,
-        [(_, transparency)] => Some(*transparency),
+        [] => Ok(None),
+        [(_, transparency)] => Ok(Some(*transparency)),
         _ => {
-            let details = candidates
-                .iter()
-                .map(|(property_id, transparency)| format!("#{property_id}={}", transparency.get()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            losses.push(StepLossCode::SurfaceTransparencyConflict.note(format!(
-                "surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"
-            )));
-            None
+            let details = TransparencyDetails(&candidates);
+            let message = match ctx {
+                Some(ctx) => crate::decode_alloc::charged_format(
+                    ctx,
+                    "step_presentation_transparency_conflict_text",
+                    format_args!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"),
+                )?,
+                None => format!("surface style rendering #{id} has conflicting transparency properties ({details}); transparency omitted"),
+            };
+            push_presentation_vec(
+                losses,
+                StepLossCode::SurfaceTransparencyConflict.note(message),
+                ctx,
+                "step_presentation_losses",
+            )?;
+            Ok(None)
         }
     }
 }
@@ -1444,31 +1479,38 @@ fn surface_side_rank(
     record: &RawRecord,
     losses: &mut Vec<LossNote>,
     invalid_surface_sides: &mut BTreeSet<u64>,
-) -> Option<SurfaceSideRank> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<SurfaceSideRank>, CodecError> {
     let Some(partial) = record
         .partials
         .iter()
         .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
     else {
-        return Some(SurfaceSideRank::NoUsage);
+        return Ok(Some(SurfaceSideRank::NoUsage));
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {
-        invalid_surface_sides.insert(id);
-        losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
+        insert_presentation_set(invalid_surface_sides, id, ctx, "step_presentation_invalid_surface_sides")?;
+        push_presentation_vec(losses, StepLossCode::SurfaceSideInvalid.note(format!(
             "SURFACE_STYLE_USAGE #{id} has no valid surface_side; style omitted"
-        )));
-        return None;
+        )), ctx, "step_presentation_losses")?;
+        return Ok(None);
     };
     match side {
-        "BOTH" => Some(SurfaceSideRank::Both),
-        "POSITIVE" => Some(SurfaceSideRank::Positive),
-        "NEGATIVE" => Some(SurfaceSideRank::Negative),
+        "BOTH" => Ok(Some(SurfaceSideRank::Both)),
+        "POSITIVE" => Ok(Some(SurfaceSideRank::Positive)),
+        "NEGATIVE" => Ok(Some(SurfaceSideRank::Negative)),
         _ => {
-            invalid_surface_sides.insert(id);
-            losses.push(StepLossCode::SurfaceSideInvalid.note(format!(
-                "SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"
-            )));
-            None
+            insert_presentation_set(invalid_surface_sides, id, ctx, "step_presentation_invalid_surface_sides")?;
+            let message = match ctx {
+                Some(ctx) => crate::decode_alloc::charged_format(
+                    ctx,
+                    "step_presentation_invalid_surface_side_text",
+                    format_args!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"),
+                )?,
+                None => format!("SURFACE_STYLE_USAGE #{id} has invalid surface_side .{side}.; style omitted"),
+            };
+            push_presentation_vec(losses, StepLossCode::SurfaceSideInvalid.note(message), ctx, "step_presentation_losses")?;
+            Ok(None)
         }
     }
 }

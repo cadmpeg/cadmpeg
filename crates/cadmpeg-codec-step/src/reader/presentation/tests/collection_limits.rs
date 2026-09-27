@@ -233,3 +233,74 @@ fn presentation_style_target_items_refuse_collection_limit() {
 fn presentation_style_target_walk_refuses_depth_limit() {
     style_target_refuses("step_presentation_style_target_walk", true);
 }
+
+#[test]
+fn presentation_losses_refuse_collection_limit() {
+    vector_refuses("step_presentation_losses");
+}
+
+fn transparency_refuses(operation: &str, retained: bool) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_RENDERING_WITH_PROPERTIES($,(#2,#3));#2=SURFACE_STYLE_TRANSPARENT(0.2);#3=SURFACE_STYLE_TRANSPARENT(0.5);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("transparency exchange");
+    let record = exchange.records().get(&1).expect("rendering record");
+    let refused = (0..=4).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits policy");
+        matches!(
+            super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), Some(&ctx)),
+            Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+        )
+    });
+    assert!(refused, "no refusal for {operation}");
+}
+
+#[test]
+fn presentation_transparency_candidates_refuse_collection_limit() {
+    transparency_refuses("step_presentation_transparency_candidates", false);
+}
+
+#[test]
+fn presentation_transparency_conflict_text_refuses_retained_limit() {
+    transparency_refuses("step_presentation_transparency_conflict_text", true);
+}
+
+fn invalid_side_refuses(operation: &str, retained: bool) {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=SURFACE_STYLE_USAGE(.UNKNOWN.,#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("surface side exchange");
+    let record = exchange.records().get(&1).expect("style usage record");
+    let refused = (0..=2).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits policy");
+        matches!(
+            super::super::surface_side_rank(
+                1, record, &mut Vec::new(), &mut BTreeSet::new(), Some(&ctx),
+            ),
+            Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
+        )
+    });
+    assert!(refused, "no refusal for {operation}");
+}
+
+#[test]
+fn presentation_invalid_surface_sides_refuse_collection_limit() {
+    invalid_side_refuses("step_presentation_invalid_surface_sides", false);
+}
+
+#[test]
+fn presentation_invalid_surface_side_text_refuses_retained_limit() {
+    invalid_side_refuses("step_presentation_invalid_surface_side_text", true);
+}
