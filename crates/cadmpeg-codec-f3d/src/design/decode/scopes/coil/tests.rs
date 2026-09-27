@@ -700,13 +700,13 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("Coil scope");
     assert_eq!(scope.coil_operation(), Some(DesignExtrudeOperation::Cut));
     assert_eq!(scope.coil_operation_offset(), Some(20));
@@ -762,13 +762,13 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("compact Coil scope");
     assert_eq!(
         scope.coil_operation(),
@@ -798,13 +798,13 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         ] {
             bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
-            let parsed = parse_parameter_scope(
+            let parsed = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset,
-            )
+            ).unwrap()
             .expect("compact Coil scope");
             assert_eq!(parsed.coil_section(), Some(section));
             assert_eq!(parsed.coil_section_placement(), Some(placement));
@@ -812,13 +812,13 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     }
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    let unsupported = parse_parameter_scope(
+    let unsupported = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("unsupported Coil operation remains a native scope");
     assert!(unsupported.coil_operation().is_none());
 }
@@ -858,13 +858,13 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
         byte_offset: 0,
     };
 
-    let scope = parse_parameter_scope(
+    let scope = parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
-    )
+    ).unwrap()
     .expect("compact Coil new-body scope");
     assert_eq!(scope.frame_length(), 442);
     assert_eq!(
@@ -931,13 +931,13 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
                 .unwrap(),
             byte_offset: 0,
         };
-        parse_parameter_scope(
+        parse_parameter_scope(&cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
-        )
+        ).unwrap()
         .expect("long Coil scope")
     };
 

@@ -1005,13 +1005,18 @@ fn parse_mesh_scope_record(
         (record.get(feature_scope::ZERO_RUN_10..feature_scope::BODY_COUNT) == Some(&[0; 10]))
             .then_some(())?;
         let (body_records, body_list_end) = counted_bodies?;
-        let scope = parse_parameter_scope(
+        let scope = match parse_parameter_scope(
+            ctx,
             bytes,
             records,
             identity.record_index(),
             identity.class_tag(),
             u64::try_from(frame.start).ok()?,
-        )?;
+        ) {
+            Ok(Some(scope)) => scope,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset() == u64::try_from(frame.start).ok()?)
         .then_some(())?;
@@ -1039,12 +1044,14 @@ fn parse_mesh_scope_record(
         .then_some(())?;
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
-        Some(MeshScopeRecord {
+        Some(Ok(MeshScopeRecord {
             scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
             body_records,
-        })
+        }))
     })();
-    parsed.ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
+    parsed
+        .transpose()?
+        .ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
 }
 
 fn parse_mesh_collection_owner_record(

@@ -1652,14 +1652,14 @@ fn surface_patch_boundary_settings_decode_the_fixed_payload() {
         model_reference: 100,
     };
     assert_eq!(
-        surface_patch_boundaries(&bytes, &records, &[42]),
+        surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap(),
         vec![expected.clone()]
     );
 
     bytes[26..30].copy_from_slice(&0_u32.to_le_bytes());
     expected.flip = 0;
     assert_eq!(
-        surface_patch_boundaries(&bytes, &records, &[42]),
+        surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap(),
         vec![expected]
     );
 }
@@ -1680,13 +1680,46 @@ fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
 
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     bytes[21] = 2;
-    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+    assert!(surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap().is_empty());
 
     bytes[21] = 0;
     bytes[30..38].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+    assert!(surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap().is_empty());
 
     bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
     bytes[38] = 0;
-    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+    assert!(surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap().is_empty());
+}
+
+#[test]
+fn surface_patch_boundary_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::design::decode::patch::surface_patch_boundaries;
+
+    let mut bytes = vec![0_u8; 49];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"999");
+    bytes[7..11].copy_from_slice(&42_u32.to_le_bytes());
+    bytes[21] = 1;
+    bytes[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 1;
+    bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = surface_patch_boundaries(&ctx, &bytes, &records, &[42]);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d SurfacePatch boundaries"
+    ));
+    assert_eq!(
+        surface_patch_boundaries(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &[42]).unwrap().len(),
+        1
+    );
 }
