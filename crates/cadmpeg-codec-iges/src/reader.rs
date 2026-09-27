@@ -160,7 +160,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
                 .conditional_double_precision_losses(parameter::uses_double_precision(&parameters)),
         );
         charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
-        let references = graph::build(&directory);
+        let references = graph::build(&directory, ctx)?;
         let mut framing_recoveries = scan.recoveries.clone();
         framing_recoveries.merge(parameter_recoveries);
         Ok(Self {
