@@ -28,7 +28,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
-use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items, retained_string, retained_strings};
+use crate::resource::{collection_vec, optional_collection_vec, reserve_vec_items, retained_format, retained_string, retained_strings};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2310,12 +2310,16 @@ pub(crate) fn parse_payloads(
         let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };
-        let entry = entries_by_name.get(name.as_str()).ok_or_else(|| {
-            CodecError::malformed(format_args!("missing exact-shape entry {name}"))
-        })?;
+        let Some(entry) = entries_by_name.get(name.as_str()) else {
+            return Err(CodecError::Malformed(retained_format(
+                ctx,
+                format_args!("missing exact-shape entry {name}"),
+                "FreeCAD missing shape entry",
+            )?));
+        };
         let payload = if entry.data.is_empty() {
             ShapePayload::Empty
-        } else if name.to_ascii_lowercase().ends_with(".bin") {
+        } else if name.rsplit_once('.').is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin")) {
             let (facts, version) = parse_binary_prefix(ctx, &entry.data)?;
             ShapePayload::Binary { facts, version }
         } else {
@@ -2334,28 +2338,31 @@ pub(crate) fn parse_payloads(
 }
 
 fn direct_shape_entry(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "invalid exact-shape property XML {}: {error}",
-            property.id
-        ))
+    let document = roxmltree::Document::parse(property.xml.text()).or_else(|error| {
+        Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("invalid exact-shape property XML {}: {error}", property.id),
+            "FreeCAD shape property XML diagnostic",
+        )?))
     })?;
     let root = document.root_element();
     if !matches!(root.tag_name().name(), "Property" | "_Property") {
-        return Err(CodecError::malformed(format_args!(
-            "exact-shape property {} has no property record root",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("exact-shape property {} has no property record root", property.id),
+            "FreeCAD shape property root diagnostic",
+        )?));
     }
     let mut parts = root
         .children()
         .filter(|node| node.has_tag_name("Part"));
     let Some(part) = parts.next() else { return Ok(None); };
     if parts.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "exact-shape property {} has multiple direct Part carriers",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("exact-shape property {} has multiple direct Part carriers", property.id),
+            "FreeCAD shape property carrier diagnostic",
+        )?));
     }
     part.attribute("file")
         .filter(|file| !file.is_empty())
