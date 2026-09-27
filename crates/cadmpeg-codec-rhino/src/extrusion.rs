@@ -836,7 +836,11 @@ fn read_mesh_cache(
             crate::mesh::MeshDecodeOptions {
                 writer_version,
                 association: None,
-                id: format!("rhino:extrusion:mesh-cache#{index}"),
+                id: crate::wire::admitted_format(
+                    expand.ctx(),
+                    format_args!("rhino:extrusion:mesh-cache#{index}"),
+                    "Rhino extrusion mesh-cache ID",
+                )?,
                 scale,
                 userdata: &userdata,
             },
@@ -917,7 +921,11 @@ fn read_v5_mesh_cache(
                     crate::mesh::MeshDecodeOptions {
                         writer_version,
                         association: None,
-                        id: format!("rhino:extrusion:v5-mesh-cache#{index}"),
+                        id: crate::wire::admitted_format(
+                            expand.ctx(),
+                            format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
+                            "Rhino V5 extrusion mesh-cache ID",
+                        )?,
                         scale,
                         userdata: &nested_userdata,
                     },
@@ -2025,6 +2033,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn extrusion_mesh_cache_id_refuses_retained_limit() {
+        let bytes = one_mesh_cache();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root view");
+        let mut reader = crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
+            .expect("valid cache range");
+        let refusal = read_mesh_cache(
+            crate::mesh::MeshExpand::new(&ctx, root),
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            None,
+            MillimeterScale::IDENTITY,
+            &mut crate::mesh::MeshBudget::new(),
+            &mut Diagnostics::new(),
+        )
+        .expect_err("cache ID exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino extrusion mesh-cache ID"
+        ));
+    }
+
+    #[test]
     fn valid_mesh_cache_item_reuses_bounded_mesh_decoder() {
         let bytes = payload(3, [false, false], Some(one_mesh_cache()));
         let decoded = decode(
@@ -2071,6 +2108,46 @@ pub(crate) mod tests {
         })
         .expect("V5 mesh cache");
         assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn v5_extrusion_mesh_cache_id_refuses_retained_limit() {
+        let mut bytes = one_mesh_wrapper();
+        bytes.extend(null_object_wrapper());
+        bytes.extend(null_object_wrapper());
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
+            range: 0..bytes.len(),
+            version: (2, 2),
+            class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            item_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            save_context: None,
+            payload_range: 0..bytes.len(),
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root view");
+        let refusal = read_v5_mesh_cache(
+            crate::mesh::MeshExpand::new(&ctx, root),
+            &bytes,
+            ArchiveVersion::V5,
+            None,
+            MillimeterScale::IDENTITY,
+            std::slice::from_ref(&descriptor),
+            &mut crate::mesh::MeshBudget::new(),
+            &mut Diagnostics::new(),
+        )
+        .expect_err("V5 cache ID exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V5 extrusion mesh-cache ID"
+        ));
     }
 
     #[test]
