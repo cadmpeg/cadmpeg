@@ -1444,6 +1444,7 @@ where
                         else {
                             break;
                         };
+                        ctx.try_reserve_items(&mut runs, 1, "creo legacy numeric child runs")?;
                         runs.push(run);
                         next_index += 1;
                     }
@@ -1475,8 +1476,10 @@ where
                     index + 1,
                 )
             };
+            let name = ctx.copy_retained_text(&declaration.name, "creo legacy numeric record names")?;
+            ctx.try_reserve_items(&mut records, 1, "creo legacy numeric records")?;
             records.push(ValueRecord {
-                name: declaration.name.clone(),
+                name,
                 attribute_id: value.attribute_id,
                 scope_offset: scope.range.start,
                 parent: parents.get(&value.offset).copied(),
