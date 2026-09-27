@@ -72,11 +72,8 @@ fn assert_valid(result: &EditableDecodeResult) {
     assert!(result.ir().native.namespace("nx").is_some());
 }
 
-#[test]
-fn inspect_summary_refuses_entry_slots_at_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let scan = crate::decode::Scan {
+fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
+    crate::decode::Scan {
         container: crate::container::Container {
             data: Vec::new().into(),
             physical_size: 0,
@@ -92,7 +89,14 @@ fn inspect_summary_refuses_entry_slots_at_collection_limit() {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
-    };
+    }
+}
+
+#[test]
+fn inspect_summary_refuses_entry_slots_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -106,6 +110,61 @@ fn inspect_summary_refuses_entry_slots_at_collection_limit() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "nx summary entries"
     ));
+}
+
+#[test]
+fn inspect_summary_refuses_attribute_node_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("one attribute exceeds the three view and entry items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx summary attributes"
+    ));
+}
+
+#[test]
+fn inspect_summary_refuses_attribute_text_at_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = super::summarize(&ctx, &scan)
+        .expect_err("the first attribute key and value need retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx summary attribute text"
+    ));
+}
+
+#[test]
+fn inspect_summary_preserves_preview_attributes_under_service_profile() {
+    let mut scan = one_preview_summary_scan();
+    scan.streams[0].file_offset = 123_456_789;
+    let summary = crate::test_support::with_decode_context(|ctx| super::summarize(ctx, &scan))
+        .expect("preview summary fits the service profile");
+    assert_eq!(
+        summary.entries[0].attributes,
+        std::collections::BTreeMap::from([
+            ("file_offset".to_string(), "123456789".to_string()),
+            ("kind".to_string(), "preview".to_string()),
+        ])
+    );
 }
 
 #[test]

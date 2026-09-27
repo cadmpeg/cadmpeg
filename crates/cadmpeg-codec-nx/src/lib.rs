@@ -115,6 +115,7 @@ use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -200,14 +201,35 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
-        attributes.insert("region".to_string(), entry.region.label().to_string());
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            "region",
+            "",
+            false,
+            SummaryValue::Text(entry.region.label()),
+        )?;
         let storage = match entry.file_span() {
             Some((off, size)) => {
-                attributes.insert("file_offset".to_string(), off.to_string());
+                insert_summary_attribute(
+                    ctx,
+                    &mut attributes,
+                    "file_offset",
+                    "",
+                    false,
+                    SummaryValue::Number(off),
+                )?;
                 EntryStorage::verbatim(VerbatimLabel::None, size)
             }
             None => {
-                attributes.insert("kind".to_string(), "directory".to_string());
+                insert_summary_attribute(
+                    ctx,
+                    &mut attributes,
+                    "kind",
+                    "",
+                    false,
+                    SummaryValue::Text("directory"),
+                )?;
                 EntryStorage::Directory
             }
         };
@@ -222,10 +244,31 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
     let mut storage_notes: Vec<String> = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind().label().to_string());
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            "file_offset",
+            "",
+            false,
+            SummaryValue::Number(u64::try_from(stream.file_offset).unwrap_or(u64::MAX)),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            "kind",
+            "",
+            false,
+            SummaryValue::Text(stream.kind().label()),
+        )?;
         if let Some(schema) = stream.schema_token() {
-            attributes.insert("schema".to_string(), schema.value().to_owned());
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                "schema",
+                "",
+                false,
+                SummaryValue::Text(schema.value()),
+            )?;
         }
         if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);
@@ -239,10 +282,16 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
                 (NodeKind::Vertex, "vertex"),
                 (NodeKind::Region, "region"),
             ] {
-                attributes.insert(
-                    format!("records.{name}"),
-                    graph.of_kind(kind).count().to_string(),
-                );
+                insert_summary_attribute(
+                    ctx,
+                    &mut attributes,
+                    "records.",
+                    name,
+                    false,
+                    SummaryValue::Number(
+                        u64::try_from(graph.of_kind(kind).count()).unwrap_or(u64::MAX),
+                    ),
+                )?;
             }
             if stream.kind() == parasolid::StreamKind::Partition {
                 let graph = topology::Graph::parse(&semantic_streams[si]);
@@ -256,72 +305,48 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
                     (NodeKind::Vertex, "vertex"),
                     (NodeKind::Region, "region"),
                 ] {
-                    attributes.insert(
-                        format!("records.live.{name}"),
-                        graph.of_kind(kind).count().to_string(),
-                    );
+                    insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "records.live.",
+                        name,
+                        false,
+                        SummaryValue::Number(
+                            u64::try_from(graph.of_kind(kind).count()).unwrap_or(u64::MAX),
+                        ),
+                    )?;
                 }
             } else if stream.kind() == parasolid::StreamKind::Deltas {
                 let census = deltas::census::walk(&stream.inflated);
                 if census.transmit_header.is_some() {
-                    attributes.insert(
-                        "records.delta.transmit_headers".to_string(),
-                        "1".to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.transmit_headers", "", false, SummaryValue::Text("1"))?;
                 }
                 if !census.body_revisions.is_empty() {
-                    attributes.insert(
-                        "records.delta.body_revisions".to_string(),
-                        census.body_revisions.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.body_revisions", "", false, SummaryValue::Number(u64::try_from(census.body_revisions.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.term_use_numeric_tails.is_empty() {
-                    attributes.insert(
-                        "records.delta.term_use_numeric_tails".to_string(),
-                        census.term_use_numeric_tails.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.term_use_numeric_tails", "", false, SummaryValue::Number(u64::try_from(census.term_use_numeric_tails.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.tagged_reference_lanes.is_empty() {
-                    attributes.insert(
-                        "records.delta.tagged_reference_lanes".to_string(),
-                        census.tagged_reference_lanes.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tagged_reference_lanes", "", false, SummaryValue::Number(u64::try_from(census.tagged_reference_lanes.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.reference_type_maps.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_type_maps".to_string(),
-                        census.reference_type_maps.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_type_maps", "", false, SummaryValue::Number(u64::try_from(census.reference_type_maps.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.reference_state_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_state_packets".to_string(),
-                        census.reference_state_packets.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_state_packets", "", false, SummaryValue::Number(u64::try_from(census.reference_state_packets.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.reference_marker_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_marker_packets".to_string(),
-                        census.reference_marker_packets.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.reference_marker_packets", "", false, SummaryValue::Number(u64::try_from(census.reference_marker_packets.len()).unwrap_or(u64::MAX)))?;
                 }
                 if !census.inline_schema_declarations.is_empty() {
-                    attributes.insert(
-                        "records.delta.inline_schema_declarations".to_string(),
-                        census.inline_schema_declarations.len().to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.inline_schema_declarations", "", false, SummaryValue::Number(u64::try_from(census.inline_schema_declarations.len()).unwrap_or(u64::MAX)))?;
                 }
                 for (family, count) in census.full_counts() {
-                    attributes.insert(
-                        format!("records.delta.full.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.full.", family, true, SummaryValue::Number(u64::try_from(count).unwrap_or(u64::MAX)))?;
                 }
                 for (family, count) in census.tombstone_counts() {
-                    attributes.insert(
-                        format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
+                    insert_summary_attribute(ctx, &mut attributes, "records.delta.tombstone.", family, true, SummaryValue::Number(u64::try_from(count).unwrap_or(u64::MAX)))?;
                 }
             }
         }
@@ -368,6 +393,63 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSu
         dialect_losses,
         notes,
     ))
+}
+
+#[derive(Clone, Copy)]
+enum SummaryValue<'a> {
+    Text(&'a str),
+    Number(u64),
+}
+
+fn insert_summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    prefix: &str,
+    suffix: &str,
+    lowercase_suffix: bool,
+    value: SummaryValue<'_>,
+) -> Result<(), CodecError> {
+    let key_len = prefix
+        .len()
+        .checked_add(suffix.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
+    let value_len = match value {
+        SummaryValue::Text(text) => text.len(),
+        SummaryValue::Number(0) => 1,
+        SummaryValue::Number(number) => {
+            usize::try_from(u64::from(number.ilog10()) + 1).unwrap_or(usize::MAX)
+        }
+    };
+    let text_len = key_len
+        .checked_add(value_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx summary attribute text", 0, u64::MAX))?;
+    ctx.charge_collection_items(1, "nx summary attributes")?;
+    ctx.charge_retained(
+        u64::try_from(text_len).unwrap_or(u64::MAX),
+        "nx summary attribute text",
+    )?;
+    let mut key = String::new();
+    key.try_reserve_exact(key_len)
+        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    key.push_str(prefix);
+    if lowercase_suffix {
+        for character in suffix.chars() {
+            key.push(character.to_ascii_lowercase());
+        }
+    } else {
+        key.push_str(suffix);
+    }
+    let mut rendered = String::new();
+    rendered
+        .try_reserve_exact(value_len)
+        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    match value {
+        SummaryValue::Text(text) => rendered.push_str(text),
+        SummaryValue::Number(number) => write!(&mut rendered, "{number}")
+            .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
+    }
+    attributes.insert(key, rendered);
+    Ok(())
 }
 
 #[cfg(test)]
