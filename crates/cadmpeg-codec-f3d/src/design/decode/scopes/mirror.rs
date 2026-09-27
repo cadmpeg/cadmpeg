@@ -7,7 +7,7 @@ use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
+use crate::design::decode::sketch::{cached_owned_record_offsets, copy_scoped_stream, IndexedRecordOffsets};
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
@@ -242,9 +242,10 @@ pub(crate) fn bind_mirror_constructions(
         if design_feature_family(&scopes[index].kind()) != Some(DesignFeatureFamily::Mirror) {
             continue;
         }
-        let Some(stream) = native_stream(&scopes[index].id).map(str::to_owned) else {
+        let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
+        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;

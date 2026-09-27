@@ -86,7 +86,7 @@ fn unit_system(bytes: &[u8], at: usize) -> Option<(String, Vec<u32>)> {
     let (_label, position) = ascii_at(bytes, position)?;
     (bytes.get(position) == Some(&1)).then_some(())?;
     let (name, position) = ascii_at(bytes, position + 1)?;
-    (name == format!("{key}UnitSystemName")).then_some(())?;
+    (name.strip_prefix(&key) == Some("UnitSystemName")).then_some(())?;
     let (namespace, position) = ascii_at(bytes, position)?;
     (namespace == SYSTEM_NAMESPACE).then_some(())?;
     let position = expect_zero_quad(bytes, position)?;

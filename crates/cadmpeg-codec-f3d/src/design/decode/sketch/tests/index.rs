@@ -95,3 +95,16 @@ fn owned_record_cache_refuses_temporary_lookup() {
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
 }
+
+#[test]
+fn scoped_stream_copy_refuses_materialized_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::sketch::copy_scoped_stream(&ctx, "stream"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+}
