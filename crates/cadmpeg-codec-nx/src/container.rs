@@ -1030,11 +1030,13 @@ pub(crate) fn parse_extref_empty_record(bytes: &[u8]) -> Option<bool> {
 
 /// Decode exact adjacent persistent-handle and tagged-reference pairs.
 pub(crate) fn parse_extref_reference_pairs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<(usize, u32, crate::om::reference_value::Tagged28)> {
+) -> Result<Vec<(usize, u32, crate::om::reference_value::Tagged28)>, CodecError> {
     let mut pairs = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
+        ctx.charge_work(1, "nx external reference tail scan")?;
         let pair = (|| {
             let bytes = bytes.get(at..)?;
             if bytes.first() != Some(&0xe0) || *bytes.get(5)? & 0xf0 != 0xc0 {
@@ -1046,13 +1048,25 @@ pub(crate) fn parse_extref_reference_pairs(
             ))
         })();
         if let Some((handle, tagged_reference)) = pair {
+            ctx.charge_collection_items(1, "nx external reference tail pairs")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    usize,
+                    u32,
+                    crate::om::reference_value::Tagged28,
+                )>()),
+                "nx external reference tail pairs",
+            )?;
+            pairs.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx external reference tail pairs", 0, 1)
+            })?;
             pairs.push((at, handle, tagged_reference));
             at += 9;
         } else {
             at += 1;
         }
     }
-    pairs
+    Ok(pairs)
 }
 
 /// Layout-specific facts of a parsed NX container.
