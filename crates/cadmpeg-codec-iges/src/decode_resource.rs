@@ -14,6 +14,17 @@ pub(crate) fn reserve_vec<T>(
     reserve_admitted_vec(count, operation)
 }
 
+pub(crate) fn reserve_optional_vec<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    match ctx {
+        Some(ctx) => reserve_vec(ctx, count, operation),
+        None => reserve_admitted_vec(count, operation),
+    }
+}
+
 pub(crate) fn reserve_admitted_vec<T>(
     count: usize,
     operation: &'static str,
@@ -49,6 +60,28 @@ pub(crate) fn reserve_optional_vec_growth<T>(
         None => values.try_reserve(additional).map_err(|_| {
             refuse_local_limit(operation, u64_from_index(additional), u64_from_index(additional))
         }),
+    }
+}
+
+pub(crate) fn copy_optional_retained(
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<Vec<u8>, CodecError> {
+    match ctx {
+        Some(ctx) => ctx.copy_retained(bytes, operation),
+        None => {
+            let mut copy = Vec::new();
+            copy.try_reserve_exact(bytes.len()).map_err(|_| {
+                refuse_local_limit(
+                    operation,
+                    u64_from_index(bytes.len()),
+                    u64_from_index(bytes.len()),
+                )
+            })?;
+            copy.extend_from_slice(bytes);
+            Ok(copy)
+        }
     }
 }
 
