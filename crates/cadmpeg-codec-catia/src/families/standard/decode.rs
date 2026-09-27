@@ -1071,40 +1071,44 @@ fn attach_free_vertices(
 
 /// Materialize one exact object-stream support surface once.
 fn standard_extrusion_support_id(
+    ctx: &DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, SurfaceId>,
-    side: &crate::families::b5::transfer::ResolvedExtrusionSupport,
+    surface_object_id: u32,
+    geometry: SurfaceGeometry,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    let source_object = cgm_source("surface", side.surface_object_id);
-    if let Some(id) = procedural_supports.get(&side.surface_object_id) {
-        return Ok(id.clone());
+    let source_object = cgm_source("surface", surface_object_id);
+    if let Some(id) = procedural_supports.get(&surface_object_id) {
+        return crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint, "catia_extrusion_existing_support_id_copy");
     }
     let id = SurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-support"),
-        side.surface_object_id,
+        surface_object_id,
     );
     annotate(
         annotations,
         &id,
         "object_stream_b5_03",
         0,
-        format!("surface:{:08x}", side.surface_object_id),
+        format!("surface:{surface_object_id:08x}"),
         Exactness::ByteExact,
     );
-    admission.charge()?;
+    admission.reserve_entity(surfaces, "catia_standard_extrusion_support_surfaces")?;
     surfaces.push(Surface {
-        id: id.clone(),
-        geometry: side.surface.clone(),
+        id: crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint, "catia_extrusion_support_surface_id_copy")?,
+        geometry,
         source_object: Some(source_object),
     });
-    procedural_supports.insert(side.surface_object_id, id.clone());
+    let map_id = crate::resource::copy_id(ctx, id.as_str(), SurfaceId::mint, "catia_extrusion_support_map_id_copy")?;
+    crate::resource::insert_map(ctx, procedural_supports, surface_object_id, map_id, "catia_extrusion_support_map")?;
     Ok(id)
 }
 
 /// Emit one resolved object-stream extrusion construction in the standard family.
 fn emit_standard_extrusion_definition(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     surfaces: &mut Vec<Surface>,
@@ -1130,10 +1134,12 @@ fn emit_standard_extrusion_definition(
             let mut build_side = |side: crate::families::b5::transfer::ResolvedExtrusionSupport| {
                 Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
                     surface: Some(standard_extrusion_support_id(
+                        ctx,
                         annotations,
                         surfaces,
                         procedural_supports,
-                        &side,
+                        side.surface_object_id,
+                        side.surface,
                         admission,
                     )?),
                     pcurve: Some(SupportPcurve::new(
@@ -1269,10 +1275,12 @@ fn emit_standard_extrusion_definition(
                 Exactness::ByteExact,
             );
             let support = standard_extrusion_support_id(
+                ctx,
                 annotations,
                 surfaces,
                 procedural_supports,
-                &support,
+                support.surface_object_id,
+                support.surface,
                 admission,
             )?;
             admission.charge()?;
@@ -2339,6 +2347,7 @@ fn try_decode_standard_population(
                             source_object: Some(cgm_source("surface", support_object_id)),
                         });
                         let definition = match emit_standard_extrusion_definition(
+                            ctx,
                             &mut ir,
                             &mut annotations,
                             &mut surfaces,
@@ -2417,6 +2426,7 @@ fn try_decode_standard_population(
             StandardSurfaceProcedure::Extrusion(extrusion) => {
                 let carrier = extrusion.surface_object_id;
                 let definition = match emit_standard_extrusion_definition(
+                    ctx,
                     &mut ir,
                     &mut annotations,
                     &mut surfaces,
