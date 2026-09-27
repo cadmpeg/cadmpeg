@@ -40,7 +40,13 @@ pub fn geometry_vertices(data: &[u8]) {
 
 /// Exercise standard-family surface-prefix extraction.
 pub fn geometry_surface_prefixes(data: &[u8]) {
-    let _probe = crate::families::standard::records::surface_prefixes(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::families::standard::records::surface_prefixes(&ctx, data);
 }
 
 /// Exercise A5 freeform surface extraction.
