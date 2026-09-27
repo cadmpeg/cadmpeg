@@ -749,8 +749,8 @@ pub(super) fn decode(
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
-    let points_by_source = point_sources(ir);
-    let curves_by_source = curve_sources(ir);
+    let points_by_source = point_sources(ir, ctx)?;
+    let curves_by_source = curve_sources(ir, ctx)?;
     let geometry_sources = GeometrySources {
         points: &points_by_source,
         curves: &curves_by_source,
@@ -1048,32 +1048,71 @@ fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
     ))
 }
 
-fn point_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>> {
+fn push_source_id<T: Clone>(
+    values: &mut BTreeMap<u64, Vec<T>>,
+    source: u64,
+    id: &T,
+    ctx: Option<&DecodeContext<'_>>,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&source) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, group_operation)?;
+        }
+    }
+    let items = values.entry(source).or_default();
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, item_operation)?;
+    }
+    items.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(item_operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(item_operation, 0, 1),
+    })?;
+    items.push(id.clone());
+    Ok(())
+}
+
+fn point_sources(
+    ir: &CadIr,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
     for point in &ir.model.points {
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
-        points
-            .entry(source)
-            .or_insert_with(Vec::new)
-            .push(point.id.clone());
+        push_source_id(
+            &mut points,
+            source,
+            &point.id,
+            ctx,
+            "step_pmi_point_source_groups",
+            "step_pmi_point_source_items",
+        )?;
     }
-    points
+    Ok(points)
 }
 
-fn curve_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>> {
+fn curve_sources(
+    ir: &CadIr,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
     for curve in &ir.model.curves {
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };
-        curves
-            .entry(source)
-            .or_insert_with(Vec::new)
-            .push(curve.id.clone());
+        push_source_id(
+            &mut curves,
+            source,
+            &curve.id,
+            ctx,
+            "step_pmi_curve_source_groups",
+            "step_pmi_curve_source_items",
+        )?;
     }
-    curves
+    Ok(curves)
 }
 
 fn datum_references(
