@@ -1122,7 +1122,9 @@ pub(super) fn curve_geometry_coplanar(
     plane: (Point3, Vector3),
     resolution: f64,
     active: &mut BTreeSet<CurveId>,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let _depth = ctx.map(|ctx| ctx.enter_nested("iges coplanar curve recursion")).transpose()?;
     let point_valid = |point: Point3| {
         transform
             .apply_point(point)
@@ -1138,7 +1140,7 @@ pub(super) fn curve_geometry_coplanar(
             .apply_vector(direction)
             .is_some_and(|direction| direction_in_plane(direction.get(), plane.1))
     };
-    match geometry {
+    let valid = match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -1179,28 +1181,48 @@ pub(super) fn curve_geometry_coplanar(
             .points()
             .map(cadmpeg_ir::features::FinitePoint3::get)
             .all(point_valid),
-        SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
-            let Some(curve) = index.curves(segment.curve.as_str()) else {
-                return false;
-            };
-            if !active.insert(segment.curve.clone()) {
-                return false;
+        SolvedCurveGeometry::Composite { segments, .. } => {
+            let mut valid = true;
+            for segment in segments {
+                if let Some(ctx) = ctx {
+                    ctx.charge_work(1, "iges coplanar composite segments")?;
+                }
+                let Some(curve) = index.curves(segment.curve.as_str()) else {
+                    valid = false;
+                    break;
+                };
+                if active.contains(&segment.curve) {
+                    valid = false;
+                    break;
+                }
+                if let Some(ctx) = ctx {
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(segment.curve.as_str().len()), "iges coplanar active curve id")?;
+                }
+                insert_optional_btree_set(ctx, active, segment.curve.clone(), "iges coplanar active curves")?;
+                let Some(geometry) = curve.geometry.solved() else {
+                    valid = false;
+                    break;
+                };
+                let segment_valid = curve_geometry_coplanar(
+                    geometry, index, transform, plane, resolution, active, ctx,
+                )?;
+                active.remove(&segment.curve);
+                if !segment_valid {
+                    valid = false;
+                    break;
+                }
             }
-            let Some(geometry) = curve.geometry.solved() else {
-                return false;
-            };
-            let valid =
-                curve_geometry_coplanar(geometry, index, transform, plane, resolution, active);
-            active.remove(&segment.curve);
             valid
-        }),
-        SolvedCurveGeometry::Transformed(placed) => transform
-            .compose(*placed.transform())
-            .is_ok_and(|transform| {
-                curve_geometry_coplanar(placed.basis(), index, transform, plane, resolution, active)
-            }),
+        }
+        SolvedCurveGeometry::Transformed(placed) => match transform.compose(*placed.transform()) {
+            Ok(transform) => curve_geometry_coplanar(
+                placed.basis(), index, transform, plane, resolution, active, ctx,
+            )?,
+            Err(_) => false,
+        },
         SolvedCurveGeometry::Unknown { .. } => false,
-    }
+    };
+    Ok(valid)
 }
 
 /// Records an entity loss when geometry admission fails.
