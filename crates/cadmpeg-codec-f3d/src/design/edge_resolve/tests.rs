@@ -1919,6 +1919,8 @@ fn edge_assignment_refuses_collection_limit() {
     ));
 }
 
+mod assignment_limits;
+
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
     use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
