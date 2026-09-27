@@ -2,7 +2,9 @@
 //! Parameter Data assembly and count-driven token spans.
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
-use crate::decode_resource::reserve_optional_vec_growth;
+use crate::decode_resource::{
+    copy_optional_retained, reserve_optional_vec, reserve_optional_vec_growth,
+};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
@@ -3443,9 +3445,34 @@ struct OwnedParameterBytes {
     card_boundaries: Vec<usize>,
 }
 
-fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> OwnedParameterBytes {
+fn owned_bytes(
+    cards: &[u32],
+    lines: &BTreeMap<u32, &PhysicalLine>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<OwnedParameterBytes, CodecError> {
+    let (byte_count, card_count) = cards
+        .iter()
+        .filter_map(|sequence| lines.get(sequence))
+        .try_fold((0_usize, 0_usize), |(bytes, count), line| {
+            Some((
+                bytes.checked_add(line.payload.len().min(64))?,
+                count.checked_add(1)?,
+            ))
+        })
+        .ok_or_else(|| refuse_local_limit("iges owned parameter bytes", u64::MAX, 1))?;
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(u64_from_index(byte_count), "iges owned parameter bytes")?;
+    }
     let mut bytes = Vec::new();
-    let mut card_boundaries = Vec::new();
+    bytes.try_reserve_exact(byte_count).map_err(|_| {
+        refuse_local_limit(
+            "iges owned parameter bytes",
+            u64_from_index(byte_count),
+            u64_from_index(byte_count),
+        )
+    })?;
+    let mut card_boundaries =
+        reserve_optional_vec(ctx, card_count, "iges parameter card boundaries")?;
     for sequence in cards {
         let Some(line) = lines.get(sequence) else {
             continue;
@@ -3453,10 +3480,10 @@ fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> OwnedPara
         bytes.extend(line.payload.get(..64).unwrap_or_default());
         card_boundaries.push(bytes.len());
     }
-    OwnedParameterBytes {
+    Ok(OwnedParameterBytes {
         bytes,
         card_boundaries,
-    }
+    })
 }
 
 /// The source offset of `offset` inside the assembled 64-column card stream.
@@ -3475,7 +3502,13 @@ fn quarantine(
     lines: &BTreeMap<u32, &PhysicalLine>,
     defect: ParameterDefect,
     failing_offset: Option<usize>,
-) -> QuarantinedParameterRecord {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<QuarantinedParameterRecord, CodecError> {
+    let byte_count = cards
+        .iter()
+        .filter_map(|sequence| lines.get(sequence))
+        .try_fold(0_usize, |count, line| count.checked_add(line.payload.len()))
+        .ok_or_else(|| refuse_local_limit("iges quarantined parameter bytes", u64::MAX, 1))?;
     let mut retained = cards
         .iter()
         .filter_map(|sequence| lines.get(sequence).map(|line| (*sequence, *line)));
@@ -3483,7 +3516,18 @@ fn quarantine(
         Some((first, line)) => {
             let first_offset = line.offset;
             let mut range = first..first.saturating_add(1);
-            let mut bytes = line.payload.clone();
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(u64_from_index(byte_count), "iges quarantined parameter bytes")?;
+            }
+            let mut bytes = Vec::new();
+            bytes.try_reserve_exact(byte_count).map_err(|_| {
+                refuse_local_limit(
+                    "iges quarantined parameter bytes",
+                    u64_from_index(byte_count),
+                    u64_from_index(byte_count),
+                )
+            })?;
+            bytes.extend_from_slice(&line.payload);
             for (sequence, line) in retained {
                 range.end = sequence.saturating_add(1);
                 bytes.extend_from_slice(&line.payload);
@@ -3498,12 +3542,12 @@ fn quarantine(
             directory_offset: entry.source_offset,
         },
     };
-    QuarantinedParameterRecord {
+    Ok(QuarantinedParameterRecord {
         sequence: entry.sequence,
         ownership,
         failing_offset: failing_offset.and_then(|offset| stream_offset(offset, cards, lines)),
         defect,
-    }
+    })
 }
 
 /// One entity's resolved Parameter Data ownership.
@@ -3682,10 +3726,10 @@ pub(crate) fn assemble_with_context(
     for owned in &ownership {
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
-            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None));
+            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None, ctx)?);
             continue;
         }
-        let owned_bytes = owned_bytes(&owned.cards, &lines);
+        let owned_bytes = owned_bytes(&owned.cards, &lines, ctx)?;
         let tokenized = if entry.entity_type == 306 {
             tokenize_macro(
                 &owned_bytes.bytes,
@@ -3714,7 +3758,8 @@ pub(crate) fn assemble_with_context(
                     &lines,
                     defect,
                     Some(offset),
-                ));
+                    ctx,
+                )?);
                 continue;
             }
         };
@@ -3726,7 +3771,8 @@ pub(crate) fn assemble_with_context(
                 &lines,
                 ParameterDefect::EntityTypeTokenMismatch,
                 tokens.first().map(|token| token.span.start),
-            ));
+                ctx,
+            )?);
             continue;
         }
         let line_start = owned.cards.first().copied().unwrap_or_default();
@@ -3738,11 +3784,11 @@ pub(crate) fn assemble_with_context(
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: owned_bytes
-                .bytes
-                .get(record_end..)
-                .unwrap_or_default()
-                .to_vec(),
+            comment: copy_optional_retained(
+                ctx,
+                owned_bytes.bytes.get(record_end..).unwrap_or_default(),
+                "iges parameter comment",
+            )?,
             bytes: owned_bytes.bytes,
             tokens,
             parameter_end,
