@@ -55,6 +55,35 @@ fn collect_pmi_set<T: Ord>(
     Ok(values)
 }
 
+fn claim_pmi_typed(
+    typed: &mut HashSet<u64>,
+    id: u64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    if !typed.contains(&id) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_pmi_typed_claims")?;
+        }
+        typed.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_pmi_typed_claims", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_pmi_typed_claims", 0, 1),
+        })?;
+        typed.insert(id);
+    }
+    Ok(())
+}
+
+fn claim_pmi_typed_many(
+    typed: &mut HashSet<u64>,
+    ids: impl IntoIterator<Item = u64>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    for id in ids {
+        claim_pmi_typed(typed, id, ctx)?;
+    }
+    Ok(())
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -125,7 +154,7 @@ pub(super) fn decode(
             None,
             PmiDefinition::Datum { identification },
         )?;
-        typed.insert(id);
+        claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
     for id in exchange.matching_entity_ids(is_datum_target_name) {
@@ -185,7 +214,7 @@ pub(super) fn decode(
                 basis: Vec::new(),
             },
         )?;
-        typed.insert(id);
+        claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
     for (id, record) in exchange.entities("DATUM_SYSTEM") {
@@ -251,8 +280,8 @@ pub(super) fn decode(
                 references: datum_references,
             },
         )?;
-        typed.insert(id);
-        typed.extend(datum_records);
+        claim_pmi_typed(&mut typed, id, ctx)?;
+        claim_pmi_typed_many(&mut typed, datum_records, ctx)?;
     }
 
     for id in exchange.matching_entity_ids(is_dimension_name) {
@@ -331,7 +360,7 @@ pub(super) fn decode(
             None,
             PmiDefinition::Dimension(definition),
         )?;
-        typed.insert(id);
+        claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
@@ -441,8 +470,8 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
-                    typed.insert(id);
-                    typed.extend(refs);
+                    claim_pmi_typed(&mut typed, id, ctx)?;
+                    claim_pmi_typed_many(&mut typed, refs, ctx)?;
                 } else {
                     losses.push(StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
@@ -461,7 +490,7 @@ pub(super) fn decode(
             .map_err(|error| {
                 CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
             })? {
-                typed.extend([id, fit_id]);
+                claim_pmi_typed_many(&mut typed, [id, fit_id], ctx)?;
             } else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
@@ -607,14 +636,14 @@ pub(super) fn decode(
                 modifiers: tolerance_modifiers(record),
             },
         )?;
-        typed.insert(id);
-        typed.extend(refs.iter().copied().filter(|reference| {
+        claim_pmi_typed(&mut typed, id, ctx)?;
+        claim_pmi_typed_many(&mut typed, refs.iter().copied().filter(|reference| {
             exchange
                 .records()
                 .get(reference)
                 .is_some_and(is_measure_record)
-        }));
-        typed.extend(
+        }), ctx)?;
+        claim_pmi_typed_many(&mut typed,
             record
                 .partials
                 .iter()
@@ -626,7 +655,8 @@ pub(super) fn decode(
                         .get(reference)
                         .is_some_and(is_measure_record)
                 }),
-        );
+            ctx,
+        )?;
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
@@ -645,7 +675,7 @@ pub(super) fn decode(
                     false
                 });
             }
-            typed.insert(id);
+            claim_pmi_typed(&mut typed, id, ctx)?;
         }
     }
 
@@ -742,13 +772,13 @@ pub(super) fn decode(
                 semantics,
             },
         )?;
-        typed.insert(id);
-        typed.extend(text_records);
+        claim_pmi_typed(&mut typed, id, ctx)?;
+        claim_pmi_typed_many(&mut typed, text_records, ctx)?;
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
     {
-        typed.insert(id);
+        claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed);
@@ -782,7 +812,11 @@ pub(super) fn decode(
         ctx,
         "step_pmi_targeted_aspects",
     )?;
-    typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
+    claim_pmi_typed_many(
+        &mut typed,
+        shape_aspects.intersection(&targeted_aspects).copied(),
+        ctx,
+    )?;
     mark_characteristic_representations(exchange, &annotations, &mut typed);
     Ok(StageOutcome {
         value: (),
