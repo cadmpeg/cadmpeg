@@ -1,10 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::object_rendering_with_negative_minor;
+use super::{object_rendering_with_negative_minor, texture_payload};
 use crate::chunks::{ArchiveVersion, FramingError};
 use crate::presentation::rendering_attributes;
 use crate::settings;
 use crate::wire::Uuid;
+
+#[test]
+fn texture_file_reference_refuses_retained_limit() {
+    let bytes = texture_payload(2, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = crate::presentation::parse_texture(
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+        &mut Vec::new(),
+    )
+    .expect_err("file-reference path exceeds retained limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino file reference full path"
+    ));
+}
 
 #[test]
 fn projected_user_string_entries_refuse_collection_limit() {

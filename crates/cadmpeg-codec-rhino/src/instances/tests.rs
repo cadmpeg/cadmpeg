@@ -302,6 +302,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
     let parsed = parse_file_reference(
+        &cadmpeg_test_support::service_decode_context(),
         &reference,
         &mut reader,
         ArchiveVersion::V6,
@@ -1605,8 +1606,14 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
-        let reference = parse_file_reference(&bytes, &mut reader, archive, &mut warnings)
-            .expect("valid file reference");
+        let reference = parse_file_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &mut reader,
+            archive,
+            &mut warnings,
+        )
+        .expect("valid file reference");
         assert_eq!(reference.full_path, "/full/source.3dm");
         assert_eq!(reference.relative_path, "source.3dm");
         assert_eq!(reader.remaining(), 0);

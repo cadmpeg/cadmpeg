@@ -5,7 +5,8 @@ use crate::container::Record;
 use crate::loss::Diagnostics;
 use crate::test_support::test_dump::{
     anonymous_chunk, class_userdata, definition_record, definition_record_with_userdata,
-    long_chunk, v5_definition_payload, v6_definition_payload,
+    file_reference as file_reference_bytes, long_chunk, v5_definition_payload,
+    v6_definition_payload,
 };
 
 fn with_collection_limit<T>(
@@ -265,4 +266,27 @@ fn unit_detail_name_refuses_retained_limit() {
         .expect_err("unit name exceeds retained limit");
         assert_resource(&error, "Rhino instance unit name");
     });
+}
+
+fn file_reference_refusal(limit: u64) -> FramingError {
+    let archive = ArchiveVersion::V8;
+    let data = file_reference_bytes(archive, "/full/source.3dm", "source.3dm");
+    with_retained_limit(limit, |ctx| {
+        let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded reference");
+        crate::instances::file_reference(ctx, &data, &mut reader, archive, &mut Diagnostics::new())
+            .expect_err("file-reference string exceeds retained limit")
+    })
+}
+
+#[test]
+fn file_reference_full_path_refuses_retained_limit() {
+    assert_resource(&file_reference_refusal(0), "Rhino file reference full path");
+}
+
+#[test]
+fn file_reference_relative_path_refuses_retained_limit() {
+    assert_resource(
+        &file_reference_refusal("/full/source.3dm".len() as u64),
+        "Rhino file reference relative path",
+    );
 }
