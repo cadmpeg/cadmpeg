@@ -212,11 +212,9 @@ fn parse_points(ctx: &DecodeContext<'_>, property: &PropertyRecord, bytes: &[u8]
     for index in 0..count {
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
-                PointId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
-                    crate::native::model_key(&property.id, index.to_string())
-                        .map_err(CodecError::malformed)?,
-                ),
+                PointId::mint(crate::native::model_id_charged(
+                    ctx, "point", &property.id, &index.to_string(),
+                )?).map_err(CodecError::malformed)?,
                 transform_point(transform, position)?,
                 Some(association(ctx, property)?),
             ));
@@ -240,25 +238,30 @@ fn point_transform(property: &PropertyRecord) -> Result<[[FiniteReal; 4]; 4], Co
     else {
         return Ok(identity());
     };
-    let values = text
-        .split_whitespace()
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CodecError::Malformed("invalid point-cloud transform scalar".into()))?;
-    if values.len() != 16 {
+    let mut values = [0.0_f64; 16];
+    let mut count = 0_usize;
+    for token in text.split_whitespace() {
+        let value = token.parse::<f64>()
+            .map_err(|_| CodecError::Malformed("invalid point-cloud transform scalar".into()))?;
+        if count < values.len() {
+            values[count] = value;
+        }
+        count = count.checked_add(1)
+            .ok_or_else(|| CodecError::Malformed("point-cloud transform must contain 16 finite scalars".into()))?;
+    }
+    if count != values.len() {
         return Err(CodecError::Malformed(
             "point-cloud transform must contain 16 finite scalars".into(),
         ));
     }
-    let values = values
-        .into_iter()
-        .map(FiniteReal::new)
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| {
+    let mut finite = [FiniteReal::ZERO; 16];
+    for (index, value) in values.into_iter().enumerate() {
+        finite[index] = FiniteReal::new(value).ok_or_else(|| {
             CodecError::Malformed("point-cloud transform must contain 16 finite scalars".into())
         })?;
+    }
     Ok(std::array::from_fn(|row| {
-        std::array::from_fn(|column| values[row * 4 + column])
+        std::array::from_fn(|column| finite[row * 4 + column])
     }))
 }
 
@@ -464,6 +467,23 @@ pub(crate) mod tests {
         assert!(matches!(parse_points(&ctx, &resource_test_property(), &points),
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD point-cloud points"));
+    }
+
+    #[test]
+    fn point_cloud_identity_refuses_at_retained_limit() {
+        let property = resource_test_property();
+        let mut points = Vec::new();
+        points.extend_from_slice(&1_u32.to_le_bytes());
+        points.extend_from_slice(&[0; 12]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = crate::native::model_id(
+            "point", &property.id, "0").len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&points, &arena, &policy)
+            .expect("root points are within the input limit");
+        assert!(matches!(parse_points(&ctx, &property, &points),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD model identity"));
     }
 
     #[test]
