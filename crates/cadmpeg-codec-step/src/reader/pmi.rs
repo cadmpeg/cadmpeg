@@ -942,18 +942,7 @@ fn set_dimension_tolerance(
     let PmiDefinition::Dimension(dimension) = definition else {
         return Ok(false);
     };
-    let merged = match (dimension.tolerance().cloned(), value) {
-        (None, value) => value,
-        (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit { fit })
-        | (Some(DimensionTolerance::Fit { fit }), DimensionTolerance::PlusMinus { lower, upper }) => {
-            DimensionTolerance::PlusMinusFit { lower, upper, fit }
-        }
-        (Some(_), _) => {
-            return Ok(false);
-        }
-    };
-    dimension.set_tolerance(Some(merged))?;
-    Ok(true)
+    dimension.merge_tolerance(value)
 }
 
 fn mark_characteristic_representations(
