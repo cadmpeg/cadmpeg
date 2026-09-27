@@ -624,9 +624,9 @@ pub(super) fn decode(
                 ),
         ctx, "step_topology_losses")?;
     }
-    let vertices = vertex_defs(exchange);
+    let vertices = vertex_defs(exchange, ctx)?;
     let edges = edge_defs(exchange);
-    let oriented = oriented_defs(exchange);
+    let oriented = oriented_defs(exchange, ctx)?;
     let shells = shell_defs(exchange);
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -2014,18 +2014,18 @@ struct OrientedDef {
     kind: OrientedKind,
 }
 
-fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
-    exchange
-        .entities("VERTEX_POINT")
-        .filter_map(|(id, r)| {
-            Some((
-                id,
-                VertexDef {
-                    point: named_reference(r, "VERTEX_POINT", 1, 0)?,
-                },
-            ))
-        })
-        .collect()
+fn vertex_defs(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, VertexDef>, CodecError> {
+    let mut vertices = BTreeMap::new();
+    for (id, record) in exchange.entities("VERTEX_POINT") {
+        let Some(point) = named_reference(record, "VERTEX_POINT", 1, 0) else {
+            continue;
+        };
+        insert_topology_map(&mut vertices, id, VertexDef { point }, ctx, "step_vertex_definitions")?;
+    }
+    Ok(vertices)
 }
 fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, Rc<EdgeDef>> {
     let mut edges = BTreeMap::new();
@@ -2143,32 +2143,33 @@ fn edge_curve_id_reported(
     }
     Ok(carrier.map(|curve| CurveId::from(ids::data(kind!("curve"), curve))))
 }
-fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
-    exchange
-        .entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"])
-        .filter_map(|(id, r)| {
-            Some((
-                id,
-                OrientedDef {
-                    edge: oriented_edge_reference(r)?,
-                    forward: oriented_edge_forward(r)?,
-                    kind: if most_specific(r, &["SEAM_EDGE"]).is_some() {
-                        OrientedKind::Seam {
-                            pcurve: r.partial("SEAM_EDGE").and_then(|partial| {
-                                partial
-                                    .parameters
-                                    .iter()
-                                    .rev()
-                                    .find_map(ValueExt::reference)
-                            }),
-                        }
-                    } else {
-                        OrientedKind::Plain
-                    },
-                },
-            ))
-        })
-        .collect()
+fn oriented_defs(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, OrientedDef>, CodecError> {
+    let mut oriented = BTreeMap::new();
+    for (id, record) in exchange.entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"]) {
+        let Some(edge) = oriented_edge_reference(record) else {
+            continue;
+        };
+        let Some(forward) = oriented_edge_forward(record) else {
+            continue;
+        };
+        let kind = if most_specific(record, &["SEAM_EDGE"]).is_some() {
+            OrientedKind::Seam {
+                pcurve: record.partial("SEAM_EDGE").and_then(|partial| {
+                    partial.parameters.iter().rev().find_map(ValueExt::reference)
+                }),
+            }
+        } else {
+            OrientedKind::Plain
+        };
+        insert_topology_map(
+            &mut oriented, id, OrientedDef { edge, forward, kind }, ctx,
+            "step_oriented_edge_definitions",
+        )?;
+    }
+    Ok(oriented)
 }
 
 fn subedge_parent(record: &RawRecord) -> Option<u64> {
