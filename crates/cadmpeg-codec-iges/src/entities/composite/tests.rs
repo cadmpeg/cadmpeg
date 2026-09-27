@@ -214,6 +214,59 @@ fn native_composite_segment_curve_ids_refuse_retained_copy() {
 }
 
 #[test]
+fn composite_child_carriers_refuse_nested_collection_admission() {
+    let bytes = composite_curve_file();
+    for operation in [
+        "iges composite child carrier nodes",
+        "iges composite curve child sequences",
+        "iges composite child curve ids",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite child admission succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite child admission failure: {error}"),
+            }
+        }
+        assert!(found, "composite child collection boundary was not reached: {operation}");
+    }
+}
+
+#[test]
+fn composite_child_curve_id_copies_refuse_retained_budget() {
+    let bytes = composite_curve_file();
+    for operation in [
+        "iges composite child curve ID copies",
+        "iges composite projected child curve IDs",
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite child identity copy succeeded before {operation}"),
+                Err(error) => panic!("unexpected composite child identity failure: {error}"),
+            }
+        }
+        assert!(found, "composite child retained boundary was not reached: {operation}");
+    }
+}
+
+#[test]
 fn composite_source_object_refusal_survives_candidate_projection() {
     let bytes = composite_curve_file();
     let mut cap = 0_u64;
