@@ -116,6 +116,22 @@ fn pmi_loss_slots_refuse_collection_limit() {
     pmi_refuses("#1=PLUS_MINUS_TOLERANCE($);", "step_pmi_losses");
 }
 
+#[test]
+fn pmi_plus_minus_references_refuse_collection_limit() {
+    pmi_refuses(
+        "#1=DIMENSIONAL_SIZE('size',#2);#2=SHAPE_ASPECT('edge',$,.F.);#3=PLUS_MINUS_TOLERANCE(#1,#4);#4=TOLERANCE_VALUE(0.1,0.2);",
+        "step_pmi_plus_minus_references",
+    );
+}
+
+#[test]
+fn pmi_geometric_tolerance_references_refuse_collection_limit() {
+    pmi_refuses(
+        "#1=FLATNESS_TOLERANCE('flat',$,#2,#3);#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#4);#3=SHAPE_ASPECT('face',$,.F.);#4=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));",
+        "step_pmi_geometric_tolerance_references",
+    );
+}
+
 fn target_refusal(limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
