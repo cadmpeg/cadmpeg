@@ -762,7 +762,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             u32::MAX => None,
             state_id => Some(i64::from(state_id)),
         });
-    let mut reference_tables = Vec::new();
+    let mut reference_table = None;
     for count_at in start + 11..reference_table_end {
         let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0
@@ -774,8 +774,26 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             continue;
         }
         let first = count_at.checked_add(4)?;
-        let mut members = Vec::with_capacity(count);
-        let mut offsets = Vec::with_capacity(count);
+        if let Err(error) = ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "f3d Design scope reference members",
+        ) {
+            return Some(Err(error));
+        }
+        let mut members = Vec::new();
+        if members.try_reserve(count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d Design scope reference members allocation", 0, 1)));
+        }
+        if let Err(error) = ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "f3d Design scope reference offsets",
+        ) {
+            return Some(Err(error));
+        }
+        let mut offsets = Vec::new();
+        if offsets.try_reserve(count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d Design scope reference offsets allocation", 0, 1)));
+        }
         for ordinal in 0..count {
             let marker = first.checked_add(ordinal.checked_mul(11)?)?;
             if bytes.get(marker) != Some(&1) || bytes.get(marker + 5..marker + 11)? != [0; 6] {
@@ -786,14 +804,15 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             offsets.push(u64::try_from(marker + 1).ok()?);
         }
         if members.len() == count {
-            reference_tables.push((count_at, members, offsets));
+            if reference_table.replace((count_at, members, offsets)).is_some() {
+                return None;
+            }
         }
     }
-    let [(reference_count_at, reference_members, reference_member_offsets)] =
-        reference_tables.as_slice()
-    else {
+    let Some(reference_table) = reference_table else {
         return None;
     };
+    let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
     let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
         exact_surface_stitch_operation(bytes, records, record_index, reference_members)
     } else {
@@ -920,6 +939,23 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     } else {
         None
     };
+    if let Err(error) = ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(reference_members.len()),
+        "f3d Design scope located references",
+    ) {
+        return Some(Err(error));
+    }
+    let mut located_references = Vec::new();
+    if located_references.try_reserve(reference_members.len()).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d Design scope located references allocation", 0, 1)));
+    }
+    located_references.extend(
+        reference_members
+            .iter()
+            .copied()
+            .zip(reference_member_offsets.iter().copied())
+            .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+    );
     let mut scope = DesignParameterScope::try_new(scope::DesignParameterScopeDraft {
         id: String::new(),
         byte_offset,
@@ -936,14 +972,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             .and_then(|offset| u64::try_from(offset).ok())
             .filter(|&offset| offset != 0),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
-        reference_members: crate::records::identity::ReferenceRun::located(
-            reference_members
-                .iter()
-                .copied()
-                .zip(reference_member_offsets.iter().copied())
-                .map(|(value, offset)| crate::records::identity::Located { value, offset })
-                .collect(),
-        ),
+        reference_members: crate::records::identity::ReferenceRun::located(located_references),
         payload: match kind {
             scope::DesignFeatureKind::SurfaceStitch => {
                 scope::DesignScopePayload::SurfaceStitch(surface_stitch_operation?)

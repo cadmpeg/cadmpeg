@@ -102,3 +102,55 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
         ));
     }
 }
+
+#[test]
+fn design_scope_reference_vectors_refuse_each_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, _) =
+        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &bytes,
+        &records,
+    )
+    .into_iter()
+    .find(|header| header.record_index == 1_400)
+    .unwrap();
+    for (cap, operation) in [
+        (1, "f3d Design scope reference members"),
+        (3, "f3d Design scope reference offsets"),
+        (5, "f3d Design scope located references"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &ctx,
+            &bytes,
+            &records,
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+    }
+    assert!(
+        crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+        )
+        .unwrap()
+        .is_some()
+    );
+}
