@@ -94,17 +94,6 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
-fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::DisplayDataNotProjected
-        .note(format!(
-            "IGES entity type {} form {} display data was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
-}
-
 pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
     // `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the
     // walk needs no depth of its own.

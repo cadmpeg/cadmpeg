@@ -47,6 +47,40 @@ fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
     panic!("did not reach {operation} within 4096 admission boundaries");
 }
 
+fn assert_copious_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn copious_projection_losses_refuse_slot_and_message_limits() {
+    let bytes = copious_data_file(12, b"106,2,0;", "00000000");
+    assert_copious_collection_refusal(&bytes, "iges entity loss slots");
+    assert_copious_retained_refusal(&bytes, "iges entity loss message");
+    let result = IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss| loss.message.contains("tuple count is outside 1..=1000000")));
+}
+
 #[test]
 fn copious_tuple_and_path_arrays_refuse_collection_limits() {
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
