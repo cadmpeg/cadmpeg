@@ -33,6 +33,13 @@ fn push_attributed_loss(
     Ok(())
 }
 
+fn non_resource_error(error: CodecError) -> Result<String, CodecError> {
+    match error {
+        CodecError::ResourceLimit(_) => Err(error),
+        other => Ok(other.to_string()),
+    }
+}
+
 fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,

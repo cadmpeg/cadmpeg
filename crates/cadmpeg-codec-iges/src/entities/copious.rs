@@ -498,7 +498,7 @@ pub(super) fn project(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
             )?)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, Some(ctx))?),
         });
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges copious neutral edges")?;
         ir.model.edges.push(Edge {

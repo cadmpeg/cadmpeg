@@ -164,6 +164,7 @@ fn add_edge(
     nurbs: NurbsCurve,
     parameter_range: [FiniteReal; 2],
     sequences: &mut super::geometry::SourceSequences,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeId>, CodecError> {
     let Some(parameter_range) =
         IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])
@@ -208,9 +209,12 @@ fn add_edge(
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-        source_object: Some(match source_object(entry) {
+        source_object: Some(match source_object(entry, Some(ctx)) {
             Ok(source) => source,
-            Err(_) => return Ok(None),
+            Err(error) => {
+                super::non_resource_error(error)?;
+                return Ok(None);
+            }
         }),
     });
     ir.model.edges.push(Edge {
@@ -613,6 +617,7 @@ pub(super) fn project(
             nurbs,
             [breakpoints[0], breakpoints[segment_count]],
             sequences,
+            ctx,
         )?
         else {
             losses.push(entity_loss(
@@ -947,7 +952,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, Some(ctx))?),
         });
         losses.push(
             IgesLossCode::SplineHeaderNotTransferred

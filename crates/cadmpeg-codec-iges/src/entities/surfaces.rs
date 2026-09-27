@@ -1260,7 +1260,7 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
             )),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         decoded.insert(entry.sequence);
     }
@@ -1385,7 +1385,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1550,7 +1550,7 @@ pub(super) fn project(
                         )
                         .map_err(CodecError::malformed)?,
                     )),
-                    source_object: Some(source_object(entry)?),
+                    source_object: Some(source_object(entry, ctx)?),
                 });
                 placed_id
             };
@@ -1564,7 +1564,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)?),
+                source_object: Some(source_object(entry, ctx)?),
             });
             let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
                 CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
@@ -1685,7 +1685,7 @@ pub(super) fn project(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     placed_directrix.clone(),
                 )),
-                source_object: Some(source_object(entry)?),
+                source_object: Some(source_object(entry, ctx)?),
             });
             placed_id
         };
@@ -1719,7 +1719,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
             CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
@@ -1888,7 +1888,7 @@ pub(super) fn project(
                         )
                         .map_err(CodecError::malformed)?,
                     )),
-                    source_object: Some(source_object(entry)?),
+                    source_object: Some(source_object(entry, ctx)?),
                 });
                 let placed_origin =
                     transform
@@ -1921,7 +1921,7 @@ pub(super) fn project(
                     construction: procedural_id.clone(),
                     cache: None,
                 },
-                source_object: Some(source_object(entry)?),
+                source_object: Some(source_object(entry, ctx)?),
             });
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -2061,7 +2061,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         let mut procedural_directrix =
             crate::ids::curve(&crate::ids::Stem::directory(generatrix_sequence));
@@ -2097,7 +2097,7 @@ pub(super) fn project(
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
-                source_object: Some(source_object(entry)?),
+                source_object: Some(source_object(entry, ctx)?),
             });
             let placed_origin = transform
                 .apply_point(admitted_axis.0.get())
@@ -2537,7 +2537,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
@@ -2670,7 +2670,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         let _attached = ir.model.add_procedural_surface(
             surface_id,

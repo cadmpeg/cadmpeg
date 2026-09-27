@@ -546,10 +546,10 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,
-            source_object: Some(match source_object(entry) {
+            source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
                 Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
+                    losses.push(entity_loss(entry, super::non_resource_error(error)?));
                     continue;
                 }
             }),
