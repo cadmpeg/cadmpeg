@@ -627,7 +627,7 @@ pub(super) fn decode(
     let vertices = vertex_defs(exchange, ctx)?;
     let edges = edge_defs(exchange, ctx)?;
     let oriented = oriented_defs(exchange, ctx)?;
-    let shells = shell_defs(exchange);
+    let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
@@ -2707,7 +2707,7 @@ fn build_one(
             (shell_reference, true)
         } else {
             require_carrier(
-                shell_def_for(shell_reference, shell_definitions, &mut typed),
+                shell_def_for(shell_reference, shell_definitions, &mut typed, ctx)?,
                 failure,
                 shell_reference,
                 CarrierKind::ShellCarrier,
@@ -4911,14 +4911,16 @@ fn curve_selection_parameter_domain_from_geometry(
     }
 }
 
-#[derive(Clone)]
 struct ShellDef {
     base: u64,
     forward: bool,
     typed: HashSet<u64>,
 }
 
-fn shell_defs(exchange: &Exchange) -> BTreeMap<u64, ShellDef> {
+fn shell_defs(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, ShellDef>, CodecError> {
     let mut cache = BTreeMap::<u64, Option<ShellDef>>::new();
     let mut active = BTreeSet::new();
     for (id, _) in exchange.entities_any(&[
@@ -4927,12 +4929,30 @@ fn shell_defs(exchange: &Exchange) -> BTreeMap<u64, ShellDef> {
         "OPEN_SHELL",
         "CLOSED_SHELL",
     ]) {
-        shell_def_cached(id, exchange, &mut active, &mut cache);
+        shell_def_cached(id, exchange, &mut active, &mut cache, ctx)?;
     }
-    cache
-        .into_iter()
-        .filter_map(|(id, definition)| definition.map(|definition| (id, definition)))
-        .collect()
+    let mut shells = BTreeMap::new();
+    for (id, definition) in cache {
+        if let Some(definition) = definition {
+            insert_topology_map(&mut shells, id, definition, ctx, "step_shell_definitions")?;
+        }
+    }
+    Ok(shells)
+}
+
+fn copy_shell_def(
+    definition: &ShellDef,
+    ctx: &DecodeContext<'_>,
+) -> Result<ShellDef, CodecError> {
+    let mut typed = HashSet::new();
+    for &id in &definition.typed {
+        insert_topology_hash_set(&mut typed, id, ctx, "step_shell_definition_typed_copy")?;
+    }
+    Ok(ShellDef {
+        base: definition.base,
+        forward: definition.forward,
+        typed,
+    })
 }
 
 fn shell_def_cached(
@@ -4940,32 +4960,25 @@ fn shell_def_cached(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, Option<ShellDef>>,
-) -> Option<ShellDef> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<ShellDef>, CodecError> {
     if let Some(definition) = cache.get(&reference) {
-        return definition.clone();
+        return definition.as_ref().map(|definition| copy_shell_def(definition, ctx)).transpose();
     }
-    if !active.insert(reference) {
-        return None;
+    let _depth = ctx.enter_nested("step_shell_definition_recursion")?;
+    if active.contains(&reference) {
+        return Ok(None);
     }
-    let result = (|| {
-        let record = exchange.records().get(&reference)?;
-        match most_specific(
-            record,
-            &[
-                "ORIENTED_OPEN_SHELL",
-                "ORIENTED_CLOSED_SHELL",
-                "OPEN_SHELL",
-                "CLOSED_SHELL",
-            ],
-        )? {
-            "OPEN_SHELL" | "CLOSED_SHELL" => Some(ShellDef {
+    insert_topology_set(active, reference, ctx, "step_shell_definition_active")?;
+    let result = if let Some(record) = exchange.records().get(&reference) {
+        match most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL", "OPEN_SHELL", "CLOSED_SHELL"]) {
+            Some("OPEN_SHELL" | "CLOSED_SHELL") => Some(ShellDef {
                 base: reference,
                 forward: true,
                 typed: HashSet::new(),
             }),
-            "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
-                let shell_type =
-                    most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
+            Some("ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL") => {
+                let shell_type = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"]);
                 let (element, orientation) = if record.partials.len() == 1 {
                     match record.parameter(1) {
                         Some(Value::Derived) => (
@@ -4980,32 +4993,46 @@ fn shell_def_cached(
                     }
                 } else {
                     (
-                        named_reference(record, shell_type, 1, 0),
-                        named_logical(record, shell_type, 2, 0),
+                        shell_type.and_then(|shell_type| named_reference(record, shell_type, 1, 0)),
+                        shell_type.and_then(|shell_type| named_logical(record, shell_type, 2, 0)),
                     )
                 };
-                let (element, orientation) = element.zip(orientation)?;
-                let mut definition = shell_def_cached(element, exchange, active, cache)?;
-                definition.forward = definition.forward == orientation;
-                definition.typed.insert(reference);
-                Some(definition)
+                if let Some((element, orientation)) = element.zip(orientation) {
+                    if let Some(mut definition) = shell_def_cached(element, exchange, active, cache, ctx)? {
+                        definition.forward = definition.forward == orientation;
+                        insert_topology_hash_set(&mut definition.typed, reference, ctx, "step_shell_definition_typed")?;
+                        Some(definition)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             }
             _ => None,
         }
-    })();
+    } else {
+        None
+    };
     active.remove(&reference);
-    cache.insert(reference, result.clone());
-    result
+    let cached = result.as_ref().map(|definition| copy_shell_def(definition, ctx)).transpose()?;
+    insert_topology_map(cache, reference, cached, ctx, "step_shell_definition_cache")?;
+    Ok(result)
 }
 
 fn shell_def_for(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
     typed: &mut HashSet<u64>,
-) -> Option<(u64, bool)> {
-    let definition = shells.get(&reference)?;
-    typed.extend(definition.typed.iter().copied());
-    Some((definition.base, definition.forward))
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(u64, bool)>, CodecError> {
+    let Some(definition) = shells.get(&reference) else {
+        return Ok(None);
+    };
+    for &id in &definition.typed {
+        insert_topology_hash_set(typed, id, ctx, "step_shell_definition_claims")?;
+    }
+    Ok(Some((definition.base, definition.forward)))
 }
 
 #[derive(Default)]

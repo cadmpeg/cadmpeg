@@ -573,3 +573,92 @@ fn edge_definition_recursion_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_edge_definition_recursion"));
 }
+
+fn shell_definition_refusal(collection_limit: u64) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid shell reference");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    super::super::shell_defs(&exchange, &ctx)
+        .err()
+        .expect("shell definitions exceed limit")
+}
+
+#[test]
+fn shell_definition_active_set_refuses_collection_limit() {
+    assert!(matches!(shell_definition_refusal(0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_shell_definition_active"));
+}
+
+#[test]
+fn shell_definition_cache_refuses_collection_limit() {
+    assert!(matches!(shell_definition_refusal(1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_shell_definition_cache"));
+}
+
+#[test]
+fn shell_definitions_refuse_collection_limit() {
+    assert!(matches!(shell_definition_refusal(2),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_shell_definitions"));
+}
+
+#[test]
+fn shell_definition_typed_copy_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let definition = super::super::ShellDef {
+        base: 1,
+        forward: true,
+        typed: std::collections::HashSet::from([2]),
+    };
+    assert!(matches!(super::super::copy_shell_def(&definition, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_shell_definition_typed_copy"));
+}
+
+#[test]
+fn shell_definition_claims_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let definition = super::super::ShellDef {
+        base: 1,
+        forward: true,
+        typed: std::collections::HashSet::from([2]),
+    };
+    let shells = BTreeMap::from([(1, definition)]);
+    assert!(matches!(super::super::shell_def_for(1, &shells, &mut std::collections::HashSet::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_shell_definition_claims"));
+}
+
+#[test]
+fn shell_definition_recursion_refuses_depth_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());#2=ORIENTED_OPEN_SHELL('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid oriented shell reference");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    assert!(matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_shell_definition_recursion"));
+}
