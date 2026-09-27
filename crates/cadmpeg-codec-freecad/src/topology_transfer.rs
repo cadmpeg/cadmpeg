@@ -40,7 +40,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use crate::resource::{collection_vec, insert_hash_map, insert_hash_set, reserve_vec_items, retained_string};
+use crate::resource::{collection_vec, copied_items, insert_hash_map, insert_hash_set, reserve_vec_items, retained_string};
 use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
@@ -238,16 +238,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         })
     }
 
-    fn source_association(&self) -> SourceObjectAssociation {
-        SourceObjectAssociation {
+    fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
+        Ok(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: self.source_object.clone(),
+            object_id: cadmpeg_core::text::NonBlankString::new(retained_string(
+                self.ctx, self.source_object.as_str(), "FreeCAD topology source association",
+            )?).ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
             visible: None,
             layer: None,
             instance_path: Vec::new(),
-        }
+        })
     }
 
     fn bind_topology(
@@ -268,7 +270,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         };
         reserve_vec_items(self.ctx, &mut self.occurrences, 1, "FreeCAD topology occurrences")?;
         self.occurrences.push(TopologyOccurrence {
-            property: self.payload.property.clone(),
+            property: retained_string(self.ctx, &self.payload.property, "FreeCAD topology occurrence property")?,
             indexed_name: indexed_name(kind),
             source_index,
             topology_id,
@@ -387,11 +389,12 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             reserve_vec_items(self.ctx, &mut ir.model.tessellations, 1, "FreeCAD tessellations records")?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
+                    crate::native::model_id_charged(self.ctx, "tessellation", &self.payload.id, &index.to_string())?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
-                        triangulation.nodes().to_vec(),
-                        triangulation.triangles().to_vec(),
-                        triangulation.normals().map(<[_]>::to_vec),
+                        copied_items(self.ctx, triangulation.nodes(), "FreeCAD unowned triangulation nodes")?,
+                        copied_items(self.ctx, triangulation.triangles(), "FreeCAD unowned triangulation triangles")?,
+                        triangulation.normals().map(|normals| copied_items(self.ctx, normals,
+                            "FreeCAD unowned triangulation normals")).transpose()?,
                     )?,
                     Vec::new(),
                 )
@@ -399,15 +402,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
                 .with_admitted_chordal_deflection(Some(triangulation.deflection))
-                .with_source_object(Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Fcstd,
-                    object_id: self.source_object.clone(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                })),
+                .with_source_object(Some(self.source_association()?)),
             );
         }
         Ok(())
@@ -901,21 +896,18 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map(|index| {
                 let triangulation = index.resolve(self.tables.triangulations)?;
                 let index = index.index();
-                let vertices = triangulation
-                    .nodes()
-                    .iter()
-                    .map(|point| {
-                        face_transform
-                            .apply_point(point.get())
-                            .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "placed triangulation node for face {} contains a non-finite coordinate",
-                                face_use.shape
-                            ))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, CodecError>>()?;
-                let triangles = triangulation.triangles().to_vec();
+                let mut vertices = collection_vec(self.ctx, triangulation.nodes().len(),
+                    "FreeCAD placed triangulation nodes")?;
+                for point in triangulation.nodes() {
+                    vertices.push(face_transform.apply_point(point.get()).ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "placed triangulation node for face {} contains a non-finite coordinate",
+                            face_use.shape
+                        ))
+                    })?);
+                }
+                let triangles = copied_items(self.ctx, triangulation.triangles(),
+                    "FreeCAD placed triangulation triangles")?;
                 let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
             })
@@ -934,20 +926,26 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 )
                 .map_err(CodecError::malformed)?,
             );
-            if self.emitted_surfaces.insert(id.clone()) {
+            let new_surface = !self.emitted_surfaces.contains(&id);
+            if new_surface {
+                insert_hash_set(self.ctx, &mut self.emitted_surfaces,
+                    SurfaceId::mint(retained_string(self.ctx, id.as_str(),
+                        "FreeCAD emitted surface identity")?).map_err(CodecError::malformed)?,
+                    "FreeCAD emitted surfaces")?;
                 reserve_vec_items(self.ctx, &mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
                 ir.model.surfaces.push(Surface {
-                    id: id.clone(),
+                    id: SurfaceId::mint(retained_string(self.ctx, id.as_str(),
+                        "FreeCAD polygonal surface identity")?).map_err(CodecError::malformed)?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
                         PolygonalSurface::from_admitted_scaled_deflection(
-                            vertices.clone(),
-                            triangles.clone(),
+                            copied_items(self.ctx, &vertices, "FreeCAD polygonal surface vertices")?,
+                            copied_items(self.ctx, &triangles, "FreeCAD polygonal surface triangles")?,
                             triangulation.deflection,
                             *deflection_scale,
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
-                    source_object: Some(self.source_association()),
+                    source_object: Some(self.source_association()?),
                 });
             }
             id
@@ -957,31 +955,34 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             located_triangulation
         {
-            self.emitted_triangulations.insert(index);
+            insert_hash_set(self.ctx, &mut self.emitted_triangulations, index,
+                "FreeCAD emitted triangulations")?;
+            let index_key = index.to_string();
+            let tessellation_key = crate::resource::retained_join(self.ctx,
+                &[index_key.as_str(), face_key.as_str()], "@", "FreeCAD tessellation key")?;
+            let mut faces = collection_vec(self.ctx, 1, "FreeCAD tessellation faces")?;
+            faces.push(FaceId::mint(retained_string(self.ctx, face_id.as_str(),
+                "FreeCAD tessellation face identity")?).map_err(CodecError::malformed)?);
             // An unshaded mesh is stated by absence, not by an empty lane.
-            let normals = triangulation
-                .normals()
-                .map(|normals| {
-                    normals
-                        .iter()
-                        .map(|normal| {
-                            transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "placed triangulation normal for face {face_key} contains a non-finite component"
-                                ))
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()
-                })
-                .transpose()?;
+            let normals = if let Some(native_normals) = triangulation.normals() {
+                let mut normals = collection_vec(self.ctx, native_normals.len(),
+                    "FreeCAD placed triangulation normals")?;
+                for normal in native_normals {
+                    normals.push(transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "placed triangulation normal for face {face_key} contains a non-finite component"
+                        ))
+                    })?);
+                }
+                Some(normals)
+            } else {
+                None
+            };
             reserve_vec_items(self.ctx, &mut ir.model.tessellations, 1, "FreeCAD tessellations records")?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id(
-                        "tessellation",
-                        &self.payload.id,
-                        format!("{index}@{face_key}"),
-                    ),
+                    crate::native::model_id_charged(self.ctx, "tessellation",
+                        &self.payload.id, &tessellation_key)?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,
@@ -990,8 +991,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
-                .with_body(self.current_body.clone())
-                .with_faces(vec![face_id.clone()])
+                .with_body(self.current_body.as_ref().map(|body| {
+                    BodyId::mint(retained_string(self.ctx, body.as_str(),
+                        "FreeCAD tessellation body identity")?).map_err(CodecError::malformed)
+                }).transpose()?)
+                .with_faces(faces)
                 .with_admitted_chordal_deflection(Some(
                     triangulation
                         .deflection
@@ -1002,7 +1006,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                             ))
                         })?,
                 ))
-                .with_source_object(Some(self.source_association())),
+                .with_source_object(Some(self.source_association()?)),
             );
         }
         let mut loops = Vec::new();
@@ -1286,7 +1290,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
-            source_object: Some(self.source_association()),
+            source_object: Some(self.source_association()?),
         });
         if let TextEdgeRepresentation::PolygonPair {
             polygons,
@@ -1312,7 +1316,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
-                source_object: Some(self.source_association()),
+                source_object: Some(self.source_association()?),
             });
         }
         Ok(id)
