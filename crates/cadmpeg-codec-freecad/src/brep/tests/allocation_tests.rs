@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Input-sized BREP parser allocation tests.
 
-use super::super::parse_text;
+use super::super::{parse_binary_prefix, parse_text};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -25,4 +25,129 @@ fn text_brep_token_index_refuses_at_materialized_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(parse_text(&ctx, bytes).is_ok());
+}
+
+#[derive(Clone, Copy)]
+enum BinaryLane {
+    PolygonNodes,
+    PolygonParameters,
+    IndexedPolygonNodes,
+    IndexedPolygonParameters,
+    TriangulationNodes,
+    TriangulationUv,
+    TriangulationTriangles,
+    TriangulationNormals,
+}
+
+fn binary_lane(lane: BinaryLane) -> Vec<u8> {
+    let version = if matches!(lane, BinaryLane::TriangulationNormals) { 4 } else { 3 };
+    let mut bytes = format!("\nOpen CASCADE Topology V{version} (c)\nLocations 0\nCurve2ds 0\nCurves 0\n").into_bytes();
+    match lane {
+        BinaryLane::PolygonNodes | BinaryLane::PolygonParameters => {
+            bytes.extend_from_slice(b"Polygon3D 1\n");
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            bytes.push(u8::from(matches!(lane, BinaryLane::PolygonParameters)));
+            bytes.extend_from_slice(&0.1_f64.to_le_bytes());
+            for value in [0.0_f64; 3] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            if matches!(lane, BinaryLane::PolygonParameters) {
+                bytes.extend_from_slice(&0.2_f64.to_le_bytes());
+            }
+        }
+        BinaryLane::IndexedPolygonNodes | BinaryLane::IndexedPolygonParameters => {
+            bytes.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 1\n");
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            bytes.extend_from_slice(&0.1_f64.to_le_bytes());
+            bytes.push(u8::from(matches!(lane, BinaryLane::IndexedPolygonParameters)));
+            if matches!(lane, BinaryLane::IndexedPolygonParameters) {
+                bytes.extend_from_slice(&0.2_f64.to_le_bytes());
+            }
+        }
+        _ => {
+            bytes.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n");
+            bytes.extend_from_slice(&1_i32.to_le_bytes());
+            let has_triangle = matches!(lane, BinaryLane::TriangulationTriangles);
+            bytes.extend_from_slice(&i32::from(has_triangle).to_le_bytes());
+            bytes.push(u8::from(matches!(lane, BinaryLane::TriangulationUv)));
+            if version == 4 {
+                bytes.push(1);
+            }
+            bytes.extend_from_slice(&0.1_f64.to_le_bytes());
+            for value in [0.0_f64; 3] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            if matches!(lane, BinaryLane::TriangulationUv) {
+                for value in [0.0_f64; 2] {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+            if has_triangle {
+                for index in [1_i32; 3] {
+                    bytes.extend_from_slice(&index.to_le_bytes());
+                }
+            }
+            if matches!(lane, BinaryLane::TriangulationNormals) {
+                for value in [0.0_f32; 3] {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+        }
+    }
+    bytes
+}
+
+fn assert_binary_lane_refusal(lane: BinaryLane, admitted_items: u64, operation: &str) {
+    let bytes = binary_lane(lane);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = admitted_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(parse_binary_prefix(&ctx, &bytes), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == operation
+            && limit.used == admitted_items
+            && limit.additional == 1));
+}
+
+#[test]
+fn binary_polygon_nodes_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::PolygonNodes, 1, "FreeCAD binary polygon nodes");
+}
+
+#[test]
+fn binary_polygon_parameters_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::PolygonParameters, 2, "FreeCAD binary polygon parameters");
+}
+
+#[test]
+fn binary_indexed_polygon_nodes_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::IndexedPolygonNodes, 1, "FreeCAD binary indexed polygon nodes");
+}
+
+#[test]
+fn binary_indexed_polygon_parameters_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::IndexedPolygonParameters, 2, "FreeCAD binary indexed polygon parameters");
+}
+
+#[test]
+fn binary_triangulation_nodes_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::TriangulationNodes, 1, "FreeCAD binary triangulation nodes");
+}
+
+#[test]
+fn binary_triangulation_uv_refuses_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::TriangulationUv, 2, "FreeCAD binary triangulation UV nodes");
+}
+
+#[test]
+fn binary_triangulation_triangles_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::TriangulationTriangles, 2, "FreeCAD binary triangulation triangles");
+}
+
+#[test]
+fn binary_triangulation_normals_refuse_at_collection_limit() {
+    assert_binary_lane_refusal(BinaryLane::TriangulationNormals, 2, "FreeCAD binary triangulation normals");
 }
