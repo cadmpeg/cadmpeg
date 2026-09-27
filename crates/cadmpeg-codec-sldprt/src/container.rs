@@ -329,6 +329,13 @@ impl ContainerScan<'_> {
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
+pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
@@ -1049,64 +1056,80 @@ pub(crate) fn select_active_parasolid_site<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
-    let mut candidates = Vec::new();
+    let mut selected = None;
     for section in scan.sections() {
-        let name = section.name().unwrap_or("").to_ascii_lowercase();
-        let section_is_partition = name.contains("partition")
-            && !name.contains("ghost")
-            && !name.contains("deltas")
-            && !name.contains("resolvedfeatures");
-        let section_is_admissible = !name.contains("ghost")
-            && !name.contains("deltas")
-            && !name.contains("resolvedfeatures");
-        let body_streams = section
+        let name = section.name().unwrap_or("");
+        let section_is_partition = contains_ascii_case_insensitive(name, "partition")
+            && !contains_ascii_case_insensitive(name, "ghost")
+            && !contains_ascii_case_insensitive(name, "deltas")
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+        let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
+            && !contains_ascii_case_insensitive(name, "deltas")
+            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
+        let sole_body_stream = section
             .ps_streams()
             .iter()
-            .filter_map(|stream| {
-                crate::parasolid::is_body_stream(&stream.header)
-                    .then_some((stream.payload.as_slice(), &stream.header))
-            })
-            .collect::<Vec<_>>();
-        let sole_body_stream = body_streams.len() == 1;
-        for (payload, header) in body_streams {
-            let description = header.description.to_ascii_lowercase();
+            .filter(|stream| crate::parasolid::is_body_stream(&stream.header))
+            .count()
+            == 1;
+        for stream in section.ps_streams() {
+            if !crate::parasolid::is_body_stream(&stream.header) {
+                continue;
+            }
+            let description = &stream.header.description;
             if !section_is_admissible
-                || description.contains("ghost")
-                || description.contains("deltas")
-                || !(description.contains("partition") || sole_body_stream && section_is_partition)
+                || contains_ascii_case_insensitive(description, "ghost")
+                || contains_ascii_case_insensitive(description, "deltas")
+                || !(contains_ascii_case_insensitive(description, "partition")
+                    || sole_body_stream && section_is_partition)
                 || active_configuration.is_some_and(|active| {
                     section.name().and_then(configuration_index) != Some(active)
                 })
             {
                 continue;
             }
-            candidates.push(ActiveParasolidSite {
+            if selected.is_some() {
+                return None;
+            }
+            selected = Some(ActiveParasolidSite {
                 section,
-                payload,
-                header,
+                payload: &stream.payload,
+                header: &stream.header,
             });
         }
     }
-    (candidates.len() == 1).then(|| candidates.remove(0))
+    selected
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
-    let start = section.to_ascii_lowercase().find("config-")? + "config-".len();
-    let digits = section[start..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>();
-    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+    let start = section
+        .as_bytes()
+        .windows(b"config-".len())
+        .position(|window| window.eq_ignore_ascii_case(b"config-"))?
+        + b"config-".len();
+    let digit_count = section.as_bytes()[start..]
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    (digit_count > 0)
+        .then(|| section[start..start + digit_count].parse().ok())
+        .flatten()
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
     explicit_active_configuration_index(scan)
-        .or_else(|| manifest_active_configuration(scan).map(|(index, _)| index))
+        .or_else(|| {
+            scan.solidworks
+                .manifest_active_configuration
+                .unique_ref()
+                .map(|(index, _)| index)
+        })
 }
 
 /// Return the active configuration's unique manifest identity, when one
 /// manifest row provides it. A manifest with zero or several `YES` rows is
 /// deliberately not an index source.
+#[cfg(test)]
 fn manifest_active_configuration(scan: &ContainerScan<'_>) -> Option<(usize, Option<String>)> {
     scan.solidworks.manifest_active_configuration.unique()
 }
@@ -1149,17 +1172,23 @@ fn manifest_configuration_name(
 }
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
-    let active = active_configuration_name(scan)?;
-    let indices = scan.solidworks.configuration_source_indices.get(&active)?;
+    let active = active_configuration_name_ref(scan)?;
+    let indices = scan.solidworks.configuration_source_indices.get(active)?;
     (indices.len() == 1).then(|| indices[0])
 }
 
 pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<String> {
-    manifest_active_configuration(scan)
+    active_configuration_name_ref(scan).map(str::to_owned)
+}
+
+fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
+    scan.solidworks
+        .manifest_active_configuration
+        .unique_ref()
         .and_then(|(_, name)| name)
         .or_else(|| {
             (scan.solidworks.configuration_names.len() == 1)
-                .then(|| scan.solidworks.configuration_names.iter().next().cloned())
+                .then(|| scan.solidworks.configuration_names.iter().next().map(String::as_str))
                 .flatten()
         })
 }
@@ -1227,9 +1256,15 @@ impl ManifestActiveConfiguration {
         }
     }
 
+    #[cfg(test)]
     fn unique(&self) -> Option<(usize, Option<String>)> {
+        self.unique_ref()
+            .map(|(index, name)| (index, name.map(str::to_owned)))
+    }
+
+    fn unique_ref(&self) -> Option<(usize, Option<&str>)> {
         match self {
-            Self::Unique(index, name) => Some((*index, name.clone())),
+            Self::Unique(index, name) => Some((*index, name.as_deref())),
             Self::Absent | Self::Ambiguous => None,
         }
     }

@@ -32,6 +32,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::configuration_index;
+use crate::container::contains_ascii_case_insensitive;
 
 use crate::brep::graph::{decode_bodies, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
@@ -1937,14 +1938,6 @@ fn multiply_projected_sketch_relation_records(
         .count()
 }
 
-/// Collect the available Parasolid body streams, excluding auxiliary sites.
-fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
-
 fn copy_retained_string(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -1956,6 +1949,7 @@ fn copy_retained_string(
     Ok(copy)
 }
 
+/// Collect the available Parasolid body streams, excluding auxiliary sites.
 fn active_body_streams<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
