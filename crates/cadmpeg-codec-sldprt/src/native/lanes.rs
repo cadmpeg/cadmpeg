@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::admission::{admit_temporary_clones, admit_validation_candidates};
+use super::admission::{admit_temporary_clones, admit_validation_candidates, NativeAdmission};
 use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
-use cadmpeg_core::decode::DecodeContext;
 
 pub(super) fn admit(
     native: &SldprtNative,
-    ctx: Option<&DecodeContext<'_>>,
+    admission: NativeAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
         if !crate::resolved_features::names::class_declarations_match(
@@ -76,11 +75,11 @@ pub(super) fn admit(
         }
     }
     let _expected_lanes_reservation = admit_temporary_clones(
-        ctx,
+        admission,
         native.feature_input_lanes.iter(),
         "validate SLDPRT expected lane copies",
     )?;
-    if let Some(ctx) = ctx {
+    if let Some(ctx) = admission.context() {
         ctx.charge_collection_items(
             u64::try_from(native.feature_input_lanes.len()).map_err(|_| {
                 ctx.refuse_codec_limit("SLDPRT expected lane pairs", u64::MAX - 1, u64::MAX)
@@ -95,7 +94,7 @@ pub(super) fn admit(
             bytes.checked_add(lane.native_payload.len())
         })
         .ok_or_else(|| {
-            ctx.map_or_else(
+            admission.context().map_or_else(
                 || {
                     cadmpeg_ir::NativeConvertError::InvalidOwner(
                         "SLDPRT lane validation byte count overflows".into(),
@@ -108,7 +107,7 @@ pub(super) fn admit(
             )
         })?;
     let _derived_reservation = admit_validation_candidates(
-        ctx,
+        admission,
         validation_source_bytes,
         "validate SLDPRT derived lanes",
     )?;
