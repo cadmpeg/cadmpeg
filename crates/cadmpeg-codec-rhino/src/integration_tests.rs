@@ -49,7 +49,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     )
 }
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("rhino").is_some());
 }
@@ -1745,7 +1745,7 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,

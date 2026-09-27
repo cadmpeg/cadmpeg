@@ -87,7 +87,7 @@ fn prepared(
     encoder: Box<dyn Encoder>,
     loss_policy: LossPolicy,
 ) -> PreparedConversion {
-    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
         validation,

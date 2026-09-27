@@ -144,7 +144,7 @@ pub(super) fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
+) -> Option<Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::decode::ResourceLimit>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -161,6 +161,11 @@ pub(super) fn decode_rolling_ball_side(
     } else {
         *position = saved;
         Some(decode_rolling_ball_curve(bytes, position, int_width)?)
+    };
+    let curve = match curve {
+        Some(Ok(curve)) => Some(curve),
+        Some(Err(limit)) => return Some(Err(limit)),
+        None => None,
     };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
     let location = take_native_vec3(bytes, position, 0x13)?;
@@ -181,7 +186,7 @@ pub(super) fn decode_rolling_ball_side(
             None
         }
     };
-    Some(RollingBallSide {
+    Some(Ok(RollingBallSide {
         support_kind,
         surface,
         curve,
@@ -193,7 +198,7 @@ pub(super) fn decode_rolling_ball_side(
         ),
         secondary_pcurve,
         extension,
-    })
+    }))
 }
 
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
@@ -267,7 +272,7 @@ pub(super) fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<RollingBallSupportCurve<CurveGeometry>> {
+) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::decode::ResourceLimit>> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end();
@@ -275,26 +280,27 @@ pub(super) fn decode_rolling_ball_curve(
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
-        return Some(RollingBallSupportCurve {
+        return Some(Ok(RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.curve)),
             parameter_range,
-        });
+        }));
     }
     let kind = take_native_ident(bytes, position)?;
     if kind == "intcurve" {
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
         let curve = decode_owned_curve_cache_at(scope, int_width)
+            .map(Ok)
             .or_else(|| decode_par_int_cur_isoline(scope.bytes(), int_width))?;
         *position += scope.bytes().len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
-        return Some(RollingBallSupportCurve {
+        return Some(curve.map(|curve| RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
-        });
+        }));
     }
     let geometry = match kind.as_str() {
         "straight" => {
@@ -370,10 +376,10 @@ pub(super) fn decode_rolling_ball_curve(
         take_optional_range_value(bytes, position)?.value(),
         take_optional_range_value(bytes, position)?.value(),
     ];
-    Some(RollingBallSupportCurve {
+    Some(Ok(RollingBallSupportCurve {
         curve: geometry,
         parameter_range,
-    })
+    }))
 }
 
 /// Decode one rolling-ball support side. Token-space counterpart of
@@ -381,7 +387,7 @@ pub(super) fn decode_rolling_ball_curve(
 pub(super) fn rolling_ball_side(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
+) -> Option<Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::decode::ResourceLimit>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -398,6 +404,11 @@ pub(super) fn rolling_ball_side(
     } else {
         cur.set_pos(saved);
         Some(rolling_ball_curve(cur, reference_context)?)
+    };
+    let curve = match curve {
+        Some(Ok(curve)) => Some(curve),
+        Some(Err(limit)) => return Some(Err(limit)),
+        None => None,
     };
     let pcurve = nullable_embedded_pcurve(cur)?.value();
     let location = cur.take_position()?;
@@ -418,7 +429,7 @@ pub(super) fn rolling_ball_side(
             None
         }
     };
-    Some(RollingBallSide {
+    Some(Ok(RollingBallSide {
         support_kind,
         surface,
         curve,
@@ -430,7 +441,7 @@ pub(super) fn rolling_ball_side(
         ),
         secondary_pcurve,
         extension,
-    })
+    }))
 }
 
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
@@ -508,7 +519,7 @@ pub(super) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]>
 pub(super) fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<RollingBallSupportCurve<CurveGeometry>> {
+) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::decode::ResourceLimit>> {
     let toks = cur.toks();
     if toks::marker_at(toks, cur.pos()).is_some() {
         let (curve, curve_end) = curve_block(toks, cur.pos())?;
@@ -517,10 +528,10 @@ pub(super) fn rolling_ball_curve(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        return Some(RollingBallSupportCurve {
+        return Some(Ok(RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
-        });
+        }));
     }
     let kind = cur.take_ident()?;
     if kind == "intcurve" {
@@ -529,16 +540,17 @@ pub(super) fn rolling_ball_curve(
         let curve = reference_context
             .and_then(|table| crate::nurbs::core::owned_curve_cache_resolving_refs(scope, table))
             .or_else(|| crate::nurbs::core::owned_curve_cache(scope))
+            .map(Ok)
             .or_else(|| par_int_cur_isoline(scope.tokens(), reference_context))?;
         cur.set_pos(cur.pos() + scope.tokens().len());
         let parameter_range = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        return Some(RollingBallSupportCurve {
+        return Some(curve.map(|curve| RollingBallSupportCurve {
             curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             parameter_range,
-        });
+        }));
     }
     let geometry = match kind {
         "straight" => {
@@ -614,10 +626,10 @@ pub(super) fn rolling_ball_curve(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
-    Some(RollingBallSupportCurve {
+    Some(Ok(RollingBallSupportCurve {
         curve: geometry,
         parameter_range,
-    })
+    }))
 }
 
 fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThirdSide> {
@@ -1022,7 +1034,7 @@ mod variable_blend_value_tests {
 pub(super) fn var_blend_spl_sur(
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let names = [
         "var_blend_spl_sur",
@@ -1058,11 +1070,19 @@ pub(super) fn var_blend_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let sides = Box::new([
-        rolling_ball_side(&mut cur, reference_context)?,
-        rolling_ball_side(&mut cur, reference_context)?,
-    ]);
-    let slice = rolling_ball_curve(&mut cur, reference_context)?;
+    let first = match rolling_ball_side(&mut cur, reference_context)? {
+        Ok(side) => side,
+        Err(limit) => return Some(Err(limit)),
+    };
+    let second = match rolling_ball_side(&mut cur, reference_context)? {
+        Ok(side) => side,
+        Err(limit) => return Some(Err(limit)),
+    };
+    let sides = Box::new([first, second]);
+    let slice = match rolling_ball_curve(&mut cur, reference_context)? {
+        Ok(curve) => curve,
+        Err(limit) => return Some(Err(limit)),
+    };
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     let two_radii = match cur.take_enum()? {
         0 => false,
@@ -1135,7 +1155,10 @@ pub(super) fn var_blend_spl_sur(
         None
     } else {
         cur.set_pos(saved);
-        Some(rolling_ball_curve(&mut cur, reference_context)?)
+        match rolling_ball_curve(&mut cur, reference_context)? {
+            Ok(curve) => Some(curve),
+            Err(limit) => return Some(Err(limit)),
+        }
     };
     let convexity = if cur.take_bool()? {
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -1162,7 +1185,7 @@ pub(super) fn var_blend_spl_sur(
     };
     let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface::revision(
+    Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
             subtype,
             revision,
@@ -1204,7 +1227,7 @@ pub(super) fn var_blend_spl_sur(
             post_curve,
             post_pcurve,
         })),
-    ))
+    )))
 }
 
 fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundary> {
@@ -1466,7 +1489,7 @@ pub(super) fn vertex_blend_spl_sur(
 pub(super) fn full_rb_blend_spl_sur(
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
     let names = [
         "rb_blend_spl_sur",
         "rbblnsur",
@@ -1480,11 +1503,19 @@ pub(super) fn full_rb_blend_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let sides = Box::new([
-        rolling_ball_side(&mut cur, Some(table))?,
-        rolling_ball_side(&mut cur, Some(table))?,
-    ]);
-    let slice = rolling_ball_curve(&mut cur, Some(table))?;
+    let first = match rolling_ball_side(&mut cur, Some(table))? {
+        Ok(side) => side,
+        Err(limit) => return Some(Err(limit)),
+    };
+    let second = match rolling_ball_side(&mut cur, Some(table))? {
+        Ok(side) => side,
+        Err(limit) => return Some(Err(limit)),
+    };
+    let sides = Box::new([first, second]);
+    let slice = match rolling_ball_curve(&mut cur, Some(table))? {
+        Ok(curve) => curve,
+        Err(limit) => return Some(Err(limit)),
+    };
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     let radius_selector = match cur.peek()? {
         Token::Enum(_) => {
@@ -1519,7 +1550,7 @@ pub(super) fn full_rb_blend_spl_sur(
     };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     cur.at_scope_end().then_some(())?;
-    Some(DecodedProceduralSurface::revision(
+    Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
@@ -1547,7 +1578,7 @@ pub(super) fn full_rb_blend_spl_sur(
                 tail_extensions,
             })),
         },
-    ))
+    )))
 }
 
 /// Decode the compact rolling-ball carrier emitted without the native side

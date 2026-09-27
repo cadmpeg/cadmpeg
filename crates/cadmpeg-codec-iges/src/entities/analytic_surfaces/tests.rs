@@ -98,7 +98,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 "{:#?}",
                 result.report().losses
             );
-            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         }
     }

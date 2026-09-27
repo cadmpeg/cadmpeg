@@ -12,6 +12,7 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use cadmpeg_core::decode::ResourceLimit;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -104,6 +105,26 @@ impl<P: PoleValue<FinitePoint2>> PcurveNurbsPoles<P> {
 }
 
 impl PcurveNurbsPoles<FinitePoint2> {
+    /// Copy evaluator positions with scratch bounded by the admitted pole count.
+    pub fn try_raw_points(&self) -> Result<Vec<Point2>, ResourceLimit> {
+        let mut output = Vec::new();
+        super::nurbs::scratch::reserve_exact(&mut output, self.count(), "IR pcurve control copy")?;
+        match self {
+            Self::Polynomial { points } => output.extend(points.iter().map(|point| point.get())),
+            Self::Rational { points } => output.extend(points.iter().map(|pole| pole.point.get())),
+        }
+        Ok(output)
+    }
+
+    /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
+    pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
+        let Self::Rational { points } = self else { return Ok(None); };
+        let mut output = Vec::new();
+        super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
+        output.extend(points.iter().map(|pole| pole.weight.get()));
+        Ok(Some(output))
+    }
+
     /// The poles with raw positions, for a reader that edits or writes them.
     #[must_use]
     pub fn to_raw(&self) -> PcurveNurbsPoles {
@@ -230,6 +251,24 @@ impl<P> PcurveNurbsPoles<P> {
 }
 
 impl<P: Copy> PcurveNurbsPoles<P> {
+    /// One admitted pole in parameter order.
+    #[must_use]
+    pub fn point_at(&self, index: usize) -> Option<P> {
+        match self {
+            Self::Polynomial { points } => points.get(index).copied(),
+            Self::Rational { points } => points.get(index).map(|pole| pole.point),
+        }
+    }
+
+    /// One rational weight, absent for a polynomial pcurve or invalid index.
+    #[must_use]
+    pub fn weight_at(&self, index: usize) -> Option<f64> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => points.get(index).map(|pole| pole.weight.get()),
+        }
+    }
+
     /// Pole positions in parameter order.
     #[must_use]
     pub fn points(&self) -> Vec<P> {

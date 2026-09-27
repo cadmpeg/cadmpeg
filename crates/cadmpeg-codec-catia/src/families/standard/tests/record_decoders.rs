@@ -1300,7 +1300,7 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         &HashSet::from([100, 501]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(matches!(
         evidence.surface_geometries.get(&100),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
@@ -1321,7 +1321,7 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
         &HashSet::from([100, 501]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     for tag in [100, 501] {
         assert!(matches!(
             evidence.surface_geometries.get(&tag),
@@ -1347,7 +1347,7 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
         &HashSet::from([100]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(!evidence.surface_geometries.contains_key(&100));
 }
 
@@ -1362,7 +1362,7 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
         &HashSet::from([100]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(matches!(
         evidence.surface_geometries.get(&100),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -1376,7 +1376,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         &HashSet::from([0x1234_5678]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(matches!(
         evidence.procedural_surfaces.get(&0x1234_5678),
         Some(
@@ -1404,7 +1404,7 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         &HashSet::new(),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(evidence.edge_owner_faces.is_empty());
 }
 
@@ -1423,7 +1423,7 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
         &HashSet::new(),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
 
     assert_eq!(
         evidence.edge_owner_faces.get(&300),
@@ -1439,7 +1439,7 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
         &HashSet::new(),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
 
     assert!(evidence.edge_owner_faces.is_empty());
     assert!(evidence.surface_geometries.is_empty());
@@ -1460,7 +1460,7 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
         &HashSet::new(),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(evidence.edge_owner_faces.is_empty());
 }
 
@@ -1488,7 +1488,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
         &HashSet::from([501]),
         &HashSet::new(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("evaluator allocation succeeds");
     assert!(!evidence.surface_geometries.contains_key(&501));
     assert!(matches!(
         evidence.procedural_surfaces.get(&501),

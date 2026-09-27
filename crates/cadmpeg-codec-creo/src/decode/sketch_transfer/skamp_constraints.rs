@@ -957,7 +957,7 @@ mod tests {
         };
         assert_eq!(native_kind, "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1023,7 +1023,7 @@ mod tests {
             entities,
             &vec![reference_line.id().clone(), point.id().clone()]
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1155,7 +1155,7 @@ mod tests {
 
     /// The native kind of entity 42, after the document validates.
     fn native_kind_42(result: &cadmpeg_ir::codec::DecodeResult) -> &str {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
         let entity = result
             .ir()
@@ -1209,7 +1209,7 @@ mod tests {
         };
         assert!(point.as_str().ends_with(":43"), "{point:?}");
         assert_eq!(entity, entity_42(&result));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 }

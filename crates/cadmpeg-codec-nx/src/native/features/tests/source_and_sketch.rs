@@ -766,7 +766,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

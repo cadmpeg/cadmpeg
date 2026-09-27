@@ -329,7 +329,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
         loss.message
             .contains("!VENDOR_ENTITY instance(s) as named opaque STEP records")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.findings.is_empty(), "{:#?}", validation.findings);
 }
 
@@ -384,7 +384,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .iter()
         .any(|link| link.as_str() == "step:data:curve#1"));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#1")
@@ -942,7 +942,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
             .contains("INTERSECTION_CURVE #57 has no decoded 3D curve")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

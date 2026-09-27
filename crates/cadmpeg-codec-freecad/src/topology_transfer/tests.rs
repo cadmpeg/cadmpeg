@@ -1091,7 +1091,7 @@ Co 1001000 +2 0 *
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         report
             .findings
@@ -1157,7 +1157,7 @@ So 1001000 +2 0 *
         Some([0.0, 1.0])
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.findings.iter().all(|finding| {
             finding.severity < cadmpeg_ir::report::Severity::Error
@@ -1208,7 +1208,7 @@ Co 1001000 +2 0 *
     assert_eq!(second.radial_next, first.id);
     assert_ne!(first.pcurves, second.pcurves);
     assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
-    let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+    let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail")
         .findings
         .into_iter()
         .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
@@ -1483,7 +1483,7 @@ Co 1001000 +2 1 +2 3 *
             cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]).expect("required invariant");
         assert_eq!((start.x - end.x).abs(), 2.0);
     }
-    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         report.findings.iter().all(|finding| finding.severity
             < cadmpeg_ir::report::Severity::Error

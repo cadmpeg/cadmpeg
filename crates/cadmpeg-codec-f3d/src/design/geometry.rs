@@ -40,35 +40,69 @@ pub(super) fn arrangement_region_containing_points(
     points: &[Point2],
     tolerance: f64,
     budget: &WorkBudget<'_>,
-) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let faces = sketch_arrangement_faces(sketch, entities, tolerance, budget)?;
-    let mut boundary_matches = faces.iter().filter(|face| {
-        points.iter().all(|point| {
-            face.boundary
-                .iter()
-                .any(|use_| point_on_profile_boundary_use(*point, use_, entities, tolerance))
-        })
-    });
-    let boundary = boundary_matches.next();
-    if boundary.is_some() && boundary_matches.next().is_none() {
-        return SketchProfileRegion::trimmed(boundary?.boundary.clone(), Vec::new()).ok();
+    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, budget) else {
+        return Ok(None);
+    };
+    let mut boundary = None;
+    let mut boundary_count = 0usize;
+    for face in &faces {
+        let mut matches = true;
+        for point in points {
+            let mut on_boundary = false;
+            for use_ in &face.boundary {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                    on_boundary = true;
+                    break;
+                }
+            }
+            if !on_boundary {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            boundary_count += 1;
+            boundary = Some(face);
+            if boundary_count == 2 {
+                break;
+            }
+        }
     }
-    let mut interior_matches = faces.iter().filter(|face| {
-        points.iter().all(|point| {
-            !face
-                .boundary
-                .iter()
-                .any(|use_| point_on_profile_boundary_use(*point, use_, entities, tolerance))
-                && point_in_polygon(*point, &face.polyline)
-        })
-    });
-    let interior = interior_matches.next()?;
-    if interior_matches.next().is_some() {
-        return None;
+    if boundary_count == 1 {
+        return Ok(boundary.and_then(|face| SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()));
     }
-    SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok()
+    let mut interior = None;
+    let mut interior_count = 0usize;
+    for face in &faces {
+        let mut matches = true;
+        for point in points {
+            let mut on_boundary = false;
+            for use_ in &face.boundary {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                    on_boundary = true;
+                    break;
+                }
+            }
+            if on_boundary || !point_in_polygon(*point, &face.polyline) {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            interior_count += 1;
+            interior = Some(face);
+            if interior_count == 2 {
+                break;
+            }
+        }
+    }
+    if interior_count != 1 {
+        return Ok(None);
+    }
+    Ok(interior.and_then(|face| SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()))
 }
 
 fn sketch_arrangement_faces(
@@ -1246,16 +1280,16 @@ fn point_on_profile_boundary_use(
     use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
-        return false;
+        return Ok(false);
     };
-    if !point_on_sketch_entity(point, entity, tolerance) {
-        return false;
+    if !point_on_sketch_entity(point, entity, tolerance)? {
+        return Ok(false);
     }
-    match entity.geometry.definition() {
+    Ok(match entity.geometry.definition() {
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => {
             let angle = (point.v - center.v).atan2(point.u - center.u);
@@ -1270,7 +1304,7 @@ fn point_on_profile_boundary_use(
             })
         }
         _ => true,
-    }
+    })
 }
 
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
@@ -1284,9 +1318,10 @@ pub(super) fn region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
-) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
+    let Some((boundaries, containment, projected)) = (|| {
     let boundaries = sketch
         .profiles
         .iter()
@@ -1309,25 +1344,25 @@ pub(super) fn region_containing_points(
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
         .collect::<Option<Vec<_>>>()?;
-    let incidences = projected
-        .iter()
-        .map(|point| {
-            sketch
-                .profiles
-                .iter()
-                .enumerate()
-                .filter(|(_, profile)| {
-                    profile.iter().any(|use_| {
-                        entities
-                            .iter()
-                            .find(|entity| entity.id() == &use_.entity)
-                            .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
-                    })
-                })
-                .map(|(index, _)| index)
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
+    Some((boundaries, containment, projected))
+    })() else { return Ok(None); };
+    let mut incidences = Vec::new();
+    for point in &projected {
+        let mut incident = HashSet::new();
+        for (index, profile) in sketch.profiles.iter().enumerate() {
+            for use_ in profile {
+                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
+                    continue;
+                };
+                if point_on_sketch_entity(*point, entity, tolerance)? {
+                    incident.insert(index);
+                    break;
+                }
+            }
+        }
+        incidences.push(incident);
+    }
+    Ok((|| {
     let region = |outer: usize| {
         let holes = immediate_containment_children(outer, &containment);
         projected
@@ -1355,16 +1390,7 @@ pub(super) fn region_containing_points(
         )
         .ok();
     }
-    if projected.iter().any(|point| {
-        sketch.profiles.iter().any(|profile| {
-            profile.iter().any(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
-                    .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
-            })
-        })
-    }) {
+    if incidences.iter().any(|incident| !incident.is_empty()) {
         return None;
     }
     let containing = boundaries
@@ -1395,6 +1421,7 @@ pub(super) fn region_containing_points(
         .map(|candidate| u32::try_from(candidate).ok())
         .collect::<Option<Vec<_>>>()?;
     SketchProfileRegion::loops(u32::try_from(outer).ok()?, holes).ok()
+    })())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -1868,17 +1895,15 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
-    let points = curve
-        .control_points()
-        .iter()
-        .map(|p| [p.u, p.v])
-        .collect::<Vec<_>>();
-    let weights = curve.pole_rows().weights();
-    cadmpeg_ir::geometry::nurbs::bounds::speed_bound(
+    cadmpeg_ir::geometry::nurbs::bounds::speed_bound_by(
         curve.degree(),
         curve.knots(),
-        &points,
-        weights.as_deref(),
+        curve.pole_rows().count(),
+        |index| curve.pole_rows().point_at(index).map(|point| {
+            let point = point.get();
+            [point.u, point.v]
+        }),
+        |index| curve.pole_rows().weight_at(index).unwrap_or(1.0),
         [0.0, 0.0],
     )
     .map(cadmpeg_ir::scalar::FiniteReal::get)
@@ -2509,10 +2534,26 @@ pub(super) fn point_on_sketch_entity(
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
-) -> bool {
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match entity.geometry.definition() {
+    if let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() {
+        if curve.periodic() {
+            return Ok(false);
+        }
+        let control_points = curve.pole_rows().try_raw_points()?;
+        let weights = curve.pole_rows().try_weights()?;
+        return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+            curve.degree(),
+            curve.knots(),
+            &control_points,
+            weights.as_deref(),
+            point,
+            tolerance,
+        )
+        .map(|contained| contained.unwrap_or(false));
+    }
+    Ok((|| match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             let dx = end.u - start.u;
             let dy = end.v - start.v;
@@ -2580,21 +2621,8 @@ pub(super) fn point_on_sketch_entity(
                 ),
             }
         }
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
-            cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                point,
-                tolerance,
-            )
-            .unwrap_or(false)
-        }
         _ => false,
-    }
+    })())
 }
 
 pub(super) fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -> bool {

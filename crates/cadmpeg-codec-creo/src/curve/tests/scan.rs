@@ -130,7 +130,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
         );
     }
     assert_ne!(rows[0].id(), rows[1].id());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

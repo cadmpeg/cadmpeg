@@ -500,7 +500,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             angular_tolerance: 1.0e-9,
             arrangement_budget: &arrangement_budget,
         },
-    );
+    ).expect("resource allocation did not fail");
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {

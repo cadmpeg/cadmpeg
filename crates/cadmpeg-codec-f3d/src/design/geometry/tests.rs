@@ -177,7 +177,7 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
         ],
         1.0e-6,
         &arrangement_budget,
-    )
+    ).expect("resource allocation did not fail")
     else {
         panic!("selected face must resolve from raw sketch geometry")
     };
@@ -256,11 +256,11 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,).expect("resource allocation did not fail"),
         None
     );
 
@@ -290,7 +290,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
-        ),
+        ).expect("resource allocation did not fail"),
         None
     );
 }
@@ -352,15 +352,15 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
@@ -369,11 +369,11 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
-        ),
+        ).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
+        region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6).expect("resource allocation did not fail"),
         None
     );
 }
@@ -465,7 +465,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
+        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
 }
@@ -555,7 +555,7 @@ fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
         ],
         1.0e-7,
         &arrangement_budget,
-    )
+    ).expect("resource allocation did not fail")
     .expect("left half-disk arrangement face");
     let SketchProfileRegion::Trimmed {
         outer_boundary,
@@ -666,11 +666,11 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(expected.clone())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,).expect("resource allocation did not fail"),
         Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
 }
@@ -893,12 +893,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
+    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6).expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
         Point2::new(-2.0, 0.0),
         &arc,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
@@ -911,11 +911,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     assert!(point_lies_on_sketch_geometry(
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry
-    ));
+    ).expect("resource allocation did not fail"));
     assert!(!point_lies_on_sketch_geometry(
         Point2::new(-2.0, 0.0),
         &clockwise_arc.geometry
-    ));
+    ).expect("resource allocation did not fail"));
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -936,17 +936,17 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         Point2::new(-1.0, -1.0),
         &ellipse,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
         Point2::new(3.0, -1.0),
         &ellipse,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
         Point2::new(-1.0, -0.9),
         &ellipse,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -966,12 +966,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         Point2::new(3.0, 2.0),
         &nurbs,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
         Point2::new(2.0, 4.0),
         &nurbs,
         1.0e-6
-    ));
+    ).expect("resource allocation did not fail"));
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
@@ -985,7 +985,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9));
+    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9).expect("resource allocation did not fail"));
 }
 
 #[test]

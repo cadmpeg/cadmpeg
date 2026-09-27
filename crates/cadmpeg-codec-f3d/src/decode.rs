@@ -2668,7 +2668,7 @@ impl<'a> F3dDecodeSession<'a> {
                 angular_tolerance: self.ir.tolerances.angular.get(),
                 arrangement_budget: &arrangement_budget,
             },
-        );
+        )?;
         if matches!(path, SessionPath::Geometry(_)) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
@@ -2726,7 +2726,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear.get(),
             )
-        };
+        }?;
         self.ir
             .model
             .sketch_constraints
@@ -2737,7 +2737,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
                 self.ir.tolerances.linear.get(),
-            ),
+            )?,
         );
         crate::design::dimensions::bind_offset_dimension_parameters(
             &mut self.ir.model.sketch_constraints,

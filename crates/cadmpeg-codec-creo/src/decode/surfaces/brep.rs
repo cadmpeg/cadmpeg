@@ -960,22 +960,23 @@ fn native_parameter_loop_polygon(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
     typed_nonlinear_curve_ids: &BTreeSet<u32>,
-) -> Option<Vec<[f64; 2]>> {
+) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::decode::ResourceLimit> {
     let segments = lp
         .half_edges
         .iter()
-        .map(|half_edge| {
-            let binding = incidence.get(half_edge)?;
-            let end_vertex_id = binding.end_vertex_id?;
-            let candidates = native_pcurves.get(&(half_edge.curve_id, face_id))?;
-            let traversal = [
-                solved_vertices.get(&binding.start_vertex_id).copied()?,
-                solved_vertices.get(&end_vertex_id).copied()?,
-            ];
-            unique_oriented_native_pcurve(surface, candidates, traversal)
-                .map(|(endpoints, _)| endpoints)
+        .map(|half_edge| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+            let Some(binding) = incidence.get(half_edge) else { return Ok(None); };
+            let Some(end_vertex_id) = binding.end_vertex_id else { return Ok(None); };
+            let Some(candidates) = native_pcurves.get(&(half_edge.curve_id, face_id)) else { return Ok(None); };
+            let [Some(start), Some(end)] = [
+                solved_vertices.get(&binding.start_vertex_id).copied(),
+                solved_vertices.get(&end_vertex_id).copied(),
+            ] else { return Ok(None); };
+            Ok(unique_oriented_native_pcurve(surface, candidates, [start, end])?
+                .map(|(endpoints, _)| endpoints))
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Result<Option<Vec<_>>, _>>()?;
+    let Some(segments) = segments else { return Ok(None); };
     if segments.len() < 3
         && (segments.len() != 2
             || lp.half_edges[0].curve_id == lp.half_edges[1].curve_id
@@ -996,9 +997,9 @@ fn native_parameter_loop_polygon(
             !parameter_points_agree(segment[1], next[0])
         })
     {
-        return None;
+        return Ok(None);
     }
-    Some(segments.into_iter().map(|segment| segment[0]).collect())
+    Ok(Some(segments.into_iter().map(|segment| segment[0]).collect()))
 }
 
 fn ordered_native_parameter_face_loops<'a>(
@@ -1009,7 +1010,7 @@ fn ordered_native_parameter_face_loops<'a>(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
     curve_evidence: NativeCurveEvidence<'_>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::decode::ResourceLimit> {
     let polygons = loops
         .iter()
         .map(|lp| {
@@ -1023,8 +1024,9 @@ fn ordered_native_parameter_face_loops<'a>(
                 curve_evidence.typed_nonlinear_curve_ids,
             )
         })
-        .collect::<Option<Vec<_>>>()?;
-    ordered_parameter_face_loops(loops.to_owned(), &polygons).or_else(|| {
+        .collect::<Result<Option<Vec<_>>, _>>()?;
+    let Some(polygons) = polygons else { return Ok(None); };
+    Ok(ordered_parameter_face_loops(loops.to_owned(), &polygons).or_else(|| {
         ordered_two_edge_circle_loops(
             loops,
             &polygons,
@@ -1032,7 +1034,7 @@ fn ordered_native_parameter_face_loops<'a>(
             curve_evidence.model_curves,
             curve_evidence.source_carriers,
         )
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -1073,13 +1075,13 @@ pub(in super::super) fn transfer_native_brep(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertex_result = solve_topological_vertices(
+        let solved_vertex_result = solve_topological_vertices(
         scan,
         ir,
         &carriers,
         curve_evidence.nurbs_endpoints,
         source_carriers,
-    );
+    )?;
     let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
@@ -1132,7 +1134,7 @@ pub(in super::super) fn transfer_native_brep(
             ir,
             pcurve,
             source_carriers,
-        ) else {
+        )? else {
             continue;
         };
         for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
@@ -1301,11 +1303,8 @@ pub(in super::super) fn transfer_native_brep(
             diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
             continue;
         }
-        let two_edge_loops_are_proven =
-            loops
-                .iter()
-                .filter(|lp| lp.half_edges.len() == 2)
-                .all(|lp| {
+        let mut two_edge_loops_are_proven = true;
+        for lp in loops.iter().filter(|lp| lp.half_edges.len() == 2) {
                     let surface_id = native_surface_id(scan, face_id);
                     let Some(surface) = exactly_one(
                         ir.model
@@ -1313,9 +1312,10 @@ pub(in super::super) fn transfer_native_brep(
                             .iter()
                             .filter(|candidate| candidate.id == surface_id),
                     ) else {
-                        return false;
+                        two_edge_loops_are_proven = false;
+                        break;
                     };
-                    native_parameter_loop_polygon(
+                    if native_parameter_loop_polygon(
                         lp,
                         face_id,
                         source_carriers.surface_geometry(surface),
@@ -1323,41 +1323,44 @@ pub(in super::super) fn transfer_native_brep(
                         solved_vertices,
                         &native_pcurves,
                         &typed_nonlinear_curve_ids,
-                    )
-                    .is_some()
-                });
+                    )?.is_none() {
+                        two_edge_loops_are_proven = false;
+                        break;
+                    }
+        }
         if !two_edge_loops_are_proven {
             diagnostics.reject_face(FaceAdmissionRejection::TwoEdgeParameterProof, face_id);
             continue;
         }
-        let ordered = ordered_face_loops(
+        let mut ordered = ordered_face_loops(
             loops.clone(),
             planes.get(&face_id).copied(),
             &incidence,
             solved_vertices,
-        )
-        .or_else(|| {
+        );
+        if ordered.is_none() {
             let surface_id = native_surface_id(scan, face_id);
-            let surface = exactly_one(
+            if let Some(surface) = exactly_one(
                 ir.model
                     .surfaces
                     .iter()
                     .filter(|candidate| candidate.id == surface_id),
-            )?;
-            ordered_native_parameter_face_loops(
-                loops,
-                face_id,
-                source_carriers.surface_geometry(surface),
-                &incidence,
-                solved_vertices,
-                &native_pcurves,
-                NativeCurveEvidence {
-                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                    model_curves: &ir.model.curves,
-                    source_carriers,
-                },
-            )
-        });
+            ) {
+                ordered = ordered_native_parameter_face_loops(
+                    loops,
+                    face_id,
+                    source_carriers.surface_geometry(surface),
+                    &incidence,
+                    solved_vertices,
+                    &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                        model_curves: &ir.model.curves,
+                        source_carriers,
+                    },
+                )?;
+            }
+        }
         let Some(ordered) = ordered else {
             diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
             continue;
@@ -1571,36 +1574,33 @@ pub(in super::super) fn transfer_native_brep(
                 let range = if derived_line {
                     orient_line_edge_carrier(&mut geometry, points)
                 } else {
-                    orient_nonperiodic_nurbs_edge_carrier(&mut geometry, points).or_else(|| {
-                        exact_line_edge_parameter_range(&geometry, points).or_else(|| {
-                            nonperiodic_conic_edge_parameter_range(&geometry, points)
-                                .or_else(|| {
-                                    pcurve_backed_periodic_conic_parameter_range(
-                                        &geometry,
-                                        *curve_id,
-                                        *curve_faces.get(curve_id)?,
-                                        &native_pcurves,
-                                        &ir.model.surfaces,
-                                        points,
-                                        source_carriers,
-                                    )
-                                })
-                                .or_else(|| {
-                                    unbacked_closed_edge.then_some(()).and_then(|()| {
-                                        full_periodic_conic_edge_parameter_range(
-                                            &geometry, points[0],
-                                        )
-                                    })
-                                })
-                                .or_else(|| {
-                                    unbacked_closed_edge.then_some(()).and_then(|()| {
-                                        full_periodic_nurbs_edge_parameter_range(
-                                            &geometry, points[0],
-                                        )
-                                    })
-                                })
+                    let mut range = orient_nonperiodic_nurbs_edge_carrier(&mut geometry, points)
+                        .or_else(|| exact_line_edge_parameter_range(&geometry, points))
+                        .or_else(|| nonperiodic_conic_edge_parameter_range(&geometry, points));
+                    if range.is_none() {
+                        if let Some(faces) = curve_faces.get(curve_id) {
+                            range = pcurve_backed_periodic_conic_parameter_range(
+                                &geometry,
+                                *curve_id,
+                                *faces,
+                                &native_pcurves,
+                                &ir.model.surfaces,
+                                points,
+                                source_carriers,
+                            )?;
+                        }
+                    }
+                    range
+                        .or_else(|| {
+                            unbacked_closed_edge.then_some(()).and_then(|()| {
+                                full_periodic_conic_edge_parameter_range(&geometry, points[0])
+                            })
                         })
-                    })
+                        .or_else(|| {
+                            unbacked_closed_edge.then_some(()).and_then(|()| {
+                                full_periodic_nurbs_edge_parameter_range(&geometry, points[0])
+                            })
+                        })
                 };
                 source_carriers.replace_curve_geometry(candidate, geometry)?;
                 range
@@ -1973,7 +1973,7 @@ pub(in super::super) fn transfer_native_brep(
                     let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
                     let mut refusal = crate::lane_refusal::LaneRefusals::new();
                     let refusal_cell = &mut refusal;
-                    let pcurve_geometry = native_candidates
+                    let native_oriented = native_candidates
                         .and_then(|candidates| {
                             let incidence = incidence.get(half_edge)?;
                             let end = incidence.end_vertex_id?;
@@ -1988,12 +1988,14 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| candidate.id == surface_id),
                             )?;
-                            unique_oriented_native_pcurve(
-                                source_carriers.surface_geometry(surface),
-                                candidates,
-                                traversal,
-                            )
-                        })
+                            Some((source_carriers.surface_geometry(surface), candidates, traversal))
+                        });
+                    let native_oriented = match native_oriented {
+                        Some((surface, candidates, traversal)) =>
+                            unique_oriented_native_pcurve(surface, candidates, traversal)?,
+                        None => None,
+                    };
+                    let pcurve_geometry = native_oriented
                         .and_then(|(endpoints, offset)| {
                             Some((
                                 line_pcurve(endpoints[0], endpoints[1])?,

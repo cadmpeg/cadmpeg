@@ -121,26 +121,30 @@ pub(super) fn infer_edge_parameter_ranges(
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let inferred = candidates
         .into_iter()
-        .filter_map(|(edge_index, curve, start, end)| {
-            let geometry = &model_index.curves(curve.as_str())?.geometry;
-            let start_seed = curve_endpoint_seed(geometry.solved()?, false, 0.0);
-            let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+        .try_fold(Vec::new(), |mut inferred, (edge_index, curve, start, end)| {
+            let Some(geometry) = model_index.curves(curve.as_str()).map(|curve| &curve.geometry) else {
+                return Ok(inferred);
+            };
+            let Some(solved) = geometry.solved() else { return Ok(inferred); };
+            let start_seed = curve_endpoint_seed(solved, false, 0.0);
+            let Some(start_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 start,
                 start_seed,
-            )?;
-            let end_seed = curve_endpoint_seed(geometry.solved()?, true, start_parameter.get());
-            let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            )? else { return Ok(inferred); };
+            let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
+            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 end,
                 end_seed,
-            )?;
-            edge_parameter_range(geometry.solved()?, start_parameter, end_parameter)
-                .map(|range| (edge_index, range))
-        })
-        .collect::<Vec<_>>();
+            )? else { return Ok(inferred); };
+            if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
+                inferred.push((edge_index, range));
+            }
+            Ok::<_, CodecError>(inferred)
+        })?;
     drop(model_index);
 
     for (index, range) in inferred {
@@ -335,7 +339,7 @@ fn source_curve_parameter_scale(
     scale
 }
 
-pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<GeometryData> {
+pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> Result<StageOutcome<GeometryData>, CodecError> {
     let mut losses = Vec::new();
     let scale = length_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
@@ -1015,12 +1019,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     losses: &mut losses,
                 };
                 (
-                    parameters
-                        .get(2)
-                        .and_then(|value| trim_parameter(value, &mut trim_context)),
-                    parameters
-                        .get(3)
-                        .and_then(|value| trim_parameter(value, &mut trim_context)),
+                    match parameters.get(2) {
+                        Some(value) => trim_parameter(value, &mut trim_context)?,
+                        None => None,
+                    },
+                    match parameters.get(3) {
+                        Some(value) => trim_parameter(value, &mut trim_context)?,
+                        None => None,
+                    },
                 )
             };
             let Some((start, end)) = start.zip(end) else {
@@ -2105,7 +2111,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             typed.insert(id);
         }
     }
-    StageOutcome {
+    Ok(StageOutcome {
         value: GeometryData {
             placements,
             transformation_operators,
@@ -2114,7 +2120,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         claims: typed,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
 fn decode_tessellated_curve_sets(
@@ -3631,7 +3637,7 @@ fn string_value(value: &Value) -> Option<String> {
     crate::strings::decode(bytes).ok()
 }
 
-fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Option<f64> {
+fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let (parameter, cartesian) = match value {
         Value::List(values) => (
             values.iter().find(|value| is_parameter_trim_value(value)),
@@ -3709,24 +3715,24 @@ fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Op
     }
 }
 
-fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let Value::Reference(id) = value else {
-        return None;
+        return Ok(None);
     };
-    context.points.get(id).and_then(|point| {
-        curve_parameter_at_point(context.geometry.solved()?, point.get(), context.tolerance)
-    })
+    let Some(point) = context.points.get(id) else { return Ok(None); };
+    let Some(geometry) = context.geometry.solved() else { return Ok(None); };
+    curve_parameter_at_point(geometry, point.get(), context.tolerance)
 }
 
 fn select_trim_parameter(
     parameter: Option<&Value>,
     cartesian: Option<&Value>,
     context: &mut TrimParameterContext<'_>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     match context.master_representation {
         TrimMasterRepresentation::Parameter => {
             if let Some(value) = parameter {
-                trim_parameter_value(value, context)
+                Ok(trim_parameter_value(value, context))
             } else {
                 if cartesian.is_some() {
                     context.losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -3734,7 +3740,10 @@ fn select_trim_parameter(
                         context.record_id
                     )));
                 }
-                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+                match cartesian {
+                    Some(value) => trim_cartesian_parameter(value, context),
+                    None => Ok(None),
+                }
             }
         }
         TrimMasterRepresentation::Cartesian => {
@@ -3747,14 +3756,17 @@ fn select_trim_parameter(
                         context.record_id
                     )));
                 }
-                parameter.and_then(|value| trim_parameter_value(value, context))
+                Ok(parameter.and_then(|value| trim_parameter_value(value, context)))
             }
         }
         TrimMasterRepresentation::Unspecified => {
             if let Some(value) = parameter {
-                trim_parameter_value(value, context)
+                Ok(trim_parameter_value(value, context))
             } else {
-                cartesian.and_then(|value| trim_cartesian_parameter(value, context))
+                match cartesian {
+                    Some(value) => trim_cartesian_parameter(value, context),
+                    None => Ok(None),
+                }
             }
         }
     }
@@ -3871,14 +3883,14 @@ fn curve_parameter_at_point(
     geometry: &SolvedCurveGeometry,
     point: Point3,
     tolerance: f64,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let offset =
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
-            Some(offset(origin).dot(direction))
+            Ok(Some(offset(origin).dot(direction)))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -3886,7 +3898,7 @@ fn curve_parameter_at_point(
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radial = offset(center);
             let y_axis = axis.cross(*ref_direction);
-            Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
+            Ok(Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction))))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
@@ -3896,27 +3908,22 @@ fn curve_parameter_at_point(
             let minor_radius = ellipse_curve.minor_radius().get();
             let radial = offset(center);
             let minor_direction = axis.cross(*major_direction);
-            Some(
+            Ok(Some(
                 (radial.dot(minor_direction) / minor_radius)
                     .atan2(radial.dot(*major_direction) / major_radius),
-            )
+            ))
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
+            let Some(domain) = nurbs_curve_parameter_domain(curve).map(|domain| domain.endpoints()) else { return Ok(None); };
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
-                .map(FiniteReal::get)
+                .map(|parameter| parameter.map(FiniteReal::get))
         }
-        SolvedCurveGeometry::Transformed(placed) => curve_parameter_at_point(
-            placed.basis(),
-            placed
-                .transform()
-                .try_inverse_affine()
-                .ok()?
-                .apply_point(point)?
-                .get(),
-            tolerance,
-        ),
-        _ => None,
+        SolvedCurveGeometry::Transformed(placed) => {
+            let Some(inverse) = placed.transform().try_inverse_affine().ok() else { return Ok(None); };
+            let Some(mapped) = inverse.apply_point(point) else { return Ok(None); };
+            curve_parameter_at_point(placed.basis(), mapped.get(), tolerance)
+        }
+        _ => Ok(None),
     }
 }
 
