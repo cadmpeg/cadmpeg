@@ -469,6 +469,52 @@ fn persistent_identity_admits_both_tail_extents_and_rejects_displaced_offsets() 
     }
 }
 
+#[test]
+fn persistent_identity_borrowed_wire_matches_owned_wire_bytes() {
+    for (tail, next) in [(0, 190), (185, 200)] {
+        let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+            "local_id": 1, "local_id_offset": 21,
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
+            "tail_slot_present": false, "tail_slot_offset": tail,
+            "next_record_index": 0, "next_byte_offset": next
+        }))
+        .unwrap();
+        let owned = super::DesignConstructionPersistentIdentityDraft::from(value.clone());
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn persistent_identity_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignConstructionPersistentIdentity,
+    }
+    let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+        "local_id": 1, "local_id_offset": 21,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
+        "tail_slot_present": false, "tail_slot_offset": 0,
+        "next_record_index": 0, "next_byte_offset": 190
+    }))
+    .unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:persistent-identity#0",
+        value: &value,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::PERSISTENT_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+        || super::PERSISTENT_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 /// A top-level optional key on a topology record names itself in its refusal.
 #[test]
 fn a_top_level_topology_key_names_itself_in_its_refusal() {
