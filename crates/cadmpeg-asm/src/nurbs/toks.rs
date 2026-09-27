@@ -155,13 +155,23 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume a `Long` count followed by that many `Double`s.
-    pub(super) fn take_float_array(&mut self) -> Option<Vec<f64>> {
+    pub(super) fn take_float_array(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Option<Result<Vec<f64>, cadmpeg_core::CodecError>> {
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
             return None;
         };
-        let mut values = Vec::new();
+        let mut values = match crate::decode_alloc::counted_vec(
+            ctx,
+            count,
+            "ASM counted float array",
+        ) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..count {
             let Some(value) = self.take_f64() else {
                 self.pos = mark;
@@ -169,7 +179,7 @@ impl<'a> Cur<'a> {
             };
             values.push(value);
         }
-        Some(values)
+        Some(Ok(values))
     }
 
     /// Consume an optional leading boolean, then one `Double`: the range-bound
@@ -901,10 +911,34 @@ mod tests {
 
     #[test]
     fn float_array_restores_position_on_a_truncated_body() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        ).expect("test decode context");
         let toks = [Token::Long(2), Token::Double(1.0), Token::True];
         let mut cur = Cur::at(&toks, 0);
-        assert_eq!(cur.take_float_array(), None);
+        assert_eq!(cur.take_float_array(&ctx).transpose().expect("resource allocation"), None);
         assert_eq!(cur.pos(), 0);
+    }
+
+    #[test]
+    fn counted_float_array_refuses_collection_limit_before_reading_values() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let toks = [Token::Long(2), Token::Double(1.0), Token::Double(2.0)];
+        let mut cur = Cur::at(&toks, 0);
+        let error = cur.take_float_array(&ctx).expect("counted float array")
+            .expect_err("two floats exceed one item");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(cur.pos(), 1);
     }
 
     #[test]

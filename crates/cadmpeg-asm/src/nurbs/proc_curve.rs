@@ -1216,9 +1216,9 @@ fn embedded_law_curve(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[Tok
         EmbeddedLawCurveLayout::Legacy([cur.take_range_value()?, cur.take_range_value()?])
     };
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let extension = cur.take_long()?;
     let primary = propagate_resource!(law_formula(ctx, &mut cur)?);
@@ -1314,9 +1314,9 @@ fn embedded_spring(
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     let direction = cur.take_enum()?;
@@ -1769,9 +1769,9 @@ fn embedded_surface_offset(
     let (surfaces, pcurves) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     let base_u_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -1897,9 +1897,9 @@ fn embedded_silhouette(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[To
     let (surfaces, pcurves) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let cast_surface = propagate_resource!(embedded_surface(ctx, &mut cur)?);
     let light = cur.take_vector3()?;
@@ -2254,9 +2254,9 @@ fn cache_first_curve_context(
         cur.take_optional_range_value()?.value(),
     ];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let extension = cur.take_long()?;
     Some(Ok(CacheFirstCurveContext {
@@ -2285,9 +2285,9 @@ fn context_first_surface_curve(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let (surfaces, pcurves) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     embedded_surface_curve_from_parts(
         family,
@@ -2394,9 +2394,9 @@ fn embedded_three_surface_intersection(ctx: &cadmpeg_core::decode::DecodeContext
     let ([first, second], [first_pcurve, second_pcurve]) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let selector = cur.take_long()?;
     let third_surface_start = cur.pos();
@@ -2462,9 +2462,9 @@ fn embedded_projection(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks: &[To
     let (surfaces, pcurves) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     let (source, source_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
@@ -2617,9 +2617,9 @@ fn context_first_intersection(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     let (surfaces, pcurves) = propagate_resource!(required_support_pair(ctx, &mut cur)?);
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     Some(Ok((
@@ -2688,9 +2688,9 @@ fn cache_first_intersection(
             .unwrap_or(domain[1]),
     ];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_long()? != 0;
     Some(Ok((
@@ -2765,9 +2765,9 @@ fn embedded_two_sided_offset(ctx: &cadmpeg_core::decode::DecodeContext<'_>, toks
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
+        propagate_resource!(cur.take_float_array(ctx)?),
     ];
     let discontinuity_flag = cur.take_bool()?;
     let offsets = [
@@ -3366,7 +3366,7 @@ fn compound_definition(
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["comp_int_cur"])
         .map(|(marker, _)| marker)?;
     let mut cur = Cur::at(toks, marker + 2);
-    let parameters = cur.take_float_array()?;
+    let parameters = propagate_resource!(cur.take_float_array(ctx)?);
     let count = usize::try_from(cur.take_long()?).ok()?;
     if count == 0 {
         return None;
