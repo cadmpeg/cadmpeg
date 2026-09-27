@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model surface point evaluation across stored and procedural carriers.
 
-use super::depth::MAX_MODEL_EVALUATION_DEPTH;
 use super::{
     cacheless_constant_rolling_ball_first_order, cacheless_constant_rolling_ball_point,
     cacheless_law_sweep_point, cacheless_variable_blend_point, model_axis_revolution_point,
@@ -12,12 +11,10 @@ use super::{
     subset_support_parameters_with_derivatives, surface_first_order, surface_point,
     surface_point_with_budget, sweep_has_current_cache, unit_cross_direction,
     variable_blend_has_current_cache, EvaluationFailure, ModelEvaluationDepthGuard,
-    UNREACHED_POINT,
+    ModelEvaluationIdentity, UNREACHED_POINT,
 };
 use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::{
-    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
 
@@ -297,22 +294,20 @@ pub(super) fn model_surface_point_by_id_inner(
         surface_id: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
-        visiting: &mut [Option<*const Surface>; MAX_MODEL_EVALUATION_DEPTH],
-        visit_depth: usize,
         budget: Option<&WorkBudget<'_>>,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
-        let _depth = ModelEvaluationDepthGuard::enter(budget)?;
+        let depth_guard = ModelEvaluationDepthGuard::enter(budget)?;
         if let Some(budget) = budget {
             budget.charge().then_some(())?;
         }
         let surface = index.surfaces(surface_id.as_str())?;
-        let identity = surface as *const Surface;
-        if visiting[..visit_depth].contains(&Some(identity)) {
+        if !depth_guard.bind(
+            ModelEvaluationIdentity::Surface(std::ptr::from_ref(surface)),
+            budget,
+        ) {
             return None;
         }
-        *visiting.get_mut(visit_depth)? = Some(identity);
-        let next_depth = visit_depth + 1;
         let procedural = index.procedural_surface_for_surface(surface_id.as_str());
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
@@ -436,11 +431,10 @@ pub(super) fn model_surface_point_by_id_inner(
                 point_evaluation(rolling_ball_jet_point(definition, u, v))
             }
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-                evaluate(index, support, u, v, visiting, next_depth, budget, normal)
+                evaluate(index, support, u, v, budget, normal)
             }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-                let mut evaluation =
-                    evaluate(index, source, u, v, visiting, next_depth, budget, normal)?;
+                let mut evaluation = evaluate(index, source, u, v, budget, normal)?;
                 if evaluation.resource.is_some() {
                     return Some(evaluation);
                 }
@@ -501,9 +495,8 @@ pub(super) fn model_surface_point_by_id_inner(
                             *u_sense,
                             *v_sense,
                         )?;
-                    let mut evaluation = evaluate(
-                        index, support, support_u, support_v, visiting, next_depth, budget, normal,
-                    )?;
+                    let mut evaluation =
+                        evaluate(index, support, support_u, support_v, budget, normal)?;
                     if u_derivative * v_derivative < 0.0 {
                         evaluation.oriented_normal = evaluation
                             .oriented_normal
@@ -516,8 +509,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 let support = definition_payload.support();
                 let distance = definition_payload.distance();
                 {
-                    let support =
-                        evaluate(index, support, u, v, visiting, next_depth, budget, true)?;
+                    let support = evaluate(index, support, u, v, budget, true)?;
                     if support.resource.is_some() {
                         return Some(support);
                     }
@@ -542,9 +534,7 @@ pub(super) fn model_surface_point_by_id_inner(
                     let support = linear_extension
                         .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
                         .flatten()
-                        .or_else(|| {
-                            evaluate(index, support, u, v, visiting, next_depth, budget, true)
-                        })?;
+                        .or_else(|| evaluate(index, support, u, v, budget, true))?;
                     if support.resource.is_some() {
                         return Some(support);
                     }
@@ -583,17 +573,8 @@ pub(super) fn model_surface_point_by_id_inner(
         })
     }
 
-    let evaluation = evaluate(
-        index,
-        surface,
-        u,
-        v,
-        &mut [None; MAX_MODEL_EVALUATION_DEPTH],
-        0,
-        budget,
-        false,
-    )
-    .ok_or(EvaluationFailure::NoValue)?;
+    let evaluation =
+        evaluate(index, surface, u, v, budget, false).ok_or(EvaluationFailure::NoValue)?;
     if let Some(limit) = evaluation.resource {
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
