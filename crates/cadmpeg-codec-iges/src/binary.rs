@@ -794,6 +794,7 @@ fn render_card(
     data: &[u8],
     section: u8,
     sequence: &mut u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if data.len() > CARD_DATA_WIDTH {
         return Err(malformed(
@@ -810,8 +811,7 @@ fn render_card(
     card[CARD_DATA_WIDTH] = section;
     let sequence_bytes = format!("{:>7}", *sequence);
     card[CARD_DATA_WIDTH + 1..].copy_from_slice(sequence_bytes.as_bytes());
-    output.extend_from_slice(&card);
-    output.push(b'\n');
+    append_output_card(output, &card, ctx)?;
     *sequence = sequence
         .checked_add(1)
         .ok_or_else(|| malformed("normalized Fixed ASCII sequence overflows"))?;
@@ -823,12 +823,13 @@ fn render_cards(
     data: &[u8],
     section: u8,
     sequence: &mut u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if data.is_empty() {
         return Ok(());
     }
     for chunk in data.chunks(CARD_DATA_WIDTH) {
-        render_card(output, chunk, section, sequence)?;
+        render_card(output, chunk, section, sequence, ctx)?;
     }
     Ok(())
 }
@@ -839,6 +840,7 @@ fn render_terminate(
     global_count: usize,
     directory_count: usize,
     parameter_count: usize,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let counts = [
         (b'S', start_count),
@@ -859,9 +861,7 @@ fn render_terminate(
     card[..CARD_DATA_WIDTH].copy_from_slice(&data);
     card[CARD_DATA_WIDTH] = b'T';
     card[CARD_DATA_WIDTH + 1..].copy_from_slice(b"      1");
-    output.extend_from_slice(&card);
-    output.push(b'\n');
-    Ok(())
+    append_output_card(output, &card, ctx)
 }
 
 fn normalize_start(
@@ -890,6 +890,7 @@ fn render_start_cards(
     output: &mut Vec<u8>,
     text: &[u8],
     sequence: &mut u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut line_start = 0;
     let mut index = 0;
@@ -903,25 +904,26 @@ fn render_start_cards(
             index += 1;
             continue;
         }
-        render_start_line(output, &text[line_start..index], sequence)?;
+        render_start_line(output, &text[line_start..index], sequence, ctx)?;
         if text[index] == b'\r' && text.get(index + 1) == Some(&b'\n') {
             index += 1;
         }
         index += 1;
         line_start = index;
     }
-    render_start_line(output, &text[line_start..], sequence)
+    render_start_line(output, &text[line_start..], sequence, ctx)
 }
 
 fn render_start_line(
     output: &mut Vec<u8>,
     line: &[u8],
     sequence: &mut u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if line.is_empty() {
-        return render_card(output, line, b'S', sequence);
+        return render_card(output, line, b'S', sequence, ctx);
     }
-    render_cards(output, line, b'S', sequence)
+    render_cards(output, line, b'S', sequence, ctx)
 }
 
 fn normalize_global(values: &[BinaryValue]) -> Result<Vec<u8>, CodecError> {
@@ -1171,8 +1173,8 @@ fn normalize_directory_and_parameters(
             };
             target.copy_from_slice(bytes);
         }
-        render_directory_card(output, &first_data, first_sequence)?;
-        render_directory_card(output, &second_data, second_sequence)?;
+        render_directory_card(output, &first_data, first_sequence, ctx)?;
+        render_directory_card(output, &second_data, second_sequence, ctx)?;
         directory_sequence = second_sequence
             .checked_add(1)
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
@@ -1185,6 +1187,7 @@ fn normalize_directory_and_parameters(
                 line,
                 parameter.directory_sequence,
                 parameter_sequence,
+                ctx,
             )?;
             parameter_sequence = parameter_sequence
                 .checked_add(1)
@@ -1219,6 +1222,7 @@ fn render_directory_card(
     output: &mut Vec<u8>,
     data: &[u8; CARD_DATA_WIDTH],
     sequence: u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if sequence == 0 || sequence > MAX_SEQUENCE {
         return Err(malformed(
@@ -1229,9 +1233,7 @@ fn render_directory_card(
     card[..CARD_DATA_WIDTH].copy_from_slice(data);
     card[72] = b'D';
     card[73..].copy_from_slice(format!("{sequence:>7}").as_bytes());
-    output.extend_from_slice(&card);
-    output.push(b'\n');
-    Ok(())
+    append_output_card(output, &card, ctx)
 }
 
 fn render_parameter_line(
@@ -1239,6 +1241,7 @@ fn render_parameter_line(
     data: &[u8],
     directory_sequence: u32,
     sequence: u32,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if data.len() > PARAMETER_DATA_WIDTH
         || directory_sequence == 0
@@ -1253,7 +1256,19 @@ fn render_parameter_line(
     card[64..72].copy_from_slice(format!("{directory_sequence:>8}").as_bytes());
     card[72] = b'P';
     card[73..].copy_from_slice(format!("{sequence:>7}").as_bytes());
-    output.extend_from_slice(&card);
+    append_output_card(output, &card, ctx)
+}
+
+fn append_output_card(
+    output: &mut Vec<u8>,
+    card: &[u8; CARD_WIDTH],
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_retained(81, "iges binary normalized card")?;
+    output
+        .try_reserve(81)
+        .map_err(|_| refuse_local_limit("iges binary normalized card", 81, 81))?;
+    output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())
 }
@@ -1285,12 +1300,12 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset, ctx)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
-    render_start_cards(&mut output, &start_text, &mut start_sequence)?;
+    render_start_cards(&mut output, &start_text, &mut start_sequence, ctx)?;
     let start_count = start_sequence.saturating_sub(1) as usize;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text)?;
     for card in &global_cards {
-        render_cards(&mut output, card, b'G', &mut global_sequence)?;
+        render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
     let global_count = global_sequence.saturating_sub(1) as usize;
     let (directory_count, parameter_count) =
@@ -1301,6 +1316,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         global_count,
         directory_count,
         parameter_count,
+        ctx,
     )?;
     charge_normalization(ctx, source.len(), output.len())?;
     Ok(output)
@@ -1310,9 +1326,42 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 mod tests {
     #[test]
     fn parameter_card_refuses_an_unrenderable_directory_sequence() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut output = Vec::new();
-        assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1).is_err());
+        assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1, &ctx).is_err());
         assert!(output.is_empty());
+    }
+
+    #[test]
+    fn normalized_binary_card_refuses_retained_limit_before_append() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 80;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut output = Vec::new();
+        let result = super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.additional == 81
+                    && limit.operation == "iges binary normalized card"
+        ));
+        assert!(output.is_empty());
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx).unwrap();
+        assert_eq!(output.len(), 81);
     }
 
     #[test]
