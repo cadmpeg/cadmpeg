@@ -109,18 +109,18 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         ctx.charge_collection_items(1, "FCStd archive entry map")?;
         data.insert(name, view);
     }
-    let physical_ledger = archive.physical_ledger()?;
+    let physical_ledger = archive.physical_ledger(ctx)?;
     let mut ledger = collection_vec(ctx, physical_ledger.len(), "FCStd archive ledger records")?;
     for (index, span) in physical_ledger.into_iter().enumerate() {
         ledger.push(ArchiveSpan {
-                id: crate::native::native_id("archive-span", index.to_string()),
+                id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
                 span: crate::native::ByteSpan::try_new(span.start, span.end)
                     .map_err(CodecError::Malformed)?,
                 role: crate::native::ArchiveSpanRole::from(&span.role),
             });
     }
     Ok(Scan {
-        entries: archive.container_entries(classify),
+        entries: archive.container_entries(ctx, classify)?,
         document,
         schema_version,
         ledger,

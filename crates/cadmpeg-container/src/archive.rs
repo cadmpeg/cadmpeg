@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
-use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ResourceDimension, ResourceFailure, ResourceLimit, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
 
@@ -325,12 +325,13 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Builds generic entry summaries using a codec-owned role classifier.
     pub fn container_entries(
         &self,
+        ctx: &DecodeContext<'_>,
         classify: impl Fn(&str) -> cadmpeg_core::container::ContainerRole,
-    ) -> Vec<ContainerEntry> {
-        self.entries
-            .iter()
-            .map(|entry| {
+    ) -> Result<Vec<ContainerEntry>, CodecError> {
+        let mut output = collection_vec(ctx, self.entries.len(), "ZIP container summaries")?;
+        for entry in &self.entries {
                 let mut attributes = BTreeMap::new();
+                ctx.charge_collection_items(4, "ZIP summary attributes")?;
                 attributes.insert("crc32".into(), format!("{:08x}", entry.crc32));
                 attributes.insert("header_offset".into(), entry.header_start.to_string());
                 attributes.insert("data_offset".into(), entry.data_start.to_string());
@@ -339,24 +340,25 @@ impl<'a> ArchiveSnapshot<'a> {
                     entry.central_start.to_string(),
                 );
                 let storage = declared_storage(
+                    ctx,
                     entry.compression,
                     entry.compressed_size,
                     entry.uncompressed_size,
                     &mut attributes,
-                );
-                ContainerEntry {
-                    name: entry.name.clone(),
+                )?;
+                output.push(ContainerEntry {
+                    name: retained_copy(ctx, &entry.name, "ZIP summary entry name")?,
                     role: classify(&entry.name),
                     storage,
                     attributes,
-                }
-            })
-            .collect()
+                });
+        }
+        Ok(output)
     }
 
     /// Partitions every physical archive byte by ZIP structural role.
-    pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
-        physical_ledger(self.root.window(), &self.entries, self.central_start)
+    pub fn physical_ledger(&self, ctx: &DecodeContext<'_>) -> Result<Vec<PhysicalSpan>, CodecError> {
+        physical_ledger(ctx, self.root.window(), &self.entries, self.central_start)
     }
 }
 
@@ -593,6 +595,29 @@ pub enum ZipSpanRole {
 }
 
 impl ZipSpanRole {
+    fn copy_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let name = |name: &str| retained_copy(ctx, name, "ZIP partition role name");
+        Ok(match self {
+            Self::LocalSignature(value) => Self::LocalSignature(name(value)?),
+            Self::LocalFields(value) => Self::LocalFields(name(value)?),
+            Self::LocalName(value) => Self::LocalName(name(value)?),
+            Self::LocalExtra(value) => Self::LocalExtra(name(value)?),
+            Self::CompressedPayload(value) => Self::CompressedPayload(name(value)?),
+            Self::DataDescriptor(value) => Self::DataDescriptor(name(value)?),
+            Self::Padding { entry } => Self::Padding {
+                entry: entry.as_deref().map(name).transpose()?,
+            },
+            Self::CentralSignature(value) => Self::CentralSignature(name(value)?),
+            Self::CentralFields(value) => Self::CentralFields(name(value)?),
+            Self::CentralName(value) => Self::CentralName(name(value)?),
+            Self::CentralExtra(value) => Self::CentralExtra(name(value)?),
+            Self::CentralComment(value) => Self::CentralComment(name(value)?),
+            Self::Zip64EndRecord => Self::Zip64EndRecord,
+            Self::Zip64EndLocator => Self::Zip64EndLocator,
+            Self::EndRecord => Self::EndRecord,
+        })
+    }
+
     const fn label(&self) -> &'static str {
         match self {
             Self::LocalSignature(_) => "local-signature",
@@ -659,20 +684,52 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: ZipSpanRole) {
+fn collection_allocation_failed(ctx: &DecodeContext<'_>, count: usize, operation: &'static str) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension: ResourceDimension::CollectionItems,
+        reason: ResourceFailure::AllocationFailed,
+        limit: ctx.policy().limits.max_collection_items,
+        used: 0,
+        additional: count as u64,
+        operation,
+    })
+}
+
+fn collection_vec<T>(ctx: &DecodeContext<'_>, count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+    ctx.charge_collection_items(count as u64, operation)?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| collection_allocation_failed(ctx, count, operation))?;
+    Ok(values)
+}
+
+fn reserve_vec_item<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, operation))
+}
+
+fn retained_copy(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
+        .map_err(|_| CodecError::Malformed("ZIP retained name lost UTF-8 encoding".into()))
+}
+
+fn push_region(ctx: &DecodeContext<'_>, regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: ZipSpanRole) -> Result<(), CodecError> {
     if start < end {
+        reserve_vec_item(ctx, regions, "ZIP ledger regions")?;
         regions.push(PhysicalSpan { start, end, role });
     }
+    Ok(())
 }
 
 fn physical_ledger(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     entries: &[EntryRecord],
     central_begin: u64,
 ) -> Result<Vec<PhysicalSpan>, CodecError> {
     let len = bytes.len() as u64;
     let mut regions = Vec::new();
-    let mut local_order = entries.iter().collect::<Vec<_>>();
+    let mut local_order = collection_vec(ctx, entries.len(), "ZIP ledger local order")?;
+    local_order.extend(entries.iter());
     local_order.sort_by_key(|entry| entry.header_start);
     if central_begin > len {
         return Err(CodecError::Malformed(
@@ -698,36 +755,36 @@ fn physical_ledger(
                 entry.name
             )));
         }
-        push_region(
+        push_region(ctx,
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            ZipSpanRole::LocalSignature(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::LocalSignature(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             entry.header_start + 4,
             fixed_end,
-            ZipSpanRole::LocalFields(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::LocalFields(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             fixed_end,
             name_end,
-            ZipSpanRole::LocalName(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::LocalName(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             name_end,
             extra_end,
-            ZipSpanRole::LocalExtra(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::LocalExtra(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            ZipSpanRole::CompressedPayload(entry.name.clone()),
-        );
+            ZipSpanRole::CompressedPayload(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
 
         let next = local_order
             .get(index + 1)
@@ -742,34 +799,35 @@ fn physical_ledger(
             let flags = u16_at(bytes, entry.header_start + 6)?;
             if flags & 0x0008 != 0 {
                 let descriptor_end = parse_data_descriptor(bytes, entry, next)?;
-                push_region(
+                push_region(ctx,
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    ZipSpanRole::DataDescriptor(entry.name.clone()),
-                );
-                push_region(
+                    ZipSpanRole::DataDescriptor(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+                )?;
+                push_region(ctx,
                     &mut regions,
                     descriptor_end,
                     next,
                     ZipSpanRole::Padding {
-                        entry: Some(entry.name.clone()),
+                        entry: Some(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
                     },
-                );
+                )?;
             } else {
-                push_region(
+                push_region(ctx,
                     &mut regions,
                     entry.data_end()?,
                     next,
                     ZipSpanRole::Padding {
-                        entry: Some(entry.name.clone()),
+                        entry: Some(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
                     },
-                );
+                )?;
             }
         }
     }
 
-    let mut central_order = entries.iter().collect::<Vec<_>>();
+    let mut central_order = collection_vec(ctx, entries.len(), "ZIP ledger central order")?;
+    central_order.extend(entries.iter());
     central_order.sort_by_key(|entry| entry.central_start);
     let mut central_end = central_begin;
     for entry in central_order {
@@ -792,41 +850,41 @@ fn physical_ledger(
                 entry.name
             )));
         }
-        push_region(
+        push_region(ctx,
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            ZipSpanRole::CentralSignature(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::CentralSignature(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            ZipSpanRole::CentralFields(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::CentralFields(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             fixed_end,
             name_end,
-            ZipSpanRole::CentralName(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::CentralName(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             name_end,
             extra_end,
-            ZipSpanRole::CentralExtra(entry.name.clone()),
-        );
-        push_region(
+            ZipSpanRole::CentralExtra(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
+        push_region(ctx,
             &mut regions,
             extra_end,
             record_end,
-            ZipSpanRole::CentralComment(entry.name.clone()),
-        );
+            ZipSpanRole::CentralComment(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+        )?;
         central_end = central_end.max(record_end);
     }
 
-    classify_end_records(bytes, central_end, len, &mut regions)?;
-    partition(len, &regions)
+    classify_end_records(ctx, bytes, central_end, len, &mut regions)?;
+    partition(ctx, len, &regions)
 }
 
 fn parse_data_descriptor(
@@ -876,6 +934,7 @@ fn parse_data_descriptor(
 }
 
 fn classify_end_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     mut offset: u64,
     len: u64,
@@ -914,13 +973,13 @@ fn classify_end_records(
                 role.label()
             )));
         }
-        push_region(regions, offset, end, role);
+        push_region(ctx,regions, offset, end, role)?;
         offset = end;
     }
     Ok(())
 }
 
-fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, CodecError> {
+fn partition(ctx: &DecodeContext<'_>, len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, CodecError> {
     let mut boundaries = BTreeSet::from([0_u64, len]);
     for region in regions {
         if region.end > len || region.start > region.end {
@@ -928,11 +987,19 @@ fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, Co
                 "invalid physical ledger region".into(),
             ));
         }
-        boundaries.insert(region.start);
-        boundaries.insert(region.end);
+        if !boundaries.contains(&region.start) {
+            ctx.charge_collection_items(1, "ZIP ledger boundaries")?;
+            boundaries.insert(region.start);
+        }
+        if !boundaries.contains(&region.end) {
+            ctx.charge_collection_items(1, "ZIP ledger boundaries")?;
+            boundaries.insert(region.end);
+        }
     }
-    let points = boundaries.into_iter().collect::<Vec<_>>();
-    let mut ordered_regions = regions.iter().collect::<Vec<_>>();
+    let mut points = collection_vec(ctx, boundaries.len(), "ZIP ledger boundary points")?;
+    points.extend(boundaries);
+    let mut ordered_regions = collection_vec(ctx, regions.len(), "ZIP ledger ordered regions")?;
+    ordered_regions.extend(regions.iter());
     ordered_regions.sort_by_key(|region| (region.start, region.end));
     let mut region_index = 0_usize;
     let mut spans = Vec::new();
@@ -953,10 +1020,11 @@ fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, Co
                     "physical ZIP ledger contains an unclassified byte range".into(),
                 )
             })?;
+        reserve_vec_item(ctx, &mut spans, "ZIP ledger spans")?;
         spans.push(PhysicalSpan {
             start,
             end,
-            role: owner.role.clone(),
+            role: owner.role.copy_with_context(ctx)?,
         });
     }
     Ok(spans)
@@ -967,22 +1035,24 @@ fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, Co
 /// A stored member declaring fewer compressed than uncompressed bytes has no
 /// usable stored span; the payload stands alone and the declaration is reported.
 fn declared_storage(
+    ctx: &DecodeContext<'_>,
     compression: ZipCompression,
     compressed_size: u64,
     uncompressed_size: u64,
     attributes: &mut BTreeMap<String, String>,
-) -> cadmpeg_core::container::EntryStorage {
+) -> Result<cadmpeg_core::container::EntryStorage, CodecError> {
     match compression.storage(compressed_size, uncompressed_size) {
-        Ok(storage) => storage,
+        Ok(storage) => Ok(storage),
         Err(message) => {
+            ctx.charge_collection_items(1, "ZIP storage declaration attribute")?;
             attributes.insert(
                 "storage_declaration".into(),
                 format!("{message}: {compressed_size}/{uncompressed_size}"),
             );
-            cadmpeg_core::container::EntryStorage::payload_only(
+            Ok(cadmpeg_core::container::EntryStorage::payload_only(
                 cadmpeg_core::container::VerbatimLabel::Stored,
                 uncompressed_size,
-            )
+            ))
         }
     }
 }
@@ -1011,7 +1081,7 @@ mod tests {
         assert!(snapshot.entries().is_empty());
         assert_eq!(
             snapshot
-                .physical_ledger()
+                .physical_ledger(&ctx)
                 .expect("empty ZIP has a complete physical ledger"),
             vec![PhysicalSpan {
                 start: 0,
@@ -1080,6 +1150,162 @@ mod tests {
             .write_all(b"Zstandard payload")
             .expect("Zstandard entry writes");
         archive.finish().expect("archive finishes").into_inner()
+    }
+
+    #[test]
+    fn physical_ledger_local_order_refuses_at_caller_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("limited root");
+        assert!(matches!(snapshot.physical_ledger(&limited),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "ZIP ledger local order"));
+    }
+
+    #[test]
+    fn physical_ledger_entry_name_refuses_at_retained_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("limited root");
+        assert!(matches!(snapshot.physical_ledger(&limited),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "ZIP ledger entry name"));
+    }
+
+    #[test]
+    fn container_summaries_refuse_at_caller_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("limited root");
+        assert!(matches!(snapshot.container_entries(&limited, |_| cadmpeg_core::container::ContainerRole::Auxiliary),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "ZIP container summaries"));
+    }
+
+    #[test]
+    fn container_summary_name_refuses_at_retained_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("limited root");
+        assert!(matches!(snapshot.container_entries(&limited, |_| cadmpeg_core::container::ContainerRole::Auxiliary),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "ZIP summary entry name"));
+    }
+
+    fn assert_ledger_collection_refusal(operation: &str) {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        for _ in 0..256 {
+            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("limited root");
+            let error = snapshot.physical_ledger(&limited).expect_err("ledger must refuse");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected {operation} refusal: {error:?}");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+            let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+            if limit.operation == operation {
+                policy.limits.max_collection_items = threshold - 1;
+                let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("limited root");
+                assert!(matches!(snapshot.physical_ledger(&limited),
+                    Err(CodecError::ResourceLimit(ref refusal)) if refusal.operation == operation));
+                return;
+            }
+            policy.limits.max_collection_items = threshold;
+        }
+        panic!("{operation} was not reached");
+    }
+
+    #[test]
+    fn physical_ledger_regions_refuse_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger regions");
+    }
+
+    #[test]
+    fn physical_ledger_central_order_refuses_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger central order");
+    }
+
+    #[test]
+    fn physical_ledger_boundaries_refuse_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger boundaries");
+    }
+
+    #[test]
+    fn physical_ledger_boundary_points_refuse_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger boundary points");
+    }
+
+    #[test]
+    fn physical_ledger_ordered_regions_refuse_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger ordered regions");
+    }
+
+    #[test]
+    fn physical_ledger_spans_refuse_at_caller_limit() {
+        assert_ledger_collection_refusal("ZIP ledger spans");
+    }
+
+    #[test]
+    fn physical_ledger_partition_role_refuses_at_retained_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        for _ in 0..256 {
+            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("limited root");
+            let error = snapshot.physical_ledger(&limited).expect_err("ledger must refuse");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected retained refusal: {error:?}");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+            let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+            if limit.operation == "ZIP partition role name" {
+                policy.limits.max_retained_bytes = threshold - 1;
+                let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("limited root");
+                assert!(matches!(snapshot.physical_ledger(&limited),
+                    Err(CodecError::ResourceLimit(ref refusal))
+                        if refusal.operation == "ZIP partition role name"));
+                return;
+            }
+            policy.limits.max_retained_bytes = threshold;
+        }
+        panic!("ZIP partition role name was not reached");
     }
 
     #[test]
@@ -1347,7 +1573,8 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
-        let entries = snapshot.container_entries(|_| ContainerRole::Stream);
+        let entries = snapshot.container_entries(&ctx, |_| ContainerRole::Stream)
+            .expect("container summary fits policy");
         let stored = entries
             .iter()
             .find(|entry| entry.name == "stored.bin")
