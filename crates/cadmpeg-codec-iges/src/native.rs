@@ -2,9 +2,12 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use crate::card::{CardScan, ScannedLine, Section};
+use crate::decode_resource::reserve_vec_growth;
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
-use crate::entities::geometry::{resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation};
+use crate::entities::geometry::{
+    resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError,
+};
 use crate::entities::structure::{
     array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
     PlacementRejection,
@@ -1971,7 +1974,7 @@ fn member_affine(
     length_factor: f64,
     precision: RealPrecision,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Transform, ()> {
+) -> Result<Transform, TransformResolutionError> {
     if entry.transform == 0 {
         return Ok(Transform::identity());
     }
@@ -1984,7 +1987,6 @@ fn member_affine(
         &mut std::collections::BTreeSet::new(),
         ctx,
     )
-    .map_err(|_| ())
 }
 
 struct OccurrenceExpansion<'a, 'ctx> {
@@ -2032,7 +2034,7 @@ impl OccurrenceExpansion<'_, '_> {
             malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
-        let Ok((definition_sequence, local)) = placement_affine(
+        let (definition_sequence, local) = match placement_affine(
             instance,
             record,
             self.entries,
@@ -2040,9 +2042,13 @@ impl OccurrenceExpansion<'_, '_> {
             self.length_factor,
             self.precision,
             self.ctx,
-        ) else {
-            malformed_placement_sequences.insert(instance_sequence);
-            return Ok(None);
+        ) {
+            Ok(placement) => placement,
+            Err(error) => {
+                error.non_resource()?;
+                malformed_placement_sequences.insert(instance_sequence);
+                return Ok(None);
+            }
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
             malformed_placement_sequences.insert(instance_sequence);
@@ -2095,16 +2101,20 @@ impl OccurrenceExpansion<'_, '_> {
                 malformed_placement_sequences.insert(instance_sequence);
                 continue;
             };
-            let Ok(member_local) = member_affine(
+            let member_local = match member_affine(
                 member_entry,
                 self.entries,
                 self.records,
                 self.length_factor,
                 self.precision,
                 self.ctx,
-            ) else {
-                malformed_placement_sequences.insert(*member);
-                continue;
+            ) {
+                Ok(transform) => transform,
+                Err(error) => {
+                    error.non_resource()?;
+                    malformed_placement_sequences.insert(*member);
+                    continue;
+                }
             };
             if let Some(ctx) = self.ctx {
                 ctx.charge_collection_items(1, "iges_product_occurrences")?;
@@ -5304,61 +5314,93 @@ pub(crate) fn store(
         .length_context()
         .map(|context| context.length_factor_mm());
     let mut malformed_definition_sequences = Vec::new();
-    let all_occurrence_definitions = directory
+    let mut all_occurrence_definitions = BTreeMap::new();
+    for entry in directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
-        .filter_map(|entry| {
-            let Some(record) = by_directory.get(&entry.sequence).copied() else {
-                malformed_definition_sequences.push(entry.sequence);
-                return None;
-            };
-            let Some(count) =
-                record.count_with_stride_before(3, 1, clamped_primary_end(entry.sequence, record))
-            else {
-                malformed_definition_sequences.push(entry.sequence);
-                return Some((
-                    entry.sequence,
-                    OccurrenceDefinition {
-                        members: Vec::new(),
-                        transform: Transform::identity(),
-                    },
-                ));
-            };
-            let mut malformed = false;
-            let members = (0..count)
-                .filter_map(|index| {
-                    let member = record
-                        .integer(4 + index)
-                        .and_then(|value| u32::try_from(value).ok())
-                        .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence));
-                    malformed |= member.is_none();
-                    member
-                })
-                .collect();
-            let transform =
-                occurrence_length_factor.map_or(Transform::identity(), |length_factor| {
-                    match resolve_transform(
-                        entry.transform,
-                        &entries,
-                        &by_directory,
-                        length_factor,
-                        global.real_precision(),
-                        &mut BTreeSet::new(),
-                        Some(ctx),
-                    ) {
-                        Ok(transform) => transform,
-                        Err(_) => {
-                            malformed = true;
-                            Transform::identity()
-                        }
-                    }
-                });
-            if malformed {
-                malformed_definition_sequences.push(entry.sequence);
+    {
+        let Some(record) = by_directory.get(&entry.sequence).copied() else {
+            reserve_vec_growth(
+                ctx,
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
+            malformed_definition_sequences.push(entry.sequence);
+            continue;
+        };
+        let Some(count) =
+            record.count_with_stride_before(3, 1, clamped_primary_end(entry.sequence, record))
+        else {
+            reserve_vec_growth(
+                ctx,
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
+            malformed_definition_sequences.push(entry.sequence);
+            if !all_occurrence_definitions.contains_key(&entry.sequence) {
+                ctx.charge_collection_items(1, "iges occurrence definition map")?;
             }
-            Some((entry.sequence, OccurrenceDefinition { members, transform }))
-        })
-        .collect::<BTreeMap<_, _>>();
+            all_occurrence_definitions.insert(
+                entry.sequence,
+                OccurrenceDefinition {
+                    members: Vec::new(),
+                    transform: Transform::identity(),
+                },
+            );
+            continue;
+        };
+        let mut malformed = false;
+        let mut members = Vec::new();
+        for index in 0..count {
+            let member = record
+                .integer(4 + index)
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence));
+            match member {
+                Some(member) => {
+                    reserve_vec_growth(ctx, &mut members, 1, "iges occurrence definition members")?;
+                    members.push(member);
+                }
+                None => malformed = true,
+            }
+        }
+        let transform = if let Some(length_factor) = occurrence_length_factor {
+            match resolve_transform(
+                entry.transform,
+                &entries,
+                &by_directory,
+                length_factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                Some(ctx),
+            ) {
+                Ok(transform) => transform,
+                Err(error) => {
+                    error.non_resource()?;
+                    malformed = true;
+                    Transform::identity()
+                }
+            }
+        } else {
+            Transform::identity()
+        };
+        if malformed {
+            reserve_vec_growth(
+                ctx,
+                &mut malformed_definition_sequences,
+                1,
+                "iges malformed occurrence definitions",
+            )?;
+            malformed_definition_sequences.push(entry.sequence);
+        }
+        if !all_occurrence_definitions.contains_key(&entry.sequence) {
+            ctx.charge_collection_items(1, "iges occurrence definition map")?;
+        }
+        all_occurrence_definitions
+            .insert(entry.sequence, OccurrenceDefinition { members, transform });
+    }
     // Keep parseable member lists as containment evidence even when semantic
     // structure admission rejects their definitions. A rejected definition is
     // not traversed below, but one of its admitted child instances must not be

@@ -10,6 +10,7 @@ use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -122,7 +123,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -142,7 +143,7 @@ pub(super) fn project(
             continue;
         };
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -150,9 +151,8 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
+        ) {
+            error.non_resource()?;
             losses.push(entity_loss(entry, "primitive placement is invalid"));
             continue;
         }
@@ -332,7 +332,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -340,9 +340,8 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
+        ) {
+            error.non_resource()?;
             losses.push(entity_loss(entry, "solid sweep placement is invalid"));
             continue;
         }
@@ -432,7 +431,7 @@ pub(super) fn project(
             continue;
         }
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -440,9 +439,8 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
+        ) {
+            error.non_resource()?;
             losses.push(entity_loss(entry, "Boolean result placement is invalid"));
             continue;
         }
@@ -480,7 +478,7 @@ pub(super) fn project(
             continue;
         }
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -488,9 +486,8 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
+        ) {
+            error.non_resource()?;
             losses.push(entity_loss(
                 entry,
                 "selected-component placement is invalid",
@@ -500,7 +497,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

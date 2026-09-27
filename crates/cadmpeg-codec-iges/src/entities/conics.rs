@@ -177,7 +177,8 @@ pub(super) fn project(
             ctx,
         ) {
             Ok(transform) => transform,
-            Err(message) => {
+            Err(error) => {
+                let message = error.non_resource()?;
                 losses.push(entity_loss(entry, message));
                 continue;
             }

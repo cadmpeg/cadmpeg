@@ -5,6 +5,7 @@ use super::curve_conversion::angularly_equal;
 use super::geometry::{
     curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
+    TransformResolutionError,
 };
 use crate::decode_resource::{collect_optional_vec, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
@@ -159,8 +160,8 @@ fn subfigure_definition_transform_valid(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> bool {
-    resolve_transform(
+) -> Result<bool, CodecError> {
+    match resolve_transform(
         entry.transform,
         entries,
         records,
@@ -168,8 +169,13 @@ fn subfigure_definition_transform_valid(
         global.real_precision(),
         &mut BTreeSet::new(),
         ctx,
-    )
-    .is_ok()
+    ) {
+        Ok(_) => Ok(true),
+        Err(error) => {
+            error.non_resource()?;
+            Ok(false)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2059,6 +2065,35 @@ pub(crate) enum PlacementRejection {
 }
 
 /// The local affine placement of a subfigure or network instance.
+pub(crate) enum PlacementAffineError {
+    Invalid,
+    Resource(CodecError),
+}
+
+impl From<()> for PlacementAffineError {
+    fn from(_: ()) -> Self {
+        Self::Invalid
+    }
+}
+
+impl From<TransformResolutionError> for PlacementAffineError {
+    fn from(error: TransformResolutionError) -> Self {
+        match error {
+            TransformResolutionError::Invalid(_) => Self::Invalid,
+            TransformResolutionError::Resource(error) => Self::Resource(error),
+        }
+    }
+}
+
+impl PlacementAffineError {
+    pub(crate) fn non_resource(self) -> Result<(), CodecError> {
+        match self {
+            Self::Invalid => Ok(()),
+            Self::Resource(error) => Err(error),
+        }
+    }
+}
+
 pub(crate) fn placement_affine(
     instance: &DirectoryEntry,
     record: &ParameterRecord,
@@ -2067,7 +2102,7 @@ pub(crate) fn placement_affine(
     length_factor: f64,
     precision: RealPrecision,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(u32, Transform), ()> {
+) -> Result<(u32, Transform), PlacementAffineError> {
     let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
     let translation_component = |index| {
         record
@@ -2130,7 +2165,7 @@ pub(crate) fn placement_affine(
             &mut std::collections::BTreeSet::new(),
             ctx,
         )
-        .map_err(|_| ())?
+        .map_err(PlacementAffineError::from)?
     };
     Ok((
         definition,
@@ -2860,16 +2895,8 @@ pub(super) fn project(
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
         let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays);
-        let transform_valid = resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            global.length_factor_mm(),
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            Some(ctx),
-        )
-        .is_ok();
+        let transform_valid =
+            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let fields_valid = if entry.entity_type == 412 {
             let scale_valid = record
                 .number_or(2, 1.0)
@@ -2959,16 +2986,8 @@ pub(super) fn project(
                             .is_some_and(|target| matches!(target.entity_type, 320 | 420))
                 })
         });
-        let transform_valid = resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            global.length_factor_mm(),
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            Some(ctx),
-        )
-        .is_ok();
+        let transform_valid =
+            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         if position_valid
             && optional_pointer_valid(4, None)
             && type_flag_valid
@@ -3028,16 +3047,8 @@ pub(super) fn project(
                 )
             }
         });
-        let transform_valid = resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            global.length_factor_mm(),
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            Some(ctx),
-        )
-        .is_ok();
+        let transform_valid =
+            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
@@ -3097,29 +3108,43 @@ pub(super) fn project(
                 .get(item)
                 .is_some_and(|target| target.entity_type == 186)
         });
-        let items_valid = assembly.items.iter().all(|(item, transformation)| {
+        let mut items_valid = true;
+        for (item, transformation) in &assembly.items {
             let item_valid = entries.get(item).is_some_and(|target| {
                 matches!(
                     target.entity_type,
                     150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 184 | 430
                 ) || (assembly.form == 1 && target.entity_type == 186)
             });
-            let transform_valid = *transformation == 0
-                || entries.get(transformation).is_some_and(|target| {
-                    target.entity_type == 124
-                        && resolve_transform(
-                            *transformation as i64,
-                            &entries,
-                            &records,
-                            global.length_factor_mm(),
-                            global.real_precision(),
-                            &mut BTreeSet::new(),
-                            Some(ctx),
-                        )
-                        .is_ok()
-                });
-            item_valid && transform_valid
-        });
+            let transform_valid = if *transformation == 0 {
+                true
+            } else if entries
+                .get(transformation)
+                .is_some_and(|target| target.entity_type == 124)
+            {
+                match resolve_transform(
+                    i64::from(*transformation),
+                    &entries,
+                    &records,
+                    global.length_factor_mm(),
+                    global.real_precision(),
+                    &mut BTreeSet::new(),
+                    Some(ctx),
+                ) {
+                    Ok(_) => true,
+                    Err(error) => {
+                        error.non_resource()?;
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+            if !(item_valid && transform_valid) {
+                items_valid = false;
+                break;
+            }
+        }
         let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
             assemblies
                 .get(&sequence)
@@ -3128,16 +3153,8 @@ pub(super) fn project(
                 .filter(|item| assemblies.contains_key(item))
                 .collect()
         });
-        let own_transform_valid = resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            global.length_factor_mm(),
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            Some(ctx),
-        )
-        .is_ok();
+        let own_transform_valid =
+            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
             || (assembly.form == 1) != has_brep
             || !items_valid
@@ -3189,7 +3206,7 @@ pub(super) fn project(
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
             definition_fields_valid.insert(entry.sequence);
         }
@@ -3210,7 +3227,7 @@ pub(super) fn project(
             let sequence = u32::try_from(value).ok()?;
             (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
         });
-        let placement_valid = placement_affine(
+        let placement_valid = match placement_affine(
             entry,
             record,
             &entries,
@@ -3218,8 +3235,13 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             Some(ctx),
-        )
-        .is_ok();
+        ) {
+            Ok(_) => true,
+            Err(error) => {
+                error.non_resource()?;
+                false
+            }
+        };
         if !placement_valid {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
@@ -3314,7 +3336,7 @@ pub(super) fn project(
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
             network_definition_fields_valid.insert(entry.sequence);
         }
@@ -3351,7 +3373,7 @@ pub(super) fn project(
         });
         let connect_points =
             network_connect_points(record, 11, 12, &entries, global.global_table());
-        let placement_valid = placement_affine(
+        let placement_valid = match placement_affine(
             entry,
             record,
             &entries,
@@ -3359,8 +3381,13 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             Some(ctx),
-        )
-        .is_ok();
+        ) {
+            Ok(_) => true,
+            Err(error) => {
+                error.non_resource()?;
+                false
+            }
+        };
         if !placement_valid {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
