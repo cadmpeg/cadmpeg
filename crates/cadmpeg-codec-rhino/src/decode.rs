@@ -95,6 +95,12 @@ impl From<String> for CandidateError {
     }
 }
 
+impl From<cadmpeg_core::CodecError> for CandidateError {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
 impl From<crate::history::ProjectionError> for CandidateError {
     fn from(error: crate::history::ProjectionError) -> Self {
         match error {
@@ -266,18 +272,6 @@ impl ExpansionBudget {
         }
     }
 
-    fn from_session(ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Self {
-        let collections = ctx.policy().limits.max_collection_items;
-        let entities = ctx.policy().limits.max_entities;
-        let mut budget = Self::new();
-        budget.limits = [
-            session_ceiling(collections, MAX_INSTANCE_REFERENCES),
-            session_ceiling(collections, MAX_INSTANCE_MEMBERS),
-            session_ceiling(entities, MAX_INSTANCE_ENTITIES),
-        ];
-        budget
-    }
-
     fn charge(value: &mut usize, amount: usize, limit: usize, label: &str) -> Result<(), String> {
         *value = value
             .checked_add(amount)
@@ -390,7 +384,7 @@ impl<'a> DecodeContext<'a> {
             instance_display: None,
             object_candidates,
             definition_candidates,
-            expansion_budget: ExpansionBudget::from_session(expand.ctx()),
+            expansion_budget: ExpansionBudget::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -488,9 +482,8 @@ impl<'a> DecodeContext<'a> {
     fn validate_candidate<T>(
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> T,
-    ) -> Result<T, String> {
+    ) -> Result<T, CandidateError> {
         self.validate_candidate_fallible(|ir, annotations| Ok::<_, String>(apply(ir, annotations)))
-            .map_err(|error| error.to_string())
     }
 
     fn validate_candidate_fallible<T, E: Into<CandidateError>>(
@@ -519,7 +512,7 @@ impl<'a> DecodeContext<'a> {
                     .map_err(CandidateError::Admission)?;
                 session
                     .charge_entities(u64_from_index(entity_count), "rhino_instance_entities")
-                    .map_err(|error| CandidateError::Admission(error.to_string()))?;
+                    .map_err(CandidateError::Codec)?;
                 Ok(value)
             })
         })
@@ -556,7 +549,9 @@ impl<'a> DecodeContext<'a> {
             );
             candidate.model.points.push(point);
         });
-        result.expect_err("duplicate entity ID must fail validation")
+        result
+            .expect_err("duplicate entity ID must fail validation")
+            .to_string()
     }
 
     /// Marks one retained object as successfully decoded.
@@ -679,7 +674,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             if object.class_uuid == crate::cage::CLASS {
-                self.decode_cage(source_order, object);
+                self.decode_cage(source_order, object)?;
                 continue;
             }
             if object.class_uuid == crate::morph::CLASS {
@@ -691,7 +686,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             if object.class_uuid == crate::polyedge::CURVE_CLASS {
-                self.decode_polyedge(source_order, object);
+                self.decode_polyedge(source_order, object)?;
                 continue;
             }
             if !crate::curves::supported_class(object.class_uuid)
@@ -752,7 +747,7 @@ impl<'a> DecodeContext<'a> {
                                         source_order,
                                         decoded,
                                         scale != MillimeterScale::IDENTITY,
-                                    );
+                                    )?;
                                     if proxy_transferred {
                                         self.mark_decoded(source_order);
                                     } else {
@@ -766,18 +761,22 @@ impl<'a> DecodeContext<'a> {
                                     source_order,
                                     "SubD mesh proxy failed its validity or parent-mesh identity checks; parent mesh retained",
                                 ),
+                                Err(crate::subd::SubdError::Resource(limit)) => {
+                                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+                                }
                                 Err(error) => self.scan_warning(
                                     source_order,
                                     &format!("SubD mesh proxy dropped: {error}; parent mesh retained"),
                                 ),
                             }
                         }
-                        if !proxy_transferred && self.commit_mesh(source_order, mesh) {
+                        if !proxy_transferred && self.commit_mesh(source_order, mesh)? {
                             self.mark_decoded(source_order);
                         } else if !proxy_transferred {
                             self.mark_failed(source_order);
                         }
                     }
+                    Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
                     Err(error) => {
                         let future = matches!(
                             error,
@@ -808,14 +807,14 @@ impl<'a> DecodeContext<'a> {
             let procedural_surface = crate::surfaces::is_procedural_class(object.class_uuid);
             match decoded {
                 Ok(value) => {
-                    if self.commit_geometry(source_order, value) {
+                    if self.commit_geometry(source_order, value)? {
                         self.mark_decoded(source_order);
                     } else if procedural_surface {
                         self.scan_warning(
                             source_order,
                             "procedural surface candidate rejected by IR validation",
                         );
-                        self.commit_unknown_surface(source_order);
+                        self.commit_unknown_surface(source_order)?;
                     } else {
                         self.mark_failed(source_order);
                     }
@@ -840,7 +839,7 @@ impl<'a> DecodeContext<'a> {
                         ),
                     );
                     if procedural_surface {
-                        self.commit_unknown_surface(source_order);
+                        self.commit_unknown_surface(source_order)?;
                     } else if !future {
                         self.mark_failed(source_order);
                     }
@@ -851,9 +850,9 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Decode semantic dimensions independently of shape carriers.
-    fn decode_dimensions(&mut self) {
+    fn decode_dimensions(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         if !self.archive().is_chunked() {
-            return;
+            return Ok(());
         }
         for source_order in 0..self.scan.objects.len() {
             let Some(object) = self.scan.objects[source_order].framed() else {
@@ -967,6 +966,7 @@ impl<'a> DecodeContext<'a> {
                                 )));
                             }
                         }
+                        Err(CandidateError::Codec(error)) => return Err(error),
                         Err(error) => self.scan_warning(
                             source_order,
                             &format!("dimension candidate rejected: {error}"),
@@ -979,6 +979,7 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
+        Ok(())
     }
 
     fn decode_hatch(
@@ -1138,20 +1139,24 @@ impl<'a> DecodeContext<'a> {
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
         let hatch_loops = hatch.loops;
+        let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
                 commit_curve_tree(
+                    session,
                     candidate,
                     candidate_annotations,
                     hatch_loop.curve,
-                    key.as_str(),
-                    &association,
-                    None,
-                    &format!("hatch-loop-{index}"),
+                    CurveCommitSource {
+                        key: key.as_str(),
+                        association: &association,
+                        record: None,
+                        path: &format!("hatch-loop-{index}"),
+                    },
                 )?;
             }
             candidate.model.features.push(feature);
-            Ok::<(), String>(())
+            Ok::<(), CandidateError>(())
         });
         match result {
             Ok(()) => {
@@ -1164,6 +1169,7 @@ impl<'a> DecodeContext<'a> {
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
                 self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
                 self.mark_failed(source_order);
@@ -1172,7 +1178,11 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    fn decode_polyedge(&mut self, source_order: usize, object: &ObjectDescriptor) {
+    fn decode_polyedge(
+        &mut self,
+        source_order: usize,
+        object: &ObjectDescriptor,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let identity = &object.identity;
@@ -1185,15 +1195,15 @@ impl<'a> DecodeContext<'a> {
             Err(error) => {
                 self.scan_warning(source_order, &format!("polyedge retained: {error}"));
                 self.mark_failed(source_order);
-                return;
+                return Ok(());
             }
         };
         let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
             self.scan_warning(source_order, "polyedge semantic serialization failed");
-            return;
+            return Ok(());
         };
         let Some(key) = self.checked_object_key(identity, source_order) else {
-            return;
+            return Ok(());
         };
         let id = FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "polyedge", "feature"),
@@ -1246,11 +1256,13 @@ impl<'a> DecodeContext<'a> {
                     RhinoLossCode::PolyedgeReferencesNotResolved,
                 );
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => self.scan_warning(
                 source_order,
                 &format!("polyedge candidate rejected: {error}"),
             ),
         }
+        Ok(())
     }
 
     fn decode_detail(
@@ -1334,18 +1346,22 @@ impl<'a> DecodeContext<'a> {
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
+        let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
+                session,
                 candidate,
                 candidate_annotations,
                 detail.boundary,
-                key.as_str(),
-                &association,
-                None,
-                "detail-boundary",
+                CurveCommitSource {
+                    key: key.as_str(),
+                    association: &association,
+                    record: None,
+                    path: "detail-boundary",
+                },
             )?;
             candidate.model.features.push(feature);
-            Ok::<(), String>(())
+            Ok::<(), CandidateError>(())
         });
         match result {
             Ok(()) => {
@@ -1353,6 +1369,7 @@ impl<'a> DecodeContext<'a> {
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
                 self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
                 self.mark_failed(source_order);
@@ -1361,12 +1378,16 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    fn decode_cage(&mut self, source_order: usize, object: &ObjectDescriptor) {
+    fn decode_cage(
+        &mut self,
+        source_order: usize,
+        object: &ObjectDescriptor,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "NURBS cage");
-            return;
+            return Ok(());
         };
         let identity = &object.identity;
         let cage = match crate::cage::decode(
@@ -1376,6 +1397,7 @@ impl<'a> DecodeContext<'a> {
             self.archive(),
         ) {
             Ok(cage) => cage,
+            Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
                 let future = matches!(
                     error,
@@ -1391,11 +1413,11 @@ impl<'a> DecodeContext<'a> {
                 if !future {
                     self.mark_failed(source_order);
                 }
-                return;
+                return Ok(());
             }
         };
         let Some(key) = self.checked_object_key(identity, source_order) else {
-            return;
+            return Ok(());
         };
         let feature_id = FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "cage", "feature"),
@@ -1484,6 +1506,7 @@ impl<'a> DecodeContext<'a> {
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::CageLatticeNotTransferred);
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
                 self.scan_warning(
                     source_order,
@@ -1492,6 +1515,7 @@ impl<'a> DecodeContext<'a> {
                 self.mark_failed(source_order);
             }
         }
+        Ok(())
     }
 
     fn decode_morph(
@@ -1556,6 +1580,7 @@ impl<'a> DecodeContext<'a> {
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::MorphDeformationNotApplied);
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
                 self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
                 self.mark_failed(source_order);
@@ -1666,25 +1691,32 @@ impl<'a> DecodeContext<'a> {
                 true,
             ),
         };
+        let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             commit_curve_tree(
+                session,
                 candidate,
                 candidate_annotations,
                 parameter_curve,
-                key.as_str(),
-                &association,
-                None,
-                "curve-on-surface-c2",
+                CurveCommitSource {
+                    key: key.as_str(),
+                    association: &association,
+                    record: None,
+                    path: "curve-on-surface-c2",
+                },
             )?;
             if let Some(model_curve) = model_curve {
                 commit_curve_tree(
+                    session,
                     candidate,
                     candidate_annotations,
                     model_curve,
-                    key.as_str(),
-                    &association,
-                    None,
-                    "curve-on-surface-c3",
+                    CurveCommitSource {
+                        key: key.as_str(),
+                        association: &association,
+                        record: None,
+                        path: "curve-on-surface-c3",
+                    },
                 )?;
             }
             candidate.model.surfaces.push(Surface {
@@ -1702,7 +1734,7 @@ impl<'a> DecodeContext<'a> {
                 },
             );
             candidate.model.features.push(feature);
-            Ok::<(), String>(())
+            Ok::<(), CandidateError>(())
         });
         match result {
             Ok(()) => {
@@ -1720,6 +1752,7 @@ impl<'a> DecodeContext<'a> {
                     RhinoLossCode::CurveOnSurfaceBindingNotTransferred,
                 );
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
                 self.scan_warning(
                     source_order,
@@ -2172,7 +2205,7 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     decoded,
                     scale != MillimeterScale::IDENTITY,
-                ) {
+                )? {
                     self.mark_decoded(source_order);
                 } else {
                     self.scan_warning(
@@ -2207,7 +2240,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         decoded: crate::subd::DecodedSubd,
         scaled: bool,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let crate::subd::DecodedSubd {
             mut surface,
             neutral_metadata,
@@ -2229,10 +2262,10 @@ impl<'a> DecodeContext<'a> {
             );
         }
         let Some(object) = self.scan.objects.get(source_order) else {
-            return false;
+            return Ok(false);
         };
         let Some(identity) = object.identity() else {
-            return false;
+            return Ok(false);
         };
         surface.source_object = Some(self.source_association(identity));
         let id = surface.id.to_string();
@@ -2251,17 +2284,18 @@ impl<'a> DecodeContext<'a> {
         });
         let link = match result {
             Ok(link) => link,
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.scan_warning(
                     source_order,
                     &format!("SubD validation rejected candidate: {findings}"),
                 );
-                return false;
+                return Ok(false);
             }
         };
         self.append_link(source_order, link);
         self.geometry_transferred = true;
-        true
+        Ok(true)
     }
 
     fn decode_extrusion(
@@ -2271,7 +2305,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "extrusion");
-            self.commit_unknown_surface(source_order);
+            self.commit_unknown_surface(source_order)?;
             return Ok(());
         };
         let decoded = crate::extrusion::decode(
@@ -2293,7 +2327,7 @@ impl<'a> DecodeContext<'a> {
                     self.mark_decoded(source_order);
                 } else {
                     self.scan_warning(source_order, "extrusion candidate rejected atomically");
-                    self.commit_unknown_surface(source_order);
+                    self.commit_unknown_surface(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -2302,7 +2336,7 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     &format!("extrusion degraded and retained: {error}"),
                 );
-                self.commit_unknown_surface(source_order);
+                self.commit_unknown_surface(source_order)?;
             }
         }
         Ok(())
@@ -2669,25 +2703,26 @@ impl<'a> DecodeContext<'a> {
             .push(format!("{class}: {message}"));
     }
 
-    fn charge_entities(&mut self, source_order: usize, amount: usize) -> bool {
+    fn charge_entities(
+        &mut self,
+        source_order: usize,
+        amount: usize,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
         if let Err(message) = budget.entities(amount) {
             self.scan_warning(source_order, &message);
-            false
-        } else if let Err(message) = self.charge_session_entities(amount) {
-            self.scan_warning(source_order, &message);
-            false
+            Ok(false)
         } else {
+            self.charge_session_entities(amount)?;
             self.expansion_budget = budget;
-            true
+            Ok(true)
         }
     }
 
-    fn charge_session_entities(&self, amount: usize) -> Result<(), String> {
+    fn charge_session_entities(&self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
         self.expand
             .ctx()
             .charge_entities(u64_from_index(amount), "rhino_instance_entities")
-            .map_err(|error| error.to_string())
     }
 
     fn charge_session_collections(
@@ -2704,15 +2739,15 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         source_order: usize,
         decoded: crate::curves::DecodedGeometry,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let Some(object) = self.scan.objects.get(source_order) else {
-            return false;
+            return Ok(false);
         };
         let Some(identity) = object.identity() else {
-            return false;
+            return Ok(false);
         };
         let Some(key) = self.checked_object_key(identity, source_order) else {
-            return false;
+            return Ok(false);
         };
         let association = self.source_association(identity);
         let Some(unknown) = self
@@ -2720,12 +2755,12 @@ impl<'a> DecodeContext<'a> {
             .get(source_order)
             .map(|record| record.id().clone())
         else {
-            return false;
+            return Ok(false);
         };
         match decoded {
             crate::curves::DecodedGeometry::Point { position, scaled } => {
-                if !self.charge_entities(source_order, 5) {
-                    return false;
+                if !self.charge_entities(source_order, 5)? {
+                    return Ok(false);
                 }
                 let body_id = cadmpeg_ir::ids::BodyId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -2793,10 +2828,10 @@ impl<'a> DecodeContext<'a> {
                     .and_then(|count| count.checked_add(3))
                 else {
                     self.scan_warning(source_order, "point-cloud entity count overflow");
-                    return false;
+                    return Ok(false);
                 };
-                if !self.charge_entities(source_order, entity_count) {
-                    return false;
+                if !self.charge_entities(source_order, entity_count)? {
+                    return Ok(false);
                 }
                 let body_id = cadmpeg_ir::ids::BodyId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -2810,7 +2845,11 @@ impl<'a> DecodeContext<'a> {
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
                     key.clone(),
                 );
-                let mut vertices = Vec::with_capacity(points.len());
+                self.charge_session_collections(points.len(), "Rhino point-cloud vertices")?;
+                let mut vertices = Vec::new();
+                vertices.try_reserve_exact(points.len()).map_err(|_| {
+                    transaction_allocation_failed("Rhino point-cloud vertices", points.len())
+                })?;
                 for (index, position) in points.into_iter().enumerate() {
                     let point_key = key.clone().then(cadmpeg_ir::identity_key!(".")).then(index);
                     let point_id = cadmpeg_ir::ids::PointId::compose(
@@ -2845,7 +2884,7 @@ impl<'a> DecodeContext<'a> {
                         Ok(shell) => shell,
                         Err(error) => {
                             self.scan_warning(source_order, &error.to_string());
-                            return false;
+                            return Ok(false);
                         }
                     },
                 );
@@ -2860,23 +2899,17 @@ impl<'a> DecodeContext<'a> {
                     vec![region_id],
                     &association,
                 ));
-                let point_ids: Vec<String> = self
+                let point_prefix = format!("rhino:object:point#{key}.");
+                for point in self
                     .ir
                     .model
                     .points
                     .iter()
-                    .filter(|point| {
-                        point
-                            .id
-                            .as_str()
-                            .starts_with(&format!("rhino:object:point#{key}."))
-                    })
-                    .map(|point| point.id.to_string())
-                    .collect();
-                for point_id in point_ids {
+                    .filter(|point| point.id.as_str().starts_with(&point_prefix))
+                {
                     set_exactness(
                         &mut self.annotations,
-                        point_id,
+                        &point.id,
                         if scaled {
                             Exactness::Derived
                         } else {
@@ -2891,23 +2924,28 @@ impl<'a> DecodeContext<'a> {
                 self.report.phase_warnings.extend(
                     warnings.map_messages(|message| format!("{}: {message}", identity.source_id)),
                 );
+                let session = self.expand.ctx();
                 let parent_id = match self.validate_candidate_fallible(|candidate, annotations| {
                     commit_curve_tree(
+                        session,
                         candidate,
                         annotations,
                         curve,
-                        key.as_str(),
-                        &association,
-                        Some(unknown),
-                        "root",
+                        CurveCommitSource {
+                            key: key.as_str(),
+                            association: &association,
+                            record: Some(unknown),
+                            path: "root",
+                        },
                     )
                 }) {
                     Ok(id) => id,
+                    Err(CandidateError::Codec(error)) => return Err(error),
                     Err(error) => {
                         self.report
                             .phase_warnings
                             .push(format!("curve candidate rejected: {error}"));
-                        return false;
+                        return Ok(false);
                     }
                 };
                 self.append_link(source_order, parent_id.to_string());
@@ -2916,8 +2954,8 @@ impl<'a> DecodeContext<'a> {
                 crate::surfaces::DecodedSurface::Typed {
                     geometry, derived, ..
                 } => {
-                    if !self.charge_entities(source_order, 1) {
-                        return false;
+                    if !self.charge_entities(source_order, 1)? {
+                        return Ok(false);
                     }
                     let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
@@ -2954,7 +2992,7 @@ impl<'a> DecodeContext<'a> {
             },
         }
         self.geometry_transferred = true;
-        true
+        Ok(true)
     }
 
     fn commit_procedural_surface(
@@ -2964,28 +3002,32 @@ impl<'a> DecodeContext<'a> {
         association: SourceObjectAssociation,
         geometry: cadmpeg_ir::geometry::nurbs::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let Some(unknown) = self
             .unknowns
             .get(source_order)
             .map(|record| record.id().clone())
         else {
-            return false;
+            return Ok(false);
         };
+        let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let ir_definition = definition.into_definition(
                 |_, path, child| {
                     commit_curve_tree(
+                        session,
                         candidate,
                         candidate_annotations,
                         child,
-                        key,
-                        &association,
-                        Some(unknown.clone()),
-                        path,
+                        CurveCommitSource {
+                            key,
+                            association: &association,
+                            record: Some(unknown.clone()),
+                            path,
+                        },
                     )
                 },
-                |error| error.to_string(),
+                |error| CandidateError::Admission(error.to_string()),
             )?;
             let key = IdentityKey::try_new(key.to_owned()).map_err(|error| error.to_string())?;
             let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
@@ -3011,20 +3053,21 @@ impl<'a> DecodeContext<'a> {
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 set_exactness(candidate_annotations, id, Exactness::Derived);
             }
-            Ok::<_, String>(vec![surface_id.to_string()])
+            Ok::<_, CandidateError>(vec![surface_id.to_string()])
         });
         let links = match result {
             Ok(links) => links,
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.report.phase_warnings.push(format!(
                     "procedural-surface: candidate rejected by IR validation: {findings}"
                 ));
-                return false;
+                return Ok(false);
             }
         };
         self.append_links(source_order, &links);
         self.geometry_transferred = true;
-        true
+        Ok(true)
     }
 
     fn commit_extrusion(
@@ -3052,18 +3095,22 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         }
         let association = self.source_association(identity);
+        let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
             let mut boundaries = Vec::with_capacity(extrusion.boundaries.len());
             for (index, boundary) in extrusion.boundaries.iter().enumerate() {
                 let id = commit_curve_tree(
+                    session,
                     candidate,
                     candidate_annotations,
                     boundary.start_curve.clone(),
-                    key.as_str(),
-                    &association,
-                    Some(unknown.clone()),
-                    &format!("profile-{index}.start"),
+                    CurveCommitSource {
+                        key: key.as_str(),
+                        association: &association,
+                        record: Some(unknown.clone()),
+                        path: &format!("profile-{index}.start"),
+                    },
                 )?;
                 boundaries.push(CommittedExtrusionBoundary {
                     boundary,
@@ -3136,7 +3183,7 @@ impl<'a> DecodeContext<'a> {
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
             }
-            Ok::<_, String>(links)
+            Ok::<_, CandidateError>(links)
         });
         let links = match result {
             Ok(links) => links,
@@ -3158,22 +3205,25 @@ impl<'a> DecodeContext<'a> {
         Ok(true)
     }
 
-    fn commit_unknown_surface(&mut self, source_order: usize) {
+    fn commit_unknown_surface(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(object) = self.scan.objects.get(source_order) else {
-            return;
+            return Ok(());
         };
         let Some(identity) = object.identity() else {
-            return;
+            return Ok(());
         };
         let Some(unknown) = self
             .unknowns
             .get(source_order)
             .map(|record| record.id().clone())
         else {
-            return;
+            return Ok(());
         };
         let Some(key) = self.checked_object_key(identity, source_order) else {
-            return;
+            return Ok(());
         };
         let id = cadmpeg_ir::ids::SurfaceId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
@@ -3195,11 +3245,13 @@ impl<'a> DecodeContext<'a> {
             Ok(link) => {
                 self.append_link(source_order, link);
             }
+            Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => self.scan_warning(
                 source_order,
                 &format!("unknown surface validation rejected candidate: {findings}"),
             ),
         }
+        Ok(())
     }
 
     fn annotate_point_topology(
@@ -3227,15 +3279,19 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    fn commit_mesh(&mut self, source_order: usize, mesh: crate::mesh::DecodedMesh) -> bool {
+    fn commit_mesh(
+        &mut self,
+        source_order: usize,
+        mesh: crate::mesh::DecodedMesh,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let Some(object) = self.scan.objects.get(source_order) else {
-            return false;
+            return Ok(false);
         };
         let Some(identity) = object.identity() else {
-            return false;
+            return Ok(false);
         };
-        if !self.charge_entities(source_order, 1) {
-            return false;
+        if !self.charge_entities(source_order, 1)? {
+            return Ok(false);
         }
         self.report
             .phase_losses
@@ -3277,7 +3333,7 @@ impl<'a> DecodeContext<'a> {
                 )));
         }
         self.append_link(source_order, id);
-        true
+        Ok(true)
     }
 
     fn decode_brep(
@@ -3948,6 +4004,7 @@ struct StagedBrepSurface {
 }
 
 struct BrepStageContext<'a> {
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     key: &'a str,
     association: &'a SourceObjectAssociation,
     unknown: &'a UnknownId,
@@ -4114,6 +4171,7 @@ fn stage_brep_carriers(
                         .map_messages(|message| format!("C3 slot {index}: {message}")),
                 );
                 let id = match stage_curve_tree(
+                    expand.ctx(),
                     &mut staged,
                     curve,
                     key,
@@ -4122,6 +4180,7 @@ fn stage_brep_carriers(
                     unknown,
                 ) {
                     Ok(id) => id,
+                    Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
                         child_cause = Some(format!("C3 slot {index}: {error}"));
                         continue;
@@ -4204,6 +4263,7 @@ fn stage_brep_carriers(
                 geometry,
                 definition,
                 &BrepStageContext {
+                    ctx: expand.ctx(),
                     key,
                     association,
                     unknown,
@@ -4218,6 +4278,7 @@ fn stage_brep_carriers(
                         },
                     );
                 }
+                Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
                     child_cause = Some(format!("surface slot {index}: {error}"));
                 }
@@ -4974,6 +5035,7 @@ fn stage_brep_procedural_surface(
     let definition = definition.into_definition(
         |child_index, _, child| {
             stage_curve_tree(
+                context.ctx,
                 staged,
                 child,
                 key.as_str(),
@@ -5019,6 +5081,7 @@ fn stage_brep_procedural_surface(
 }
 
 fn stage_curve_tree(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     staged: &mut BrepDraft,
     curve: crate::curves::DecodedCurve,
     key: &str,
@@ -5026,6 +5089,7 @@ fn stage_curve_tree(
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
 ) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
+    let _nested = ctx.enter_nested("Rhino Brep curve tree")?;
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -5033,14 +5097,40 @@ fn stage_curve_tree(
             end_parameter,
             ..
         } => {
-            let mut parameters = Vec::with_capacity(children.len() + 1);
-            let mut components = Vec::with_capacity(children.len());
+            let parameter_count = children.len().checked_add(1).ok_or_else(|| {
+                crate::curves::GeometryError::unpositioned(
+                    "compound curve parameter count overflow",
+                )
+            })?;
+            ctx.charge_collection_items(
+                u64_from_index(parameter_count),
+                "Rhino Brep curve tree parameters",
+            )?;
+            let mut parameters = Vec::new();
+            parameters.try_reserve_exact(parameter_count).map_err(|_| {
+                crate::curves::collection_allocation_failed(
+                    "Rhino Brep curve tree parameters",
+                    parameter_count,
+                )
+            })?;
+            ctx.charge_collection_items(
+                u64_from_index(children.len()),
+                "Rhino Brep curve tree components",
+            )?;
+            let mut components = Vec::new();
+            components.try_reserve_exact(children.len()).map_err(|_| {
+                crate::curves::collection_allocation_failed(
+                    "Rhino Brep curve tree components",
+                    children.len(),
+                )
+            })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
                     component: stage_curve_tree(
+                        ctx,
                         staged,
                         child,
                         key,
@@ -5639,15 +5729,21 @@ fn curve_warnings(curve: &crate::curves::DecodedCurve) -> Diagnostics {
     warnings
 }
 
+struct CurveCommitSource<'a> {
+    key: &'a str,
+    association: &'a SourceObjectAssociation,
+    record: Option<UnknownId>,
+    path: &'a str,
+}
+
 fn commit_curve_tree(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut cadmpeg_ir::Annotations,
     curve: crate::curves::DecodedCurve,
-    key: &str,
-    association: &SourceObjectAssociation,
-    record: Option<UnknownId>,
-    path: &str,
-) -> Result<cadmpeg_ir::ids::CurveId, String> {
+    source: CurveCommitSource<'_>,
+) -> Result<cadmpeg_ir::ids::CurveId, CandidateError> {
+    let _nested = ctx.enter_nested("Rhino committed curve tree")?;
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
         crate::curves::DecodedCurve::Compound {
@@ -5655,28 +5751,56 @@ fn commit_curve_tree(
             end_parameter,
             ..
         } => {
-            let mut parameters = Vec::with_capacity(children.len() + 1);
-            let mut components = Vec::with_capacity(children.len());
+            let parameter_count = children.len().checked_add(1).ok_or_else(|| {
+                CandidateError::Admission("compound curve parameter count overflow".to_string())
+            })?;
+            ctx.charge_collection_items(
+                u64_from_index(parameter_count),
+                "Rhino committed curve tree parameters",
+            )?;
+            let mut parameters = Vec::new();
+            parameters.try_reserve_exact(parameter_count).map_err(|_| {
+                transaction_allocation_failed(
+                    "Rhino committed curve tree parameters",
+                    parameter_count,
+                )
+            })?;
+            ctx.charge_collection_items(
+                u64_from_index(children.len()),
+                "Rhino committed curve tree components",
+            )?;
+            let mut components = Vec::new();
+            components.try_reserve_exact(children.len()).map_err(|_| {
+                transaction_allocation_failed(
+                    "Rhino committed curve tree components",
+                    children.len(),
+                )
+            })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
-                let child_path = format!("{path}.component-{index}");
+                let child_path = format!("{}.component-{index}", source.path);
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
                     component: commit_curve_tree(
+                        ctx,
                         ir,
                         annotations,
                         child,
-                        key,
-                        association,
-                        None,
-                        &child_path,
+                        CurveCommitSource {
+                            key: source.key,
+                            association: source.association,
+                            record: None,
+                            path: &child_path,
+                        },
                     )?,
                 });
             }
             parameters.push(end_parameter.get());
             (
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }),
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: source.record,
+                }),
                 Some(ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components, None,
@@ -5686,13 +5810,13 @@ fn commit_curve_tree(
             )
         }
     };
-    let key = IdentityKey::try_new(key.to_owned()).map_err(|error| error.to_string())?;
-    let curve_key = if path == "root" {
+    let key = IdentityKey::try_new(source.key.to_owned()).map_err(|error| error.to_string())?;
+    let curve_key = if source.path == "root" {
         key.clone()
     } else {
         key.clone()
             .then(cadmpeg_ir::identity_key!("."))
-            .then(IdentityKey::try_new(path.to_owned()).map_err(|error| error.to_string())?)
+            .then(IdentityKey::try_new(source.path.to_owned()).map_err(|error| error.to_string())?)
     };
     let id = cadmpeg_ir::ids::CurveId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
@@ -5701,7 +5825,7 @@ fn commit_curve_tree(
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        source_object: Some(association.clone()),
+        source_object: Some(source.association.clone()),
     });
     set_exactness(annotations, &id, Exactness::Derived);
     if let Some(definition) = definition {
@@ -6039,7 +6163,7 @@ pub(crate) fn decode(
 ) -> Result<Decoded, cadmpeg_core::CodecError> {
     let mut context = DecodeContext::new(scan, expand)?;
     context.decode_geometry()?;
-    context.decode_dimensions();
+    context.decode_dimensions()?;
     context.retain_unbound_history_geometry()?;
     let geometry_context = context.neutral_scale().map(|scale| {
         (
