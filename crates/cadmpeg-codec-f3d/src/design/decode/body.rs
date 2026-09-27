@@ -4,8 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 use std::fmt::Write;
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{lp_ascii_filtered, take_reference};
 use crate::container::ContainerScan;
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::native_scope_charged;
 use crate::design::RECIPES;
@@ -513,15 +514,21 @@ fn reference_has_type(
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
 /// snapshot. The carrier uses a bare entity header in every serializer band.
 fn snapshot_body_map_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
     let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
-    let primary_by_entity = frames
-        .iter()
-        .enumerate()
-        .map(|(ordinal, frame)| (frame.entity_id, ordinal))
-        .collect::<HashMap<_, _>>();
+    let mut primary_by_entity = HashMap::new();
+    for (ordinal, frame) in frames.iter().enumerate() {
+        if !primary_by_entity.contains_key(&frame.entity_id) {
+            ctx.charge_collection_items(1, "f3d snapshot body-map primary index")?;
+            primary_by_entity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d snapshot body-map primary index allocation", 0, 1)
+            })?;
+        }
+        primary_by_entity.insert(frame.entity_id, ordinal);
+    }
     let mut out = Vec::new();
     for (type_ordinal, design_type) in meta.types.iter().enumerate() {
         if !design_type
@@ -579,8 +586,12 @@ fn snapshot_body_map_records(
                 )));
             }
             if let Some(record) =
-                parse_snapshot_body_map_frame(bytes, meta, frame.start, frame.end, entity)?
+                parse_snapshot_body_map_frame(ctx, bytes, meta, frame.start, frame.end, entity)?
             {
+                ctx.charge_collection_items(1, "f3d snapshot body-map records")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d snapshot body-map records allocation", 0, 1)
+                })?;
                 out.push(record);
             }
         }
@@ -589,6 +600,7 @@ fn snapshot_body_map_records(
 }
 
 fn parse_snapshot_body_map_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     start: usize,
@@ -670,7 +682,7 @@ fn parse_snapshot_body_map_frame(
             else {
                 continue;
             };
-            let Some((blob_name, name_end)) = lp_utf16_bounded(bytes, name_at, 0..=max_chars)
+            let Some((blob_name, name_end)) = lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_chars)?
             else {
                 continue;
             };
@@ -684,8 +696,11 @@ fn parse_snapshot_body_map_frame(
                 continue;
             }
             let mut bindings = Vec::new();
+            ctx.charge_collection_items(u64::try_from(count).map_err(|_| {
+                ctx.refuse_codec_limit("f3d snapshot body-map pair count", 0, 1)
+            })?, "f3d snapshot body-map pairs")?;
             bindings.try_reserve(count).map_err(|_| {
-                crate::error::malformed("F3D snapshot body-map count exceeds capacity")
+                ctx.refuse_codec_limit("f3d snapshot body-map pairs allocation", 0, 1)
             })?;
             for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
                 let mut pair = View::over_retained(pair);
@@ -712,6 +727,7 @@ fn parse_snapshot_body_map_frame(
 /// extents. A candidate is a body map only when one supported reserved-zero
 /// width makes its count, pair run, tail, and basename consume that extent.
 fn body_map_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
@@ -719,6 +735,12 @@ fn body_map_records(
 
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
+        if !primary_by_entity.contains_key(&record.entity_id) {
+            ctx.charge_collection_items(1, "f3d body-map primary index")?;
+            primary_by_entity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body-map primary index allocation", 0, 1)
+            })?;
+        }
         primary_by_entity
             .entry(record.entity_id)
             .and_modify(|record_ordinal| *record_ordinal = None)
@@ -766,11 +788,16 @@ fn body_map_records(
         let class_tag = class_tag.to_string();
 
         for &entity_id in design_type.entities.values() {
-            if !typed_entities.insert(entity_id) {
+            if typed_entities.contains(&entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
                 )));
             }
+            ctx.charge_collection_items(1, "f3d body-map typed entities")?;
+            typed_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body-map typed entities allocation", 0, 1)
+            })?;
+            typed_entities.insert(entity_id);
             let record_ordinal = match primary_by_entity.get(&entity_id) {
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
@@ -807,7 +834,7 @@ fn body_map_records(
 
             let mut matched = None;
             for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
-                let Some(bindings) = parse_body_map_frame(bytes, meta, start, end, prefix_len)?
+                let Some(bindings) = parse_body_map_frame(ctx, bytes, meta, start, end, prefix_len)?
                 else {
                     continue;
                 };
@@ -818,6 +845,10 @@ fn body_map_records(
                 }
             }
             if let Some(record) = matched {
+                ctx.charge_collection_items(1, "f3d body-map records")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d body-map records allocation", 0, 1)
+                })?;
                 out.push(record);
             }
         }
@@ -826,30 +857,57 @@ fn body_map_records(
 }
 
 pub(crate) fn body_bindings(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyBinding>, CodecError> {
-    Ok(body_map_records(bytes, meta)?
-        .into_iter()
-        .flat_map(|record| record.bindings)
-        .collect())
+    let records = body_map_records(ctx, bytes, meta)?;
+    let count = records.iter().try_fold(0usize, |total, record| {
+        total.checked_add(record.bindings.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit("f3d flattened body-map pair count", 0, 1)
+        })
+    })?;
+    ctx.charge_collection_items(u64::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d flattened body-map pair count", 0, 1)
+    })?, "f3d flattened body-map pairs")?;
+    let mut bindings = Vec::new();
+    bindings.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d flattened body-map pairs allocation", 0, 1)
+    })?;
+    for record in records {
+        bindings.extend(record.bindings);
+    }
+    Ok(bindings)
 }
 
 fn selected_body_map_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
-    let modern = body_map_records(bytes, meta)?;
+    let modern = body_map_records(ctx, bytes, meta)?;
     if modern.is_empty() {
-        snapshot_body_map_records(bytes, meta)
+        snapshot_body_map_records(ctx, bytes, meta)
     } else {
         Ok(modern)
     }
 }
 
+fn copy_body_map_name(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(name.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("F3D body-map name must be UTF-8"))
+}
+
 /// Return the typed model-blob set selected independently in each Design
 /// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
-pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+pub(crate) fn design_model_blob_names(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<String>, CodecError> {
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
     let mut saw_design_stream = false;
@@ -865,11 +923,20 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
         else {
             continue;
         };
-        let modern = body_map_records(bytes, &metadata)?;
-        let snapshots = snapshot_body_map_records(bytes, &metadata)?;
+        let modern = body_map_records(ctx, bytes, &metadata)?;
+        let snapshots = snapshot_body_map_records(ctx, bytes, &metadata)?;
         for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
-                *carrier_counts.entry(record.blob_name.clone()).or_default() += 1;
+                if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
+                    *count += 1;
+                } else {
+                    let name = copy_body_map_name(ctx, &record.blob_name, "f3d body-map carrier name")?;
+                    ctx.charge_collection_items(1, "f3d body-map carrier counts")?;
+                    carrier_counts.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d body-map carrier counts allocation", 0, 1)
+                    })?;
+                    carrier_counts.insert(name, 1);
+                }
             }
         }
         let selected = if modern.is_empty() {
@@ -877,12 +944,14 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
         } else {
             &modern
         };
-        model_names.extend(
-            selected
-                .iter()
-                .filter(|record| !record.blob_name.is_empty())
-                .map(|record| record.blob_name.clone()),
-        );
+        for record in selected.iter().filter(|record| !record.blob_name.is_empty()) {
+            let name = copy_body_map_name(ctx, &record.blob_name, "f3d selected body-map name")?;
+            ctx.charge_collection_items(1, "f3d selected body-map names")?;
+            model_names.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d selected body-map names allocation", 0, 1)
+            })?;
+            model_names.push(name);
+        }
     }
 
     let mut archive_counts = HashMap::<String, usize>::new();
@@ -891,10 +960,26 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
             && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
     }) {
         let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
-        *archive_counts.entry(basename.to_owned()).or_default() += 1;
+        if let Some(count) = archive_counts.get_mut(basename) {
+            *count += 1;
+        } else {
+            let name = copy_body_map_name(ctx, basename, "f3d archive BREP basename")?;
+            ctx.charge_collection_items(1, "f3d archive BREP counts")?;
+            archive_counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d archive BREP counts allocation", 0, 1)
+            })?;
+            archive_counts.insert(name, 1);
+        }
     }
     if !saw_design_stream || carrier_counts.is_empty() {
-        let mut names = archive_counts.into_keys().collect::<Vec<_>>();
+        ctx.charge_collection_items(u64::try_from(archive_counts.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d archive BREP name count", 0, 1)
+        })?, "f3d archive BREP names")?;
+        let mut names = Vec::new();
+        names.try_reserve(archive_counts.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d archive BREP names allocation", 0, 1)
+        })?;
+        names.extend(archive_counts.into_keys());
         names.sort();
         return Ok(names);
     }
@@ -909,6 +994,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
 }
 
 fn parse_body_map_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     start: usize,
@@ -944,51 +1030,61 @@ fn parse_body_map_frame(
     else {
         return Ok(None);
     };
-    let decode_name = |name_at: usize| {
-        let max_name_chars = name_at
+    let decode_name = |name_at: usize| -> Result<Option<(usize, String)>, CodecError> {
+        let Some(max_name_chars) = name_at
             .checked_add(4)
-            .and_then(|payload| end.checked_sub(payload))?
-            / 2;
-        let (blob_name, name_end) = lp_utf16_bounded(bytes, name_at, 0..=max_name_chars)?;
-        (name_end == end
+            .and_then(|payload| end.checked_sub(payload))
+            .map(|remaining| remaining / 2) else {
+            return Ok(None);
+        };
+        let Some((blob_name, name_end)) =
+            lp_utf16_bounded_charged(ctx, bytes, name_at, 0..=max_name_chars)? else {
+            return Ok(None);
+        };
+        Ok((name_end == end
             && ((pair_count == 0 && blob_name.is_empty())
                 || (pair_count > 0
                     && is_brep_blob_basename(&blob_name)
                     && std::path::Path::new(&blob_name).extension()
                         == Some(std::ffi::OsStr::new("smbh")))))
-        .then_some((name_at, blob_name))
+        .then_some((name_at, blob_name)))
     };
-    let mut typed_names = local_reference_candidates(bytes, pairs_end, true)
-        .into_iter()
-        .filter(|reference| {
-            reference_has_type(
-                meta,
-                reference,
-                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-            )
-        })
-        .filter_map(|reference| decode_name(reference.end));
-    let typed_name = typed_names.next();
-    if typed_names.next().is_some() {
-        return Err(crate::error::malformed(
-            "F3D Design body-map frame has ambiguous typed reference tails",
-        ));
+    let mut typed_name = None;
+    for reference in local_reference_candidates(bytes, pairs_end, true) {
+        if !reference_has_type(
+            meta,
+            &reference,
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+        ) {
+            continue;
+        }
+        if let Some(name) = decode_name(reference.end)? {
+            if typed_name.replace(name).is_some() {
+                return Err(crate::error::malformed(
+                    "F3D Design body-map frame has ambiguous typed reference tails",
+                ));
+            }
+        }
     }
-    let fixed_name = || {
-        (View::u64_le_at(bytes, pairs_end).is_some()
-            && View::u32_le_at(bytes, pairs_end + 8) == Some(0))
-        .then(|| pairs_end.checked_add(12).and_then(decode_name))
-        .flatten()
+    let fixed_name = if typed_name.is_none()
+        && View::u64_le_at(bytes, pairs_end).is_some()
+        && View::u32_le_at(bytes, pairs_end + 8) == Some(0)
+    {
+        match pairs_end.checked_add(12) {
+            Some(name_at) => decode_name(name_at)?,
+            None => None,
+        }
+    } else {
+        None
     };
-    let Some((name_at, blob_name)) = typed_name.or_else(fixed_name) else {
+    let Some((name_at, blob_name)) = typed_name.or(fixed_name) else {
         return Ok(None);
     };
 
     let mut bindings = Vec::new();
+    ctx.charge_collection_items(u64::from(pair_count), "f3d body-map pairs")?;
     bindings.try_reserve(count).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "F3D Design body map at byte {start} pair count exceeds decoder capacity"
-        ))
+        ctx.refuse_codec_limit("f3d body-map pairs allocation", 0, 1)
     })?;
     for pair in 0..count {
         let at = pairs_start + pair * 16;
@@ -1022,6 +1118,7 @@ fn is_brep_blob_basename(value: &str) -> bool {
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
 /// named blob's body-selector namespace.
 pub(crate) fn decode_design_body_bindings(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
@@ -1039,36 +1136,45 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        for record in selected_body_map_records(bytes, &metadata)? {
+        for record in selected_body_map_records(ctx, bytes, &metadata)? {
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
+            let mut source_bodies = Vec::new();
+            if pair_count != 0 {
+                for key in body_keys.iter().filter(|key| {
+                    key.source_brep.as_deref().map_or_else(
+                        || active_basename == Some(record.blob_name.as_str()),
+                        |source| source == record.blob_name,
+                    )
+                }) {
+                    ctx.charge_collection_items(1, "f3d source BREP body keys")?;
+                    source_bodies.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d source BREP body keys allocation", 0, 1)
+                    })?;
+                    source_bodies.push(key);
+                }
+            }
             for (ordinal, binding) in (0..pair_count).zip(&record.bindings) {
-                let source_bodies = body_keys
-                    .iter()
-                    .filter(|key| {
-                        key.source_brep.as_deref().map_or_else(
-                            || active_basename == Some(record.blob_name.as_str()),
-                            |source| source == record.blob_name,
-                        )
-                    })
-                    .collect::<Vec<_>>();
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
-                out.push(
-                    DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+                let record = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
-                        stream: entry.name.clone(),
+                        stream: copy_body_map_name(ctx, &entry.name, "f3d body-binding stream")?,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
                         asm_body_key_offset: binding.asm_key_offset as u64,
                         entity_suffix: binding.entity_suffix,
                         entity_suffix_offset: binding.entity_suffix_offset() as u64,
-                        blob_name: record.blob_name.clone(),
+                        blob_name: copy_body_map_name(ctx, &record.blob_name, "f3d body-binding blob name")?,
                         blob_name_offset: record.blob_name_offset as u64,
                         body,
                     })
-                    .map_err(CodecError::Malformed)?,
-                );
+                    .map_err(CodecError::Malformed)?;
+                ctx.charge_collection_items(1, "f3d decoded body bindings")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d decoded body bindings allocation", 0, 1)
+                })?;
+                out.push(record);
             }
         }
     }
@@ -1132,7 +1238,7 @@ pub(crate) fn decode_all_body_visibility(
             continue;
         };
         let hidden_by_entity = typed_browser_node_hidden_flags(ctx, bytes, &metadata)?;
-        for record in selected_body_map_records(bytes, &metadata)? {
+        for record in selected_body_map_records(ctx, bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
@@ -1537,9 +1643,32 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_body_map_refuses_name_and_collection_limits() {
+        let bytes = snapshot_body_map_bytes(0);
+        let metadata = snapshot_body_map_metadata();
+        for (items, retained, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "f3d snapshot body-map primary index"),
+            (1, u64::MAX, ResourceDimension::CollectionItems, "f3d snapshot body-map pairs"),
+            (2, u64::MAX, ResourceDimension::CollectionItems, "f3d snapshot body-map records"),
+            (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d Design UTF-16 text"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                snapshot_body_map_records(&ctx, &bytes, &metadata),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+        }
+    }
+
+    #[test]
     fn snapshot_body_map_accepts_every_reference_envelope() {
         for form in 0..=2 {
-            let records = snapshot_body_map_records(
+            let records = snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(),
                 &snapshot_body_map_bytes(form),
                 &snapshot_body_map_metadata(),
             )
@@ -1559,7 +1688,7 @@ mod tests {
         take_reference(&bytes, &mut companion_end).expect("ordinary companion reference");
         bytes.insert(companion_end, 0);
 
-        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+        let records = snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &bytes, &snapshot_body_map_metadata())
             .expect("three-zero companion variant");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
@@ -1572,7 +1701,7 @@ mod tests {
         let companion_end = 4 + 3 + 8 + 6 + 2 + 8;
         bytes.insert(companion_end, 0);
 
-        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+        let records = snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &bytes, &snapshot_body_map_metadata())
             .expect("padded doubled companion");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
@@ -1584,7 +1713,7 @@ mod tests {
         let mut metadata = snapshot_body_map_metadata();
         metadata.types[2].entities = crate::records::identity::ReferenceRun::unlocated(Vec::new());
         assert!(
-            snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
+            snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")
                 .is_empty()
         );
@@ -1598,7 +1727,7 @@ mod tests {
             "BREP.snapshot.smb",
             crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
         );
-        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+        let records = snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &bytes, &snapshot_body_map_metadata())
             .expect("named zero-pair snapshot body map");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
@@ -1613,7 +1742,7 @@ mod tests {
             "",
             crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
         );
-        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+        let records = snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &bytes, &snapshot_body_map_metadata())
             .expect("empty zero-pair snapshot body map");
         assert_eq!(records.len(), 1);
         assert!(records[0].blob_name.is_empty());
@@ -1629,7 +1758,7 @@ mod tests {
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
         );
         assert!(
-            snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            snapshot_body_map_records(&cadmpeg_test_support::service_decode_context(), &bytes, &snapshot_body_map_metadata())
                 .expect("mixed carrier family")
                 .is_empty()
         );
@@ -1640,7 +1769,7 @@ mod tests {
         let pairs = (0u64..65)
             .map(|ordinal| (1000 + ordinal, (1u64 << 40) + ordinal))
             .collect::<Vec<_>>();
-        let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
+        let bindings = body_bindings(&cadmpeg_test_support::service_decode_context(), &body_map_bytes(10, 65, &pairs), &body_map_metadata())
             .expect("65-pair body map");
         assert_eq!(bindings.len(), 65);
         assert_eq!(bindings[0].asm_key, 1000);
@@ -1649,9 +1778,34 @@ mod tests {
     }
 
     #[test]
+    fn modern_body_map_refuses_name_and_collection_limits() {
+        let bytes = body_map_bytes(10, 1, &[(7, 500)]);
+        let metadata = body_map_metadata();
+        for (items, retained, dimension, operation) in [
+            (0, u64::MAX, ResourceDimension::CollectionItems, "f3d body-map primary index"),
+            (1, u64::MAX, ResourceDimension::CollectionItems, "f3d body-map typed entities"),
+            (2, u64::MAX, ResourceDimension::CollectionItems, "f3d body-map pairs"),
+            (3, u64::MAX, ResourceDimension::CollectionItems, "f3d body-map records"),
+            (4, u64::MAX, ResourceDimension::CollectionItems, "f3d flattened body-map pairs"),
+            (u64::MAX, 0, ResourceDimension::RetainedBytes, "f3d Design UTF-16 text"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                body_bindings(&ctx, &bytes, &metadata),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+        }
+    }
+
+    #[test]
     fn body_map_accepts_typed_container_reference_tail() {
         let bytes = body_map_bytes_with_typed_tail(10, &[(2291, 7492), (2292, 7534)]);
-        let bindings = body_bindings(&bytes, &body_map_metadata()).expect("typed reference tail");
+        let bindings = body_bindings(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata()).expect("typed reference tail");
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].asm_key, 2291);
         assert_eq!(bindings[0].entity_suffix, 7492);
@@ -1664,11 +1818,11 @@ mod tests {
         for prefix_len in crate::design::body::BODY_MAP_ZERO_PREFIX_LENGTHS {
             let bytes = body_map_bytes(prefix_len, 0, &[]);
             let frame =
-                parse_body_map_frame(&bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
+                parse_body_map_frame(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata(), 0, bytes.len(), prefix_len)
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
             assert!(frame.bindings.is_empty());
-            assert!(body_bindings(&bytes, &body_map_metadata())
+            assert!(body_bindings(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata())
                 .expect("empty typed body map")
                 .is_empty());
         }
@@ -1678,7 +1832,7 @@ mod tests {
     fn body_map_header_prevents_a_high_word_count_alias() {
         let bytes = body_map_bytes(10, 2, &[(10, (1u64 << 32) + 77), (20, 30)]);
         let bindings =
-            body_bindings(&bytes, &body_map_metadata()).expect("typed two-pair body map");
+            body_bindings(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata()).expect("typed two-pair body map");
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].entity_suffix, (1u64 << 32) + 77);
         assert_eq!(bindings[1].asm_key, 20);
@@ -1687,7 +1841,7 @@ mod tests {
     #[test]
     fn truncated_body_map_frame_is_not_decoded() {
         let bytes = body_map_bytes(10, 2, &[(10, 20)]);
-        assert!(body_bindings(&bytes, &body_map_metadata())
+        assert!(body_bindings(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata())
             .expect("typed carrier record")
             .is_empty());
     }
@@ -1699,7 +1853,7 @@ mod tests {
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
-        assert!(body_bindings(&bytes, &body_map_metadata())
+        assert!(body_bindings(&cadmpeg_test_support::service_decode_context(), &bytes, &body_map_metadata())
             .expect("outer typed carrier record")
             .is_empty());
     }

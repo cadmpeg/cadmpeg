@@ -2182,6 +2182,7 @@ impl<'a> F3dDecodeSession<'a> {
                 )));
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+            ctx,
             scan,
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
@@ -2400,6 +2401,7 @@ impl<'a> F3dDecodeSession<'a> {
         if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
+                    ctx,
                     scan,
                     None,
                     &self.native.body_native_keys,
@@ -3070,9 +3072,9 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(scan)?;
+    let model_blob_names = crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
-        crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
+        crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
