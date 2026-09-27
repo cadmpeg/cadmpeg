@@ -21,6 +21,32 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn combined_summary_refuses_collection_limit_before_append() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut notes = Vec::new();
+    let result = super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges combined summary notes"
+    ));
+    assert!(notes.is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]).unwrap();
+    assert_eq!(notes, ["a"]);
+}
+
+#[test]
 fn source_metadata_admits_formatted_values_before_building_attributes() {
     use crate::{card, dialect, global, representation::Representation};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

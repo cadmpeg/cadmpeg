@@ -4,7 +4,7 @@
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::decode_resource::{
     copy_optional_retained, insert_optional_btree_map, insert_optional_btree_set,
-    reserve_optional_vec, reserve_optional_vec_growth,
+    push_formatted_note, reserve_optional_vec, reserve_optional_vec_growth,
 };
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
@@ -4238,24 +4238,45 @@ fn copy_token_bytes(
     }
 }
 
-pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
-    vec![
-        format!("parameter_records={}", records.len()),
-        format!(
+pub(crate) fn summary_notes(
+    records: &[ParameterRecord],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<String>, CodecError> {
+    let mut notes = Vec::new();
+    push_formatted_note(
+        ctx,
+        &mut notes,
+        format_args!("parameter_records={}", records.len()),
+        "iges parameter summary notes",
+        "iges parameter summary text",
+    )?;
+    push_formatted_note(
+        ctx,
+        &mut notes,
+        format_args!(
             "parameter_tokens={}",
             records
                 .iter()
                 .map(|record| record.tokens.len())
                 .sum::<usize>()
         ),
-        format!(
+        "iges parameter summary notes",
+        "iges parameter summary text",
+    )?;
+    push_formatted_note(
+        ctx,
+        &mut notes,
+        format_args!(
             "external_references={}",
             records
                 .iter()
                 .filter(|record| record.integer(0) == Some(416))
                 .count()
         ),
-    ]
+        "iges parameter summary notes",
+        "iges parameter summary text",
+    )?;
+    Ok(notes)
 }
 
 #[cfg(test)]

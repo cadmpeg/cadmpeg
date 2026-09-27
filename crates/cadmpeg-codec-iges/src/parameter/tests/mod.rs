@@ -29,6 +29,51 @@ mod solid_entity_boundaries;
 mod type_fem;
 
 #[test]
+fn parameter_summary_refuses_note_slot_and_text_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let records = [];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&records, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges parameter summary notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = b"parameter_records=0".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&records, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == b"parameter_records=0".len() as u64
+                && limit.operation == "iges parameter summary text"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&records, &ctx).unwrap(),
+        [
+            "parameter_records=0",
+            "parameter_tokens=0",
+            "external_references=0"
+        ]
+    );
+}
+
+#[test]
 fn trailing_pointer_prefix_refuses_collection_limit_before_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeMap;

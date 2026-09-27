@@ -21,6 +21,41 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]
+fn reference_summary_refuses_note_limit_without_heap_group_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let graph = BTreeMap::from([(
+        1,
+        vec![ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+            raw_pointer: 3,
+            resolution: Resolution::Dangling,
+            expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+        }],
+    )]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::summary_notes(&graph, &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges reference summary notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::summary_notes(&graph, &ctx).unwrap(),
+        ["references.dangling=1"]
+    );
+}
+
+#[test]
 fn parameter_resolver_directory_index_refuses_collection_limit_before_insert() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -530,7 +565,7 @@ fn zero_pointer_absence_creates_no_reference_edge() {
     );
     resolver.append_to(&mut graph).unwrap();
     assert!(graph[&1].is_empty());
-    assert!(super::summary_notes(&graph).is_empty());
+    assert!(super::summary_notes(&graph, &ctx).unwrap().is_empty());
 }
 
 #[test]
