@@ -6059,37 +6059,45 @@ type EndpointRelationKey = Vec<Option<[usize; 2]>>;
 type EndpointRelationKeys<'a> = Vec<(&'a MeshEndpointRelationChoice, EndpointRelationKey)>;
 
 fn canonical_endpoint_relation_key(
+    ctx: &DecodeContext<'_>,
     choice: &MeshEndpointRelationChoice,
     edges: &[usize],
-) -> EndpointRelationKey {
-    edges
-        .iter()
-        .map(|&edge| {
-            choice
-                .selection
-                .edge_pairs()
-                .iter()
-                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair))
-                .map(|mut pair| {
-                    if pair[1] < pair[0] {
-                        pair.swap(0, 1);
-                    }
-                    pair
-                })
-        })
-        .collect()
+) -> Result<EndpointRelationKey, CodecError> {
+    let mut key = Vec::new();
+    for &edge in edges {
+        let pair = choice
+            .selection
+            .edge_pairs()
+            .iter()
+            .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair))
+            .map(|mut pair| {
+                if pair[1] < pair[0] {
+                    pair.swap(0, 1);
+                }
+                pair
+            });
+        crate::resource::push(ctx, &mut key, pair, "catia_endpoint_relation_key_values")?;
+    }
+    Ok(key)
 }
 
 fn complete_endpoint_relation_keys<'a>(
+    ctx: &DecodeContext<'_>,
     choices: &'a [MeshEndpointRelationChoice],
     edges: &[usize],
-) -> (bool, EndpointRelationKeys<'a>) {
-    let keys = choices
-        .iter()
-        .map(|choice| (choice, canonical_endpoint_relation_key(choice, edges)))
-        .collect::<EndpointRelationKeys<'_>>();
+) -> Result<(bool, EndpointRelationKeys<'a>), CodecError> {
+    let mut keys = Vec::new();
+    for choice in choices {
+        let key = canonical_endpoint_relation_key(ctx, choice, edges)?;
+        crate::resource::push(
+            ctx,
+            &mut keys,
+            (choice, key),
+            "catia_endpoint_relation_keys",
+        )?;
+    }
     let complete = keys.iter().all(|(_, key)| key.iter().all(Option::is_some));
-    (complete, keys)
+    Ok((complete, keys))
 }
 
 fn build_endpoint_relation_constraints(
@@ -6097,33 +6105,84 @@ fn build_endpoint_relation_constraints(
     domains: &[Vec<MeshEndpointRelationChoice>],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<MeshEndpointRelationConstraints>, CodecError> {
-    let mut shared_edges = BTreeMap::<(usize, usize), Vec<usize>>::new();
-    let mut edge_faces = HashMap::<usize, BTreeSet<usize>>::new();
+    let mut shared_edges = HashMap::<(usize, usize), Vec<usize>>::new();
+    let mut edge_faces = HashMap::<usize, HashSet<usize>>::new();
     for (face, choices) in domains.iter().enumerate() {
         for choice in choices {
             for &(edge, _) in choice.selection.edge_pairs() {
-                edge_faces.entry(edge).or_default().insert(face);
+                crate::resource::admit_map_entry(
+                    ctx,
+                    &mut edge_faces,
+                    &edge,
+                    "catia_endpoint_relation_edge_face_keys",
+                )?;
+                crate::resource::insert_set(
+                    ctx,
+                    edge_faces.entry(edge).or_default(),
+                    face,
+                    "catia_endpoint_relation_edge_faces",
+                )?;
             }
         }
     }
     for (edge, faces) in edge_faces {
-        let faces = faces.into_iter().collect::<Vec<_>>();
-        for (left_index, &left) in faces.iter().enumerate() {
-            for &right in &faces[left_index + 1..] {
-                shared_edges.entry((left, right)).or_default().push(edge);
-                shared_edges.entry((right, left)).or_default().push(edge);
+        let mut sorted_faces = Vec::new();
+        for face in faces {
+            crate::resource::push(
+                ctx,
+                &mut sorted_faces,
+                face,
+                "catia_endpoint_relation_sorted_faces",
+            )?;
+        }
+        sorted_faces.sort_unstable();
+        for (left_index, &left) in sorted_faces.iter().enumerate() {
+            for &right in &sorted_faces[left_index + 1..] {
+                for pair in [(left, right), (right, left)] {
+                    crate::resource::admit_map_entry(
+                        ctx,
+                        &mut shared_edges,
+                        &pair,
+                        "catia_endpoint_relation_shared_keys",
+                    )?;
+                    crate::resource::push(
+                        ctx,
+                        shared_edges.entry(pair).or_default(),
+                        edge,
+                        "catia_endpoint_relation_shared_edges",
+                    )?;
+                }
             }
         }
     }
 
-    let mut arcs = (0..domains.len())
-        .map(|_| Vec::<MeshEndpointRelationArc>::new())
-        .collect::<Vec<_>>();
-    let mut incoming = (0..domains.len())
-        .map(|_| Vec::<(usize, usize)>::new())
-        .collect::<Vec<_>>();
-    let choice_counts = domains.iter().map(Vec::len).collect::<Vec<_>>();
-    for ((face, neighbor), edges) in shared_edges {
+    let mut shared_rows = Vec::new();
+    for (pair, mut edges) in shared_edges {
+        edges.sort_unstable();
+        crate::resource::push(
+            ctx,
+            &mut shared_rows,
+            (pair, edges),
+            "catia_endpoint_relation_shared_rows",
+        )?;
+    }
+    shared_rows.sort_unstable_by_key(|(pair, _)| *pair);
+    let mut arcs = ctx.alloc_filled(domains.len(), Vec::new(), "catia_endpoint_relation_arcs")?;
+    let mut incoming = ctx.alloc_filled(
+        domains.len(),
+        Vec::new(),
+        "catia_endpoint_relation_incoming",
+    )?;
+    let mut choice_counts = Vec::new();
+    for domain in domains {
+        crate::resource::push(
+            ctx,
+            &mut choice_counts,
+            domain.len(),
+            "catia_endpoint_relation_choice_counts",
+        )?;
+    }
+    for ((face, neighbor), edges) in shared_rows {
         // A pair is in `shared_edges` only because both faces are in
         // `edge_faces` for the shared edge, and a face reaches `edge_faces`
         // only through an edge one of its own choices names. Both domains
@@ -6135,59 +6194,89 @@ fn build_endpoint_relation_constraints(
         if !budget.charge_by(index_work) {
             return Ok(None);
         }
-        let (left_complete, left_choices) = complete_endpoint_relation_keys(&domains[face], &edges);
+        let (left_complete, left_choices) =
+            complete_endpoint_relation_keys(ctx, &domains[face], &edges)?;
         let (right_complete, right_choices) =
-            complete_endpoint_relation_keys(&domains[neighbor], &edges);
+            complete_endpoint_relation_keys(ctx, &domains[neighbor], &edges)?;
         let supports = if left_complete && right_complete {
             let mut index = HashMap::<EndpointRelationKey, Vec<usize>>::new();
             for (choice, key) in right_choices {
-                index.entry(key).or_default().push(choice.id);
+                crate::resource::admit_map_entry(
+                    ctx,
+                    &mut index,
+                    &key,
+                    "catia_endpoint_relation_index_keys",
+                )?;
+                crate::resource::push(
+                    ctx,
+                    index.entry(key).or_default(),
+                    choice.id,
+                    "catia_endpoint_relation_index_values",
+                )?;
             }
-            left_choices
-                .iter()
-                .map(|(_, key)| {
-                    let mut mask = ctx.alloc_filled(
-                        bitset_words(domains[neighbor].len()),
-                        0u64,
-                        "catia_endpoint_relation_support_mask",
-                    )?;
-                    for &other in index.get(key).into_iter().flatten() {
-                        mask[other / 64] |= 1u64 << (other % 64);
-                    }
-                    Ok(mask)
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?
+            let mut supports = Vec::new();
+            for (_, key) in &left_choices {
+                let mut mask = ctx.alloc_filled(
+                    bitset_words(domains[neighbor].len()),
+                    0u64,
+                    "catia_endpoint_relation_support_mask",
+                )?;
+                for &other in index.get(key).into_iter().flatten() {
+                    mask[other / 64] |= 1u64 << (other % 64);
+                }
+                crate::resource::push(
+                    ctx,
+                    &mut supports,
+                    mask,
+                    "catia_endpoint_relation_support_rows",
+                )?;
+            }
+            supports
         } else {
             let comparison_work =
                 work_units(domains[face].len().saturating_mul(domains[neighbor].len()));
             if !budget.charge_by(comparison_work) {
                 return Ok(None);
             }
-            left_choices
-                .iter()
-                .map(|(_, left_key)| {
-                    let mut mask = ctx.alloc_filled(
-                        bitset_words(domains[neighbor].len()),
-                        0u64,
-                        "catia_endpoint_relation_support_mask",
-                    )?;
-                    for (other, right_key) in &right_choices {
-                        let compatible = left_key.iter().zip(right_key).all(|(left, right)| {
-                            left.as_ref()
-                                .zip(right.as_ref())
-                                .is_none_or(|(left, right)| same_unordered_pair(*left, *right))
-                        });
-                        if compatible {
-                            mask[other.id / 64] |= 1u64 << (other.id % 64);
-                        }
+            let mut supports = Vec::new();
+            for (_, left_key) in &left_choices {
+                let mut mask = ctx.alloc_filled(
+                    bitset_words(domains[neighbor].len()),
+                    0u64,
+                    "catia_endpoint_relation_support_mask",
+                )?;
+                for (other, right_key) in &right_choices {
+                    let compatible = left_key.iter().zip(right_key).all(|(left, right)| {
+                        left.as_ref()
+                            .zip(right.as_ref())
+                            .is_none_or(|(left, right)| same_unordered_pair(*left, *right))
+                    });
+                    if compatible {
+                        mask[other.id / 64] |= 1u64 << (other.id % 64);
                     }
-                    Ok(mask)
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?
+                }
+                crate::resource::push(
+                    ctx,
+                    &mut supports,
+                    mask,
+                    "catia_endpoint_relation_support_rows",
+                )?;
+            }
+            supports
         };
         let arc_index = arcs[face].len();
-        arcs[face].push(MeshEndpointRelationArc { neighbor, supports });
-        incoming[neighbor].push((face, arc_index));
+        crate::resource::push(
+            ctx,
+            &mut arcs[face],
+            MeshEndpointRelationArc { neighbor, supports },
+            "catia_endpoint_relation_arc_entries",
+        )?;
+        crate::resource::push(
+            ctx,
+            &mut incoming[neighbor],
+            (face, arc_index),
+            "catia_endpoint_relation_incoming_entries",
+        )?;
     }
     Ok(Some(MeshEndpointRelationConstraints {
         arcs,
@@ -6203,13 +6292,17 @@ fn propagate_endpoint_relation_domains(
     constraints: &MeshEndpointRelationConstraints,
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
-    let mut dirty_faces = domains
-        .iter()
-        .enumerate()
-        .filter_map(|(face, choices)| {
-            (choices.len() != constraints.choice_counts[face]).then_some(face)
-        })
-        .collect::<Vec<_>>();
+    let mut dirty_faces = Vec::new();
+    for (face, choices) in domains.iter().enumerate() {
+        if choices.len() != constraints.choice_counts[face] {
+            crate::resource::push(
+                ctx,
+                &mut dirty_faces,
+                face,
+                "catia_endpoint_relation_dirty_faces",
+            )?;
+        }
+    }
     let mut first_pass = true;
     loop {
         let mut changed = false;
@@ -6227,22 +6320,30 @@ fn propagate_endpoint_relation_domains(
                 return Ok(false);
             }
             if choices.len() != before {
-                dirty_faces.push(face);
+                crate::resource::push(
+                    ctx,
+                    &mut dirty_faces,
+                    face,
+                    "catia_endpoint_relation_dirty_faces",
+                )?;
                 changed = true;
             }
         }
 
-        let mut active = constraints
-            .choice_counts
-            .iter()
-            .map(|&choice_count| {
-                ctx.alloc_filled(
-                    bitset_words(choice_count),
-                    0u64,
-                    "catia_endpoint_relation_active_mask",
-                )
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+        let mut active = Vec::new();
+        for &choice_count in &constraints.choice_counts {
+            let mask = ctx.alloc_filled(
+                bitset_words(choice_count),
+                0u64,
+                "catia_endpoint_relation_active_mask",
+            )?;
+            crate::resource::push(
+                ctx,
+                &mut active,
+                mask,
+                "catia_endpoint_relation_active_rows",
+            )?;
+        }
         for (face, choices) in domains.iter().enumerate() {
             for choice in choices {
                 let Some(active_word) = active[face].get_mut(choice.id / 64) else {
@@ -6251,19 +6352,30 @@ fn propagate_endpoint_relation_domains(
                 *active_word |= 1u64 << (choice.id % 64);
             }
         }
-        let mut queue = if first_pass && dirty_faces.is_empty() {
-            constraints
-                .arcs
-                .iter()
-                .enumerate()
-                .flat_map(|(face, arcs)| (0..arcs.len()).map(move |arc| (face, arc)))
-                .collect::<VecDeque<_>>()
+        let mut queue = VecDeque::new();
+        if first_pass && dirty_faces.is_empty() {
+            for (face, arcs) in constraints.arcs.iter().enumerate() {
+                for arc in 0..arcs.len() {
+                    crate::resource::push_back(
+                        ctx,
+                        &mut queue,
+                        (face, arc),
+                        "catia_endpoint_relation_queue",
+                    )?;
+                }
+            }
         } else {
-            dirty_faces
-                .drain(..)
-                .flat_map(|face| constraints.incoming[face].iter().copied())
-                .collect::<VecDeque<_>>()
-        };
+            for face in dirty_faces.drain(..) {
+                for &incoming in &constraints.incoming[face] {
+                    crate::resource::push_back(
+                        ctx,
+                        &mut queue,
+                        incoming,
+                        "catia_endpoint_relation_queue",
+                    )?;
+                }
+            }
+        }
         first_pass = false;
         while let Some((face, arc_index)) = queue.pop_front() {
             let arc = &constraints.arcs[face][arc_index];
@@ -6292,12 +6404,17 @@ fn propagate_endpoint_relation_domains(
                 active[face][choice.id / 64] |= 1u64 << (choice.id % 64);
             }
             changed = true;
-            queue.extend(
-                constraints.incoming[face]
-                    .iter()
-                    .copied()
-                    .filter(|&(source, _)| source != arc.neighbor),
-            );
+            for &incoming in constraints.incoming[face]
+                .iter()
+                .filter(|&&(source, _)| source != arc.neighbor)
+            {
+                crate::resource::push_back(
+                    ctx,
+                    &mut queue,
+                    incoming,
+                    "catia_endpoint_relation_queue",
+                )?;
+            }
         }
         // A pair present with one value in every surviving choice of one face
         // is a forced edge relation, even when the face still has assignment
@@ -6312,7 +6429,24 @@ fn propagate_endpoint_relation_domains(
             let mut counts = HashMap::<usize, usize>::new();
             for choice in choices {
                 for &(edge, pair) in choice.selection.edge_pairs() {
-                    pairs.entry(edge).or_default().insert(pair);
+                    crate::resource::admit_map_entry(
+                        ctx,
+                        &mut pairs,
+                        &edge,
+                        "catia_endpoint_relation_pair_keys",
+                    )?;
+                    crate::resource::insert_set(
+                        ctx,
+                        pairs.entry(edge).or_default(),
+                        pair,
+                        "catia_endpoint_relation_pair_values",
+                    )?;
+                    crate::resource::admit_map_entry(
+                        ctx,
+                        &mut counts,
+                        &edge,
+                        "catia_endpoint_relation_count_keys",
+                    )?;
                     *counts.entry(edge).or_default() += 1;
                 }
             }
@@ -11499,18 +11633,46 @@ fn endpoint_relation_support_masks_propagate_collection_refusal() {
                 .is_some()
         );
 
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let error = build_endpoint_relation_constraints(&ctx, &domains, &budget)
-            .err()
-            .expect("support mask exceeds the collection limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia_endpoint_relation_support_mask"));
+        let mut refused = HashSet::new();
+        for cap in 0..512 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            match build_endpoint_relation_constraints(&ctx, &domains, &budget) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    refused.insert(limit.operation);
+                }
+                Ok(Some(_)) => break,
+                _ => panic!("unexpected relation outcome"),
+            }
+        }
+        for operation in [
+            "catia_endpoint_relation_edge_face_keys",
+            "catia_endpoint_relation_edge_faces",
+            "catia_endpoint_relation_sorted_faces",
+            "catia_endpoint_relation_shared_keys",
+            "catia_endpoint_relation_shared_edges",
+            "catia_endpoint_relation_shared_rows",
+            "catia_endpoint_relation_arcs",
+            "catia_endpoint_relation_incoming",
+            "catia_endpoint_relation_choice_counts",
+            "catia_endpoint_relation_key_values",
+            "catia_endpoint_relation_keys",
+            "catia_endpoint_relation_support_mask",
+            "catia_endpoint_relation_support_rows",
+            "catia_endpoint_relation_arc_entries",
+            "catia_endpoint_relation_incoming_entries",
+        ] {
+            assert!(refused.contains(operation), "no refusal at {operation}");
+        }
+        if !optional_edge {
+            assert!(refused.contains("catia_endpoint_relation_index_keys"));
+            assert!(refused.contains("catia_endpoint_relation_index_values"));
+        }
     }
 }
 
@@ -11547,7 +11709,7 @@ fn endpoint_relation_active_masks_propagate_collection_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let mut limited_domains = domains;
+    let mut limited_domains = domains.clone();
     let error = propagate_endpoint_relation_domains(
         &ctx,
         &mut limited_domains,
@@ -11559,6 +11721,91 @@ fn endpoint_relation_active_masks_propagate_collection_refusal() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_endpoint_relation_active_mask"));
+
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let mut candidate_domains = domains.clone();
+        match propagate_endpoint_relation_domains(
+            &ctx,
+            &mut candidate_domains,
+            &mut [None],
+            &constraints,
+            &budget,
+        ) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                refused.insert(limit.operation);
+            }
+            Ok(true) => break,
+            _ => panic!("unexpected relation propagation outcome"),
+        }
+    }
+    for operation in [
+        "catia_endpoint_relation_active_mask",
+        "catia_endpoint_relation_active_rows",
+        "catia_endpoint_relation_queue",
+        "catia_endpoint_relation_pair_keys",
+        "catia_endpoint_relation_pair_values",
+        "catia_endpoint_relation_count_keys",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn endpoint_relation_dirty_faces_refuse_before_empty_domain() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let choice = MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        },
+    };
+    let domains = vec![vec![choice.clone()], vec![choice]];
+    catia_test_context!(service_ctx);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+        .expect("service resource budget")
+        .expect("shared edge creates relation constraints");
+    let mut empty = domains.clone();
+    empty[0].clear();
+    assert!(!propagate_endpoint_relation_domains(
+        &service_ctx,
+        &mut empty,
+        &mut [None],
+        &constraints,
+        &budget,
+    )
+    .expect("service resource budget"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
+    let mut empty = domains;
+    empty[0].clear();
+    assert!(matches!(
+        propagate_endpoint_relation_domains(
+            &ctx,
+            &mut empty,
+            &mut [None],
+            &constraints,
+            &budget,
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia_endpoint_relation_dirty_faces"
+    ));
 }
 
 #[test]
