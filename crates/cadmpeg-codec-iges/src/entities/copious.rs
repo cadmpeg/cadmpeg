@@ -495,7 +495,9 @@ pub(super) fn project(
             "iges copious finite knots",
         )?
         .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
-        let nurbs = KnotVector::from_finite_lanes(knots).and_then(|knots| {
+        let mut raw_knots = reserve_vec(ctx, knots.len(), "iges copious admitted knots")?;
+        raw_knots.extend(knots.into_iter().map(FiniteReal::get));
+        let nurbs = KnotVector::new(raw_knots).and_then(|knots| {
             NurbsPoles3::from_checked_lanes(positions, None)
                 .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });

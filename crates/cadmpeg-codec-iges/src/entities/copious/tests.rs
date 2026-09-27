@@ -110,6 +110,7 @@ fn copious_tuple_and_path_arrays_refuse_collection_limits() {
         "iges copious path points",
         "iges copious knots",
         "iges copious finite knots",
+        "iges copious admitted knots",
         "iges copious neutral curves",
         "iges copious neutral edges",
         "iges copious wire edges",

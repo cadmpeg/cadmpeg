@@ -28,7 +28,7 @@ impl KnotVector {
     /// # Errors
     ///
     /// Refuses a non-finite knot, then a decreasing pair.
-    pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
+    pub fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
         Ok(Self(knots))
     }
