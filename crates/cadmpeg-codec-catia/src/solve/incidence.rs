@@ -1536,7 +1536,7 @@ fn prune_ordered_face_endpoint_support(
             }
             let selected = ctx.alloc_filled(choices.len(), None, "catia_ordered_face_selection")?;
             let Some(configurations) =
-                mesh_face_endpoint_configurations(assignments, choices, &selected, budget)
+                mesh_face_endpoint_configurations(ctx, assignments, choices, &selected, budget)?
             else {
                 if budget.exhausted() {
                     return Ok(true);
@@ -1719,7 +1719,7 @@ fn prepare_face_configuration_domains(
         }
         let budget = WorkBudget::new(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
         let Some(configurations) =
-            mesh_face_endpoint_configurations(assignments, choices, selected, &budget)
+            mesh_face_endpoint_configurations(ctx, assignments, choices, selected, &budget)?
         else {
             continue;
         };
@@ -3070,11 +3070,13 @@ impl IncidenceComponentSearch<'_, '_> {
                     .collect()
             } else {
                 let Some(configurations) = mesh_face_endpoint_configurations(
+                    self.ctx,
                     assignments,
                     self.choices,
                     &self.assignment,
                     self.boundary_propagation_budget,
-                ) else {
+                )?
+                else {
                     if self.boundary_propagation_budget.exhausted() {
                         break;
                     }
