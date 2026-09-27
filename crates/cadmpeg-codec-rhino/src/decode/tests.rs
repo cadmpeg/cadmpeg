@@ -3,11 +3,12 @@
 
 use super::{
     append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
+    hatch_plane_transform, region_shell_groups, region_shell_groups_without_records,
+    scaled_tolerance, seal_for_test, set_exactness, stage_brep, stage_curve_tree,
+    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -16,7 +17,7 @@ use crate::objects::ObjectRecord;
 use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{
     minimal_document, object_record, object_record_with_payload, point_payload, scan_with_objects,
-    set_test_units, table, POINT_CLASS, REV_SURFACE_CLASS,
+    set_test_units, table, MESH_CLASS, POINT_CLASS, REV_SURFACE_CLASS,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::ModelCheckpoint;
@@ -48,6 +49,81 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
     )
 }
 
+fn one_child_compound() -> crate::curves::DecodedCurve {
+    crate::curves::DecodedCurve::Compound {
+        children: vec![(
+            finite_parameter(0.0),
+            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+        )],
+        end_parameter: finite_parameter(1.0),
+        warnings: Diagnostics::new(),
+    }
+}
+
+fn staged_curve_tree_refusal(limit: u64, operation: &str) {
+    let refusal = with_collection_limit(limit, |ctx| {
+        let mut staged = BrepDraft::default();
+        stage_curve_tree(
+            ctx,
+            &mut staged,
+            one_child_compound(),
+            "compound",
+            "root",
+            &test_association(),
+            &DecodeContext::mint_unknown_id(0),
+        )
+        .expect_err("curve tree exceeds collection limit")
+    });
+    assert!(matches!(
+        refusal,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
+            if limit.operation == operation
+    ));
+}
+
+fn committed_curve_tree_refusal(limit: u64, operation: &str) {
+    let refusal = with_collection_limit(limit, |ctx| {
+        commit_curve_tree(
+            ctx,
+            &mut CadIr::empty(),
+            &mut cadmpeg_ir::Annotations::default(),
+            one_child_compound(),
+            CurveCommitSource {
+                key: "compound",
+                association: &test_association(),
+                record: None,
+                path: "root",
+            },
+        )
+        .expect_err("curve tree exceeds collection limit")
+    });
+    assert!(matches!(
+        refusal,
+        CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
+            if limit.operation == operation
+    ));
+}
+
+#[test]
+fn staged_curve_tree_parameters_refuse_collection_limit() {
+    staged_curve_tree_refusal(1, "Rhino Brep curve tree parameters");
+}
+
+#[test]
+fn staged_curve_tree_components_refuse_collection_limit() {
+    staged_curve_tree_refusal(2, "Rhino Brep curve tree components");
+}
+
+#[test]
+fn committed_curve_tree_parameters_refuse_collection_limit() {
+    committed_curve_tree_refusal(1, "Rhino committed curve tree parameters");
+}
+
+#[test]
+fn committed_curve_tree_components_refuse_collection_limit() {
+    committed_curve_tree_refusal(2, "Rhino committed curve tree components");
+}
+
 fn with_collection_limit<R>(
     limit: u64,
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
@@ -76,6 +152,148 @@ fn with_transaction_limits<R>(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
             .expect("test scan fits the root limit");
     f(crate::mesh::MeshExpand::new(&ctx, root))
+}
+
+fn with_entity_limit<R>(
+    scan: &crate::container::Scan<'_>,
+    limit: u64,
+    f: impl FnOnce(crate::mesh::MeshExpand<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = limit;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+            .expect("test scan fits the root limit");
+    f(crate::mesh::MeshExpand::new(&ctx, root))
+}
+
+#[test]
+fn point_commit_propagates_entity_limit() {
+    let object = object_record_with_payload(
+        ArchiveVersion::V5,
+        1,
+        POINT_CLASS,
+        &point_payload([2.0, 0.0, 0.0]),
+    );
+    let mut scan = scan_with_objects(&[object]);
+    set_test_units(&mut scan, 1.0);
+    let refusal = with_entity_limit(&scan, 4, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        let result = context.decode_geometry();
+        assert!(
+            result.is_err(),
+            "points: {}, warnings: {:?}",
+            context.ir.model.points.len(),
+            context.report.phase_warnings
+        );
+        result.expect_err("five point entities exceed four")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "rhino_instance_entities"
+    ));
+    with_entity_limit(&scan, 5, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context.decode_geometry().expect("five point entities fit");
+        assert_eq!(context.ir.model.points.len(), 1);
+    });
+}
+
+#[test]
+fn mesh_commit_propagates_entity_limit() {
+    let object = object_record_with_payload(
+        ArchiveVersion::V5,
+        0x20,
+        MESH_CLASS,
+        &crate::test_support::test_dump::mesh_payload(),
+    );
+    let scan = scan_with_objects(&[object]);
+    let refusal = with_entity_limit(&scan, 0, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .decode_geometry()
+            .expect_err("mesh tessellation exceeds zero entities")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "rhino_instance_entities"
+    ));
+    with_entity_limit(&scan, 1, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context.decode_geometry().expect("mesh tessellation fits");
+        assert_eq!(context.ir.model.tessellations.len(), 1);
+    });
+}
+
+#[test]
+fn point_cloud_vertices_refuse_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let cloud = || {
+        crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
+            points: vec![
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    .expect("finite point"),
+            ],
+            scaled: false,
+            warnings: Diagnostics::new(),
+        })
+    };
+    let refusal = with_transaction_limits(&scan, 4, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .commit_geometry(0, cloud())
+            .expect_err("point-cloud vertex exceeds four collection items")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.operation == "Rhino point-cloud vertices"
+    ));
+    with_transaction_limits(&scan, 5, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        assert!(context
+            .commit_geometry(0, cloud())
+            .expect("vertex admitted"));
+        assert_eq!(context.ir.model.vertices.len(), 1);
+    });
+}
+
+#[test]
+fn candidate_validation_propagates_entity_limit() {
+    let scan = scan_with_objects(&[]);
+    let refusal = with_entity_limit(&scan, 0, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .validate_candidate(|candidate, _| {
+                candidate.model.points.push(Point::new(
+                    "rhino:test:point#limited".try_into().expect("valid id"),
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .expect("finite point"),
+                    Some(SourceObjectAssociation {
+                        format: cadmpeg_ir::CodecFormat::Rhino,
+                        object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
+                            .expect("nonblank source id"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                ));
+            })
+            .expect_err("candidate entity exceeds zero")
+    });
+    assert!(
+        matches!(
+            refusal,
+            CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
+                if limit.operation == "rhino_instance_entities"
+        ),
+        "{refusal:?}"
+    );
 }
 
 fn assert_transaction_refusal(
@@ -168,7 +386,10 @@ fn transaction_source_record_bytes_refuse_retained_limit() {
         Some((length - 1) as u64),
         "Rhino source record bytes",
     );
-    assert!(with_expand(&scan, |expand| DecodeContext::new(&scan, expand).is_ok()));
+    assert!(with_expand(&scan, |expand| DecodeContext::new(
+        &scan, expand
+    )
+    .is_ok()));
 }
 
 /// Brep staging judges values the model already holds, so a refusal there names
