@@ -1037,12 +1037,10 @@ fn neutral_link_target(
             .then_some(PrototypeReference::Unresolved {}));
     };
     Ok(Some(cadmpeg_ir::products::PrototypeReference::Local {
-        definition: ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "product_definition"),
-            crate::native::id_key_identity(object)
-                .map_err(CodecError::malformed)?
-                .colon(cadmpeg_ir::identity_key!("definition")),
-        ),
+        definition: ProductDefinitionId::mint(crate::native::model_id_charged(
+            ctx, "product_definition", object, "definition",
+        )?)
+        .map_err(CodecError::malformed)?,
     }))
 }
 

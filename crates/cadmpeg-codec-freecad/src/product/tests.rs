@@ -16,6 +16,30 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 #[test]
+fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
+    let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("fcstd:native:object#Gear".into()),
+        subelements: Vec::new(),
+    })
+    .expect("valid target")
+    .expect("target is present");
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD model identity", |ctx| {
+        super::neutral_link_target(ctx, &target)
+    });
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let target = super::neutral_link_target(&ctx, &target)
+        .expect("admitted target")
+        .expect("local reference");
+    assert!(matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
+        if definition.as_str() == "fcstd:model:product_definition#Gear:definition"));
+}
+
+#[test]
 fn product_record_collection_refuses_at_caller_limit() {
     let object = native::ObjectRecord {
         id: "fcstd:native:object#Assembly".into(),
