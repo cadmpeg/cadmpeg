@@ -153,6 +153,20 @@ fn is_ws(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r')
 }
 
+fn copy_sat_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, StreamFailure> {
+    let amount = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, amount))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 struct FieldReader<'a> {
     bytes: &'a [u8],
     pos: usize,
@@ -193,7 +207,7 @@ impl FieldReader<'_> {
         } else {
             scratch.grow(word.len() as u64)?;
         }
-        let word = word.to_owned();
+        let word = copy_sat_string(ctx, word, "SAT field")?;
         Ok(Some((start, word)))
     }
 
@@ -201,6 +215,7 @@ impl FieldReader<'_> {
     /// then `N` raw bytes.
     fn read_str_payload(
         &mut self,
+        ctx: &DecodeContext<'_>,
         len: usize,
         at: usize,
         scratch: &mut ScopedReservation<'_>,
@@ -225,7 +240,7 @@ impl FieldReader<'_> {
                 reason: format!("@{len} string is not valid UTF-8"),
             })?;
         scratch.grow(payload.len() as u64)?;
-        let payload = payload.to_owned();
+        let payload = copy_sat_string(ctx, payload, "SAT string payload")?;
         self.pos = end;
         Ok(payload)
     }
@@ -313,7 +328,7 @@ fn counted_string(
         reason: format!("header {what} string is not valid UTF-8"),
     })?;
     ctx.charge_retained(value.len() as u64, "retain SAT header string")?;
-    let value = value.to_owned();
+    let value = copy_sat_string(ctx, value, "SAT header string")?;
     *pos = end;
     Ok(value)
 }
@@ -496,7 +511,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 }
                 break;
             }
-            let prim = lex_prim(&mut reader, at, field, &mut scratch)?;
+            let prim = lex_prim(ctx, &mut reader, at, field, &mut scratch)?;
             match prim {
                 Prim::Open => subtype_depth += 1,
                 Prim::Close if subtype_depth == 0 => {
@@ -601,6 +616,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
 }
 
 fn lex_prim(
+    ctx: &DecodeContext<'_>,
     reader: &mut FieldReader<'_>,
     at: usize,
     field: String,
@@ -620,7 +636,7 @@ fn lex_prim(
             offset: at,
             reason: "string field has no valid decimal byte count".to_string(),
         })?;
-        return Ok(Prim::Str(reader.read_str_payload(len, at, scratch)?));
+        return Ok(Prim::Str(reader.read_str_payload(ctx, len, at, scratch)?));
     }
     if field == "{" {
         return Ok(Prim::Open);
@@ -1898,6 +1914,35 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn sat_string_copies_refuse_at_header_field_and_payload_limits() {
+        let source = asm_stream("mystery @3 abc #\n");
+        let cases = [
+            (ResourceDimension::RetainedBytes, 15, "retain SAT header string"),
+            (ResourceDimension::RetainedBytes, 67, "retain SAT record name"),
+            (ResourceDimension::MaterializedBytes, 4, "frame SAT record"),
+        ];
+        for (dimension, limit, operation) in cases {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+                ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = limit;
+                }
+                _ => panic!("unexpected test dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("string limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, dimension);
+            assert_eq!(refusal.operation, operation);
+        }
     }
 
     fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
