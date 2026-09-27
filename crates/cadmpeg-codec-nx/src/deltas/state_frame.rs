@@ -2,6 +2,8 @@
 //! Reference-state frames and nonempty packet contents.
 
 use super::state_references::StateReferences;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 /// One four-reference frame in a deltas state packet.
@@ -23,11 +25,16 @@ impl Serialize for StateFrames {
 }
 
 impl StateFrames {
-    pub(super) fn new(first: ReferenceStateFrame) -> Self {
-        Self(vec![first])
+    pub(super) fn new(ctx: &DecodeContext<'_>, first: ReferenceStateFrame) -> Result<Self, CodecError> {
+        Ok(Self(ctx.alloc_filled(1, first, "NX reference state frames")?))
     }
-    pub(super) fn push(&mut self, frame: ReferenceStateFrame) {
+    pub(super) fn push(&mut self, ctx: &DecodeContext<'_>, frame: ReferenceStateFrame) -> Result<(), CodecError> {
+        ctx.charge_collection_items(1, "NX reference state frames")?;
+        self.0
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("NX reference state frames", 0, 1))?;
         self.0.push(frame);
+        Ok(())
     }
     #[cfg(test)]
     pub(crate) fn as_slice(&self) -> &[ReferenceStateFrame] {
