@@ -3,6 +3,8 @@
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 pub(crate) fn collection_vec<T>(
     ctx: &DecodeContext<'_>,
@@ -93,4 +95,33 @@ pub(crate) fn retained_suffix(
     })?;
     output.push_str(suffix);
     Ok(output)
+}
+
+pub(crate) fn insert_hash_set<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    items: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if items.contains(&value) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, operation)?;
+    items.try_reserve(1).map_err(|_| allocation_failed(ctx, 1, operation))?;
+    Ok(items.insert(value))
+}
+
+fn allocation_failed(
+    ctx: &DecodeContext<'_>,
+    count: u64,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension: ResourceDimension::CollectionItems,
+        reason: ResourceFailure::AllocationFailed,
+        limit: ctx.policy().limits.max_collection_items,
+        used: 0,
+        additional: count,
+        operation,
+    })
 }

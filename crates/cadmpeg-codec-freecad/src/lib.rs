@@ -698,11 +698,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
     let expected_coverage = container::byte_coverage(
+        ctx,
         &physical,
         &entries,
         &logical,
         physical_end.unwrap_or_default(),
-    );
+    )?;
     if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -790,7 +791,8 @@ impl CodecBackend for FcstdCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::scan(ctx, root).map(|scan| container::summarize(&scan))
+        let scan = container::scan(ctx, root)?;
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -1103,6 +1105,7 @@ impl CodecBackend for FcstdCodec {
                 &gui_graph.properties,
             )?;
             let logical_ledger = container::logical_ledger(
+                ctx,
                 &entry_records,
                 &graph.properties,
                 &gui_graph,
@@ -1115,11 +1118,12 @@ impl CodecBackend for FcstdCodec {
                 .set_arena(ctx, "logical_ledger", &logical_ledger)?;
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
+                ctx,
                 &scan.ledger,
                 &entry_records,
                 &logical_ledger,
                 physical_byte_len,
-            );
+            )?;
             ir.native.namespace_mut("fcstd").set_arena(
                 ctx,
                 "byte_coverage",
@@ -1130,7 +1134,7 @@ impl CodecBackend for FcstdCodec {
                 .set_arena(ctx, "element_maps", &element_maps)?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
+            let coverage = container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)?;
             ir.native.namespace_mut("fcstd").set_arena(
                 ctx,
                 "byte_coverage",
@@ -1152,7 +1156,7 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        let summary_notes = container::summary_notes(&scan);
+        let summary_notes = container::summary_notes(ctx, &scan)?;
         Ok(Decoded {
             ir,
             body: DecodeBody {
