@@ -19,6 +19,39 @@ use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
 #[test]
+fn section_result_collector_refuses_before_output_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = [0u8];
+    let section =
+        super::Section::scan("body".to_string(), 0, 1, None, &bytes).expect("one bounded section");
+    let sections = [section];
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("root input is admitted");
+        super::collect_section_records_result(
+            &ctx,
+            sections.iter(),
+            |_| Ok(vec![42u32]),
+            |_, _| {},
+            |_| 0,
+        )
+    };
+    assert_eq!(run(1).expect("one output item is admitted"), vec![42]);
+    let error = run(0).expect_err("one output item exceeds the collection limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section record aggregation"
+    ));
+}
+
+#[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
     assert_eq!(codec.detect(b"#UGC:2 P foo"), Confidence::High);
