@@ -121,7 +121,7 @@ pub(super) fn decode(
                     ctx,
                 )
             }).transpose()?.flatten(),
-            targets([id]),
+            targets([id], ctx)?,
             None,
             PmiDefinition::Datum { identification },
         )?;
@@ -177,7 +177,7 @@ pub(super) fn decode(
                     ctx,
                 )
             }).transpose()?.flatten(),
-            targets([id]),
+            targets([id], ctx)?,
             None,
             PmiDefinition::DatumTarget {
                 form: datum_target_form(&form),
@@ -244,7 +244,8 @@ pub(super) fn decode(
                     .iter()
                     .flat_map(references)
                     .filter(|id| base_aspects.contains(id)),
-            ),
+                ctx,
+            )?,
             None,
             PmiDefinition::DatumSystem {
                 references: datum_references,
@@ -323,7 +324,7 @@ pub(super) fn decode(
             ir,
             id,
             name,
-            targets(aspect_ids),
+            targets(aspect_ids, ctx)?,
             None,
             PmiDefinition::Dimension(definition),
         )?;
@@ -591,7 +592,7 @@ pub(super) fn decode(
                 })
                 .transpose()?
                 .flatten(),
-            targets(refs.iter().copied().filter(|id| base_aspects.contains(id))),
+            targets(refs.iter().copied().filter(|id| base_aspects.contains(id)), ctx)?,
             None,
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -1414,14 +1415,30 @@ fn collect_placement_candidates(
     }
 }
 
-fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
+fn targets(
+    ids: impl IntoIterator<Item = u64>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<PmiTarget>, CodecError> {
     let mut seen = BTreeSet::new();
-    ids.into_iter()
-        .filter(|id| seen.insert(*id))
-        .map(|id| PmiTarget::ShapeAspect {
+    let mut targets = Vec::new();
+    for id in ids {
+        if seen.contains(&id) {
+            continue;
+        }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "step_pmi_target_ids")?;
+            ctx.charge_collection_items(1, "step_pmi_target_items")?;
+        }
+        seen.insert(id);
+        targets.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => ctx.refuse_codec_limit("step_pmi_target_items", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit("step_pmi_target_items", 0, 1),
+        })?;
+        targets.push(PmiTarget::ShapeAspect {
             source_id: super::step_source_id(id),
-        })
-        .collect()
+        });
+    }
+    Ok(targets)
 }
 
 fn pmi_id(id: u64) -> PmiId {
