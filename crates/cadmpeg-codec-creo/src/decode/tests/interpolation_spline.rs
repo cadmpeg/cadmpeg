@@ -60,6 +60,17 @@ fn draft_neutral_plane_selection_with_service(
     .expect("service profile admits draft neutral plane selection")
 }
 
+fn thicken_plane_offset_with_service(
+    transitions: &[(u32, u32)],
+    planes: &BTreeMap<u32, PlaneEquation>,
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<(f64, ThickenSide)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        thicken_plane_offset(ctx, transitions, planes, rows)
+    })
+    .expect("service profile admits thicken plane offsets")
+}
+
 const EPS_FULL_TURN: f64 = 1e-12;
 
 fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
@@ -929,27 +940,27 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     ];
 
     assert_eq!(
-        thicken_plane_offset(&transitions, &planes, &rows),
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Reverse))
     );
 
     planes.get_mut(&201).expect("plane").origin[1] = 7.0;
     planes.get_mut(&202).expect("plane").origin[0] = 9.0;
     assert_eq!(
-        thicken_plane_offset(&transitions, &planes, &rows),
+        thicken_plane_offset_with_service(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Forward))
     );
 
     planes.get_mut(&202).expect("plane").origin[0] = -2.0;
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
 
     planes.get_mut(&202).expect("plane").origin[0] = -1.0;
     planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
 
     planes.get_mut(&202).expect("plane").normal = [1.0, 0.0, 0.0];
     rows[3].reversed = false;
-    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
+    assert_eq!(thicken_plane_offset_with_service(&transitions, &planes, &rows), None);
 }
 
 #[test]

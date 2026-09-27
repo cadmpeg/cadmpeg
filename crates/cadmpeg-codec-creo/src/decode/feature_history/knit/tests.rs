@@ -522,6 +522,49 @@ fn draft_neutral_plane_native_refuses_retained_limit() {
         if resource.operation == "creo draft neutral plane native"), "{error:?}");
 }
 
+fn thicken_offset_limit_error(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let planes = std::collections::BTreeMap::from([
+        (11, crate::decode::analytic::equations::PlaneEquation {
+            origin: [0.0, 2.0, 0.0],
+            normal: [0.0, -1.0, 0.0],
+        }),
+        (201, crate::decode::analytic::equations::PlaneEquation {
+            origin: [0.0, -3.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        }),
+    ]);
+    let row = |id, reversed| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: if id >= 200 { 17 } else { 3 },
+        reversed,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let rows = [row(11, true), row(201, false)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::thicken_plane_offset(&ctx, &[(11, 201)], &planes, &rows)
+        .expect_err("one thicken offset exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn thicken_plane_offsets_refuse_collection_limit() {
+    thicken_offset_limit_error(0, "creo thicken plane offsets");
+}
+
+#[test]
+fn thicken_plane_magnitudes_refuse_collection_limit() {
+    thicken_offset_limit_error(1, "creo thicken plane magnitudes");
+}
+
 #[test]
 fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     let entry =
