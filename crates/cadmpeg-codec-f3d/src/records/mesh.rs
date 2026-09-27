@@ -306,10 +306,30 @@ impl DesignMeshTextureTable {
         &self.resources
     }
     /// Borrow resources in the serialized flags-map order.
-    pub(crate) fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
-        let mut resources = self.resources.iter().collect::<Vec<_>>();
-        resources.sort_by_key(|resource| resource.ordinal);
+    pub(crate) fn resources_in_flags_order(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
+        let operation = "order F3D mesh texture resources";
+        let count = u64::try_from(self.resources.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut resources = Vec::new();
         resources
+            .try_reserve(self.resources.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+        resources.extend(&self.resources);
+        let passes = if self.resources.len() < 2 {
+            0
+        } else {
+            u64::from(usize::BITS - (self.resources.len() - 1).leading_zeros())
+        };
+        let work = count
+            .checked_mul(passes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        resources.sort_by_key(|resource| resource.ordinal);
+        Ok(resources)
     }
     fn flags_count_offset(&self) -> u64 {
         self.record.byte_offset()
