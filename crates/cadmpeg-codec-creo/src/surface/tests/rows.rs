@@ -10,6 +10,7 @@ use super::positional_spline_replay_body_end;
 use super::positional_spline_replay_prototype;
 use crate::scalar;
 use crate::surface::complete_surface_array_bounds;
+use crate::surface::contour_records_for_rows;
 use crate::surface::counted_row_bounds;
 use crate::surface::cross_section_plane_envelopes;
 use crate::surface::cross_section_rows;
@@ -34,6 +35,27 @@ use crate::surface::SurfaceNamedValue;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
 use crate::surface::TabulatedCylinderFrame;
+
+#[test]
+fn contour_surface_frames_refuse_before_aggregate_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_array\0\xf8\x01";
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("surface frame fixture fits root limit");
+        contour_records_for_rows(&ctx, payload, &[]).map(|records| records.len())
+    };
+    assert_eq!(run(1).expect("one frame admitted"), 0);
+    let error = run(0).expect_err("frame lookup needs one slot");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo contour surface frames")
+    );
+}
 
 fn named_spline_scalar_slots(
     family: &SurfacePrototypeFamily,
@@ -821,7 +843,7 @@ fn counted_surface_arrays_share_the_collection_item_limit() {
         \xe0\x02v_params\0\xf8\x02\x0f\x0f\xe3";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 7;
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("small prototype payload is admitted");
     let error = crate::surface::named_prototype_records(
@@ -829,7 +851,7 @@ fn counted_surface_arrays_share_the_collection_item_limit() {
         payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
-    .expect_err("two arrays require four items from one context");
+    .expect_err("the second array exceeds the shared collection budget");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

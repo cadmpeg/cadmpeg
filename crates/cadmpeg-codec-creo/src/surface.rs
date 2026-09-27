@@ -2826,43 +2826,40 @@ struct SurfaceArrayFrame {
     count: usize,
 }
 
-fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
+fn surface_array_frames(payload: &[u8]) -> impl Iterator<Item = SurfaceArrayFrame> + '_ {
     const LABEL: &[u8] = b"srf_array\0";
-    let mut labels = Vec::new();
     let mut search = 0;
-    while let Some(offset) = find(payload, LABEL, search) {
-        labels.push(offset);
-        search = offset + LABEL.len();
-    }
-    let mut frames = Vec::new();
-    for (index, label) in labels.iter().copied().enumerate() {
-        let start = label + LABEL.len();
-        if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
-            continue;
-        }
-        let (count, after_count) = compact_int(payload, start + 1);
-        if after_count == start + 1 {
-            continue;
-        }
-        // The declared count is a slot extent every reader compares against a
-        // `usize` length, so a count this target cannot address states no
-        // frame.
-        let Ok(count) = usize::try_from(count) else {
-            continue;
-        };
-        let mut end = labels.get(index + 1).copied().unwrap_or(payload.len());
-        for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
-            if let Some(offset) = find(payload, terminator, after_count) {
-                end = end.min(offset);
+    std::iter::from_fn(move || {
+        loop {
+            let label = find(payload, LABEL, search)?;
+            let start = label + LABEL.len();
+            search = start;
+            if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
+                continue;
             }
+            let (count, after_count) = compact_int(payload, start + 1);
+            if after_count == start + 1 {
+                continue;
+            }
+            // The declared count is a slot extent every reader compares against a
+            // `usize` length, so a count this target cannot address states no
+            // frame.
+            let Ok(count) = usize::try_from(count) else {
+                continue;
+            };
+            let mut end = find(payload, LABEL, start).unwrap_or(payload.len());
+            for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
+                if let Some(offset) = find(payload, terminator, after_count) {
+                    end = end.min(offset);
+                }
+            }
+            return Some(SurfaceArrayFrame {
+                start: after_count,
+                end,
+                count,
+            });
         }
-        frames.push(SurfaceArrayFrame {
-            start: after_count,
-            end,
-            count,
-        });
-    }
-    frames
+    })
 }
 
 /// Discover positional rows from every `srf_array` namespace in `payload`.
@@ -2880,8 +2877,8 @@ pub(crate) fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
 /// Discover rows and their containing frame bounds from complete counted
 /// `srf_array` frames.
 pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
-    let frames = surface_array_frames(payload);
-    if frames.is_empty() {
+    let mut frames = surface_array_frames(payload).peekable();
+    if frames.peek().is_none() {
         return Vec::new();
     }
     let candidates = rows(payload);
@@ -2905,13 +2902,12 @@ pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
 /// frames are excluded so a prototype cannot join to a row in a neighboring
 /// frame through section-wide adjacency.
 pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
-    let frames = surface_array_frames(payload);
-    if frames.is_empty() {
+    let mut frames = surface_array_frames(payload).peekable();
+    if frames.peek().is_none() {
         return Vec::new();
     }
     let rows = rows(payload);
     frames
-        .into_iter()
         .filter(|frame| {
             frame.count != 0
                 && rows
@@ -3040,8 +3036,8 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
     result.retain(|row| boundary_types.contains(&row.boundary_type));
-    let frames = surface_array_frames(payload);
-    if !frames.is_empty() {
+    let mut frames = surface_array_frames(payload).peekable();
+    if frames.peek().is_some() {
         let unframed = result.clone();
         let mut framed = Vec::new();
         let mut saw_framed_candidate = false;
@@ -5123,7 +5119,11 @@ fn contour_records_for_rows(
     rows: &[SurfaceRow],
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let frames = surface_array_frames(payload);
+    let mut frames = Vec::new();
+    for frame in surface_array_frames(payload) {
+        ctx.try_reserve_items(&mut frames, 1, "creo contour surface frames")?;
+        frames.push(frame);
+    }
     let mut records = Vec::new();
     for (index, row) in rows.iter().enumerate() {
         let frame_end = frames
