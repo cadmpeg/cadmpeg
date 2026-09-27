@@ -423,6 +423,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
     assert_eq!(indexes.quarantined_parameter_records.len(), 1);
 }
 
+mod allocation_limits;
 mod annotations;
 mod counted_lists;
 mod fem;
