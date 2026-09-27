@@ -110,14 +110,11 @@ impl ReadPoles3 {
             v_count: usize,
         ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
             (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
-            let mut rows = match crate::decode_alloc::counted_vec(
-                ctx,
-                u_count,
-                "ASM NURBS grid rows",
-            ) {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
+            let mut rows =
+                match crate::decode_alloc::counted_vec(ctx, u_count, "ASM NURBS grid rows") {
+                    Ok(rows) => rows,
+                    Err(error) => return Some(Err(error)),
+                };
             for u in 0..u_count {
                 let mut row = match crate::decode_alloc::counted_vec(
                     ctx,

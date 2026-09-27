@@ -516,7 +516,9 @@ fn reserve_framed_vec<T>(
     values: &mut Vec<T>,
     operation: &'static str,
 ) -> Result<(), StreamFailure> {
-    values.try_reserve(1).map_err(|_| refuse_size(ctx, operation))
+    values
+        .try_reserve(1)
+        .map_err(|_| refuse_size(ctx, operation))
 }
 
 fn copy_framed_string(
@@ -720,14 +722,22 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Ident(copy_framed_string(ctx, identifier, "frame SAB identifier")?));
+                    tokens.push(Token::Ident(copy_framed_string(
+                        ctx,
+                        identifier,
+                        "frame SAB identifier",
+                    )?));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::SubIdent(copy_framed_string(ctx, identifier, "frame SAB subidentifier")?));
+                    tokens.push(Token::SubIdent(copy_framed_string(
+                        ctx,
+                        identifier,
+                        "frame SAB subidentifier",
+                    )?));
                 }
                 Lexed::Str(value) => {
                     payload_start = false;
@@ -735,7 +745,11 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(ctx, &mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Str(copy_framed_string(ctx, value, "frame SAB string")?));
+                    tokens.push(Token::Str(copy_framed_string(
+                        ctx,
+                        value,
+                        "frame SAB string",
+                    )?));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
@@ -862,7 +876,7 @@ mod tests {
         policy.limits.max_collection_items = max_items;
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
         let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight)
-            .err().expect("collection refusal");
+            .expect_err("collection refusal");
         let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected resource refusal: {error:?}")
         };

@@ -636,11 +636,13 @@ mod tests {
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use std::collections::{HashMap, HashSet};
 
-    fn test_context<'a>(
-        arena: &'a cadmpeg_core::decode::DecodeArena,
-    ) -> cadmpeg_core::decode::DecodeContext<'a> {
+    fn test_context(
+        arena: &cadmpeg_core::decode::DecodeArena,
+    ) -> cadmpeg_core::decode::DecodeContext<'_> {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], arena, &cadmpeg_core::decode::DecodePolicy::service(),
+            &[],
+            arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test decode context")
         .0

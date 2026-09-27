@@ -1843,8 +1843,11 @@ fn subtype_reference_resolves_surface_cache() {
     active.extend_from_slice(&source);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("test decode context");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
         &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
@@ -1855,7 +1858,8 @@ fn subtype_reference_resolves_surface_cache() {
         &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight)
             .expect("valid single-record byte fixture"),
     )
-    .transpose().expect("resource allocation")
+    .transpose()
+    .expect("resource allocation")
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
 }
@@ -1923,7 +1927,9 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )
     .expect("test decode context");
 
@@ -1942,8 +1948,11 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let decoded = procedural_surface_resolving_refs(
         &ctx,
         &record.tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record)).unwrap(),
-    ).transpose().expect("resource allocation did not fail")
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record))
+            .unwrap(),
+    )
+    .transpose()
+    .expect("resource allocation did not fail")
     .expect("the record owns its extrusion");
     assert!(matches!(
         decoded.definition(),
@@ -1972,6 +1981,8 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
         &ctx,
         &nested_records[0].tokens,
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, &nested_records).unwrap(),
-    ).transpose().expect("resource allocation did not fail")
+    )
+    .transpose()
+    .expect("resource allocation did not fail")
     .is_none());
 }

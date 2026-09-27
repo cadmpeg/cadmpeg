@@ -15,7 +15,10 @@ fn nurbs_curve_copy_refuses_knot_and_pole_limits() {
     let pole_count = u64::try_from(curve.pole_count()).unwrap();
     for (dimension, limit) in [
         (ResourceDimension::CollectionItems, knot_count - 1),
-        (ResourceDimension::CollectionItems, knot_count + pole_count - 1),
+        (
+            ResourceDimension::CollectionItems,
+            knot_count + pole_count - 1,
+        ),
         (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
     ] {
         let arena = DecodeArena::new();
@@ -27,7 +30,8 @@ fn nurbs_curve_copy_refuses_knot_and_pole_limits() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let error = curve.try_clone_for_decode(&ctx, "copy NURBS curve")
+        let error = curve
+            .try_clone_for_decode(&ctx, "copy NURBS curve")
             .expect_err("copy exceeds resource limit");
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");
@@ -583,18 +587,22 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])).expect("resource allocation did not fail"),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0]))
+            .expect("resource allocation did not fail"),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
             Some(&[1.0, 1.0, 2.0, 2.0])
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
     );
     assert_eq!(
         positive_controls(&surface.poles(), None).expect("resource allocation did not fail"),
-        positive_controls(&surface.poles(), Some(&[1.0; 4])).expect("resource allocation did not fail")
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+            .expect("resource allocation did not fail")
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])).expect("resource allocation did not fail"),
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0]))
+            .expect("resource allocation did not fail"),
         None
     );
     let mut mapped = surface.clone();

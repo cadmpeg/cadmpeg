@@ -108,9 +108,14 @@ mod tests {
             cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             Vec::new(),
         );
-        let source =
-            classify_document(&ctx, &scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
-                .unwrap();
+        let source = classify_document(
+            &ctx,
+            &scan,
+            ReportScope::Standalone,
+            BTreeMap::new(),
+            &mut report,
+        )
+        .unwrap();
         assert!(source.dialects().is_some());
         assert!(report
             .losses

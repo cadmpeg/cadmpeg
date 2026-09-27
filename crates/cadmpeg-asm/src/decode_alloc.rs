@@ -11,8 +11,8 @@ pub(crate) fn counted_vec<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    let count_u64 = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let count_u64 =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(count_u64, operation)?;
     let mut values = Vec::new();
     values
@@ -39,8 +39,8 @@ pub(crate) fn append_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let count = source.len();
-    let amount = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let amount =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(amount, operation)?;
     target
         .try_reserve(count)

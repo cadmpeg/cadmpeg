@@ -52,7 +52,7 @@ use self::attributes::attribute_owner;
 use self::emit::{
     count_other_records, emit_attributes, emit_carrier_records, emit_coedges, emit_containers,
     emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
-    emit_vertices,
+    emit_vertices, CoedgeDecodeInputs, CurveSenseRefs,
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
 use self::records::{
@@ -348,7 +348,12 @@ fn insert_adjacency(
         out.insert(key, HashSet::new());
     }
     if let Some(references) = out.get_mut(owner) {
-        crate::decode_alloc::insert_string_set(ctx, references, reference, "ASM adjacency references")?;
+        crate::decode_alloc::insert_string_set(
+            ctx,
+            references,
+            reference,
+            "ASM adjacency references",
+        )?;
     }
     Ok(())
 }
@@ -634,11 +639,12 @@ pub fn decode_with_header(
         .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
     let _subtype_index_reservation =
         ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
-    let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?.with_save_format_version(
-        header
-            .as_ref()
-            .and_then(|header| header.save_format_version),
-    );
+    let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?
+        .with_save_format_version(
+            header
+                .as_ref()
+                .and_then(|header| header.save_format_version),
+        );
     nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
     let save_format_major = header
         .as_ref()
@@ -686,7 +692,8 @@ pub fn decode_with_header(
         format,
     )?;
 
-    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(ctx, records, &reach)?;
+    let (reversed_curve_refs, forward_curve_refs) =
+        classify_edge_curve_senses(ctx, records, &reach)?;
 
     emit_carrier_records(
         ctx,
@@ -694,8 +701,10 @@ pub fn decode_with_header(
         records,
         &mut carriers,
         &reach,
-        &reversed_curve_refs,
-        &forward_curve_refs,
+        CurveSenseRefs {
+            reversed_curve_refs: &reversed_curve_refs,
+            forward_curve_refs: &forward_curve_refs,
+        },
         format,
     )?;
     emit_pcurves(ctx, &mut out, records, &mut carriers, &reach, format)?;
@@ -707,16 +716,20 @@ pub fn decode_with_header(
         records,
         &by_index,
         &reach,
-        &reversed_curve_refs,
-        &forward_curve_refs,
+        CurveSenseRefs {
+            reversed_curve_refs: &reversed_curve_refs,
+            forward_curve_refs: &forward_curve_refs,
+        },
         format,
     )?;
     emit_coedges(
         ctx,
         &mut out,
         records,
-        &token_table,
-        save_format_major,
+        CoedgeDecodeInputs {
+            token_table: &token_table,
+            save_format_major,
+        },
         &carriers,
         &reach,
         format,
