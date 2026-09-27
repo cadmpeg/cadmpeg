@@ -1247,6 +1247,18 @@ fn mesh_filename_entries<'a>(
     Ok(entries)
 }
 
+fn collect_mesh_records<T>(
+    ctx: &DecodeContext<'_>,
+    records: impl IntoIterator<Item = Result<T, CodecError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for record in records {
+        push_mesh_record(ctx, &mut collected, record?, operation)?;
+    }
+    Ok(collected)
+}
+
 fn parse_mesh_design_records<F>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1264,96 +1276,121 @@ where
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
-    let collections = collection_frames
-        .into_iter()
-        .map(|frame| parse_mesh_collection_record(ctx, bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|collection| !collection.body_records.is_empty())
-        .collect::<Vec<_>>();
+    let mut collections = collect_mesh_records(
+        ctx,
+        collection_frames
+            .into_iter()
+            .map(|frame| parse_mesh_collection_record(ctx, bytes, meta, frame)),
+        "f3d mesh collection records",
+    )?;
+    collections.retain(|collection| !collection.body_records.is_empty());
     if collections.is_empty() {
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
-            .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
+                .into_iter()
+                .map(|frame| parse_mesh_entry_name_record(bytes, frame)),
+            "f3d mesh entry-name records",
+        )?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
-            .into_iter()
-            .map(|frame| parse_mesh_guid_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+                .into_iter()
+                .map(|frame| parse_mesh_guid_record(bytes, frame)),
+            "f3d mesh GUID records",
+        )?,
         |record| record.guid.record().record_index(),
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
-            .into_iter()
-            .map(|frame| parse_mesh_body_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+                .into_iter()
+                .map(|frame| parse_mesh_body_record(bytes, frame)),
+            "f3d mesh body records",
+        )?,
         |record| record.placement.record().record_index(),
         "mesh-body",
     )?;
     let collection_record_indices = mesh_collection_indices(ctx, &collections)?;
     let mut texture_tables = unique_record_map(
         ctx,
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_TEXTURE_TABLE_TYPE_GUID,
-            "mesh-texture-table",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_texture_table_record(ctx, bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(
+                bytes,
+                meta,
+                MESH_TEXTURE_TABLE_TYPE_GUID,
+                "mesh-texture-table",
+            )?
+            .into_iter()
+            .map(|frame| parse_mesh_texture_table_record(ctx, bytes, frame)),
+            "f3d mesh texture-table records",
+        )?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
-            .into_iter()
-            .map(|frame| parse_mesh_wrapper_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+                .into_iter()
+                .map(|frame| parse_mesh_wrapper_record(bytes, frame)),
+            "f3d mesh wrapper records",
+        )?,
         |record| record.identity.record_index(),
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
         ctx,
-        typed_primary_frames(
-            bytes,
-            meta,
-            MESH_FEATURE_SCOPE_TYPE_GUID,
-            "mesh-feature-scope",
-        )?
-        .into_iter()
-        .map(|frame| parse_mesh_scope_record(ctx, bytes, meta, &records, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(
+                bytes,
+                meta,
+                MESH_FEATURE_SCOPE_TYPE_GUID,
+                "mesh-feature-scope",
+            )?
+            .into_iter()
+            .map(|frame| parse_mesh_scope_record(ctx, bytes, meta, &records, frame)),
+            "f3d mesh feature-scope records",
+        )?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
-            .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
+                .into_iter()
+                .map(|frame| parse_mesh_scene_state_record(bytes, frame)),
+            "f3d mesh scene-state records",
+        )?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
         ctx,
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
-            .into_iter()
-            .map(|frame| parse_scene_node_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        collect_mesh_records(
+            ctx,
+            typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
+                .into_iter()
+                .map(|frame| parse_scene_node_record(bytes, frame)),
+            "f3d mesh scene-node records",
+        )?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
@@ -3049,6 +3086,35 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && limit.operation == "f3d native stream key"
         ));
+    }
+
+    #[test]
+    fn mesh_parsed_record_vectors_refuse_caller_limit() {
+        for operation in [
+            "f3d mesh collection records",
+            "f3d mesh entry-name records",
+            "f3d mesh GUID records",
+            "f3d mesh body records",
+            "f3d mesh texture-table records",
+            "f3d mesh wrapper records",
+            "f3d mesh feature-scope records",
+            "f3d mesh scene-state records",
+            "f3d mesh scene-node records",
+        ] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                super::collect_mesh_records(&ctx, [Ok(7_u32)], operation),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ));
+        }
     }
 
     #[test]
