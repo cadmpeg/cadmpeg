@@ -122,7 +122,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
         streams,
     };
 
-    let summary = crate::test_support::with_decode_context(|ctx| crate::summarize(ctx, &scan))
+    let summary = crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
         .expect("test container summary");
     let (layers, losses) = classify_layers(&scan).into_report_parts();
     assert_eq!(
