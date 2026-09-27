@@ -994,9 +994,11 @@ fn extended_geometry_json(
             "caps": extrusion.caps,
         })
     } else if value.class_id == crate::cage::CLASS {
-        cage_json(
-            &crate::cage::decode(expand, value.class_data_range.clone(), scale, archive).ok()?,
-        )
+        let cage = optional_geometry(
+            crate::cage::decode(expand, value.class_data_range.clone(), scale, archive),
+            refusal,
+        )?;
+        cage_json(&cage)
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
             crate::morph::decode(expand, value.class_data_range.clone(), scale, archive),
@@ -1192,14 +1194,21 @@ fn extended_geometry_json(
             })
             .ok();
     } else if value.class_id == crate::polyedge::CURVE_CLASS {
-        let polyedge = crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
-            .map_err(|error| {
-                warnings.push(format!(
-                    "embedded history polyedge at offset {}: {error}",
-                    value.class_data_range.start
-                ));
-            })
-            .ok()?;
+        let polyedge =
+            match crate::polyedge::decode(expand, value.class_data_range.clone(), archive) {
+                Ok(polyedge) => polyedge,
+                Err(FramingError::Resource(limit)) => {
+                    *refusal = Some(CodecError::ResourceLimit(limit));
+                    return None;
+                }
+                Err(error) => {
+                    warnings.push(format!(
+                        "embedded history polyedge at offset {}: {error}",
+                        value.class_data_range.start
+                    ));
+                    return None;
+                }
+            };
         return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;

@@ -1216,6 +1216,9 @@ impl<'a> DecodeContext<'a> {
             self.archive(),
         ) {
             Ok(value) => value,
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+            }
             Err(error) => {
                 self.scan_warning(source_order, &format!("polyedge retained: {error}"));
                 self.mark_failed(source_order);
