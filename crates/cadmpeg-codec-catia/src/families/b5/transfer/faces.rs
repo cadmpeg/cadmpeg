@@ -274,44 +274,46 @@ fn b5_plane_point(
 }
 
 fn b5_planar_loop_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     graph: &B5Graph,
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
     pcurve_uses: &PcurveUses,
-) -> Option<Vec<Point3>> {
-    let surface = ir
+) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
+    let Some(surface) = ir
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == *surface_id)?;
+        .find(|surface| surface.id == *surface_id) else { return Ok(None) };
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-        return None;
+        return Ok(None);
     };
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
-    let loop_ = graph.loops.get(&loop_id)?;
-    let mut points = Vec::with_capacity(loop_.members.len());
+    let Some(loop_) = graph.loops.get(&loop_id) else { return Ok(None) };
+    let mut points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut points, loop_.members.len(), "catia_b5_planar_loop_points")?;
     for member in loop_orientation.member_order() {
         let edge = loop_.members[member].edge;
-        let mut endpoints = graph.vertices.edge_points(edge)?;
+        let Some(mut endpoints) = graph.vertices.edge_points(edge) else { return Ok(None) };
         if loop_orientation.members[member].reversed {
             endpoints.swap(0, 1);
         }
         let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
-        let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
+        let Some((pcurve_id, parameter_range)) = pcurve_uses.get(&(loop_id, member)) else { return Ok(None) };
         if parameter_range[0] == parameter_range[1] {
-            return None;
+            return Ok(None);
         }
-        let pcurve = ir
+        let Some(pcurve) = ir
             .model
             .pcurves
             .iter()
-            .find(|pcurve| pcurve.id == *pcurve_id)?;
+            .find(|pcurve| pcurve.id == *pcurve_id) else { return Ok(None) };
         let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
-            return None;
+            return Ok(None);
         };
         let uv_origin = line_pcurve.origin().as_raw();
         let direction = line_pcurve.direction().as_raw();
@@ -326,61 +328,56 @@ fn b5_planar_loop_points(
         let reverse_error = lifted[1].distance(start).max(lifted[0].distance(end));
         let error = forward_error.min(reverse_error);
         if !error.is_finite() || error > 2e-3 {
-            return None;
+            return Ok(None);
         }
         points.push(start);
     }
-    Some(points)
+    Ok(Some(points))
 }
 
 /// The face's loop ids and their classification, built once from the loop
 /// rows the graph states for this face.
 fn b5_face_loops(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     graph: &B5Graph,
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &PcurveUses,
-) -> cadmpeg_ir::topology::FaceLoops {
-    let ids: Vec<LoopId> = face
-        .loops
-        .iter()
-        .map(|loop_id| {
-            LoopId::compose(
+) -> Result<cadmpeg_ir::topology::FaceLoops, cadmpeg_core::CodecError> {
+    let mut ids = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut ids, face.loops.len(), "catia_b5_face_loop_ids")?;
+    for loop_id in &face.loops {
+        ids.push(LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
                 loop_id,
-            )
-        })
-        .collect();
-    let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
+            ));
+    }
+    let unspecified = || -> Result<_, cadmpeg_core::CodecError> {
+        let mut copy = Vec::new();
+        for id in &ids {
+            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_b5_unspecified_loop_id_copy")?;
+            crate::resource::push(ctx, &mut copy, id, "catia_b5_unspecified_loop_ids")?;
+        }
+        Ok(cadmpeg_ir::topology::FaceLoops::unspecified(copy))
+    };
     if let [single] = ids.as_slice() {
-        return cadmpeg_ir::topology::FaceLoops::classified(single.clone(), Vec::new());
+        return Ok(cadmpeg_ir::topology::FaceLoops::classified(
+            crate::resource::copy_id(ctx, single.as_str(), LoopId::mint, "catia_b5_single_loop_id_copy")?,
+            Vec::new(),
+        ));
     }
     let Some(surface_id) = surface_ids.get(&face.surface) else {
         return unspecified();
     };
-    let Some(rows) = face
-        .loops
-        .iter()
-        .zip(&ids)
-        .map(|(loop_id, id)| {
-            Some((
-                id.clone(),
-                b5_planar_loop_points(
-                    ir,
-                    graph,
-                    *loop_id,
-                    loop_orientation.get(loop_id)?,
-                    surface_id,
-                    pcurve_uses,
-                )?,
-            ))
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return unspecified();
-    };
+    let mut rows = Vec::new();
+    for (loop_id, id) in face.loops.iter().zip(&ids) {
+        let Some(orientation) = loop_orientation.get(loop_id) else { return unspecified() };
+        let Some(points) = b5_planar_loop_points(ctx, ir, graph, *loop_id, orientation, surface_id, pcurve_uses)? else { return unspecified() };
+        let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_b5_planar_loop_id_copy")?;
+        crate::resource::push(ctx, &mut rows, (id, points), "catia_b5_planar_loop_rows")?;
+    }
     let Some(surface) = ir
         .model
         .surfaces
@@ -389,7 +386,7 @@ fn b5_face_loops(
     else {
         return unspecified();
     };
-    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
+    crate::boundary_roles::classify_planar_boundaries(ctx, &surface.geometry, &rows)
 }
 
 /// References to the records emitted by the preceding B5 passes.
@@ -531,7 +528,7 @@ pub(super) fn emit_faces(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
             ownership.face_components[face_index],
         );
-        let face_loops = b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
+        let face_loops = b5_face_loops(admission.context(), ir, graph, face, loop_orientation, surface_ids, pcurve_uses)?;
         annotate(
             annotations,
             &face_id,
@@ -859,7 +856,8 @@ mod tests {
         ir.model.pcurves = pcurves;
 
         assert_eq!(
-            b5_face_loops(
+            crate::test_support::with_service_context(|ctx| b5_face_loops(
+                ctx,
                 &ir,
                 &graph,
                 &graph.faces[0],
@@ -870,7 +868,7 @@ mod tests {
                         .expect("identity grammar")
                 )]),
                 &pcurve_uses,
-            ),
+            )).expect("service context admits B5 face loops"),
             cadmpeg_ir::topology::FaceLoops::classified(
                 LoopId::mint("catia:b5:loop#2".to_string()).expect("identity grammar"),
                 vec![LoopId::mint("catia:b5:loop#3".to_string()).expect("identity grammar")]

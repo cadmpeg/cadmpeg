@@ -5,6 +5,8 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::FaceLoops;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
@@ -143,12 +145,21 @@ fn polygon_boundaries_intersect(
 /// deliberately declines disjoint, touching, nested-hole, malformed, and
 /// non-planar arrangements.
 pub(crate) fn classify_planar_boundaries(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     rows: &[(LoopId, Vec<Point3>)],
-) -> FaceLoops {
-    let unspecified = || FaceLoops::unspecified(rows.iter().map(|(id, _)| id.clone()).collect());
+) -> Result<FaceLoops, CodecError> {
+    let unspecified = || -> Result<FaceLoops, CodecError> {
+        let mut ids = Vec::new();
+        for (id, _) in rows {
+            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_boundary_unspecified_id_copy")?;
+            crate::resource::push(ctx, &mut ids, id, "catia_boundary_unspecified_ids")?;
+        }
+        Ok(FaceLoops::unspecified(ids))
+    };
     if let [(single, _)] = rows {
-        return FaceLoops::classified(single.clone(), Vec::new());
+        let id = crate::resource::copy_id(ctx, single.as_str(), LoopId::mint, "catia_boundary_single_id_copy")?;
+        return Ok(FaceLoops::classified(id, Vec::new()));
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
@@ -156,23 +167,19 @@ pub(crate) fn classify_planar_boundaries(
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
-    let polygons = rows
-        .iter()
-        .map(|(_, boundary)| {
-            (boundary.len() >= 3).then(|| {
-                boundary
-                    .iter()
-                    .map(|point| {
-                        let offset = point.vector_from(origin);
-                        Point2::new(offset.dot(u_axis), offset.dot(v_axis))
-                    })
-                    .collect::<Vec<_>>()
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(polygons) = polygons else {
-        return unspecified();
-    };
+    let mut polygons = Vec::new();
+    for (_, boundary) in rows {
+        if boundary.len() < 3 {
+            return unspecified();
+        }
+        let mut polygon = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut polygon, boundary.len(), "catia_boundary_polygon_points")?;
+        for point in boundary {
+            let offset = point.vector_from(origin);
+            polygon.push(Point2::new(offset.dot(u_axis), offset.dot(v_axis)));
+        }
+        crate::resource::push(ctx, &mut polygons, polygon, "catia_boundary_polygon_rows")?;
+    }
     let coordinate_scale = polygons
         .iter()
         .flat_map(|polygon| polygon.iter())
@@ -180,17 +187,16 @@ pub(crate) fn classify_planar_boundaries(
         .fold(1.0, f64::max);
     let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;
     let area_tolerance = coordinate_tolerance * coordinate_scale;
-    let areas = polygons
-        .iter()
-        .map(|polygon| {
-            polygon
-                .iter()
-                .zip(polygon.iter().cycle().skip(1))
-                .map(|(left, right)| left.u * right.v - right.u * left.v)
-                .sum::<f64>()
-                * 0.5
-        })
-        .collect::<Vec<_>>();
+    let mut areas = Vec::new();
+    for polygon in &polygons {
+        let area = polygon
+            .iter()
+            .zip(polygon.iter().cycle().skip(1))
+            .map(|(left, right)| left.u * right.v - right.u * left.v)
+            .sum::<f64>()
+            * 0.5;
+        crate::resource::push(ctx, &mut areas, area, "catia_boundary_polygon_areas")?;
+    }
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
@@ -244,13 +250,15 @@ pub(crate) fn classify_planar_boundaries(
     let Some((outer_id, _)) = rows.get(outer) else {
         return unspecified();
     };
-    let inner = rows
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| *index != outer)
-        .map(|(_, (id, _))| id.clone())
-        .collect();
-    FaceLoops::classified(outer_id.clone(), inner)
+    let mut inner = Vec::new();
+    for (index, (id, _)) in rows.iter().enumerate() {
+        if index != outer {
+            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_boundary_inner_id_copy")?;
+            crate::resource::push(ctx, &mut inner, id, "catia_boundary_inner_ids")?;
+        }
+    }
+    let outer_id = crate::resource::copy_id(ctx, outer_id.as_str(), LoopId::mint, "catia_boundary_outer_id_copy")?;
+    Ok(FaceLoops::classified(outer_id, inner))
 }
 
 #[cfg(test)]
@@ -260,7 +268,15 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::FaceLoops;
 
-    use super::classify_planar_boundaries;
+    fn classify_planar_boundaries(
+        surface: &SurfaceGeometry,
+        rows: &[(cadmpeg_ir::ids::LoopId, Vec<Point3>)],
+    ) -> FaceLoops {
+        crate::test_support::with_service_context(|ctx| {
+            super::classify_planar_boundaries(ctx, surface, rows)
+        })
+        .expect("service context admits boundary classification")
+    }
 
     fn plane() -> SurfaceGeometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -295,6 +311,19 @@ mod tests {
             .enumerate()
             .map(|(index, boundary)| (loop_id(index), boundary))
             .collect()
+    }
+
+    #[test]
+    fn planar_boundary_points_refuse_before_nested_polygon_allocation() {
+        let boundaries = rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]);
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            super::classify_planar_boundaries(ctx, &plane(), &boundaries)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        assert_eq!(
+            classify_planar_boundaries(&plane(), &boundaries),
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
+        );
     }
 
     #[test]
