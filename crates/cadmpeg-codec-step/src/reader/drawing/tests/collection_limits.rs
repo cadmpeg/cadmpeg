@@ -239,3 +239,35 @@ fn drawing_ambiguous_loss_slot_refuses_collection_limit() {
                 && refusal.operation == "step_drawing_losses"
     ));
 }
+
+#[test]
+fn drawing_relationship_groups_refuse_collection_limit() {
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');",
+        "step_drawing_relationship_groups",
+    );
+}
+
+#[test]
+fn drawing_relationship_members_refuse_collection_limit() {
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');",
+        "step_drawing_relationship_members",
+    );
+}
+
+#[test]
+fn drawing_usage_sequences_refuse_collection_limit() {
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');#2=DRAWING_REVISION('A',#1,'revision');#3=REPRESENTATION_CONTEXT('','');#4=DRAWING_SHEET_REVISION('Sheet',(),#3,#2);#5=DRAWING_SHEET_REVISION_USAGE(#4,#2,'one');",
+        "step_drawing_usage_sequences",
+    );
+}
+
+#[test]
+fn drawing_association_claims_refuse_collection_limit() {
+    drawing_refuses(
+        "#1=REPRESENTATION_CONTEXT('','');#2=DRAUGHTING_MODEL('Model',(),#1);#3=ITEM('semantic');#4=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',#3,#2,(#3));",
+        "step_drawing_typed_claims",
+    );
+}
