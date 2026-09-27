@@ -836,11 +836,7 @@ fn read_mesh_cache(
             crate::mesh::MeshDecodeOptions {
                 writer_version,
                 association: None,
-                id: crate::wire::admitted_format(
-                    expand.ctx(),
-                    format_args!("rhino:extrusion:mesh-cache#{index}"),
-                    "Rhino extrusion mesh-cache ID",
-                )?,
+                id: crate::mesh::MeshId::ExtrusionCache(index),
                 scale,
                 userdata: &userdata,
             },
@@ -921,11 +917,7 @@ fn read_v5_mesh_cache(
                     crate::mesh::MeshDecodeOptions {
                         writer_version,
                         association: None,
-                        id: crate::wire::admitted_format(
-                            expand.ctx(),
-                            format_args!("rhino:extrusion:v5-mesh-cache#{index}"),
-                            "Rhino V5 extrusion mesh-cache ID",
-                        )?,
+                        id: crate::mesh::MeshId::V5ExtrusionCache(index),
                         scale,
                         userdata: &nested_userdata,
                     },
@@ -2037,7 +2029,7 @@ pub(crate) mod tests {
         let bytes = one_mesh_cache();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = 12;
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("root view");
@@ -2053,7 +2045,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
-        .expect_err("cache ID exceeds zero retained bytes");
+        .expect_err("cache ID exceeds the retained vertex buffer allowance");
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -2128,7 +2120,7 @@ pub(crate) mod tests {
         });
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = 12;
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("root view");
@@ -2142,7 +2134,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
-        .expect_err("V5 cache ID exceeds zero retained bytes");
+        .expect_err("V5 cache ID exceeds the retained vertex buffer allowance");
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))

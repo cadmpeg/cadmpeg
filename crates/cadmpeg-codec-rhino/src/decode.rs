@@ -833,7 +833,7 @@ impl<'a> DecodeContext<'a> {
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
                         association: Some(self.source_association(identity)?),
-                        id: format!("rhino:object:tessellation#{key}"),
+                        id: format!("rhino:object:tessellation#{key}").into(),
                         scale,
                         userdata: &object.userdata,
                     },
@@ -4254,7 +4254,7 @@ fn stage_brep_carriers(
                 crate::mesh::MeshDecodeOptions {
                     writer_version,
                     association: Some(association.clone()),
-                    id,
+                    id: id.into(),
                     scale,
                     userdata: &slot.userdata,
                 },
