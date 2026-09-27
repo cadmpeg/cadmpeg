@@ -225,6 +225,21 @@ fn y4_2_gui_state_values_are_admitted_before_allocation() {
 }
 
 #[test]
+fn gui_state_side_entry_refuses_at_caller_limit() {
+    let xml = "<Camera><Settings file=\"asset\"/></Camera>";
+    assert_gui_state_service(xml);
+    let document = roxmltree::Document::parse(xml).expect("GUI state XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
+        .expect("GUI state context");
+    assert!(matches!(super::super::gui_state(&ctx, xml, 0, document.root_element()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "FCStd GUI side entry references"));
+}
+
+#[test]
 fn y4_2_gui_provider_xml_copy_refuses_at_the_retained_byte_limit() {
     let xml = "<ViewProvider name=\"P\"><Properties Count=\"0\"/></ViewProvider>";
     assert_gui_provider_service(xml);

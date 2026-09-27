@@ -1103,13 +1103,11 @@ fn gui_state(
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .count();
-    ctx.charge_collection_items(value_count as u64, "FCStd GUI state values")?;
-    let values = node
-        .descendants()
+    let mut values = collection_vec(ctx, value_count, "FCStd GUI state values")?;
+    for (value_order, value) in node.descendants()
         .filter(|value| value.is_element() && *value != node)
-        .enumerate()
-        .map(|(value_order, value)| -> Result<ValueRecord, CodecError> {
-            Ok(ValueRecord {
+        .enumerate() {
+        values.push(ValueRecord {
                 tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
                 order: value_order,
                 attributes: value
@@ -1127,21 +1125,19 @@ fn gui_state(
                     .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
                     .transpose()?,
                 raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let side_entries = node
+            });
+    }
+    let mut side_entries = Vec::new();
+    for value in node
         .descendants()
         .filter(roxmltree::Node::is_element)
         .flat_map(|element| element.attributes())
         .filter(|attribute| matches!(attribute.name(), "file" | "File"))
         .map(|attribute| attribute.value())
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            ctx.charge_collection_items(1, "FCStd GUI side entry references")?;
-            copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .filter(|value| !value.is_empty()) {
+        reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
+        side_entries.push(copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")?);
+    }
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
         kind: copy_xml_text(Some(ctx), node.tag_name().name(), "FCStd GUI state kind")?,
