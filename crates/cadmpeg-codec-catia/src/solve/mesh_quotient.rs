@@ -5120,48 +5120,107 @@ fn possible_face_choices(
         .expect("unbounded test face-choice materialization")
 }
 
-fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
-    fn canonical_cycle(boundary: &[MeshBoundaryEdgeCandidate]) -> Vec<(usize, Option<bool>)> {
-        fn rotations(values: &[(usize, Option<bool>)]) -> Vec<Vec<(usize, Option<bool>)>> {
-            (0..values.len())
-                .map(|start| {
-                    values[start..]
-                        .iter()
-                        .chain(&values[..start])
-                        .copied()
-                        .collect()
-                })
-                .collect()
+fn deduplicate_mesh_quotient_assignments(
+    ctx: &DecodeContext<'_>,
+    faces: &mut [Vec<MeshFaceBoundaryAssignment>],
+) -> Result<(), CodecError> {
+    fn canonical_cycle(
+        ctx: &DecodeContext<'_>,
+        boundary: &[MeshBoundaryEdgeCandidate],
+    ) -> Result<Vec<(usize, Option<bool>)>, CodecError> {
+        let mut forward = Vec::new();
+        let mut reversed = Vec::new();
+        for use_ in boundary {
+            crate::resource::push(
+                ctx,
+                &mut forward,
+                (use_.edge, use_.reversed),
+                "catia_mesh_quotient_cycle_forward",
+            )?;
         }
-
-        let forward = boundary
-            .iter()
-            .map(|use_| (use_.edge, use_.reversed))
-            .collect::<Vec<_>>();
-        let reversed = boundary
-            .iter()
-            .rev()
-            .map(|use_| (use_.edge, use_.reversed.map(|value| !value)))
-            .collect::<Vec<_>>();
-        rotations(&forward)
-            .into_iter()
-            .chain(rotations(&reversed))
-            .min()
-            .unwrap_or_default()
+        for use_ in boundary.iter().rev() {
+            crate::resource::push(
+                ctx,
+                &mut reversed,
+                (use_.edge, use_.reversed.map(|value| !value)),
+                "catia_mesh_quotient_cycle_reverse",
+            )?;
+        }
+        let mut best = None;
+        for values in [&forward, &reversed] {
+            for start in 0..values.len() {
+                let work = u64::try_from(values.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("catia_mesh_quotient_cycle_compare", u64::MAX, u64::MAX)
+                })?;
+                ctx.charge_work(work, "catia_mesh_quotient_cycle_compare")?;
+                let candidate = values[start..].iter().chain(&values[..start]);
+                if best.is_none_or(|(best_values, best_start): (&Vec<_>, usize)| {
+                    candidate
+                        .clone()
+                        .cmp(
+                            best_values[best_start..]
+                                .iter()
+                                .chain(&best_values[..best_start]),
+                        )
+                        .is_lt()
+                }) {
+                    best = Some((values, start));
+                }
+            }
+        }
+        let mut canonical = Vec::new();
+        if let Some((values, start)) = best {
+            for &value in values[start..].iter().chain(&values[..start]) {
+                crate::resource::push(
+                    ctx,
+                    &mut canonical,
+                    value,
+                    "catia_mesh_quotient_canonical_cycle",
+                )?;
+            }
+        }
+        Ok(canonical)
     }
 
     for assignments in faces {
         let mut seen = HashSet::new();
+        let mut refusal = None;
         assignments.retain(|assignment| {
-            let mut signature = assignment
-                .boundaries
-                .iter()
-                .map(|boundary| canonical_cycle(boundary))
-                .collect::<Vec<_>>();
-            signature.sort_unstable();
-            seen.insert(signature)
+            if refusal.is_some() {
+                return true;
+            }
+            let result = (|| -> Result<bool, CodecError> {
+                let mut signature = Vec::new();
+                for boundary in &assignment.boundaries {
+                    let cycle = canonical_cycle(ctx, boundary)?;
+                    crate::resource::push(
+                        ctx,
+                        &mut signature,
+                        cycle,
+                        "catia_mesh_quotient_signature_boundaries",
+                    )?;
+                }
+                signature.sort_unstable();
+                crate::resource::insert_set(
+                    ctx,
+                    &mut seen,
+                    signature,
+                    "catia_mesh_quotient_seen_assignments",
+                )
+            })();
+            match result {
+                Ok(retain) => retain,
+                Err(error) => {
+                    refusal = Some(error);
+                    true
+                }
+            }
         });
+        if let Some(error) = refusal {
+            return Err(error);
+        }
     }
+    Ok(())
 }
 
 pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
@@ -9628,7 +9687,7 @@ pub(super) fn parse_standard_mesh_endpoint_candidates(
     if assignments.len() != face_count {
         return Ok(None);
     }
-    deduplicate_mesh_quotient_assignments(&mut assignments);
+    deduplicate_mesh_quotient_assignments(ctx, &mut assignments)?;
     // Standard-row occurrence direction is a face-quotient choice. Complete
     // FBB tables retain their scoped handle equalities in these local ports.
     let Some(port_identities) = crate::solve::missing_edge::edge_port_identities(ctx, bytes)?
@@ -10631,7 +10690,7 @@ where
     }
     for domain in &mut mesh_domains {
         if let MeshFaceBoundaryDomain::Ordered(assignments) = domain {
-            deduplicate_mesh_quotient_assignments(std::slice::from_mut(assignments));
+            deduplicate_mesh_quotient_assignments(ctx, std::slice::from_mut(assignments))?;
         }
     }
     if !mesh_domains_have_incident_edge_support(edge_faces, &mesh_domains) {
@@ -10769,7 +10828,7 @@ where
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
-                deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+                deduplicate_mesh_quotient_assignments(ctx, &mut mesh_assignments)?;
                 // This child owns the incidence-to-endpoint relation phase. The
                 // complete materialization invoked by that relation takes its
                 // own MAX_MESH_CONSTRAINT_OPERATIONS child slice.
