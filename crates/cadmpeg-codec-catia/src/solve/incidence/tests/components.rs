@@ -982,12 +982,15 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     ])];
     let candidates = vec![Vec::new(), Vec::new()];
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
+    catia_test_context!(ctx);
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
     )
+    .expect("service resource budget")
     .expect("ordered component quotient");
 
     assert_eq!(quotient.find(0), quotient.find(3));
@@ -1004,12 +1007,15 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
             .map(|point| Arc::new(HashSet::from([point])))
             .collect(),
     );
+    catia_test_context!(ctx);
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
     )
+    .expect("service resource budget")
     .expect("unordered component quotient");
 
     assert_eq!(quotient.find(1), quotient.find(2));
@@ -1183,14 +1189,17 @@ fn component_face_viability_refuses_edge_point_collection_limit() {
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 16));
     let budget = WorkBudget::new(10_000);
+    catia_test_context!(ctx);
 
     assert!(
         crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
+            &ctx,
             &(0..8).collect::<Vec<_>>(),
             &quotient,
             16,
             &budget,
         )
+        .expect("service resource budget")
         .is_none()
     );
 }
@@ -1218,12 +1227,15 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
             .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
             .collect(),
     );
+    catia_test_context!(ctx);
 
     crate::solve::mesh_quotient::propagate_common_boundary_components(
+        &ctx,
         &domains,
         &candidates,
         &mut quotient,
     )
+    .expect("service resource budget")
     .expect("deferred component quotient");
 
     assert_eq!(quotient.find(1), quotient.find(4));
