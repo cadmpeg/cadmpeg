@@ -32,6 +32,7 @@ mod borrowed_wires;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;
 mod body_write_wire;
 mod common_frame_wire;
+mod datum_plane_wire;
 pub(super) mod object_frame;
 pub(super) mod operation_record;
 pub(super) mod surface_branches;
@@ -1568,11 +1569,8 @@ pub(super) struct FeatureDatumPlaneCsysIdentityUse {
 }
 
 /// Exact logical datum-plane object payload reconstructed in lane order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumPlanePayloadWire",
-    into = "FeatureDatumPlanePayloadWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumPlanePayloadWire")]
 pub(super) struct FeatureDatumPlanePayload {
     /// Globally unique reconstructed-payload identity.
     pub(super) id: String,
@@ -1619,6 +1617,7 @@ struct FeatureDatumPlanePayloadWire {
     index_lane_trailer: Option<u32>,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
     fn from(value: FeatureDatumPlanePayload) -> Self {
         let (
@@ -1722,11 +1721,8 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
 }
 
 /// Resolved typed descriptor of one datum-plane construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumPlaneDescriptorWire",
-    into = "FeatureDatumPlaneDescriptorWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumPlaneDescriptorWire")]
 pub(super) struct FeatureDatumPlaneDescriptor {
     /// Globally unique descriptor identity.
     pub(super) id: String,
@@ -1768,6 +1764,7 @@ struct FeatureDatumPlaneDescriptorWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
     fn from(value: FeatureDatumPlaneDescriptor) -> Self {
         Self {
@@ -2940,11 +2937,8 @@ impl FeatureOperationBodyOperand {
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "reference::Body11ContinuationWire",
-    into = "reference::Body11ContinuationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "reference::Body11ContinuationWire")]
 pub(super) struct FeatureOperationBody11Continuation {
     /// Globally unique continuation identity.
     pub(super) id: String,

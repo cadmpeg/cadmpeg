@@ -2,19 +2,10 @@
 //! Native terminal discriminator wire adapter.
 
 use crate::iter_wire::IterWire;
-use crate::om::compact::CompactIndexAtom;
+use crate::om::compact::{CompactIndexAtom, RawCompactIndex};
 use crate::om::terminal_discriminator::OperationTerminalDiscriminator;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy)]
-struct RawCompactIndex(CompactIndexAtom);
-
-impl Serialize for RawCompactIndex {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.raw().serialize(serializer)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "FeatureOperationTerminalDiscriminatorWire")]
