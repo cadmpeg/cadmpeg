@@ -1843,12 +1843,16 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             })
         })
         .collect::<Vec<_>>();
-    crate::families::standard::decode::apply_standard_native_edge_faces(
-        &mut edge_faces,
-        &supports,
-        &records,
-        &HashMap::from([(700, HashSet::from([20, 900]))]),
-    );
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::apply_standard_native_edge_faces(
+            ctx,
+            &mut edge_faces,
+            &supports,
+            &records,
+            &HashMap::from([(700, HashSet::from([20, 900]))]),
+        )
+    })
+    .expect("service context admits native edge faces");
     assert_eq!(edge_faces, [[0, 1]]);
 
     let mut ambiguous = vec![[0, 0]];
@@ -1860,12 +1864,16 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             kind: AnalyticSurfaceKind::Cylinder,
         },
     ));
-    crate::families::standard::decode::apply_standard_native_edge_faces(
-        &mut ambiguous,
-        &supports,
-        &repeated_records,
-        &HashMap::from([(700, HashSet::from([20]))]),
-    );
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::apply_standard_native_edge_faces(
+            ctx,
+            &mut ambiguous,
+            &supports,
+            &repeated_records,
+            &HashMap::from([(700, HashSet::from([20]))]),
+        )
+    })
+    .expect("service context admits ambiguous native edge faces");
     assert_eq!(ambiguous, [[0, 0]]);
 }
 
@@ -1893,12 +1901,16 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
         })
         .collect::<Vec<_>>();
 
-    crate::families::standard::decode::apply_standard_native_edge_faces(
-        &mut edge_faces,
-        &supports,
-        &records,
-        &HashMap::from([(700, HashSet::from([10]))]),
-    );
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::apply_standard_native_edge_faces(
+            ctx,
+            &mut edge_faces,
+            &supports,
+            &records,
+            &HashMap::from([(700, HashSet::from([10]))]),
+        )
+    })
+    .expect("service context admits one owner occurrence");
 
     assert_eq!(edge_faces, [[0, 0]]);
 }
