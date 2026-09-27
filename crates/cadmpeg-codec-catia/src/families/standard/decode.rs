@@ -1425,9 +1425,9 @@ fn standard_population_selections(
     };
     let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let layouts = fbb::fbb_population_layouts(ctx, standard_spine)?;
-    let populations = crate::families::standard::records::standard_surface_populations(brep);
+    let populations = crate::families::standard::records::standard_surface_populations(ctx, brep)?;
     let Some(pairs) =
-        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)?
     else {
         return Ok(None);
     };
@@ -1445,9 +1445,10 @@ fn standard_population_selections(
             supports: population.supports,
             edge_table_form: layout.edge_table_form,
             vertex_roster_compatible: crate::families::standard::records::standard_vertex_roster(
+                ctx,
                 &scan.data,
                 layout.vertex_count,
-            )
+            )?
             .is_some(),
         }))
     };
@@ -1827,12 +1828,14 @@ fn try_decode_standard_population(
         },
     };
     let points = vertex_points.unwrap_or_default();
-    let vertex_roster = selection
-        .is_none_or(|selection| selection.vertex_roster_compatible)
-        .then(|| {
-            crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
-        })
-        .flatten();
+    let vertex_roster = if selection.is_none_or(|selection| selection.vertex_roster_compatible) {
+        match crate::families::standard::records::standard_vertex_roster(ctx, &scan.data, points.len()) {
+            Ok(roster) => roster,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        None
+    };
     let face_count = if let Some(selection) = selection {
         selection.records.len()
     } else {
@@ -1841,18 +1844,34 @@ fn try_decode_standard_population(
             Err(error) => return Some(Err(error)),
         }
     };
-    let records = selection.map_or_else(
-        || {
-            crate::families::standard::records::standard_surface_records(brep, face_count)
-                .unwrap_or_else(|| {
-                    crate::families::standard::records::surface_prefixes(brep)
-                        .into_iter()
-                        .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
-                        .collect()
-                })
-        },
-        |selection| selection.records.clone(),
-    );
+    let records = if let Some(selection) = selection {
+        match crate::resource::copy_retained_slice(ctx, &selection.records, "catia_standard_selected_records") {
+            Ok(records) => records,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        let parsed = match crate::families::standard::records::standard_surface_records(ctx, brep, face_count) {
+            Ok(records) => records,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Some(records) = parsed {
+            records
+        } else {
+            let prefixes = match crate::families::standard::records::surface_prefixes(ctx, brep) {
+                Ok(prefixes) => prefixes,
+                Err(error) => return Some(Err(error)),
+            };
+            let mut records = Vec::new();
+            for prefix in prefixes {
+                if let Err(error) = crate::resource::push(ctx, &mut records,
+                    crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix),
+                    "catia_standard_analytic_records") {
+                    return Some(Err(error));
+                }
+            }
+            records
+        }
+    };
     let analytic_record_count = records
         .iter()
         .filter(|record| {
@@ -1887,16 +1906,17 @@ fn try_decode_standard_population(
         };
         count.filter(|count| *count > 0)
     };
-    let curve_supports = selection.map_or_else(
-        || {
-            crate::families::standard::records::standard_curve_supports(
-                brep,
-                face_count,
-                standard_edge_count,
-            )
-        },
-        |selection| selection.supports.clone(),
-    );
+    let curve_supports = if let Some(selection) = selection {
+        match crate::resource::copy_retained_slice(ctx, &selection.supports, "catia_standard_selected_supports") {
+            Ok(supports) => supports,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        match crate::families::standard::records::standard_curve_supports(ctx, brep, face_count, standard_edge_count) {
+            Ok(supports) => supports,
+            Err(error) => return Some(Err(error)),
+        }
+    };
     let edge_tags = curve_supports
         .iter()
         .map(|support| support.tag)
@@ -4235,16 +4255,25 @@ fn attach_standard_topology(
     let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
         return Err(StandardTopologyFailure::NoCurveSupports.into());
     };
-    let mut supports = support_override.map_or_else(
-        || {
-            crate::families::standard::records::standard_curve_supports(
-                brep,
-                face_count,
-                Some(edge_count),
-            )
-        },
-        ToOwned::to_owned,
-    );
+    let mut supports = support_override
+        .map_or_else(
+            || {
+                crate::families::standard::records::standard_curve_supports(
+                    ctx,
+                    brep,
+                    face_count,
+                    Some(edge_count),
+                )
+            },
+            |supports| {
+                crate::resource::copy_retained_slice(
+                    ctx,
+                    supports,
+                    "catia_topology_support_override",
+                )
+            },
+        )
+        .map_err(StandardTopologyError::Resource)?;
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports.into());
     }
@@ -4417,14 +4446,16 @@ fn attach_standard_topology(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>();
-    let vertex_roster = use_vertex_roster
-        .then(|| {
-            crate::families::standard::records::standard_vertex_roster(
-                source,
-                ir.model.points.len(),
-            )
-        })
-        .flatten();
+    let vertex_roster = if use_vertex_roster {
+        crate::families::standard::records::standard_vertex_roster(
+            ctx,
+            source,
+            ir.model.points.len(),
+        )
+        .map_err(StandardTopologyError::Resource)?
+    } else {
+        None
+    };
     let allocation_endpoint_points = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_points(&supports, roster));
