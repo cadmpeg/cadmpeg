@@ -161,3 +161,57 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         &rows,
     ));
 }
+
+#[test]
+fn rowless_generated_profile_rejects_duplicate_entity_ids() {
+    let entry = |entity_id, class_id, source_entity_id| {
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        }
+    };
+    let mut table = crate::feature::entity::FeatureEntityTable::new(
+        7,
+        29,
+        vec![
+            entry(29, 204, None),
+            entry(30, 203, None),
+            entry(31, 200, Some(11)),
+            entry(32, 200, Some(13)),
+        ],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([29, 30, 32]);
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    };
+    let rows = [row(29), row(30), row(32)];
+    assert!(section_entity_is_generated_profile(
+        true,
+        Some(7),
+        11,
+        &[crate::surface::SurfaceKind::Plane],
+        std::slice::from_ref(&table),
+        &rows,
+    ));
+    table.entries[0].entity_id = 30;
+    let table = table.with_surface_ids([30, 32]);
+    assert!(!section_entity_is_generated_profile(
+        true,
+        Some(7),
+        11,
+        &[crate::surface::SurfaceKind::Plane],
+        &[table],
+        &rows,
+    ));
+}
