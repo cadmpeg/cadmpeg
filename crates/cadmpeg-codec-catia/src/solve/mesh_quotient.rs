@@ -6586,26 +6586,22 @@ enum MeshDirectionEnumerationError {
 }
 
 fn endpoint_configuration_boundary_directions(
+    ctx: &DecodeContext<'_>,
     boundary: &[MeshBoundaryEdgeCandidate],
     pairs: &HashMap<usize, [usize; 2]>,
-) -> Result<Vec<Vec<bool>>, MeshDirectionEnumerationError> {
+) -> Result<Result<Vec<Vec<bool>>, MeshDirectionEnumerationError>, CodecError> {
     if boundary.is_empty() {
-        return Err(MeshDirectionEnumerationError::Invalid);
+        return Ok(Err(MeshDirectionEnumerationError::Invalid));
     }
-    let first = boundary
-        .first()
-        .ok_or(MeshDirectionEnumerationError::Invalid)?;
-    let first_pair = *pairs
-        .get(&first.edge)
-        .ok_or(MeshDirectionEnumerationError::Invalid)?;
-    let first_directions = if first_pair[0] == first_pair[1] {
-        vec![false]
-    } else {
-        vec![false, true]
+    let first = &boundary[0];
+    let Some(&first_pair) = pairs.get(&first.edge) else {
+        return Ok(Err(MeshDirectionEnumerationError::Invalid));
     };
-    let mut states = first_directions
-        .into_iter()
-        .map(|direction| {
+    let mut states = Vec::new();
+    for direction in [false, true] {
+        if first_pair[0] == first_pair[1] && direction {
+            continue;
+        }
             let start = if direction {
                 first_pair[1]
             } else {
@@ -6616,13 +6612,13 @@ fn endpoint_configuration_boundary_directions(
             } else {
                 first_pair[1]
             };
-            (start, current, vec![direction])
-        })
-        .collect::<Vec<_>>();
+            let directions = ctx.alloc_filled(1, direction, "catia_endpoint_initial_direction")?;
+            crate::resource::push(ctx, &mut states, (start, current, directions), "catia_endpoint_initial_states")?;
+    }
     for use_ in &boundary[1..] {
-        let pair = *pairs
-            .get(&use_.edge)
-            .ok_or(MeshDirectionEnumerationError::Invalid)?;
+        let Some(&pair) = pairs.get(&use_.edge) else {
+            return Ok(Err(MeshDirectionEnumerationError::Invalid));
+        };
         let mut next = Vec::new();
         for (start, current, directions) in states {
             for direction in [false, true] {
@@ -6634,23 +6630,25 @@ fn endpoint_configuration_boundary_directions(
                 if edge_start != current {
                     continue;
                 }
-                let mut directions = directions.clone();
-                directions.push(direction);
-                next.push((start, edge_end, directions));
+                let mut directions = crate::resource::copy_slice(ctx, &directions, "catia_endpoint_direction_prefix")?;
+                crate::resource::push(ctx, &mut directions, direction, "catia_endpoint_direction_step")?;
+                crate::resource::push(ctx, &mut next, (start, edge_end, directions), "catia_endpoint_direction_states")?;
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return Err(MeshDirectionEnumerationError::Overflow);
+                    return Ok(Err(MeshDirectionEnumerationError::Overflow));
                 }
             }
         }
         states = next;
         if states.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Ok(Vec::new()));
         }
     }
-    let mut solutions = states
-        .into_iter()
-        .filter_map(|(start, current, directions)| (start == current).then_some(directions))
-        .collect::<Vec<_>>();
+    let mut solutions = Vec::new();
+    for (start, current, directions) in states {
+        if start == current {
+            crate::resource::push(ctx, &mut solutions, directions, "catia_endpoint_boundary_solutions")?;
+        }
+    }
     solutions.sort_unstable();
     solutions.dedup();
     if solutions.len() == 2 && boundary.iter().all(|use_| use_.reversed.is_none()) {
@@ -6659,28 +6657,35 @@ fn endpoint_configuration_boundary_directions(
         // before combining independent boundaries.
         solutions.truncate(1);
     }
-    Ok(solutions)
+    Ok(Ok(solutions))
 }
 
 fn endpoint_configuration_directions(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     configuration: &MeshFaceEndpointConfiguration,
-) -> Result<MeshFaceDirectionOptions, MeshDirectionEnumerationError> {
-    let pairs = configuration.iter().copied().collect::<HashMap<_, _>>();
-    if pairs.len() != configuration.len() {
-        return Err(MeshDirectionEnumerationError::Invalid);
+) -> Result<Result<MeshFaceDirectionOptions, MeshDirectionEnumerationError>, CodecError> {
+    let mut pairs = HashMap::new();
+    for &(edge, pair) in configuration {
+        crate::resource::insert_map(ctx, &mut pairs, edge, pair, "catia_endpoint_configuration_pairs")?;
     }
-    let mut alternatives = vec![Vec::new()];
+    if pairs.len() != configuration.len() {
+        return Ok(Err(MeshDirectionEnumerationError::Invalid));
+    }
+    let mut alternatives = ctx.alloc_filled(1, Vec::new(), "catia_endpoint_initial_alternatives")?;
     for boundary in &assignment.boundaries {
-        let boundary_options = endpoint_configuration_boundary_directions(boundary, &pairs)?;
+        let boundary_options = match endpoint_configuration_boundary_directions(ctx, boundary, &pairs)? {
+            Ok(options) => options,
+            Err(error) => return Ok(Err(error)),
+        };
         let mut next = Vec::new();
         for prefix in &alternatives {
             for boundary_directions in &boundary_options {
-                let mut alternative = prefix.clone();
-                alternative.push(boundary_directions.clone());
-                next.push(alternative);
+                let mut alternative = crate::resource::copy_retained_rows(ctx, prefix, "catia_endpoint_alternative_prefix_rows", "catia_endpoint_alternative_prefix_directions")?;
+                crate::resource::push(ctx, &mut alternative, crate::resource::copy_slice(ctx, boundary_directions, "catia_endpoint_boundary_direction_copy")?, "catia_endpoint_alternative_boundary")?;
+                crate::resource::push(ctx, &mut next, alternative, "catia_endpoint_alternatives")?;
                 if next.len() > MAX_FACE_ENDPOINT_CONFIGURATION_WORK {
-                    return Err(MeshDirectionEnumerationError::Overflow);
+                    return Ok(Err(MeshDirectionEnumerationError::Overflow));
                 }
             }
         }
@@ -6689,7 +6694,7 @@ fn endpoint_configuration_directions(
             break;
         }
     }
-    Ok(alternatives)
+    Ok(Ok(alternatives))
 }
 
 #[derive(Clone)]
@@ -8637,6 +8642,31 @@ struct MeshEndpointGeometry<'a> {
     vertex_points: &'a [[f64; 3]],
 }
 
+fn copy_mesh_assignment(
+    ctx: &DecodeContext<'_>,
+    assignment: &MeshFaceBoundaryAssignment,
+) -> Result<MeshFaceBoundaryAssignment, CodecError> {
+    Ok(MeshFaceBoundaryAssignment {
+        boundaries: crate::resource::copy_retained_rows(
+            ctx,
+            &assignment.boundaries,
+            "catia_fixed_assignment_boundary_rows",
+            "catia_fixed_assignment_boundary_uses",
+        )?,
+    })
+}
+
+fn fixed_initial_orientations(
+    ctx: &DecodeContext<'_>,
+    fixed: &[bool],
+    operation: &'static str,
+) -> Result<Vec<Option<bool>>, CodecError> {
+    let mut orientations = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut orientations, fixed.len(), operation)?;
+    orientations.extend(fixed.iter().map(|fixed| (!fixed).then_some(false)));
+    Ok(orientations)
+}
+
 fn resolve_fixed_mesh_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     geometry: MeshEndpointGeometry<'_>,
@@ -8656,11 +8686,11 @@ fn resolve_fixed_mesh_endpoint_pairs(
     {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     }
-    let assignment_domains = selected
-        .iter()
-        .cloned()
-        .map(|assignment| vec![assignment])
-        .collect::<Vec<_>>();
+    let mut assignment_domains = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut assignment_domains, selected.len(), "catia_fixed_assignment_domain_rows")?;
+    for assignment in selected {
+        assignment_domains.push(ctx.alloc_filled(1, copy_mesh_assignment(ctx, assignment)?, "catia_fixed_assignment_domain_entries")?);
+    }
     if edge_candidates
         .iter()
         .any(|candidates| candidates.len() != 1)
@@ -8685,14 +8715,18 @@ fn resolve_fixed_mesh_endpoint_pairs(
             return Ok(resolved);
         }
     }
-    let edge_pairs = edge_candidates
-        .iter()
-        .map(|candidates| candidates.first().copied())
-        .collect::<Option<Vec<_>>>();
-    let Some(edge_pairs) = edge_pairs else {
+    if edge_candidates.iter().any(Vec::is_empty) {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
-    };
-    let mut fixed_face_directions = Vec::with_capacity(selected.len());
+    }
+    let mut edge_pairs = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut edge_pairs, edge_candidates.len(), "catia_fixed_endpoint_pairs")?;
+    for candidates in edge_candidates {
+        if let Some(&pair) = candidates.first() {
+            edge_pairs.push(pair);
+        }
+    }
+    let mut fixed_face_directions = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut fixed_face_directions, selected.len(), "catia_fixed_face_direction_rows")?;
     let mut direction_overflow = false;
     for assignment in selected {
         let Some(configuration) =
@@ -8700,7 +8734,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         else {
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
         };
-        let directions = match endpoint_configuration_directions(assignment, &configuration) {
+        let directions = match endpoint_configuration_directions(ctx, assignment, &configuration)? {
             Ok(directions) => directions,
             Err(MeshDirectionEnumerationError::Overflow) => {
                 direction_overflow = true;
@@ -8746,12 +8780,10 @@ fn resolve_fixed_mesh_endpoint_pairs(
     else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     };
-    let mut direct_quotient = quotient.clone();
-    let mut direct_orientations = edge_has_fixed_direction
-        .iter()
-        .map(|fixed| (!fixed).then_some(false))
-        .collect::<Vec<_>>();
-    let mut direct_directions = Vec::with_capacity(selected.len());
+    let mut direct_quotient = quotient.clone_charged(ctx)?;
+    let mut direct_orientations = fixed_initial_orientations(ctx, &edge_has_fixed_direction, "catia_fixed_direct_orientations")?;
+    let mut direct_directions = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut direct_directions, selected.len(), "catia_fixed_direct_direction_rows")?;
     let mut direct_possible = true;
     for (assignment, direction_options) in selected.iter().zip(&fixed_face_directions) {
         let Some(direction_options) = direction_options.as_ref() else {
@@ -8762,7 +8794,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
             direct_possible = false;
             break;
         };
-        let mut next_orientations = direct_orientations.clone();
+        let mut next_orientations = crate::resource::copy_slice(ctx, &direct_orientations, "catia_fixed_next_orientations")?;
         let constrained = assignment
             .boundaries
             .iter()
@@ -8833,30 +8865,26 @@ fn resolve_fixed_mesh_endpoint_pairs(
             return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
         }
     }
+    let face_work = ctx.alloc_filled(assignment_domains.len(), Some(1usize), "catia_fixed_face_work")?;
+    let fixed_edge_orientations = if use_fixed_direction_search {
+        fixed_initial_orientations(ctx, &edge_has_fixed_direction, "catia_fixed_search_orientations")?
+    } else {
+        Vec::new()
+    };
     let mut search = MeshSelectionSearch {
         ctx,
         assignments: &assignment_domains,
         #[cfg(test)]
         possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
-        face_work: assignment_domains
-            .iter()
-            .map(|assignments| Some(assignments.len()))
-            .collect(),
+        face_work,
         edge_candidates,
         edge_rows,
         vertex_points,
         candidate_gauge,
         port_identities: Some(port_identities),
         fixed_face_directions,
-        fixed_edge_orientations: if use_fixed_direction_search {
-            edge_has_fixed_direction
-                .iter()
-                .map(|fixed| (!fixed).then_some(false))
-                .collect()
-        } else {
-            Vec::new()
-        },
+        fixed_edge_orientations,
         edge_has_fixed_direction: if use_fixed_direction_search {
             edge_has_fixed_direction
         } else {
@@ -12731,6 +12759,16 @@ fn fixed_mesh_search_charges_edge_direction_and_selection_arrays() {
     );
     assert!(refused.contains("catia_fixed_mesh_edge_directions"));
     assert!(refused.contains("catia_fixed_mesh_selection"));
+    for operation in [
+        "catia_fixed_assignment_domain_rows",
+        "catia_fixed_assignment_domain_entries",
+        "catia_fixed_assignment_boundary_rows",
+        "catia_fixed_assignment_boundary_uses",
+        "catia_fixed_endpoint_pairs",
+        "catia_fixed_face_direction_rows",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
@@ -12792,6 +12830,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
     let mut refused = HashSet::new();
     let mut limit = 0;
     let mut completed = false;
+    let mut last_operation = "";
     for _ in 0..4_096 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -12801,6 +12840,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
         match run(&ctx) {
             Err(CodecError::ResourceLimit(error)) => {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                last_operation = error.operation;
                 refused.insert(error.operation);
                 limit = error.used + error.additional;
             }
@@ -12810,6 +12850,38 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
             }
             Err(error) => panic!("unexpected overflow-search refusal: {error}"),
         }
+    }
+    if !completed {
+        assert!(last_operation.starts_with("catia_endpoint_"));
+        let mut low = limit;
+        let mut high = 1_000_000u64;
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = mid;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match run(&ctx) {
+                Err(CodecError::ResourceLimit(error))
+                    if error.operation.starts_with("catia_endpoint_") => low = mid + 1,
+                Err(CodecError::ResourceLimit(_)) | Ok(_) => high = mid,
+                Err(error) => panic!("unexpected overflow-search refusal: {error}"),
+            }
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = low;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(error)) => {
+                refused.insert(error.operation);
+                assert_eq!(error.operation, "catia_general_mesh_fixed_face_directions");
+            }
+            _ => panic!("expected the first post-enumeration charge"),
+        }
+        completed = true;
     }
     assert!(completed, "adaptive caps must admit the overflow fixture");
     assert!(refused.contains("catia_general_mesh_fixed_face_directions"));
@@ -13635,13 +13707,63 @@ fn endpoint_configuration_unresolved_boundary_reversal_is_a_gauge() {
     };
     let configuration = vec![(0, [0, 1]), (1, [0, 1]), (2, [2, 3]), (3, [2, 3])];
 
-    let directions = endpoint_configuration_directions(&assignment, &configuration)
+    catia_test_context!(ctx);
+    let directions = endpoint_configuration_directions(&ctx, &assignment, &configuration)
+        .expect("service resource budget")
         .expect("unresolved boundary directions should enumerate");
 
     assert_eq!(directions.len(), 1);
     assert_eq!(directions[0].len(), 2);
     assert_eq!(directions[0][0].len(), 2);
     assert_eq!(directions[0][1].len(), 2);
+}
+
+#[test]
+fn endpoint_configuration_directions_refuse_before_state_and_prefix_growth() {
+    use std::collections::BTreeSet;
+
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: None },
+            MeshBoundaryEdgeCandidate { edge: 1, start: 0, end: 1, reversed: None },
+        ]],
+    };
+    let configuration = vec![(0, [0, 1]), (1, [0, 1])];
+    let run = |ctx: &DecodeContext<'_>| endpoint_configuration_directions(ctx, &assignment, &configuration);
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(run(ctx).expect("service budget").expect("directions").len(), 1);
+    });
+    let mut refusals = BTreeSet::new();
+    let mut completed = false;
+    for cap in 0..=64 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refusals.insert(limit.operation);
+            }
+            Ok(Ok(directions)) => {
+                assert_eq!(directions.len(), 1);
+                completed = true;
+                break;
+            }
+            _ => panic!("unexpected endpoint direction result"),
+        }
+    }
+    assert!(completed, "fixture must fit the final cap");
+    for operation in [
+        "catia_endpoint_configuration_pairs",
+        "catia_endpoint_initial_alternatives",
+        "catia_endpoint_initial_direction",
+        "catia_endpoint_initial_states",
+        "catia_endpoint_direction_prefix",
+        "catia_endpoint_direction_step",
+        "catia_endpoint_direction_states",
+        "catia_endpoint_boundary_solutions",
+        "catia_endpoint_boundary_direction_copy",
+        "catia_endpoint_alternative_boundary",
+        "catia_endpoint_alternatives",
+    ] {
+        assert!(refusals.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
