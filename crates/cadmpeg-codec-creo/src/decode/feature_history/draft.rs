@@ -96,10 +96,11 @@ pub(super) fn thicken_feature_definition(
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
     let transitions = feature_surface_transitions(
+        ctx,
         feature_id,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    );
+    )?;
     let faces = if let Some(transitions) = transitions.as_ref() {
             let source_ids = transitions
                 .iter()

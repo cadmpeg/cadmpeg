@@ -298,42 +298,48 @@ pub(in super::super) fn draft_neutral_plane_selection(
 }
 
 pub(in super::super) fn feature_surface_transitions(
+    ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
-) -> Option<Vec<(u32, u32)>> {
-    let owned = tables
+) -> Result<Option<Vec<(u32, u32)>>, CodecError> {
+    let outputs = tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    let outputs = owned
-        .iter()
-        .flat_map(|table| {
-            table
-                .entries
-                .iter()
-                .filter(|entry| entry.class_id() == 210)
-                .map(move |entry| (*table, entry))
-        })
-        .collect::<Vec<_>>();
-    if outputs.is_empty() {
-        return None;
+        .flat_map(|table| table.entries.iter())
+        .filter(|entry| entry.class_id() == 210)
+        .count();
+    if outputs == 0 {
+        return Ok(None);
     }
-    let predecessors = owned
+    let predecessors = tables
         .iter()
+        .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter())
         .filter(|entry| entry.class_id() == 214 && entry.related_entity_id().is_some())
         .count();
-    if predecessors != outputs.len() {
-        return None;
+    if predecessors != outputs {
+        return Ok(None);
     }
 
     let mut output_ids = BTreeSet::new();
     let mut intermediate_ids = BTreeSet::new();
     let mut source_ids = BTreeSet::new();
-    let mut transitions = Vec::with_capacity(outputs.len());
-    for (output_table, output) in outputs {
-        let intermediate_id = output.related_entity_id()?;
+    let mut transitions = Vec::new();
+    for (output_table, output) in tables
+        .iter()
+        .filter(|table| table.feature_id == feature_id)
+        .flat_map(|table| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.class_id() == 210)
+                .map(move |entry| (table, entry))
+        })
+    {
+        let Some(intermediate_id) = output.related_entity_id() else {
+            return Ok(None);
+        };
         if output.related_entity_state() != Some(0)
             || output_table
                 .surface_ids_iter()
@@ -342,11 +348,15 @@ pub(in super::super) fn feature_surface_transitions(
                 != 1
             || crate::surface::unique_surface_row(surface_rows, output.entity_id)
                 .is_none_or(|row| row.feature_id != feature_id)
-            || !output_ids.insert(output.entity_id)
-            || !intermediate_ids.insert(intermediate_id)
+            || output_ids.contains(&output.entity_id)
+            || intermediate_ids.contains(&intermediate_id)
         {
-            return None;
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "creo transition output identity nodes")?;
+        output_ids.insert(output.entity_id);
+        ctx.charge_collection_items(1, "creo transition intermediate identity nodes")?;
+        intermediate_ids.insert(intermediate_id);
         let mut matches = output_table.entries.iter().filter(|predecessor| {
             predecessor.class_id() == 214
                 && predecessor.entity_id == intermediate_id
@@ -354,39 +364,48 @@ pub(in super::super) fn feature_surface_transitions(
                 && output_table.contains_non_surface_entity_id(predecessor.entity_id)
                 && crate::surface::unique_surface_row(surface_rows, predecessor.entity_id).is_none()
         });
-        let predecessor = matches.next()?;
+        let Some(predecessor) = matches.next() else {
+            return Ok(None);
+        };
         if matches.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        let source_id = predecessor.related_entity_id()?;
+        let Some(source_id) = predecessor.related_entity_id() else {
+            return Ok(None);
+        };
         if crate::surface::unique_surface_row(surface_rows, source_id)
             .is_none_or(|row| row.feature_id == feature_id)
-            || !source_ids.insert(source_id)
+            || source_ids.contains(&source_id)
         {
-            return None;
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "creo transition source identity nodes")?;
+        source_ids.insert(source_id);
+        ctx.try_reserve_items(&mut transitions, 1, "creo surface transitions")?;
         transitions.push((source_id, output.entity_id));
     }
-    output_ids.is_disjoint(&source_ids).then_some(transitions)
+    Ok(output_ids.is_disjoint(&source_ids).then_some(transitions))
 }
 
 pub(in super::super) fn surface_transition_dependencies(
+    ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
-) -> Vec<u32> {
-    feature_surface_transitions(feature_id, tables, surface_rows)
-        .into_iter()
-        .flatten()
-        .filter_map(|(source_id, _)| {
-            crate::surface::unique_surface_row(surface_rows, source_id).map(|row| row.feature_id)
-        })
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+) -> Result<Vec<u32>, CodecError> {
+    let mut dependencies = Vec::new();
+    for (source_id, _) in feature_surface_transitions(ctx, feature_id, tables, surface_rows)?
+        .unwrap_or_default()
+    {
+        let Some(row) = crate::surface::unique_surface_row(surface_rows, source_id) else {
+            continue;
+        };
+        if !dependencies.contains(&row.feature_id) {
+            ctx.try_reserve_items(&mut dependencies, 1, "creo transition dependencies")?;
+            dependencies.push(row.feature_id);
+        }
+    }
+    Ok(dependencies)
 }
 
 pub(in super::super) fn thicken_plane_offset(

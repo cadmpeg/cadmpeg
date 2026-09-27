@@ -17,6 +17,17 @@ fn draft_neutral_plane_selection_with_service(
     .expect("service profile admits draft neutral plane selection")
 }
 
+fn feature_surface_transitions_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> Option<Vec<(u32, u32)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::feature_surface_transitions(ctx, feature_id, tables, rows)
+    })
+    .expect("service profile admits surface transitions")
+}
+
 fn one_knit_scan() -> crate::container::ContainerScan<'static> {
     let entry = |entity_id, class_id, offset| crate::feature::entity::FeatureEntityTableEntry {
         payload: crate::feature::entity::entry_payload(class_id, None, None, None),
@@ -611,16 +622,90 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     ];
 
     assert_eq!(
-        super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions_with_service(17, std::slice::from_ref(&table), &rows),
         Some(vec![(11, 201)])
     );
 
     table.entries.push(entry(201, 210, Some(101)));
     table.mark_surface_id(201);
     assert_eq!(
-        super::feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions_with_service(17, std::slice::from_ref(&table), &rows),
         None
     );
+}
+
+fn transition_limit_error(limit: u64, operation: &'static str, dependency_route: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let entry = |entity_id, class_id, related_entity_id| {
+        crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(
+                class_id,
+                None,
+                related_entity_id,
+                related_entity_id.map(|_| 0),
+            ),
+            entity_id,
+            prefixed: true,
+            offset: entity_id as usize,
+            end_offset: entity_id as usize,
+        }
+    };
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        17,
+        80,
+        vec![entry(101, 214, Some(11)), entry(201, 210, Some(101))],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([201]);
+    let row = |id, feature_id| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let rows = [row(11, 3), row(201, 17)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = if dependency_route {
+        super::surface_transition_dependencies(&ctx, 17, &[table], &rows).map(|_| ())
+    } else {
+        super::feature_surface_transitions(&ctx, 17, &[table], &rows).map(|_| ())
+    }
+    .expect_err("one transition exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn transition_output_identity_nodes_refuse_collection_limit() {
+    transition_limit_error(0, "creo transition output identity nodes", false);
+}
+
+#[test]
+fn transition_intermediate_identity_nodes_refuse_collection_limit() {
+    transition_limit_error(1, "creo transition intermediate identity nodes", false);
+}
+
+#[test]
+fn transition_source_identity_nodes_refuse_collection_limit() {
+    transition_limit_error(2, "creo transition source identity nodes", false);
+}
+
+#[test]
+fn surface_transitions_refuse_collection_limit() {
+    transition_limit_error(3, "creo surface transitions", false);
+}
+
+#[test]
+fn transition_dependencies_refuse_collection_limit() {
+    transition_limit_error(4, "creo transition dependencies", true);
 }
 
 #[test]
