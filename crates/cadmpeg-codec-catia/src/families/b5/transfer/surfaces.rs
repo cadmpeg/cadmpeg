@@ -130,23 +130,23 @@ pub(super) fn neutral_surface(
     surface_id: u32,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> SurfacePlan {
+) -> Result<SurfacePlan, cadmpeg_core::decode::ResourceLimit> {
     let carrier = match surface_carrier(surface) {
         B5SurfaceCarrier::Analytic(geometry) => {
-            return SurfacePlan {
+            return Ok(SurfacePlan {
                 geometry,
                 procedure: None,
-            }
+            })
         }
         B5SurfaceCarrier::Procedural(carrier) => carrier,
     };
-    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id, refusal) {
-        return SurfacePlan {
+    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id, refusal)? {
+        return Ok(SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
             }),
             procedure: Some(SurfaceProcedure::Extrusion(Box::new(extrusion))),
-        };
+        });
     }
     let mut procedure = None;
     let geometry = match carrier {
@@ -195,10 +195,10 @@ pub(super) fn neutral_surface(
         ),
     };
 
-    SurfacePlan {
+    Ok(SurfacePlan {
         geometry,
         procedure,
-    }
+    })
 }
 
 pub(super) fn revolution_surface(

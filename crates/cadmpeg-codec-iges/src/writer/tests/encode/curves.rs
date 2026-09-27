@@ -53,7 +53,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         round_trip.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

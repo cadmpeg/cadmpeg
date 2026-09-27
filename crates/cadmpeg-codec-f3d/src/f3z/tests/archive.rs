@@ -281,7 +281,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     assert!(merged_unknowns
         .iter()
         .all(|record| record.id.as_str().starts_with(&prefix)));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
     assert!(
         !validation.findings.iter().any(|finding| {
             finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity

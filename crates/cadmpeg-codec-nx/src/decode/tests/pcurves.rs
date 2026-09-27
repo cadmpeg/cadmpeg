@@ -434,7 +434,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             curve,
             point.get(),
             parameter,
-        )
+        ).expect("resource allocation did not fail")
         .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
         assert!((inverse.get() - parameter).abs() < 1.0e-10);
     }
@@ -1364,7 +1364,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     point.z += 0.001;
 
     let parameters =
-        cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01)
+        cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.01).expect("resource allocation did not fail")
             .unwrap();
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
@@ -1856,7 +1856,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         .zip(weights)
         .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
         .collect();
-    let spans = homogeneous_spans(2, &knots, controls).expect("valid Bézier extraction");
+    let spans = homogeneous_spans(2, &knots, controls).expect("resource allocation did not fail").expect("valid Bézier extraction");
 
     assert_eq!(spans.len(), 3);
     for span in spans {

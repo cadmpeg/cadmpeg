@@ -1033,7 +1033,7 @@ mod route_tests {
             &ir,
             std::iter::empty(),
             Vec::new(),
-        );
+        ).expect("resource allocation did not fail");
         assert!(unsorted
             .findings
             .iter()
@@ -1053,7 +1053,7 @@ mod route_tests {
             &ir,
             std::iter::empty(),
             Vec::new(),
-        );
+        ).expect("resource allocation did not fail");
         assert!(!sorted
             .findings
             .iter()

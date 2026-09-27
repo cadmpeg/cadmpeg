@@ -393,7 +393,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.semantic_kind == "pattern"
             && record.neutral()
     }));
-    let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).findings;
+    let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").findings;
     assert!(
         baseline_findings
             .iter()

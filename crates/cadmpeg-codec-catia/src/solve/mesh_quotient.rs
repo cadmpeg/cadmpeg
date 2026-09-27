@@ -5,7 +5,7 @@
 #[cfg(test)]
 use std::num::NonZeroUsize;
 
-use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, work_units, ResourceLimit, WorkBudget};
 
 /// Words in a zeroed bitset over `bits` positions.
 ///
@@ -8858,21 +8858,28 @@ pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget<'_>,
     mut solve: F,
-) -> MeshFaceDomainCandidateSolve
+) -> Result<MeshFaceDomainCandidateSolve, ResourceLimit>
 where
-    F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> MeshCandidateSolve,
+    F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> Result<MeshCandidateSolve, ResourceLimit>,
 {
     let mut solution: Option<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)> = None;
     let mut rejection = None;
     let mut ambiguity = None;
     let mut exhaustion = None;
+    let mut resource_refusal = None;
     let mut evaluate = |assignment: &[[usize; 2]]| {
         if !budget.charge() {
             exhaustion = Some(MeshCandidateExhaustion::FaceDomainEnumeration);
             return false;
         }
         let branch_budget = budget.child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
-        let outcome = solve(assignment, &branch_budget);
+        let outcome = match solve(assignment, &branch_budget) {
+            Ok(outcome) => outcome,
+            Err(limit) => {
+                resource_refusal = Some(limit);
+                return false;
+            }
+        };
         if !budget.charge_by(branch_budget.consumed()) {
             exhaustion = Some(MeshCandidateExhaustion::FaceDomainEnumeration);
             return false;
@@ -8939,29 +8946,32 @@ where
             }
         }
     };
+    if let Some(limit) = resource_refusal {
+        return Err(limit);
+    }
     if visit.is_none() {
-        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::InputStructure,
-        ));
+        )));
     }
     if let Some(ambiguity) = ambiguity {
-        return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity));
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity)));
     }
     if let Some(exhaustion) = exhaustion {
-        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion));
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion)));
     }
     if matches!(visit, Some(DuplicateFaceAssignmentVisit::Exhausted)) {
-        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(
+        return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(
             MeshCandidateExhaustion::FaceDomainEnumeration,
-        ));
+        )));
     }
-    if let Some((faces, topology, point_assignment)) = solution {
+    Ok(if let Some((faces, topology, point_assignment)) = solution {
         MeshSolve::Solved((faces, topology, point_assignment))
     } else {
         MeshSolve::Failed(MeshCandidateFailure::Rejected(
             rejection.unwrap_or(MeshCandidateRejection::InputStructure),
         ))
-    }
+    })
 }
 
 #[test]
@@ -9047,7 +9057,7 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
         &budget,
         |faces, _| {
             visited.push(faces.to_vec());
-            if faces[0][1] == 2 {
+            Ok(if faces[0][1] == 2 {
                 MeshSolve::Solved((
                     StandardTopology {
                         faces: Vec::new(),
@@ -9061,9 +9071,9 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
                 MeshSolve::Failed(MeshCandidateFailure::Rejected(
                     MeshCandidateRejection::InputStructure,
                 ))
-            }
+            })
         },
-    );
+    ).expect("face assignment evaluator allocation succeeds");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the unique branch");
@@ -9085,7 +9095,7 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
         &budget,
         |faces, _| {
             visited.push(faces.to_vec());
-            if faces[0][1] == 2 {
+            Ok(if faces[0][1] == 2 {
                 MeshSolve::Solved((
                     StandardTopology {
                         faces: Vec::new(),
@@ -9099,9 +9109,9 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
                 MeshSolve::Failed(MeshCandidateFailure::Rejected(
                     MeshCandidateRejection::InputStructure,
                 ))
-            }
+            })
         },
-    );
+    ).expect("face assignment evaluator allocation succeeds");
 
     let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the closed assignment");
@@ -9123,7 +9133,7 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
         },
         &budget,
         |assignment, _| {
-            MeshSolve::Solved((
+            Ok(MeshSolve::Solved((
                 StandardTopology {
                     faces: Vec::new(),
                     edge_rows: Vec::new(),
@@ -9131,9 +9141,9 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
                     logical_vertex_count: 0,
                 },
                 vec![assignment[0][1]],
-            ))
+            )))
         },
-    );
+    ).expect("face assignment evaluator allocation succeeds");
 
     assert!(matches!(
         result,

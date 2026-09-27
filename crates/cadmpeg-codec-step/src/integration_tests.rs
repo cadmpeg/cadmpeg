@@ -66,7 +66,7 @@ use crate::writer::tests::round_trips::{
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("step").is_some());
 }

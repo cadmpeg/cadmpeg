@@ -35,7 +35,7 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 }
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
     assert!(result.ir().native.namespace("catia").is_some());

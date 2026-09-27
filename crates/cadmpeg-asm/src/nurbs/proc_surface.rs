@@ -706,7 +706,7 @@ fn optional_trailing_cache_tolerance(cur: &mut Cur<'_>) -> Option<Nullable<f64>>
 fn g2_blend_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
     let names = ["g2_blend_spl_sur", "g2blnsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -720,10 +720,15 @@ fn g2_blend_spl_sur(
         (name == "g2_blend_spl_sur").then_some(())?;
         let revision = PositiveI64::new(cur.take_long()?)?;
         let leading_parameters = [cur.take_f64()?, cur.take_f64()?];
-        let sides = Box::new([
-            rolling_ball_side(&mut cur, resolver)?,
-            rolling_ball_side(&mut cur, resolver)?,
-        ]);
+        let first = match rolling_ball_side(&mut cur, resolver)? {
+            Ok(side) => side,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let second = match rolling_ball_side(&mut cur, resolver)? {
+            Ok(side) => side,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let sides = Box::new([first, second]);
         let table = resolver?;
         let center = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let center_range = [
@@ -756,7 +761,7 @@ fn g2_blend_spl_sur(
         } = revision_surface_tail(&mut cur)?;
         let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
         cur.at_scope_end().then_some(())?;
-        return Some(DecodedProceduralSurface::revision(
+        return Some(Ok(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
                 EmbeddedRevisionG2Blend {
                     revision,
@@ -778,7 +783,7 @@ fn g2_blend_spl_sur(
                     tail_extensions,
                 },
             )),
-        ));
+        )));
     }
     let first = g2_side(&mut cur)?;
     let singularity = cur.take_enum()?;
@@ -840,7 +845,7 @@ fn g2_blend_spl_sur(
         cur.take_float_array()?,
         cur.take_float_array()?,
     ];
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::G2Blend(Box::new(EmbeddedG2Blend {
             first,
             singularity,
@@ -855,7 +860,7 @@ fn g2_blend_spl_sur(
             discontinuities,
         })),
         cache_fit_tolerance,
-    ))
+    )))
 }
 
 /// Constraint fields carried by a classic loft profile.
@@ -4401,7 +4406,7 @@ fn resolve_t_spline_subtransform(
 pub fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
     procedural_resolving_refs(toks, table, &mut Vec::new())
 }
 
@@ -4409,7 +4414,7 @@ fn procedural_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
     if let Some(decoded) = defm_spl_sur(toks)
         .or_else(|| helix_spl_sur(toks))
         .or_else(|| t_spl_sur(toks, table))
@@ -4424,16 +4429,17 @@ fn procedural_resolving_refs(
         .or_else(|| skin_spl_sur(toks))
         .or_else(|| net_spl_sur(toks))
         .or_else(|| sweep_spl_sur(toks, Some(table)))
+        .map(Ok)
         .or_else(|| g2_blend_spl_sur(toks, Some(table)))
-        .or_else(|| ruled_spl_sur(toks))
-        .or_else(|| sum_spl_sur(toks, Some(table)))
-        .or_else(|| rot_spl_sur(toks, Some(table)))
-        .or_else(|| off_spl_sur(toks, Some(table)))
-        .or_else(|| cyl_spl_sur(toks, Some(table)))
+        .or_else(|| ruled_spl_sur(toks).map(Ok))
+        .or_else(|| sum_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| rot_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| off_spl_sur(toks, Some(table)).map(Ok))
+        .or_else(|| cyl_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| var_blend_spl_sur(toks, Some(table)))
-        .or_else(|| vertex_blend_spl_sur(toks, Some(table)))
+        .or_else(|| vertex_blend_spl_sur(toks, Some(table)).map(Ok))
         .or_else(|| full_rb_blend_spl_sur(toks, table))
-        .or_else(|| compact_rb_blend_spl_sur(toks))
+        .or_else(|| compact_rb_blend_spl_sur(toks).map(Ok))
     {
         return Some(decoded);
     }

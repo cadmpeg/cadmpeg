@@ -456,6 +456,6 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;
     ir.finalize();
-    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }

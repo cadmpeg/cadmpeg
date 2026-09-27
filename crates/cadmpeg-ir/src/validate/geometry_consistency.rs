@@ -23,15 +23,16 @@ use crate::scalar::{ExtendedReal, FiniteReal};
 use crate::topology::{ParameterInterval, Sense};
 
 use crate::units::COINCIDENCE_TOLERANCE;
+use cadmpeg_core::decode::ResourceLimit;
 
 use super::pcurve_parameter_domain;
 
 /// A curve point as the checks measure it: the finite point, or the point an
 /// evaluation outside the finite range reached, whose mismatch is then the
 /// finding's measure. An evaluation with no value has no point.
-fn measured_point(evaluation: Result<FinitePoint3, EvaluationFailure<Point3>>) -> Option<Point3> {
+fn measured_point(evaluation: Result<FinitePoint3, EvaluationFailure<Point3>>) -> Result<Option<Point3>, ResourceLimit> {
     match evaluation {
-        Ok(point) => Some(point.get()),
+        Ok(point) => Ok(Some(point.get())),
         Err(failure) => failure.non_finite(),
     }
 }
@@ -67,7 +68,7 @@ fn procedural_support_allowance(
 
 /// Embedded support pcurves must map through their surfaces onto the curve
 /// they constrain at both ends of the construction interval.
-pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), ResourceLimit> {
     let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
@@ -92,7 +93,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 .parameter_range()
                 .endpoints()
                 .map(|parameter| measured_point(model_curve_point_by_id(&index, owner, parameter)));
-            let [Some(start), Some(end)] = evaluated else {
+            let [Some(start), Some(end)] = [evaluated[0]?, evaluated[1]?] else {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,
@@ -133,7 +134,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 .parameter_range()
                 .endpoints()
                 .map(|parameter| measured_point(curve_point(solved, parameter)));
-            let [Some(solved_start), Some(solved_end)] = solved else {
+            let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
                 continue;
             };
             let bound = procedural_support_allowance(
@@ -145,10 +146,11 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let Some(base) = curves.get(base.as_str()) else {
                 continue;
             };
-            let base = base_endpoints.map(|parameter| {
-                parameter.and_then(|parameter| measured_point(curve_point(base, parameter.get())))
+            let base = base_endpoints.map(|parameter| match parameter {
+                Some(parameter) => measured_point(curve_point(base, parameter.get())),
+                None => Ok(None),
             });
-            let [Some(base_start), Some(base_end)] = base else {
+            let [Some(base_start), Some(base_end)] = [base[0]?, base[1]?] else {
                 check_support_sides(
                     context,
                     None,
@@ -160,7 +162,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                     bound,
                     procedural.id.as_str(),
                     findings,
-                );
+                )?;
                 continue;
             };
             let offset_mismatch = worse_mismatch(
@@ -186,7 +188,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 bound,
                 procedural.id.as_str(),
                 findings,
-            );
+            )?;
             continue;
         }
         let (context, third) = match procedural.definition() {
@@ -234,7 +236,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             .parameter_range()
             .endpoints()
             .map(|parameter| measured_point(curve_point(curve, parameter)));
-        let [Some(solved_start), Some(solved_end)] = solved else {
+        let [Some(solved_start), Some(solved_end)] = [solved[0]?, solved[1]?] else {
             continue;
         };
         let bound = procedural_support_allowance(
@@ -251,8 +253,9 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             bound,
             procedural.id.as_str(),
             findings,
-        );
+        )?;
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -272,7 +275,7 @@ fn check_support_sides(
     bound: f64,
     entity: &str,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), ResourceLimit> {
     let (constrained, expected_distance) = match contract {
         SupportEndpointContract::Coincident(endpoints) => (endpoints, None),
         SupportEndpointContract::Offset {
@@ -286,18 +289,18 @@ fn check_support_sides(
         };
         // A non-finite pcurve or support point is measured as a finite one
         // is: the mismatch it produces is the finding's measure.
-        let support = context.parameter_range().endpoints().map(|parameter| {
-            let parameter = side.pcurve_parameter(context.parameter_range(), parameter)?;
+        let support = context.parameter_range().endpoints().map(|parameter| -> Result<Option<Point3>, ResourceLimit> {
+            let Some(parameter) = side.pcurve_parameter(context.parameter_range(), parameter) else { return Ok(None); };
             let uv = match pcurve_uv(&pcurve.geometry, parameter.get()) {
                 Ok(uv) => uv.get(),
-                Err(failure) => failure.non_finite()?,
+                Err(failure) => { let Some(uv) = failure.non_finite()? else { return Ok(None); }; uv },
             };
             match model_surface_point_by_id(index, surface_id, uv.u, uv.v) {
-                Ok(point) => Some(point.get()),
+                Ok(point) => Ok(Some(point.get())),
                 Err(failure) => failure.non_finite(),
             }
         });
-        let [Some(support_start), Some(support_end)] = support else {
+        let [Some(support_start), Some(support_end)] = [support[0]?, support[1]?] else {
             continue;
         };
         let endpoint_mismatch = |constrained, support| {
@@ -320,6 +323,7 @@ fn check_support_sides(
             });
         }
     }
+    Ok(())
 }
 
 fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
@@ -348,7 +352,7 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
 /// An edge's curve evaluated at its parameter range must land on the edge's
 /// start and end vertex positions within the topology tolerances or the
 /// evaluated curve cache's fit tolerance.
-pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), ResourceLimit> {
     let curves = ir
         .model
         .curves
@@ -384,8 +388,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
             continue;
         };
         let (Some(at_start), Some(at_end)) = (
-            measured_point(curve_point(geometry, start_t)),
-            measured_point(curve_point(geometry, end_t)),
+            measured_point(curve_point(geometry, start_t))?,
+            measured_point(curve_point(geometry, end_t))?,
         ) else {
             continue;
         };
@@ -446,8 +450,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
             continue;
         };
         let (Some(at_start), Some(at_end)) = (
-            measured_point(curve_point(geometry, start_t)),
-            measured_point(curve_point(geometry, end_t)),
+            measured_point(curve_point(geometry, start_t))?,
+            measured_point(curve_point(geometry, end_t))?,
         ) else {
             continue;
         };
@@ -479,6 +483,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
             });
         }
     }
+    Ok(())
 }
 
 /// A coedge's pcurve, mapped through its face's surface, must land on the
@@ -486,7 +491,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// the topology tolerances or the evaluated pcurve carriers' fit tolerances.
 /// Pcurve parameter sign and direction are independent of edge sense, so
 /// either sign and either endpoint assignment satisfy the check.
-pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) -> Result<(), ResourceLimit> {
     let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
@@ -628,7 +633,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             first,
             last,
             recovery_bound,
-        )
+        )?
         .unwrap_or_default();
         let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(
@@ -661,13 +666,12 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(intervals) = intervals else {
             continue;
         };
-        let Some(mismatch) = intervals
-            .into_iter()
-            .filter_map(|[t0, t1]| {
+        let mut minimum_mismatch: Option<f64> = None;
+        for [t0, t1] in intervals {
                 // A non-finite pcurve or surface point is measured as a finite
                 // one is: the distance it produces is the finding's measure.
                 let pcurve_point = |geometry, parameter| match pcurve_uv(geometry, parameter) {
-                    Ok(uv) => Some(uv.get()),
+                    Ok(uv) => Ok(Some(uv.get())),
                     Err(failure) => failure.non_finite(),
                 };
                 let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
@@ -676,22 +680,22 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     uv.u,
                     uv.v,
                 ) {
-                    Ok(point) => Some(point.get()),
+                    Ok(point) => Ok(Some(point.get())),
                     Err(failure) => failure.non_finite(),
                 };
-                let (uv0, uv1) = (
+                let (Some(uv0), Some(uv1)) = (
                     pcurve_point(&first.geometry, t0)?,
                     pcurve_point(&last.geometry, t1)?,
-                );
-                let (p0, p1) = (surface_point(uv0)?, surface_point(uv1)?);
+                ) else { continue; };
+                let (Some(p0), Some(p1)) = (surface_point(uv0)?, surface_point(uv1)?) else { continue; };
                 let forward =
                     worse_mismatch(Point3::distance(p0, *start), Point3::distance(p1, *end));
                 let reversed =
                     worse_mismatch(Point3::distance(p0, *end), Point3::distance(p1, *start));
-                Some(forward.min(reversed))
-            })
-            .reduce(f64::min)
-        else {
+                let mismatch = forward.min(reversed);
+                minimum_mismatch = Some(minimum_mismatch.map_or(mismatch, |minimum| minimum.min(mismatch)));
+        }
+        let Some(mismatch) = minimum_mismatch else {
             continue;
         };
         if !mismatch.is_finite() || mismatch > bound {
@@ -706,6 +710,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             });
         }
     }
+    Ok(())
 }
 
 /// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
@@ -764,18 +769,20 @@ fn edge_pcurve_parameter_ranges(
     first: &crate::geometry::pcurve::Pcurve,
     last: &crate::geometry::pcurve::Pcurve,
     tolerance: f64,
-) -> Option<Vec<[f64; 2]>> {
-    let start_parameters = pcurve_parameter_seeds_on_surface(context, first)
-        .into_iter()
-        .filter_map(|seed| {
-            mapped_pcurve_parameter_near_point(context, &first.geometry, start, seed, tolerance)
-        });
+ ) -> Result<Option<Vec<[f64; 2]>>, ResourceLimit> {
+    let mut start_parameters = Vec::new();
+    for seed in pcurve_parameter_seeds_on_surface(context, first) {
+        if let Some(parameter) = mapped_pcurve_parameter_near_point(context, &first.geometry, start, seed, tolerance)? {
+            start_parameters.push(parameter);
+        }
+    }
     let start_parameters = unique(start_parameters);
-    let end_parameters = pcurve_parameter_seeds_on_surface(context, last)
-        .into_iter()
-        .filter_map(|seed| {
-            mapped_pcurve_parameter_near_point(context, &last.geometry, end, seed, tolerance)
-        });
+    let mut end_parameters = Vec::new();
+    for seed in pcurve_parameter_seeds_on_surface(context, last) {
+        if let Some(parameter) = mapped_pcurve_parameter_near_point(context, &last.geometry, end, seed, tolerance)? {
+            end_parameters.push(parameter);
+        }
+    }
     let end_parameters = unique(end_parameters);
     let ranges = start_parameters
         .iter()
@@ -788,10 +795,10 @@ fn edge_pcurve_parameter_ranges(
         })
         .collect::<Vec<_>>();
     if !ranges.is_empty() {
-        return Some(ranges);
+        return Ok(Some(ranges));
     }
 
-    let curve_geometry = curve_geometry?;
+    let Some(curve_geometry) = curve_geometry else { return Ok(None); };
     if !matches!(
         curve_geometry,
         crate::geometry::CurveGeometry::Solved(
@@ -801,20 +808,21 @@ fn edge_pcurve_parameter_ranges(
                 | SolvedCurveGeometry::Hyperbola(_)
         )
     ) {
-        return None;
+        return Ok(None);
     }
     let seeds = pcurve_parameter_seeds_on_surface(context, first)
         .into_iter()
         .chain(pcurve_parameter_seeds_on_surface(context, last))
         .collect::<Vec<_>>();
-    let start_parameters = seeds.iter().filter_map(|seed| {
+    let start_parameters = seeds.iter().map(|seed| {
         curve_parameter_near_point(curve_geometry, start, seed.get(), tolerance)
-    });
-    let start_parameters = unique(start_parameters);
+    }).collect::<Result<Vec<_>, _>>()?;
+    let start_parameters = unique(start_parameters.into_iter().flatten());
     let end_parameters = seeds
         .iter()
-        .filter_map(|seed| curve_parameter_near_point(curve_geometry, end, seed.get(), tolerance));
-    let end_parameters = unique(end_parameters);
+        .map(|seed| curve_parameter_near_point(curve_geometry, end, seed.get(), tolerance))
+        .collect::<Result<Vec<_>, _>>()?;
+    let end_parameters = unique(end_parameters.into_iter().flatten());
     let ranges = start_parameters
         .into_iter()
         .flat_map(|start| {
@@ -824,7 +832,7 @@ fn edge_pcurve_parameter_ranges(
                 .map(move |end| [start.get(), end.get()])
         })
         .collect::<Vec<_>>();
-    (!ranges.is_empty()).then_some(ranges)
+    Ok((!ranges.is_empty()).then_some(ranges))
 }
 
 /// Find a pcurve parameter whose mapped surface point is near a topology
@@ -837,9 +845,9 @@ fn mapped_pcurve_parameter_near_point(
     target: Point3,
     seed: FiniteReal,
     tolerance: f64,
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, ResourceLimit> {
     if !tolerance.is_finite() || tolerance < 0.0 {
-        return None;
+        return Ok(None);
     }
     let domain = pcurve_parameter_domain(pcurve_geometry).map(ParameterInterval::from);
     // A step projects onto the pcurve domain. Without a domain, a step past
@@ -854,56 +862,65 @@ fn mapped_pcurve_parameter_near_point(
     // A non-finite pcurve or surface point is evaluated as a finite one is;
     // the search reads its non-finite distance.
     let uv_at = |parameter: FiniteReal| match pcurve_uv(pcurve_geometry, parameter.get()) {
-        Ok(uv) => Some(uv.get()),
+        Ok(uv) => Ok(Some(uv.get())),
         Err(failure) => failure.non_finite(),
     };
-    let point_at = |parameter: FiniteReal| {
-        let uv = uv_at(parameter)?;
+    let point_at = |parameter: FiniteReal| -> Result<Option<Point3>, ResourceLimit> {
+        let Some(uv) = uv_at(parameter)? else { return Ok(None); };
         match model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v) {
-            Ok(point) => Some(point.get()),
+            Ok(point) => Ok(Some(point.get())),
             Err(failure) => failure.non_finite(),
         }
     };
     // Only a Newton step reads the tangent pushed through the partials.
-    let tangent_at = |parameter: FiniteReal| {
-        let uv = uv_at(parameter)?;
-        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter.get()).ok()?;
-        let partials =
-            model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v).ok()?;
-        Some(Vector3::new(
+    let tangent_at = |parameter: FiniteReal| -> Result<Option<Vector3>, ResourceLimit> {
+        let Some(uv) = uv_at(parameter)? else { return Ok(None); };
+        let tangent_uv = match pcurve_tangent(pcurve_geometry, parameter.get()) {
+            Ok(tangent) => tangent,
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
+        };
+        let partials = match model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v) {
+            Ok(partials) => partials,
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
+        };
+        Ok(Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
             partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
-        ))
+        )))
     };
     let mismatch = |point: Point3| Point3::distance(point, target);
     let mut parameter = domain.map_or(seed, |domain| {
         domain.project(ExtendedReal::from_finite(seed))
     });
     for _ in 0..32 {
-        let point = point_at(parameter)?;
+        let Some(point) = point_at(parameter)? else { return Ok(None); };
         let error = mismatch(point);
         if error.is_finite() && error <= tolerance {
-            return Some(parameter);
+            return Ok(Some(parameter));
         }
-        let step =
-            crate::math::solve::projection_step(tangent_at(parameter)?, point.vector_from(target))?;
-        let mut candidate = stepped(parameter, step)?;
-        let mut candidate_error = point_at(candidate).map(mismatch)?;
+        let Some(tangent) = tangent_at(parameter)? else { return Ok(None); };
+        let Some(step) = crate::math::solve::projection_step(tangent, point.vector_from(target)) else { return Ok(None); };
+        let Some(mut candidate) = stepped(parameter, step) else { return Ok(None); };
+        let Some(candidate_point) = point_at(candidate)? else { return Ok(None); };
+        let mut candidate_error = mismatch(candidate_point);
         for _ in 0..12 {
             if candidate_error <= error {
                 break;
             }
             // Both parameters lie in the domain, so their midpoint does too.
             candidate = candidate.midpoint(parameter);
-            candidate_error = point_at(candidate).map(mismatch)?;
+            let Some(candidate_point) = point_at(candidate)? else { return Ok(None); };
+            candidate_error = mismatch(candidate_point);
         }
         if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
-            return None;
+            return Ok(None);
         }
         parameter = candidate;
     }
-    None
+    Ok(None)
 }
 
 fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<FiniteReal> {

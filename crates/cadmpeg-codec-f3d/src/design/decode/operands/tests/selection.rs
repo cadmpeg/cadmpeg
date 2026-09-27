@@ -898,7 +898,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .scoped(&[]),
             None,
             None,
-        ),
+        ).expect("resource allocation did not fail"),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -971,7 +971,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .scoped(&[]),
             None,
             None,
-        ),
+        ).expect("resource allocation did not fail"),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
@@ -997,7 +997,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .scoped(&[]),
             None,
             None,
-        ),
+        ).expect("resource allocation did not fail"),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
             sketch: ref actual_sketch,
             selections: ref actual_selections,
@@ -1027,7 +1027,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .scoped(&[]),
             None,
             None,
-        ),
+        ).expect("resource allocation did not fail"),
         cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,

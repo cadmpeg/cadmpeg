@@ -1492,7 +1492,7 @@ pub fn extrusion_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Extru
 pub fn rolling_ball_patch_layout(
     bytes: &[u8],
     int_width: RefWidth,
-) -> Option<RollingBallPatchLayout> {
+) -> Option<Result<RollingBallPatchLayout, cadmpeg_core::decode::ResourceLimit>> {
     let names: [&[u8]; 6] = [
         b"rb_blend_spl_sur",
         b"rbblnsur",
@@ -1508,13 +1508,17 @@ pub fn rolling_ball_patch_layout(
     let radii = (|| {
         let mut position = payload_start;
         take_tagged_int(span, &mut position, 0x04, int_width)?;
-        decode_rolling_ball_side(span, &mut position, int_width)?;
-        decode_rolling_ball_side(span, &mut position, int_width)?;
+        for _ in 0..2 {
+            match decode_rolling_ball_side(span, &mut position, int_width)? {
+                Ok(_) => {}
+                Err(limit) => return Some(Err(limit)),
+            }
+        }
         position = decode_curve_block(span, position, int_width)?.end();
-        Some([
+        Some(Ok([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
-        ])
+        ]))
     })()
     .or_else(|| {
         let mut position = payload_start;
@@ -1527,12 +1531,12 @@ pub fn rolling_ball_patch_layout(
             position = decode_surface_block(span, position, int_width)?.end();
         }
         position = decode_curve_block(span, position, int_width)?.end();
-        Some([
+        Some(Ok([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
-        ])
+        ]))
     })?;
-    Some(RollingBallPatchLayout { radii })
+    Some(radii.map(|radii| RollingBallPatchLayout { radii }))
 }
 
 /// Embedded cache-first base curve: a direct NURBS block, an analytic
@@ -1914,7 +1918,10 @@ fn embedded_surface_curve(toks: &[Token], table: &SubtypeTable) -> Option<Embedd
 /// whole domain in the other is decoded: that restriction is exactly a NURBS
 /// curve of the support's degree over the support's knot vector. Any other
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
-pub fn decode_par_int_cur_isoline(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
+pub fn decode_par_int_cur_isoline(
+    scope: &[u8],
+    int_width: RefWidth,
+) -> Option<Result<NurbsCurve, cadmpeg_core::decode::ResourceLimit>> {
     let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
     let (start, name) = find_owned_subtype_marker(scope, &names, int_width)?;
     let mut position = start + name.len() + 3;
@@ -1949,7 +1956,7 @@ pub fn decode_par_int_cur_isoline(scope: &[u8], int_width: RefWidth) -> Option<N
     else {
         return None;
     };
-    surface_isoline_along(support, pcurve)
+    surface_isoline_along(support, pcurve).transpose()
 }
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
@@ -1957,7 +1964,7 @@ pub fn decode_par_int_cur_isoline(scope: &[u8], int_width: RefWidth) -> Option<N
 pub(super) fn par_int_cur_isoline(
     scope: &[Token],
     reference_context: Option<&SubtypeTable>,
-) -> Option<NurbsCurve> {
+) -> Option<Result<NurbsCurve, cadmpeg_core::decode::ResourceLimit>> {
     let (start, _) =
         crate::nurbs::toks::find_owned_subtype_marker(scope, &["par_int_cur", "parcur"])?;
     let mut cur = Cur::at(scope, start + 2);
@@ -1992,7 +1999,7 @@ pub(super) fn par_int_cur_isoline(
     else {
         return None;
     };
-    surface_isoline_along(support, pcurve)
+    surface_isoline_along(support, pcurve).transpose()
 }
 
 /// The support isoline a uv pcurve selects, or `None` when the pcurve is not an
@@ -2000,8 +2007,9 @@ pub(super) fn par_int_cur_isoline(
 fn surface_isoline_along(
     support: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pcurve: &PcurveNurbs,
-) -> Option<NurbsCurve> {
+) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
     use cadmpeg_ir::eval::IsolineDirection;
+    let Some((direction, at)) = (|| {
     (pcurve.degree() == 1 && pcurve.control_points().len() == 2 && pcurve.weights().is_none())
         .then_some(())?;
     let start = *pcurve.control_points().first()?;
@@ -2035,6 +2043,8 @@ fn surface_isoline_along(
         && agree(free_domain[0], domain[0], scale)
         && agree(free_domain[1], domain[1], scale))
     .then_some(())?;
+    Some((direction, at))
+    })() else { return Ok(None); };
     cadmpeg_ir::eval::nurbs_surface_isoline(support, direction, at)
 }
 

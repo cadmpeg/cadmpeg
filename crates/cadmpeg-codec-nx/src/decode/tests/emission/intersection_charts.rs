@@ -1075,7 +1075,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             owner,
             evaluated.get(),
             parameter,
-        )
+        ).expect("resource allocation did not fail")
         .expect("charted tolerant intersection inverts");
         assert!((inverted.get() - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {

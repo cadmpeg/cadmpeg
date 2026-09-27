@@ -12,7 +12,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     let (ir, curve, surface) = cyclic_model();
     let expected =
         format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}");
-    let report = validate_neutral(&ir, Vec::new());
+    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));

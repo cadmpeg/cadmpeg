@@ -10,7 +10,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
@@ -375,21 +375,18 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .map(|curve| &curve.geometry)
 }
 
-fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let count = curve.pole_count();
+fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Result<Option<Vec<HomogeneousBezierSpan>>, ResourceLimit> {
+    let Some(degree) = usize::try_from(curve.degree()).ok() else { return Ok(None); };
     let weights = match curve.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
-                return None;
+                return Ok(None);
             }
             weights.into_iter().map(NonZeroReal::get).collect()
         }
-        None => {
-            cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok()?
-        }
+        None => Vec::new(),
     };
-    let controls = positive_controls(&curve.control_points(), Some(&weights))?;
+    let Some(controls) = positive_controls(&curve.control_points(), (!weights.is_empty()).then_some(weights.as_slice()))? else { return Ok(None); };
     homogeneous_spans(degree, curve.knots(), controls)
 }
 
@@ -559,9 +556,10 @@ fn partition_homogeneous_spans(
 fn aligned_homogeneous_spans(
     first: &NurbsCurve,
     second: &NurbsCurve,
-) -> Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>> {
-    let first_spans = homogeneous_bezier_spans(first)?;
-    let second_spans = homogeneous_bezier_spans(second)?;
+) -> Result<Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>>, ResourceLimit> {
+    let Some(first_spans) = homogeneous_bezier_spans(first)? else { return Ok(None); };
+    let Some(second_spans) = homogeneous_bezier_spans(second)? else { return Ok(None); };
+    Ok((|| {
     let first_domain = homogeneous_span_domain(&first_spans)?;
     let second_domain = homogeneous_span_domain(&second_spans)?;
     let mut boundaries = normalized_span_boundaries(&first_spans, first_domain)?;
@@ -572,6 +570,7 @@ fn aligned_homogeneous_spans(
     let second_spans = partition_homogeneous_spans(&second_spans, second_domain, &boundaries)?;
     (first_spans.len() == second_spans.len())
         .then(|| first_spans.into_iter().zip(second_spans).collect())
+    })())
 }
 
 /// Positive weights in pole order, unit weights for a polynomial curve.
@@ -692,11 +691,7 @@ fn ruled_surface_carrier(
                 .map_err(cadmpeg_core::CodecError::malformed);
         }
     }
-    let mut pole_refusal = None;
-    let lanes = ruled_surface_span_lanes(first, second, ctx, &mut pole_refusal);
-    if let Some(error) = pole_refusal {
-        return Err(error);
-    }
+    let lanes = ruled_surface_span_lanes(first, second, ctx)?;
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
@@ -723,28 +718,24 @@ type RuledSpanLanes = (u32, Vec<f64>, Vec<FinitePoint3>, Option<Vec<PositiveReal
 
 /// The span lanes of a ruled carrier, or `None` when the rails state none.
 ///
-/// `pole_refusal` carries the one answer that is a refusal rather than an
-/// absent carrier: a pole count above the codec limit. The caller returns it,
-/// so the limit is not lost in the `None` that every other exit means.
+/// Resource refusals from span extraction and pole admission remain distinct
+/// from a carrier that the two rails do not define.
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
-    pole_refusal: &mut Option<cadmpeg_core::CodecError>,
-) -> Option<RuledSpanLanes> {
-    let degree = usize::try_from(first.degree())
-        .ok()?
-        .checked_add(usize::try_from(second.degree()).ok()?)?;
+) -> Result<Option<RuledSpanLanes>, CodecError> {
+    let Some(degree) = usize::try_from(first.degree()).ok().and_then(|first| {
+        usize::try_from(second.degree()).ok().and_then(|second| first.checked_add(second))
+    }) else { return Ok(None); };
     if degree == 0 {
-        return None;
+        return Ok(None);
     }
-    let spans = aligned_homogeneous_spans(first, second)?;
-    let u_count = spans.len().checked_mul(degree)?.checked_add(1)?;
-    let pole_count = u_count.checked_mul(2)?;
-    if let Err(error) = admit_surface_pole_count(ctx, pole_count) {
-        *pole_refusal = Some(error);
-        return None;
-    }
+    let Some(spans) = aligned_homogeneous_spans(first, second)? else { return Ok(None); };
+    let Some(u_count) = spans.len().checked_mul(degree).and_then(|count| count.checked_add(1)) else { return Ok(None); };
+    let Some(pole_count) = u_count.checked_mul(2) else { return Ok(None); };
+    admit_surface_pole_count(ctx, pole_count)?;
+    Ok((|| {
     let mut homogeneous = Vec::with_capacity(pole_count);
     let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
@@ -801,6 +792,7 @@ fn ruled_surface_span_lanes(
         control_points,
         weights,
     ))
+    })())
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -808,35 +800,36 @@ fn homogeneous_curve_boundary_matches(
     second: &NurbsCurve,
     range: [f64; 2],
     resolution: f64,
-) -> Option<bool> {
+) -> Result<Option<bool>, ResourceLimit> {
     if !resolution.is_finite()
         || resolution < 0.0
         || !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
     {
-        return None;
+        return Ok(None);
     }
-    let first_spans = homogeneous_bezier_spans(first)?;
-    let second_spans = homogeneous_bezier_spans(second)?;
+    let Some(first_spans) = homogeneous_bezier_spans(first)? else { return Ok(None); };
+    let Some(second_spans) = homogeneous_bezier_spans(second)? else { return Ok(None); };
     if first.degree() != second.degree()
         || first.knots() != second.knots()
         || first_spans.len() != second_spans.len()
     {
-        return None;
+        return Ok(None);
     }
     for (first_span, second_span) in first_spans.iter().zip(second_spans) {
         if first_span.domain[1] <= range[0] || first_span.domain[0] >= range[1] {
             continue;
         }
         if first_span.domain != second_span.domain {
-            return None;
+            return Ok(None);
         }
-        if !boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)? {
-            return Some(false);
+        let Some(within) = boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution) else { return Ok(None); };
+        if !within {
+            return Ok(Some(false));
         }
     }
-    Some(true)
+    Ok(Some(true))
 }
 
 fn surface_boundary_is_closed(
@@ -845,9 +838,9 @@ fn surface_boundary_is_closed(
     fixed_range: [f64; 2],
     varying_range: [f64; 2],
     resolution: f64,
-) -> Option<bool> {
-    let first = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])?;
-    let second = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])?;
+) -> Result<Option<bool>, ResourceLimit> {
+    let Some(first) = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[0])? else { return Ok(None); };
+    let Some(second) = cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed_axis, fixed_range[1])? else { return Ok(None); };
     homogeneous_curve_boundary_matches(&first, &second, varying_range, resolution)
 }
 
@@ -2419,7 +2412,7 @@ pub(super) fn project(
                 fixed_range,
                 varying_range,
                 global.minimum_resolution_mm(),
-            ) else {
+            )? else {
                 losses.push(entity_loss(
                     entry,
                     format!("{direction}-closed surface boundary cannot be evaluated"),

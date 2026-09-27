@@ -279,21 +279,24 @@ pub(super) fn decoded_surface_point_inner_with_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the blend construction.
     match model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget) {
-        Ok(point) => Some(point.get()),
-        Err(EvaluationFailure::NonFinite(point)) => Some(point),
-        Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
+        Ok(point) => Ok(Some(point.get())),
+        Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+        Err(EvaluationFailure::NoValue) => Ok(blend_surface_point_inner_with_index_and_budget(
             index,
             surface,
             u,
             v,
             depth + 1,
             geometry_budget,
-        ),
+        )),
     }
 }
 
@@ -305,8 +308,10 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     v: f64,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Point3> {
-    (depth < 32).then_some(())?;
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
     // A non-finite point is returned as the evaluation reached it; only an
     // evaluation with no value falls back to the next route.
     let evaluated = match surface_point_with_budget(geometry, u, v, geometry_budget) {
@@ -316,16 +321,17 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
         direct => direct,
     };
     match evaluated {
-        Ok(point) => Some(point.get()),
-        Err(EvaluationFailure::NonFinite(point)) => Some(point),
-        Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
+        Ok(point) => Ok(Some(point.get())),
+        Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+        Err(EvaluationFailure::NoValue) => Ok(blend_surface_point_inner_with_index_and_budget(
             index,
             surface,
             u,
             v,
             depth + 1,
             geometry_budget,
-        ),
+        )),
     }
 }
 
@@ -3586,7 +3592,7 @@ pub(super) fn closest_spine_parameter(
     curve: &CurveId,
     point: Point3,
     seed: Option<f64>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
@@ -3598,38 +3604,40 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
-    let carrier = index.curves(curve.as_str())?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(carrier) = index.curves(curve.as_str()) else {
+        return Ok(None);
+    };
     match carrier.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
-            Some(
+            Ok(Some(
                 (point.x - origin.x) * direction.x
                     + (point.y - origin.y) * direction.y
                     + (point.z - origin.z) * direction.z,
-            )
+            ))
         }
-        Some(SolvedCurveGeometry::Circle(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                carrier.geometry.solved()?,
+        Some(geometry @ SolvedCurveGeometry::Circle(_)) => {
+            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+                geometry,
                 point,
                 seed,
                 geometry_budget,
-            )
+            ))
         }
-        Some(SolvedCurveGeometry::Ellipse(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                carrier.geometry.solved()?,
+        Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => {
+            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+                geometry,
                 point,
                 seed,
                 geometry_budget,
-            )
+            ))
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -3854,7 +3862,7 @@ pub(super) fn closest_nurbs_curve_parameter(
     curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     closest_nurbs_curve_parameter_with_budget(curve, point, seed, &geometry_budget)
 }
@@ -3864,7 +3872,8 @@ fn closest_nurbs_curve_parameter_with_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let count = curve.control_points().len();
     if !point.is_finite() {
@@ -3878,11 +3887,10 @@ fn closest_nurbs_curve_parameter_with_budget(
         return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
-    let weights = match curve.pole_rows().weights() {
-        Some(weights) if weights.iter().all(|weight| *weight > 0.0) => weights,
-        Some(_) => return None,
-        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
-    };
+    let weights = curve.pole_rows().weights();
+    if weights.is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0)) {
+        return None;
+    }
     let coordinate_scale = curve
         .control_points()
         .iter()
@@ -3900,9 +3908,18 @@ fn closest_nurbs_curve_parameter_with_budget(
             )
         })
         .collect::<Vec<_>>();
-    let controls = positive_controls(&residuals, Some(&weights))?;
+    let controls = match positive_controls(&residuals, weights) {
+        Ok(Some(controls)) => controls,
+        Ok(None) => return None,
+        Err(limit) => return Some(Err(limit)),
+    };
+    let spans = match homogeneous_spans(degree, curve.knots(), controls) {
+        Ok(Some(spans)) => spans,
+        Ok(None) => return None,
+        Err(limit) => return Some(Err(limit)),
+    };
     let homogeneous = HomogeneousCurveSpans {
-        spans: homogeneous_spans(degree, curve.knots(), controls)?,
+        spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let parameters = closest_parameter_candidates(
@@ -3912,6 +3929,8 @@ fn closest_nurbs_curve_parameter_with_budget(
     lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
         .into_iter()
         .next()
+        .map(Ok)
+    })().transpose()
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

@@ -110,7 +110,7 @@ pub(super) fn keep_faces_and_carriers(
                     &surf_rec.tokens,
                     token_table,
                 ) {
-                    procedural_surface_defs.insert(surf_ref, procedural);
+                    procedural_surface_defs.insert(surf_ref, procedural?);
                 }
             }
             surface_geo.entry(surf_ref).or_insert_with(|| {
@@ -122,7 +122,7 @@ pub(super) fn keep_faces_and_carriers(
         if let Some(procedural) =
             nurbs::proc_surface::procedural_surface_resolving_refs(&surf_rec.tokens, token_table)
         {
-            procedural_surface_defs.insert(surf_ref, procedural);
+            procedural_surface_defs.insert(surf_ref, procedural?);
         }
         if let Some(geometry) = procedural_surface_defs
             .get(&surf_ref)

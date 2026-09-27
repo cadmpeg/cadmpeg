@@ -695,11 +695,14 @@ pub(in crate::families) fn try_decode_zero_entity(
     if surfaces.is_empty() {
         return None;
     }
-    let support_runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+    let support_runs = match crate::families::zero_entity::records::zero_entity_support_runs_in_range(
         &scan.data,
         preamble.clone(),
         refusal,
-    );
+    ) {
+        Ok(runs) => runs,
+        Err(limit) => return Some(Err(limit.into())),
+    };
     let ownership_root = crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
         &scan.data, preamble,
     );

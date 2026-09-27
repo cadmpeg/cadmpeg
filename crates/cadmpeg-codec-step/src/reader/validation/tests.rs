@@ -35,7 +35,7 @@ fn complex_validation_measure_carrier_is_decoded() {
         loss.message
             .contains("geometric validation property #41 has an unsupported value")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

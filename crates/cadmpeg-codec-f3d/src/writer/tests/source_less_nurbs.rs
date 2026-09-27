@@ -820,7 +820,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .count()
             == 2
     }));
-    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

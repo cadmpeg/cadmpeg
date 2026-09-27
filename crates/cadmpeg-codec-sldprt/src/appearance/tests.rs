@@ -467,7 +467,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]

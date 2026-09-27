@@ -305,7 +305,7 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",

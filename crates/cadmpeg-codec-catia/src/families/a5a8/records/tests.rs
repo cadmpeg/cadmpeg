@@ -1585,7 +1585,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
                 | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

@@ -448,7 +448,7 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
             radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(
         validation
             .findings

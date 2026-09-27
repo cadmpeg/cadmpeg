@@ -397,7 +397,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         ),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         ),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
         ),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn decode_transfers_unset_non_numeric_legacy_parameters() {
         assert_eq!(parameter.value, None);
         assert!(parameter.expression.is_empty());
         assert_eq!(parameter.properties["value_type"], parameter_type);
-        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -708,7 +708,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
         ),
         2
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 }
 
 #[test]
@@ -911,7 +911,7 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         ),
         1
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:?}", validation.findings);
 
     let mismatched = CatiaCodec
@@ -1207,7 +1207,7 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         ),
         1
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
 
     let mismatched = CatiaCodec
         .decode(

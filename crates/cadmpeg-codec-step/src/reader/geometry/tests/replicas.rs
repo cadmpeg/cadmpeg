@@ -201,7 +201,7 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
