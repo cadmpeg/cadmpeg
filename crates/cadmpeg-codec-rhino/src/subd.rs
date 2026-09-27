@@ -90,6 +90,19 @@ impl SubdEnumDiagnostic {
     }
 }
 
+impl std::fmt::Display for SubdEnumDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SymmetryType(value) => {
+                write!(f, "SubD symmetry type {value} mapped to neutral Unset")
+            }
+            Self::SymmetryCoordinateSystem(value) => {
+                write!(f, "SubD symmetry coordinate system {value} mapped to neutral Unset")
+            }
+        }
+    }
+}
+
 /// A bounded `SubD` payload failure.
 #[derive(Debug, Clone)]
 pub(crate) enum SubdError {

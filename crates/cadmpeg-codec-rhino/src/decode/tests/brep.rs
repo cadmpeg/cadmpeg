@@ -86,7 +86,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     });
     let links = staged.links.clone();
     staged
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit fallback carrier");
     append_record_links(&mut candidate, &unknown, &links);
     assert_eq!(
@@ -119,7 +119,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().curves.push(curve);
     assert!(staged
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .is_err());
     assert_eq!(candidate, live);
     assert_eq!(live.model.curves.len(), 1);
@@ -216,7 +216,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         )
         .expect("required invariant");
     staged
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
@@ -286,7 +286,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         )
         .expect("required invariant");
     staged
-        .apply(&mut candidate, &mut cadmpeg_ir::Annotations::default())
+        .draft.commit(&mut candidate, &mut cadmpeg_ir::Annotations::default())
         .expect("commit Brep with an isolated vertex");
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
     assert!(report.is_ok(), "{report:?}");

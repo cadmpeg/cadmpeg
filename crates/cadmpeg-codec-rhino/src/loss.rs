@@ -115,6 +115,23 @@ impl Diagnostics {
         Ok(())
     }
 
+    /// Adds a source label while admitting each destination diagnostic and message.
+    pub(crate) fn append_prefixed_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: Self,
+        prefix: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for diagnostic in other {
+            self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{prefix}: {}", diagnostic.message),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Copies diagnostics into another report after admitting the slots and text.
     pub(crate) fn extend_cloned_admitted(
         &mut self,
