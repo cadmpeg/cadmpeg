@@ -1503,8 +1503,8 @@ impl From<SketchSurface> for SketchSurfaceWire {
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchCurveGeometryWire", into = "SketchCurveGeometryWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchCurveGeometryWire")]
 pub(crate) enum SketchCurveGeometry {
     /// A straight line segment.
     Line {
@@ -1548,6 +1548,153 @@ pub(crate) enum SketchCurveGeometry {
         /// Admitted degree, fit tolerance, knots and poles; source scalar width is eight.
         geometry: SketchNurbsGeometry,
     },
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_CURVE_GEOMETRY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchCurveGeometry {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        match self {
+            Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => Self::Line {
+                start: *start,
+                end: *end,
+                direction: *direction,
+                normal: *normal,
+            },
+            Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center: *center,
+                normal: *normal,
+                reference_direction: *reference_direction,
+                radius: *radius,
+                start_angle: *start_angle,
+                end_angle: *end_angle,
+            },
+            Self::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                geometry,
+            } => Self::Nurbs {
+                carrier_reference: *carrier_reference,
+                subtype_class_tag: subtype_class_tag.clone(),
+                subtype_record_index: *subtype_record_index,
+                geometry: geometry.clone(),
+            },
+        }
+    }
+}
+
+struct NurbsPoints<'a>(&'a SketchNurbsPoles);
+
+impl Serialize for NurbsPoints<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.points())
+    }
+}
+
+struct NurbsWeights<'a>(&'a SketchNurbsPoles);
+
+impl Serialize for NurbsWeights<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.weights())
+    }
+}
+
+impl Serialize for SketchCurveGeometry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum WireRef<'a> {
+            Line {
+                start: Point3,
+                end: Point3,
+                direction: Vector3,
+                normal: Vector3,
+            },
+            Arc {
+                center: Point3,
+                normal: Vector3,
+                reference_direction: Vector3,
+                radius: f64,
+                start_angle: f64,
+                end_angle: f64,
+            },
+            Nurbs {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                carrier_reference: Option<u64>,
+                subtype_class_tag: &'a str,
+                subtype_record_index: u32,
+                degree: u32,
+                fit_tolerance: f64,
+                scalar_width: u32,
+                knots: SliceColumn<'a, FiniteReal, f64>,
+                weights: NurbsWeights<'a>,
+                control_points: NurbsPoints<'a>,
+            },
+        }
+        let view = match self {
+            Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => WireRef::Line {
+                start: start.get(),
+                end: end.get(),
+                direction: *direction.as_raw(),
+                normal: *normal.as_raw(),
+            },
+            Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => WireRef::Arc {
+                center: center.get(),
+                normal: *normal.as_raw(),
+                reference_direction: *reference_direction.as_raw(),
+                radius: radius.get(),
+                start_angle: start_angle.get(),
+                end_angle: end_angle.get(),
+            },
+            Self::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                geometry,
+            } => WireRef::Nurbs {
+                carrier_reference: *carrier_reference,
+                subtype_class_tag: subtype_class_tag.as_str(),
+                subtype_record_index: *subtype_record_index,
+                degree: geometry.degree,
+                fit_tolerance: geometry.fit_tolerance.get(),
+                scalar_width: 8,
+                knots: SliceColumn::new(&geometry.knots, |knot| knot.get()),
+                weights: NurbsWeights(&geometry.poles),
+                control_points: NurbsPoints(&geometry.poles),
+            },
+        };
+        view.serialize(serializer)
+    }
 }
 
 const EPS_SKETCH_LINE_FRAME: f64 = 1.0e-9;
@@ -1861,6 +2008,7 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
     }
 }
 
+#[cfg(test)]
 impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
     fn from(geometry: SketchCurveGeometry) -> Self {
         match geometry {
@@ -2036,6 +2184,62 @@ mod tests {
             "start_angle": 0.0,
             "end_angle": 1.0
         })
+    }
+
+    fn native_nurbs_wire(weights: &[f64]) -> serde_json::Value {
+        json!({
+            "kind": "nurbs", "subtype_class_tag": "306", "subtype_record_index": 4,
+            "degree": 1, "fit_tolerance": 0.0, "scalar_width": 8,
+            "knots": [0.0, 0.0, 1.0, 1.0], "weights": weights,
+            "control_points": [
+                {"x": 0.0, "y": 0.0, "z": 0.0},
+                {"x": 1.0, "y": 0.0, "z": 0.0}
+            ]
+        })
+    }
+
+    #[test]
+    fn sketch_curve_geometry_borrowed_wire_matches_owned_wire_bytes() {
+        let line = json!({
+            "kind": "line", "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "end": {"x": 10.0, "y": 0.0, "z": 0.0},
+            "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
+        });
+        for wire in [
+            line,
+            native_arc_wire(),
+            native_nurbs_wire(&[]),
+            native_nurbs_wire(&[1.0, 2.0]),
+        ] {
+            let geometry: SketchCurveGeometry = serde_json::from_value(wire).unwrap();
+            let owned = super::SketchCurveGeometryWire::from(geometry.clone());
+            assert_eq!(
+                serde_json::to_vec(&geometry).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_curve_geometry_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchCurveGeometry,
+        }
+        let geometry: SketchCurveGeometry =
+            serde_json::from_value(native_nurbs_wire(&[1.0, 2.0])).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-curve#0",
+            value: &geometry,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_curves",
+            || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 
     #[test]
