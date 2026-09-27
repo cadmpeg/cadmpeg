@@ -56,3 +56,81 @@ fn validation_design_header_index_refuses_collection_limit() {
             if limit.operation == "index F3D design headers"
     ));
 }
+
+#[test]
+fn validation_typed_sketch_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let error = super::super::collect_index_set(
+        Some(&ctx),
+        [("Design/BulkStream.dat", 1)],
+        "index F3D typed sketch records",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D typed sketch records"));
+}
+
+#[test]
+fn validation_sketch_operand_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let error = super::super::collect_index(
+        Some(&ctx),
+        [(("Design/BulkStream.dat", 1), 1)],
+        "index F3D sketch operands",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch operands"));
+}
+
+#[test]
+fn validation_sketch_relation_owner_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let mut owners = std::collections::HashMap::new();
+    let error = super::super::insert_sketch_relation_owner(
+        Some(&ctx),
+        &mut owners,
+        ("Design/BulkStream.dat", 1),
+        2,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch relation owners"));
+}
+
+#[test]
+fn validation_sketch_owner_finding_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let mut findings = Vec::new();
+    let error = super::super::emit_sketch_relation_finding(
+        Some(&ctx),
+        &mut findings,
+        "f3d:native:sketch#1",
+        "conflicting owner",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D sketch owner findings"));
+}
+
+#[test]
+fn validation_sketch_owner_finding_id_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    let error = super::super::emit_sketch_relation_finding(
+        Some(&ctx),
+        &mut findings,
+        "f3d:native:sketch#1",
+        "conflicting owner",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D sketch owner finding ID"));
+}
