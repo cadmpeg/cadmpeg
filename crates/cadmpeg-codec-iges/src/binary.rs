@@ -1032,7 +1032,7 @@ fn normalize_directory_and_parameters(
             )
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let text = parameter_text(parameter.entity_type, &parameter.values)?;
-        let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
+        let lines = render_parameter_lines(&text, parameter.entity_type == 306, ctx)?;
         let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
@@ -1208,14 +1208,23 @@ fn normalize_directory_and_parameters(
     ))
 }
 
-fn render_parameter_lines(data: &[u8], language: bool) -> Result<Vec<Vec<u8>>, CodecError> {
+fn render_parameter_lines(
+    data: &[u8],
+    language: bool,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     if language {
-        return Ok(data
-            .chunks(PARAMETER_DATA_WIDTH)
-            .map(<[u8]>::to_vec)
-            .collect());
+        let mut cards = reserve_vec(
+            ctx,
+            data.chunks(PARAMETER_DATA_WIDTH).count(),
+            "iges binary macro parameter cards",
+        )?;
+        for chunk in data.chunks(PARAMETER_DATA_WIDTH) {
+            cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
+        }
+        return Ok(cards);
     }
-    crate::parameter::layout_parameter_cards(data)
+    crate::parameter::layout_parameter_cards(data, Some(ctx))
 }
 
 fn render_directory_card(

@@ -58,6 +58,30 @@ fn numeric_token_text_refuses_materialization_limit() {
 }
 
 #[test]
+fn parameter_layout_card_refuses_retained_limit_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = b"116,1,2,3,0;";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 63;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let result = super::super::layout_parameter_cards(bytes, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 64
+                && limit.operation == "iges parameter layout card bytes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(super::super::layout_parameter_cards(bytes, Some(&ctx)).unwrap().len(), 1);
+}
+
+#[test]
 fn numeric_parameter_and_delimiter_must_share_a_card() {
     let mut bytes = b"116,".to_vec();
     bytes.extend(std::iter::repeat_n(b'0', 59));
@@ -90,7 +114,7 @@ fn a_zero_hollerith_count_is_not_a_null_string() {
         ))
     ));
 
-    let error = super::super::layout_parameter_cards(b"116,0H;").unwrap_err();
+    let error = super::super::layout_parameter_cards(b"116,0H;", None).unwrap_err();
     assert!(error.to_string().contains("count must be positive"));
 }
 
@@ -271,14 +295,14 @@ fn generated_parameter_layout_keeps_headers_and_numeric_delimiters_legal() {
     let mut payload = b"116,70H".to_vec();
     payload.extend(std::iter::repeat_n(b'x', 70));
     payload.extend_from_slice(b",1,;");
-    let cards = super::super::layout_parameter_cards(&payload).unwrap();
+    let cards = super::super::layout_parameter_cards(&payload, None).unwrap();
     assert_eq!(cards.len(), 2);
     assert_eq!(&cards[0][4..7], b"70H");
 
     let mut numeric = b"116,".to_vec();
     numeric.extend(std::iter::repeat_n(b'0', 58));
     numeric.extend_from_slice(b",2,;");
-    let cards = super::super::layout_parameter_cards(&numeric).unwrap();
+    let cards = super::super::layout_parameter_cards(&numeric, None).unwrap();
     assert_eq!(cards.len(), 2);
     assert_eq!(&cards[1][..2], b"2,");
 }
@@ -290,7 +314,7 @@ fn whitespace_prefixed_hollerith_header_uses_its_absolute_end() {
     payload.extend_from_slice(b"70H");
     payload.extend(std::iter::repeat_n(b'x', 70));
     payload.push(b';');
-    let cards = super::super::layout_parameter_cards(&payload)
+    let cards = super::super::layout_parameter_cards(&payload, None)
         .expect("the whitespace and Hollerith header fit on one card");
     assert_eq!(&cards[0][44..47], b"70H");
 }
