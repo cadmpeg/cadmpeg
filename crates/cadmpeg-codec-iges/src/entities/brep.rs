@@ -4,7 +4,7 @@
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
-use crate::decode_resource::reserve_vec;
+use crate::decode_resource::{insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -384,7 +384,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-list coordinates are truncated or non-finite"))?;
             continue;
         }
-        vertex_lists.insert(entry.sequence, points);
+        insert_optional_btree_map(Some(ctx), &mut vertex_lists, entry.sequence, points, "iges B-rep vertex-list nodes")?;
     }
 
     for entry in directory
@@ -440,7 +440,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge-list tuple is invalid or names a missing vertex"))?;
             continue;
         }
-        edge_lists.insert(entry.sequence, edges);
+        insert_optional_btree_map(Some(ctx), &mut edge_lists, entry.sequence, edges, "iges B-rep edge-list nodes")?;
     }
 
     for entry in directory
@@ -554,7 +554,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use tuple is invalid"))?;
             continue;
         }
-        loops.insert(entry.sequence, uses);
+        insert_optional_btree_map(Some(ctx), &mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
     }
 
     for entry in directory
@@ -585,14 +585,23 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some((first, rest)) = pointer(record, 4).zip(
-            (1..count)
-                .map(|index| pointer(record, 4 + index))
-                .collect::<Option<Vec<_>>>(),
-        ) else {
+        let Some(first) = pointer(record, 4) else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop pointer is invalid"))?;
             continue;
         };
+        let mut rest = reserve_vec(ctx, count - 1, "iges B-rep face loop pointers")?;
+        let mut valid_pointers = true;
+        for index in 1..count {
+            let Some(sequence) = pointer(record, 4 + index) else {
+                valid_pointers = false;
+                break;
+            };
+            rest.push(sequence);
+        }
+        if !valid_pointers {
+            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop pointer is invalid"))?;
+            continue;
+        }
         let face_loops = if has_outer_loop {
             FaceLoopPointers::OuterFirst {
                 outer: first,
@@ -608,13 +617,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop is missing"))?;
             continue;
         }
-        faces.insert(
-            entry.sequence,
-            FaceDefinition {
-                surface,
-                loops: face_loops,
-            },
-        );
+        insert_optional_btree_map(Some(ctx), &mut faces, entry.sequence, FaceDefinition { surface, loops: face_loops }, "iges B-rep face nodes")?;
     }
 
     let mut shell_definitions = BTreeMap::new();
@@ -658,13 +661,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell face-use tuple is invalid"))?;
             continue;
         }
-        shell_definitions.insert(
-            entry.sequence,
-            ShellDefinition {
-                form: entry.form,
-                faces: face_uses,
-            },
-        );
+        insert_optional_btree_map(Some(ctx), &mut shell_definitions, entry.sequence, ShellDefinition { form: entry.form, faces: face_uses }, "iges B-rep shell nodes")?;
     }
 
     let mut body_definitions = Vec::new();
@@ -673,10 +670,13 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && entry.form == 2)
     {
         if shell_definitions.contains_key(&entry.sequence) {
+            let mut shells = reserve_vec(ctx, 1, "iges B-rep sheet shell uses")?;
+            shells.push((entry.sequence, Sense::Forward));
+            reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
-                shells: vec![(entry.sequence, Sense::Forward)],
+                shells,
                 closed: false,
                 transform: None,
             });
@@ -707,7 +707,9 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid void-shell count is invalid"))?;
             continue;
         };
-        let mut shell_uses = vec![(outer, outer_sense)];
+        let shell_count = void_count.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1))?;
+        let mut shell_uses = reserve_vec(ctx, shell_count, "iges B-rep solid shell uses")?;
+        shell_uses.push((outer, outer_sense));
         let mut valid = true;
         for index in 0..void_count {
             let Some(shell) = pointer(record, 4 + index * 2) else {
@@ -734,7 +736,9 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid shell-use tuple is invalid or not closed"))?;
             continue;
         }
-        referenced_closed_shells.extend(shell_uses.iter().map(|(sequence, _)| *sequence));
+        for (sequence, _) in &shell_uses {
+            insert_optional_btree_set(Some(ctx), &mut referenced_closed_shells, *sequence, "iges B-rep referenced closed shells")?;
+        }
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -751,6 +755,7 @@ pub(super) fn project(
                 continue;
             }
         };
+        reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
         body_definitions.push(BodyDefinition {
             entry,
             kind: BodyKind::Solid,
@@ -766,10 +771,13 @@ pub(super) fn project(
         if shell_definitions.contains_key(&entry.sequence)
             && !referenced_closed_shells.contains(&entry.sequence)
         {
+            let mut shells = reserve_vec(ctx, 1, "iges B-rep sheet shell uses")?;
+            shells.push((entry.sequence, Sense::Forward));
+            reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
-                shells: vec![(entry.sequence, Sense::Forward)],
+                shells,
                 closed: true,
                 transform: None,
             });
