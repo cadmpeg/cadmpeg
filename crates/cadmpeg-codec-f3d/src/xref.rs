@@ -500,7 +500,7 @@ fn bind_occurrences(
             let meta_bytes = scan.entry_bytes(&name)?;
             (
                 Some(crate::metastream::serializer_magic(meta_bytes, &name)?),
-                Some(typed_occurrence_placement_offsets(&meta)?),
+                Some(typed_occurrence_placement_offsets(ctx, &meta)?),
             )
         } else {
             (None, None)
@@ -640,9 +640,11 @@ fn superseded_placement_count(
 /// occurrence-placement type. Dynamic class tags and record shape are not
 /// sufficient because unrelated component records can share that shape.
 fn typed_occurrence_placement_offsets(
+    ctx: &DecodeContext<'_>,
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashSet<usize>, CodecError> {
-    let placement_entities = meta
+    let mut placement_entities = HashSet::new();
+    for entity in meta
         .types
         .iter()
         .filter(|design_type| {
@@ -652,19 +654,34 @@ fn typed_occurrence_placement_offsets(
                 .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         })
         .flat_map(|design_type| design_type.entities.values().copied())
-        .collect::<HashSet<_>>();
-    meta.records
-        .iter()
-        .chain(meta.secondary_records.iter())
-        .filter(|record| placement_entities.contains(&record.entity_id))
-        .map(|record| {
-            usize::try_from(record.bulk_offset).map_err(|_| {
-                CodecError::Malformed(
-                    "F3D occurrence-placement BulkStream offset exceeds usize".into(),
-                )
-            })
-        })
-        .collect()
+    {
+        if !placement_entities.contains(&entity) {
+            ctx.charge_collection_items(1, "index F3D xref placement entities")?;
+            placement_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D xref placement entities", 0, 1)
+            })?;
+            placement_entities.insert(entity);
+        }
+    }
+    let mut offsets = HashSet::new();
+    for record in meta.records.iter().chain(meta.secondary_records.iter()) {
+        if !placement_entities.contains(&record.entity_id) {
+            continue;
+        }
+        let offset = usize::try_from(record.bulk_offset).map_err(|_| {
+            CodecError::Malformed(
+                "F3D occurrence-placement BulkStream offset exceeds usize".into(),
+            )
+        })?;
+        if !offsets.contains(&offset) {
+            ctx.charge_collection_items(1, "index F3D xref placement offsets")?;
+            offsets.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D xref placement offsets", 0, 1)
+            })?;
+            offsets.insert(offset);
+        }
+    }
+    Ok(offsets)
 }
 
 #[derive(Debug)]
