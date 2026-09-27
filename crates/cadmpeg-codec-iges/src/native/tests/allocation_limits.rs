@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
-use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_owned::{owned_test_file, owned_test_file_with_structures, OwnedTestEntity};
 use crate::test_support::test_drawing_and_trimming::{
     associativity_definition_file, bounded_associativity_forms_file,
     flow_associativity_forms_file, legacy_associativity_forms_file,
@@ -707,4 +707,130 @@ fn native_flow_and_recalculable_dimension_lists_refuse_limits() {
     let dimension = recalculable_dimension_associativity_file();
     assert_collection_refusal_at(&dimension, "iges native recalculable geometry slots");
     assert_retained_refusal_at(&dimension, "iges native recalculable dimension");
+}
+
+#[test]
+fn native_attribute_definition_and_instance_nested_values_refuse_limits() {
+    let definition = owned_test_file(&[native_entity(322, 1, "322,4HATTR,0,1,1,1,1,3HVAL;")]);
+    assert_native_arena(&definition, "attribute_table_definitions");
+    let decoded = IgesCodec.decode(&mut Cursor::new(&definition), &DecodeOptions::default()).unwrap();
+    let definitions = &decoded.ir().native.namespace("iges").unwrap().arenas()["attribute_table_definitions"];
+    assert_eq!(definitions[0].fields()["attributes"].as_array().unwrap().len(), 1);
+    for operation in [
+        "iges native attribute definition slots",
+        "iges native attribute definition attributes",
+        "iges native attribute definition values",
+    ] {
+        assert_collection_refusal_at(&definition, operation);
+    }
+    for operation in [
+        "iges native attribute definition name",
+        "iges native attribute definition id",
+        "iges native token value bytes",
+    ] {
+        assert_retained_refusal_at(&definition, operation);
+    }
+
+    let instance = owned_test_file_with_structures(&[
+        native_entity(322, 0, "322,4HMETA,1,1,10,1,1;"),
+        native_entity(422, 1, "422,1,4HITEM;"),
+    ], &[(3, -1)]);
+    assert_native_arena(&instance, "attribute_table_instances");
+    let decoded = IgesCodec.decode(&mut Cursor::new(&instance), &DecodeOptions::default()).unwrap();
+    let instances = &decoded.ir().native.namespace("iges").unwrap().arenas()["attribute_table_instances"];
+    assert_eq!(instances[0].fields()["rows"].as_array().unwrap().len(), 1);
+    for operation in [
+        "iges native attribute instance slots",
+        "iges native attribute instance row slots",
+        "iges native attribute instance value slots",
+    ] {
+        assert_collection_refusal_at(&instance, operation);
+    }
+    assert_retained_refusal_at(&instance, "iges native attribute instance definition");
+    assert_retained_refusal_at(&instance, "iges native token value bytes");
+}
+
+#[test]
+fn native_unstatable_attribute_table_node_refuses_collection_limit() {
+    let bytes = owned_test_file_with_structures(&[
+        native_entity(322, 0, "322,4HMETA,1,1,10,1,1;"),
+        native_entity(422, 1, "422,-1,4HITEM;"),
+    ], &[(3, -1)]);
+    assert_collection_refusal_at(&bytes, "iges unstatable attribute table nodes");
+}
+
+#[test]
+fn native_product_property_and_property_strings_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(406, 15, "406,1,4HNAME;")]);
+    assert_native_arena(&bytes, "product_properties");
+    assert_native_arena(&bytes, "properties");
+    assert_collection_refusal_at(&bytes, "iges native product property slots");
+    assert_collection_refusal_at(&bytes, "iges native property slots");
+    for operation in [
+        "iges native product property id",
+        "iges native product property source",
+        "iges native product property value",
+        "iges native property id",
+        "iges native property source",
+        "iges native property string",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_property_nested_tabular_layer_and_token_lists_refuse_limits() {
+    for (form, parameters, operations) in [
+        (11, "406,7,0,1,1,1,1,2,3;", &[
+            "iges native tabular independent variables",
+            "iges native tabular independent values",
+            "iges native tabular dependent values",
+        ][..]),
+        (24, "406,5,1,7,2HID,8,4HFUNC;", &[
+            "iges native layer definition slots",
+        ][..]),
+        (27, "406,3,4HNAME,1,1,3HVAL;", &[
+            "iges native generic property value slots",
+        ][..]),
+        (12, "406,1,4HFILE;", &["iges native property string slots"][..]),
+        (25, "406,3,4HNAME,1,7;", &["iges native artwork level slots"][..]),
+        (30, "406,0,0,0,1,1HL,0,0,0,0,0,0,0,1,0,0,0;", &[
+            "iges native supplemental note slots",
+        ][..]),
+        (31, "406,0,1,2,3,4,5,6,7,8,9;", &[
+            "iges native basic dimension corners",
+        ][..]),
+        (34, "406,0,1,0,1,2;", &["iges native text score range slots"][..]),
+    ] {
+        let bytes = owned_test_file(&[native_entity(406, form, parameters)]);
+        let decoded = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+        let properties = &decoded.ir().native.namespace("iges").unwrap().arenas()["properties"];
+        assert_eq!(properties.len(), 1, "form {form}");
+        for operation in operations {
+            assert_collection_refusal_at(&bytes, operation);
+        }
+        if form == 27 {
+            assert_retained_refusal_at(&bytes, "iges native token value bytes");
+        }
+    }
+}
+
+#[test]
+fn native_units_data_nested_definitions_and_copied_bytes_refuse_limits() {
+    let bytes = owned_test_file(&[native_entity(316, 0, "316,1,6HLENGTH,2HKN,1852;")]);
+    assert_native_arena(&bytes, "units_data");
+    for operation in [
+        "iges native units data slots",
+        "iges native unit definition slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
+    }
+    for operation in [
+        "iges native units data id",
+        "iges native units data source",
+        "iges native unit type",
+        "iges native unit value",
+    ] {
+        assert_retained_refusal_at(&bytes, operation);
+    }
 }

@@ -2190,6 +2190,14 @@ fn copy_native_token_value(
     }
 }
 
+fn copy_native_string(
+    ctx: &DecodeContext<'_>,
+    bytes: Option<&[u8]>,
+    operation: &'static str,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    bytes.map(|bytes| ctx.copy_retained(bytes, operation)).transpose()
+}
+
 fn native_entity_ids(
     ctx: &DecodeContext<'_>,
     sequences: impl IntoIterator<Item = u32>,
@@ -5273,11 +5281,11 @@ pub(crate) fn store(
                 Ok(())
             })
             ?;
-    let attribute_table_definitions = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
-        .map(|entry| {
-            Ok::<_, CodecError>({
+    let attribute_table_definitions = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2)),
+        "iges native attribute definition slots",
+        |entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
                 let count = if entry.form == 0 {
@@ -5286,7 +5294,7 @@ pub(crate) fn store(
                     record.and_then(|record| record.count_with_stride_before(3, 1, end))
                 };
                 let mut cursor = 4;
-                let mut attributes = Vec::with_capacity(count.unwrap_or_default());
+                let mut attributes = reserve_vec(ctx, count.unwrap_or_default(), "iges native attribute definition attributes")?;
                 let mut complete = true;
                 if let Some(count) = count {
                     for _ in 0..count {
@@ -5327,15 +5335,12 @@ pub(crate) fn store(
                             complete = false;
                             break;
                         };
-                        let mut values = Vec::with_capacity(value_count);
+                        let mut values = reserve_vec(ctx, value_count, "iges native attribute definition values")?;
                         if entry.form != 0 {
                             for offset in 0..value_count {
                                 let value_index = value_start + offset * stride;
-                                let value = record
-                                    .tokens()
-                                    .get(value_index)
-                                    .cloned()
-                                    .map_or(TokenValue::Omitted, |token| token.value);
+                                let value = record.tokens().get(value_index)
+                                    .map_or(Ok(TokenValue::Omitted), |token| copy_native_token_value(ctx, &token.value))?;
                                 let display_template = (entry.form == 2)
                                     .then(|| record.integer(value_index + 1))
                                     .flatten()
@@ -5351,7 +5356,8 @@ pub(crate) fn store(
                                     })
                                     .transpose()?
                                     .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"));
+                                    .map(|sequence| format_retained(ctx, format_args!("iges:entity:directory#{sequence}"), "iges native attribute display template"))
+                                    .transpose()?;
                                 values.push(NativeAttributeValue {
                                     value,
                                     display_template,
@@ -5370,24 +5376,22 @@ pub(crate) fn store(
                 if !complete {
                     attributes.clear();
                 }
-                NativeAttributeTableDefinition {
-                    id: format!("iges:product:attribute-definition#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                Ok(NativeAttributeTableDefinition {
+                    id: format_retained(ctx, format_args!("iges:product:attribute-definition#D{}", entry.sequence), "iges native attribute definition id")?,
+                    source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native attribute definition source")?,
                     form: entry.form,
-                    name: record
-                        .and_then(|record| record.string(1))
-                        .map(<[u8]>::to_vec),
+                    name: copy_native_string(ctx, record.and_then(|record| record.string(1)), "iges native attribute definition name")?,
                     attribute_list_type: record.and_then(|record| record.integer(2)),
                     declared_attribute_count: record.and_then(|record| record.integer(3)),
                     attributes,
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let attribute_table_instances = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
-        .map(|entry| {
+                })
+        },
+    )?;
+    let attribute_table_instances = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1)),
+        "iges native attribute instance slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let definition_sequence =
                 crate::graph::resolved_structure_sequence(references, entry.sequence);
@@ -5418,47 +5422,49 @@ pub(crate) fn store(
                 None => Ok(None),
             };
             let rows = match grid {
-                Ok(Some(grid)) => grid
-                    .values
-                    .chunks_exact(grid.values_per_row.get())
-                    .map(|row| row.iter().map(|token| token.value.clone()).collect())
-                    .collect(),
+                Ok(Some(grid)) => {
+                    let row_width = grid.values_per_row.get();
+                    collect_result_vec(ctx, grid.values.len() / row_width, "iges native attribute instance row slots", |index| {
+                        let row = &grid.values[index * row_width..(index + 1) * row_width];
+                        collect_result_vec(ctx, row.len(), "iges native attribute instance value slots", |offset| copy_native_token_value(ctx, &row[offset].value))
+                    })?
+                }
                 Ok(None) => Vec::new(),
                 Err(refusal) => {
-                    unstatable_attribute_tables.insert(entry.sequence, refusal);
+                    insert_optional_btree_map(Some(ctx), &mut unstatable_attribute_tables, entry.sequence, refusal, "iges unstatable attribute table nodes")?;
                     Vec::new()
                 }
             };
-            NativeAttributeTableInstance {
-                id: format!("iges:product:attribute-instance#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            Ok(NativeAttributeTableInstance {
+                id: format_retained(ctx, format_args!("iges:product:attribute-instance#D{}", entry.sequence), "iges native attribute instance id")?,
+                source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native attribute instance source")?,
                 form: entry.form,
                 definition: definition_sequence
-                    .map(|sequence| format!("iges:product:attribute-definition#D{sequence}")),
+                    .map(|sequence| format_retained(ctx, format_args!("iges:product:attribute-definition#D{sequence}"), "iges native attribute instance definition"))
+                    .transpose()?,
                 declared_row_count: (entry.form == 1)
                     .then(|| record.and_then(|record| record.integer(1)))
                     .flatten(),
                 rows,
-            }
-        })
-        .collect::<Vec<_>>();
-    let product_properties = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15))
-        .map(|entry| {
+            })
+        },
+    )?;
+    let product_properties = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15)),
+        "iges native product property slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            NativeProductProperty {
-                id: format!("iges:product:property#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            Ok(NativeProductProperty {
+                id: format_retained(ctx, format_args!("iges:product:property#D{}", entry.sequence), "iges native product property id")?,
+                source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native product property source")?,
                 property_kind: if entry.form == 7 {
                     ProductPropertyKind::ReferenceDesignator
                 } else {
                     ProductPropertyKind::Name
                 },
-                value: record
-                    .and_then(|record| record.string(2))
-                    .map(<[u8]>::to_vec),
-                owners: by_directory
+                value: copy_native_string(ctx, record.and_then(|record| record.string(2)), "iges native product property value")?,
+                owners: native_entity_ids(ctx, by_directory
                     .iter()
                     .filter(|(sequence, _owner_record)| {
                         **sequence != entry.sequence
@@ -5470,24 +5476,24 @@ pub(crate) fn store(
                                 })
                                 .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
-                    .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
-            }
-        })
-        .collect::<Vec<_>>();
-    let properties = directory
+                    .map(|(sequence, _)| *sequence), "iges native product property owner slots")?,
+            })
+        },
+    )?;
+    let mut properties = Vec::new();
+    for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
-        .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
+    {
+            let Some(record) = by_directory.get(&entry.sequence).copied() else { continue };
+            reserve_vec_growth(ctx, &mut properties, 1, "iges native property slots")?;
             let end = clamped_primary_end(entry.sequence, record);
             let mut counted = |index, stride| {
                 overdeclared_counts.counted_tail(entry.sequence, Some(record), end, index, stride)
             };
-            let strings = |start: usize, count: usize| {
-                (0..count)
-                    .map(|offset| record.string(start + offset).map(<[u8]>::to_vec))
-                    .collect::<Vec<_>>()
+            let string = |index| copy_native_string(ctx, record.string(index), "iges native property string");
+            let strings = |start: usize, count: usize| -> Result<Vec<Option<Vec<u8>>>, CodecError> {
+                collect_result_vec(ctx, count, "iges native property string slots", |offset| string(start + offset))
             };
             let value = match entry.form {
                 2 => NativePropertyValue::RegionRestriction {
@@ -5497,7 +5503,7 @@ pub(crate) fn store(
                 },
                 3 => NativePropertyValue::LevelFunction {
                     function_code: record.integer(2),
-                    description: record.string(3).map(<[u8]>::to_vec),
+                    description: string(3)?,
                 },
                 4 => NativePropertyValue::RegionFill {
                     fill_code: record.integer(2),
@@ -5518,16 +5524,16 @@ pub(crate) fn store(
                     upper_layer: record.integer(6),
                 },
                 7 => NativePropertyValue::ReferenceDesignator {
-                    value: record.string(2).map(<[u8]>::to_vec),
+                    value: string(2)?,
                 },
                 8 => NativePropertyValue::PinNumber {
-                    value: record.string(2).map(<[u8]>::to_vec),
+                    value: string(2)?,
                 },
                 9 => NativePropertyValue::PartNumber {
-                    generic: record.string(2).map(<[u8]>::to_vec),
-                    military: record.string(3).map(<[u8]>::to_vec),
-                    vendor: record.string(4).map(<[u8]>::to_vec),
-                    internal: record.string(5).map(<[u8]>::to_vec),
+                    generic: string(2)?,
+                    military: string(3)?,
+                    vendor: string(4)?,
+                    internal: string(5)?,
                 },
                 10 => NativePropertyValue::Hierarchy {
                     line_font: record.integer(2),
@@ -5558,8 +5564,7 @@ pub(crate) fn store(
                                         let count_start = 5 + independent_count;
                                         let mut cursor = header_end;
                                         let mut point_count = 1_usize;
-                                        let mut independent_variables =
-                                            Vec::with_capacity(independent_count);
+                                        let mut independent_variables = reserve_vec(ctx, independent_count, "iges native tabular independent variables")?;
                                         let mut valid = true;
                                         for offset in 0..independent_count {
                                             let declared_value_count =
@@ -5589,9 +5594,7 @@ pub(crate) fn store(
                                             independent_variables.push(NativeIndependentVariable {
                                                 variable_type: record.integer(5 + offset),
                                                 declared_value_count,
-                                                values: (0..value_count)
-                                                    .map(|index| record.number(cursor + index))
-                                                    .collect(),
+                                                values: collect_result_vec(ctx, value_count, "iges native tabular independent values", |index| Ok(record.number(cursor + index)))?,
                                             });
                                             cursor = next;
                                         }
@@ -5602,9 +5605,7 @@ pub(crate) fn store(
                                         match dependent_value_count {
                                             Some(count) => (
                                                 independent_variables,
-                                                (0..count)
-                                                    .map(|offset| record.number(cursor + offset))
-                                                    .collect(),
+                                                collect_result_vec(ctx, count, "iges native tabular dependent values", |offset| Ok(record.number(cursor + offset)))?,
                                             ),
                                             None => (Vec::new(), Vec::new()),
                                         }
@@ -5622,18 +5623,18 @@ pub(crate) fn store(
                     }
                 }
                 12 => NativePropertyValue::ExternalReferenceFileList {
-                    names: strings(2, counted(1, 1)),
+                    names: strings(2, counted(1, 1))?,
                 },
                 13 => NativePropertyValue::NominalSize {
                     size: record.number(2),
-                    name: record.string(3).map(<[u8]>::to_vec),
-                    standard: record.string(4).map(<[u8]>::to_vec),
+                    name: string(3)?,
+                    standard: string(4)?,
                 },
                 14 => NativePropertyValue::FlowLineSpecification {
-                    values: strings(2, counted(1, 1)),
+                    values: strings(2, counted(1, 1))?,
                 },
                 15 => NativePropertyValue::Name {
-                    value: record.string(2).map(<[u8]>::to_vec),
+                    value: string(2)?,
                 },
                 18 => NativePropertyValue::IntercharacterSpacing {
                     percent: record.number(2),
@@ -5657,33 +5658,27 @@ pub(crate) fn store(
                 },
                 23 => NativePropertyValue::AssociativityGroupType {
                     associativity_type: record.integer(2),
-                    name: record.string(3).map(<[u8]>::to_vec),
+                    name: string(3)?,
                 },
                 24 => {
                     let definition_count = counted(2, 4);
                     NativePropertyValue::LevelToLepLayerMap {
-                        definitions: (0..definition_count)
-                            .map(|offset| {
+                        definitions: collect_result_vec(ctx, definition_count, "iges native layer definition slots", |offset| {
                                 let start = 3 + offset * 4;
-                                NativeLepLayerDefinition {
+                                Ok(NativeLepLayerDefinition {
                                     exchange_level: record.integer(start),
-                                    native_identifier: record.string(start + 1).map(<[u8]>::to_vec),
+                                    native_identifier: string(start + 1)?,
                                     physical_layer: record.integer(start + 2),
-                                    functional_identifier: record
-                                        .string(start + 3)
-                                        .map(<[u8]>::to_vec),
-                                }
-                            })
-                            .collect(),
+                                    functional_identifier: string(start + 3)?,
+                                })
+                            })?,
                     }
                 }
                 25 => {
                     let level_count = counted(3, 1);
                     NativePropertyValue::LepArtworkStackup {
-                        identification: record.string(2).map(<[u8]>::to_vec),
-                        levels: (0..level_count)
-                            .map(|offset| record.integer(4 + offset))
-                            .collect(),
+                        identification: string(2)?,
+                        levels: collect_result_vec(ctx, level_count, "iges native artwork level slots", |offset| Ok(record.integer(4 + offset)))?,
                     }
                 }
                 26 => NativePropertyValue::LepDrilledHole {
@@ -5694,27 +5689,22 @@ pub(crate) fn store(
                 27 => {
                     let value_count = counted(3, 2);
                     NativePropertyValue::GenericData {
-                        name: record.string(2).map(<[u8]>::to_vec),
-                        values: (0..value_count)
-                            .map(|offset| {
+                        name: string(2)?,
+                        values: collect_result_vec(ctx, value_count, "iges native generic property value slots", |offset| {
                                 let index = 4 + offset * 2;
-                                NativeGenericPropertyValue {
+                                Ok(NativeGenericPropertyValue {
                                     data_type: record.integer(index),
-                                    value: record
-                                        .tokens()
-                                        .get(index + 1)
-                                        .cloned()
-                                        .map_or(TokenValue::Omitted, |token| token.value),
-                                }
-                            })
-                            .collect(),
+                                    value: record.tokens().get(index + 1)
+                                        .map_or(Ok(TokenValue::Omitted), |token| copy_native_token_value(ctx, &token.value))?,
+                                })
+                            })?,
                     }
                 }
                 28 => NativePropertyValue::DimensionUnits {
                     secondary_position: record.integer(2),
                     units_indicator: record.integer(3),
                     character_set: record.integer_or(4, DEFAULT_DIMENSION_UNITS_CHARACTER_SET),
-                    suffix: record.string(5).map(<[u8]>::to_vec),
+                    suffix: string(5)?,
                     fraction_flag: record.integer(6),
                     precision: record.integer(7),
                 },
@@ -5736,7 +5726,7 @@ pub(crate) fn store(
                         declared_character_set: record.integer(4),
                         character_set: record
                             .integer_or(4, DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET),
-                        label: record.string(5).map(<[u8]>::to_vec),
+                        label: string(5)?,
                         decimal_symbol: record.integer(6),
                         declared_witness_line_angle: record.number(7),
                         witness_line_angle: record
@@ -5746,46 +5736,40 @@ pub(crate) fn store(
                         text_placement: record.integer(10),
                         arrow_orientation: record.integer(11),
                         initial_value: record.number(12),
-                        supplemental_notes: (0..note_count)
-                            .map(|offset| {
+                        supplemental_notes: collect_result_vec(ctx, note_count, "iges native supplemental note slots", |offset| {
                                 let start = 14 + offset * 3;
-                                NativeSupplementalNote {
+                                Ok(NativeSupplementalNote {
                                     position: record.integer(start),
                                     first_text: record.integer(start + 1),
                                     last_text: record.integer(start + 2),
-                                }
-                            })
-                            .collect(),
+                                })
+                            })?,
                     }
                 }
                 31 => NativePropertyValue::BasicDimension {
-                    corners: (0..4)
-                        .map(|offset| {
-                            [record.number(2 + offset * 2), record.number(3 + offset * 2)]
-                        })
-                        .collect(),
+                    corners: collect_result_vec(ctx, 4, "iges native basic dimension corners", |offset| {
+                        Ok([record.number(2 + offset * 2), record.number(3 + offset * 2)])
+                    })?,
                 },
                 32 => NativePropertyValue::DrawingSheetApproval {
-                    name: record.string(2).map(<[u8]>::to_vec),
-                    organization: record.string(3).map(<[u8]>::to_vec),
-                    date: record.string(4).map(<[u8]>::to_vec),
+                    name: string(2)?,
+                    organization: string(3)?,
+                    date: string(4)?,
                 },
                 33 => NativePropertyValue::DrawingSheetId {
                     sheet_number: record.integer(2),
-                    revision: record.string(3).map(<[u8]>::to_vec),
+                    revision: string(3)?,
                 },
                 34 | 35 => {
                     let range_count = counted(2, 3);
-                    let ranges = (0..range_count)
-                        .map(|offset| {
+                    let ranges = collect_result_vec(ctx, range_count, "iges native text score range slots", |offset| {
                             let start = 3 + offset * 3;
-                            NativeTextScoreRange {
+                            Ok(NativeTextScoreRange {
                                 text_index: record.integer(start),
                                 first_character: record.integer(start + 1),
                                 last_character: record.integer(start + 2),
-                            }
-                        })
-                        .collect();
+                            })
+                        })?;
                     if entry.form == 34 {
                         NativePropertyValue::Underscore { ranges }
                     } else {
@@ -5796,14 +5780,14 @@ pub(crate) fn store(
                     u: record.integer(2),
                     v: record.integer(3),
                 },
-                _ => return None,
+                _ => continue,
             };
-            Some(NativeProperty {
-                id: format!("iges:application:property#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            properties.push(NativeProperty {
+                id: format_retained(ctx, format_args!("iges:application:property#D{}", entry.sequence), "iges native property id")?,
+                source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native property source")?,
                 form: entry.form,
                 declared_value_count: record.integer(1),
-                owners: by_directory
+                owners: native_entity_ids(ctx, by_directory
                     .iter()
                     .filter(|(sequence, _owner)| {
                         **sequence != entry.sequence
@@ -5815,20 +5799,19 @@ pub(crate) fn store(
                                 })
                                 .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                     })
-                    .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
-                    .collect(),
+                    .map(|(sequence, _)| *sequence), "iges native property owner slots")?,
                 value,
-            })
-        })
-        .collect::<Vec<_>>();
-    let units_data = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 316 && entry.form == 0)
-        .map(|entry| {
+            });
+    }
+    let units_data = collect_native_items(
+        ctx,
+        directory.iter().filter(|entry| entry.entity_type == 316 && entry.form == 0),
+        "iges native units data slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 3);
-            let owners = by_directory
+            let owners = native_entity_ids(ctx, by_directory
                 .iter()
                 .filter(|(sequence, _owner)| {
                     trailing_pointer_analysis
@@ -5839,30 +5822,23 @@ pub(crate) fn store(
                         })
                         .is_some_and(|groups| groups.properties().contains(&entry.sequence))
                 })
-                .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
-                .collect();
-            NativeUnitsData {
-                id: format!("iges:metadata:units-data#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                .map(|(sequence, _)| *sequence), "iges native units owner slots")?;
+            Ok(NativeUnitsData {
+                id: format_retained(ctx, format_args!("iges:metadata:units-data#D{}", entry.sequence), "iges native units data id")?,
+                source_entity: format_retained(ctx, format_args!("iges:entity:directory#{}", entry.sequence), "iges native units data source")?,
                 declared_count: record.and_then(|record| record.integer(1)),
-                units: (0..count)
-                    .map(|offset| {
+                units: collect_result_vec(ctx, count, "iges native unit definition slots", |offset| {
                         let start = 2 + offset * 3;
-                        NativeUnitDefinition {
-                            unit_type: record
-                                .and_then(|record| record.string(start))
-                                .map(<[u8]>::to_vec),
-                            unit_value: record
-                                .and_then(|record| record.string(start + 1))
-                                .map(<[u8]>::to_vec),
+                        Ok(NativeUnitDefinition {
+                            unit_type: copy_native_string(ctx, record.and_then(|record| record.string(start)), "iges native unit type")?,
+                            unit_value: copy_native_string(ctx, record.and_then(|record| record.string(start + 1)), "iges native unit value")?,
                             scale_factor: record.and_then(|record| record.number(start + 2)),
-                        }
-                    })
-                    .collect(),
+                        })
+                    })?,
                 owners,
-            }
-        })
-        .collect::<Vec<_>>();
+            })
+        },
+    )?;
     let views = directory
         .iter()
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
