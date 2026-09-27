@@ -44,6 +44,122 @@ fn parse_attributes(
     )
 }
 
+fn attribute_resource_refusal(
+    bytes: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+) -> crate::chunks::FramingError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    crate::objects::parse_attributes(
+        &ctx,
+        bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V5,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("attribute value exceeds configured resource limit")
+}
+
+fn assert_attribute_resource(error: &crate::chunks::FramingError, operation: &str) {
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == operation),
+        "expected resource operation {operation}"
+    );
+}
+
+#[test]
+fn fixed_object_name_and_url_refuse_retained_limit() {
+    let bytes = fixed_attributes(0, 0, None);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 100, 3),
+        "Rhino object name",
+    );
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 100, 4),
+        "Rhino object URL",
+    );
+}
+
+#[test]
+fn tagged_object_name_and_url_refuse_retained_limit() {
+    let bytes = tagged_attributes(&[(1, utf16_bytes("name"))], 0);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 100, 3),
+        "Rhino object name",
+    );
+    let bytes = tagged_attributes(&[(2, utf16_bytes("url"))], 0);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 100, 2),
+        "Rhino object URL",
+    );
+}
+
+#[test]
+fn fixed_object_groups_refuse_collection_limit() {
+    let mut bytes = fixed_attributes(1, 0, None);
+    let count_offset = fixed_attributes(0, 0, None).len();
+    bytes.splice(
+        count_offset..count_offset + 4,
+        [1_i32.to_le_bytes(), 7_i32.to_le_bytes()].concat(),
+    );
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 0, 100),
+        "Rhino object groups",
+    );
+}
+
+#[test]
+fn fixed_object_display_materials_refuse_collection_limit() {
+    let mut bytes = fixed_attributes(3, 0, None);
+    let count_offset = fixed_attributes(2, 0, None).len();
+    let mut payload = 1_i32.to_le_bytes().to_vec();
+    payload.extend([1; 32]);
+    bytes.splice(count_offset..count_offset + 4, payload);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 0, 100),
+        "Rhino object display materials",
+    );
+}
+
+#[test]
+fn fixed_object_explicit_display_materials_refuse_collection_limit() {
+    let mut bytes = fixed_attributes(6, 0, None);
+    let count_offset = fixed_attributes(5, 0, None).len() + 1;
+    let mut payload = 1_i32.to_le_bytes().to_vec();
+    payload.extend([1; 32]);
+    bytes.splice(count_offset..count_offset + 4, payload);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 0, 100),
+        "Rhino object explicit display materials",
+    );
+}
+
+#[test]
+fn tagged_object_groups_and_display_materials_refuse_collection_limit() {
+    let mut groups = 1_i32.to_le_bytes().to_vec();
+    groups.extend(7_i32.to_le_bytes());
+    let bytes = tagged_attributes(&[(18, groups)], 0);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 0, 100),
+        "Rhino object groups",
+    );
+
+    let mut materials = 1_i32.to_le_bytes().to_vec();
+    materials.extend([1; 32]);
+    let bytes = tagged_attributes(&[(21, materials)], 0);
+    assert_attribute_resource(
+        &attribute_resource_refusal(&bytes, 0, 100),
+        "Rhino object display materials",
+    );
+}
+
 #[test]
 fn parses_fixed_attributes_through_every_minor_gate() {
     for minor in 0..=8 {
@@ -1009,9 +1125,31 @@ fn uuid_list_uses_an_anonymous_versioned_chunk() {
     body.extend([0x11; 16]);
     let bytes = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
-    let values = crate::objects::read_uuid_list(&mut reader, archive).expect("UUID list");
+    let values = crate::objects::read_uuid_list(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut reader,
+        archive,
+    )
+    .expect("UUID list");
     assert_eq!(values.len(), 1);
     assert_eq!(reader.remaining(), 0);
+}
+
+#[test]
+fn object_uuid_list_refuses_collection_limit() {
+    let archive = ArchiveVersion::V5;
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend([0x11; 16]);
+    let bytes = anonymous_chunk(archive, 0, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
+    let error = crate::objects::read_uuid_list(&ctx, &mut reader, archive)
+        .expect_err("UUID list exceeds collection limit");
+    assert_attribute_resource(&error, "Rhino UUID list");
 }
 
 #[test]
