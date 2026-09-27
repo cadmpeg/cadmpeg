@@ -178,46 +178,59 @@ pub(in super::super) fn feature_skamp_table_complete(
 }
 
 pub(in super::super) fn feature_dimension_parameter_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     keys: &[(SketchId, u32)],
-) -> Option<Vec<(u32, String, Option<usize>)>> {
-    let mut name_counts = BTreeMap::new();
-    let mut local_counts = BTreeMap::new();
+) -> Result<Option<Vec<(u32, String, Option<usize>)>>, cadmpeg_core::CodecError> {
+    let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in keys {
-        *name_counts
-            .entry((sketch.clone(), *external_id))
-            .or_insert(0usize) += 1;
+        let key = (sketch, *external_id);
+        if !local_counts.contains_key(&key) {
+            ctx.charge_collection_items(1, "creo dimension layout count nodes")?;
+        }
+        *local_counts.entry(key).or_insert(0) += 1;
     }
-    for key in keys {
-        *local_counts.entry(key.clone()).or_insert(0usize) += 1;
+    let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
+    let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
+    let mut layout = Vec::new();
+    ctx.try_reserve_items(&mut layout, keys.len(), "creo dimension parameter layout")?;
+    for (sketch, external_id) in keys {
+        if !next_ordinals.contains_key(sketch) {
+            ctx.charge_collection_items(1, "creo dimension layout ordinal nodes")?;
+        }
+        let ordinal = next_ordinals.entry(sketch).or_default();
+        let assigned = *ordinal;
+        let Some(next) = ordinal.checked_add(1) else {
+            return Ok(None);
+        };
+        *ordinal = next;
+        let key = (sketch, *external_id);
+        let occurrence = if local_counts[&key] > 1 {
+            if !local_occurrences.contains_key(&key) {
+                ctx.charge_collection_items(1, "creo dimension layout occurrence nodes")?;
+            }
+            let next = local_occurrences.entry(key).or_insert(0);
+            let assigned = *next;
+            *next += 1;
+            Some(assigned)
+        } else {
+            None
+        };
+        let name = if local_counts[&key] == 1 {
+            ctx.format_retained(format_args!("d{external_id}"), "creo dimension parameter name")?
+        } else if let Some(occurrence) = occurrence {
+            ctx.format_retained(
+                format_args!("d{}_{}_{}", sketch_identity_scope(sketch), external_id, occurrence + 1),
+                "creo dimension parameter name",
+            )?
+        } else {
+            ctx.format_retained(
+                format_args!("d{}_{}", sketch_identity_scope(sketch), external_id),
+                "creo dimension parameter name",
+            )?
+        };
+        layout.push((assigned, name, occurrence));
     }
-    let mut next_ordinals = BTreeMap::<SketchId, u32>::new();
-    let mut local_occurrences = BTreeMap::new();
-    keys.iter()
-        .map(|key @ (sketch, external_id)| {
-            let ordinal = next_ordinals.entry(sketch.clone()).or_default();
-            let assigned = *ordinal;
-            *ordinal = ordinal.checked_add(1)?;
-            let occurrence = (local_counts[key] > 1).then(|| {
-                let occurrence = local_occurrences.entry(key.clone()).or_insert(0usize);
-                let assigned = *occurrence;
-                *occurrence += 1;
-                assigned
-            });
-            let name = if name_counts[&(sketch.clone(), *external_id)] == 1 {
-                format!("d{external_id}")
-            } else if let Some(occurrence) = occurrence {
-                format!(
-                    "d{}_{}_{}",
-                    sketch_identity_scope(sketch),
-                    external_id,
-                    occurrence + 1
-                )
-            } else {
-                format!("d{}_{}", sketch_identity_scope(sketch), external_id)
-            };
-            Some((assigned, name, occurrence))
-        })
-        .collect()
+    Ok(Some(layout))
 }
 
 pub(in super::super) fn transfer_feature_dimensions(
@@ -258,7 +271,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         .iter()
         .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
-    let Some(layout) = feature_dimension_parameter_layout(&keys) else {
+    let Some(layout) = feature_dimension_parameter_layout(ctx, &keys)? else {
         return Ok((0, BTreeMap::new()));
     };
     let unique_external_ids = keys

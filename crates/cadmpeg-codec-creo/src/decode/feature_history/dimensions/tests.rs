@@ -12,9 +12,80 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    dimension_expression, insert_dimension_property, planned_feature_dimension_parameter_ids,
-    transfer_feature_dimensions, HexToken,
+    dimension_expression, feature_dimension_parameter_layout, insert_dimension_property,
+    planned_feature_dimension_parameter_ids, transfer_feature_dimensions, HexToken,
 };
+
+fn layout_key() -> cadmpeg_ir::sketches::SketchId {
+    cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917".to_string())
+        .expect("valid test identity")
+}
+
+#[test]
+fn dimension_layout_refuses_before_count_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
+        .expect_err("one count needs one BTreeMap node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo dimension layout count nodes"));
+}
+
+#[test]
+fn dimension_layout_refuses_before_output_vector() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
+        .expect_err("one layout row needs one vector slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo dimension parameter layout"));
+}
+
+#[test]
+fn dimension_layout_refuses_before_ordinal_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
+        .expect_err("one sketch needs one ordinal BTreeMap node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo dimension layout ordinal nodes"));
+}
+
+#[test]
+fn dimension_layout_refuses_before_occurrence_node() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let key = layout_key();
+    let error = feature_dimension_parameter_layout(&ctx, &[(key.clone(), 3), (key, 3)])
+        .expect_err("duplicate key needs an occurrence BTreeMap node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo dimension layout occurrence nodes"));
+}
+
+#[test]
+fn dimension_layout_refuses_before_retained_name() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = feature_dimension_parameter_layout(&ctx, &[(layout_key(), 3)])
+        .expect_err("dimension name exceeds retained allowance");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo dimension parameter name"));
+}
 
 #[test]
 fn dimension_property_refuses_before_btree_node() {
