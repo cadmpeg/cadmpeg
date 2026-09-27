@@ -689,7 +689,7 @@ fn scan_decodes_active_principal_unit() {
     assert_eq!(
         scan.framing
             .principal_unit
-            .map(crate::legacy::PrincipalUnitSystem::token)
+            .map(|unit| unit.to_string())
             .as_deref(),
         Some("mmNs")
     );
