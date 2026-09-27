@@ -87,7 +87,7 @@ pub(crate) fn transfer(
                 }
             }
             drawings.push(DrawingRecord {
-                id: crate::native::native_id("drawing", &object.name),
+                id: crate::native::native_id_charged(ctx, "drawing", &object.name)?,
                 object: retained_string(ctx, &object.id, "fcstd drawing object")?,
                 kind,
                 sources,
@@ -109,10 +109,9 @@ pub(crate) fn transfer_neutral(
     ctx.charge_collection_items(records.len() as u64, "fcstd drawing neutral identities")?;
     neutral_ids.try_reserve(records.len()).map_err(|_| collection_allocation_failed(ctx, records.len() as u64, "fcstd drawing neutral identities"))?;
     for record in records {
-        neutral_ids.insert(record.object.as_str(), DrawingId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "drawing"),
-            crate::native::model_key(&record.object, "entity").map_err(CodecError::malformed)?,
-        ));
+        neutral_ids.insert(record.object.as_str(), DrawingId::mint(
+            crate::native::model_id_charged(ctx, "drawing", &record.object, "entity")?,
+        ).map_err(CodecError::malformed)?);
     }
     for (order, record) in records.iter().enumerate() {
         let count = properties.iter().filter(|property| property.owner == record.object).count();
@@ -181,7 +180,7 @@ pub(crate) fn transfer_neutral(
             ctx.charge_collection_items(1, "fcstd drawing relationship roles")?;
             relationships.insert(retained_string(ctx, role, "fcstd drawing relationship role")?, selections);
         }
-        let template = if matches!(record.kind, TechDrawKind::Page { .. }) {
+        let template_id = if matches!(record.kind, TechDrawKind::Page { .. }) {
             record
                 .relationships
                 .get("Template")
@@ -192,11 +191,15 @@ pub(crate) fn transfer_neutral(
                         return None;
                     }
                     let object = link.object()?;
-                    neutral_ids.get(object).cloned()
+                    neutral_ids.get(object)
                 })
         } else {
             None
         };
+        let template = template_id.map(|id| {
+            DrawingId::mint(retained_string(ctx, id.as_str(), "fcstd drawing template identity")?)
+                .map_err(CodecError::malformed)
+        }).transpose()?;
         reserve_vec_items(ctx, &mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
@@ -205,32 +208,32 @@ pub(crate) fn transfer_neutral(
         }
         let mut assets = collection_vec(ctx, record.side_entries.len(), "fcstd drawing assets")?;
         for name in &record.side_entries {
-            assets.push(crate::native::native_id("entry", name));
+            assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
         model.drawings.push(Drawing {
             id: neutral_ids
                 .get(record.object.as_str())
-                .cloned()
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "drawing {} has no admitted neutral identity",
                         record.id
                     ))
-                })?,
+                })
+                .and_then(|id| DrawingId::mint(retained_string(ctx, id.as_str(), "fcstd drawing neutral identity")?)
+                    .map_err(CodecError::malformed))?,
             object: retained_string(ctx, &record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),
             runtime_type: retained_string(ctx, record.kind.as_str(), "fcstd drawing neutral runtime type")?,
             order: order as u32,
             visible: None,
-            relationships: cadmpeg_core::text::named_entries(&record.object, relationships)?,
+            relationships: crate::resource::named_entries_charged(ctx, &record.object, relationships, "fcstd drawing keyed relationships")?,
             template,
             position,
             scale,
             direction,
             rotation_degrees,
-            parameters: cadmpeg_core::text::named_entries(
-                &record.object,
-                parameters,
+            parameters: crate::resource::named_entries_charged(
+                ctx, &record.object, parameters, "fcstd drawing keyed parameters",
             )?,
             assets,
             native_ref: retained_string(ctx, &record.id, "fcstd drawing native reference")?,
