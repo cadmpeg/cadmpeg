@@ -1025,17 +1025,32 @@ pub(crate) fn orient_face_cycles(
     ctx: &DecodeContext<'_>,
     faces: &mut [FaceTopology],
 ) -> Result<Option<()>, CodecError> {
-    let boundaries = faces
-        .iter_mut()
-        .flat_map(|face| &mut face.boundaries)
-        .collect::<Vec<_>>();
+    let mut boundaries = Vec::new();
+    for face in faces {
+        for boundary in &mut face.boundaries {
+            crate::resource::push(
+                ctx,
+                &mut boundaries,
+                boundary,
+                "catia_standard_orientation_boundaries",
+            )?;
+        }
+    }
     let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
     for (node, boundary) in boundaries.iter().enumerate() {
         for coedge in &boundary.coedges {
-            edge_uses
-                .entry(coedge.edge_row)
-                .or_default()
-                .push((node, coedge.reversed));
+            crate::resource::admit_map_entry(
+                ctx,
+                &mut edge_uses,
+                &coedge.edge_row,
+                "catia_standard_orientation_edge_uses",
+            )?;
+            crate::resource::push(
+                ctx,
+                edge_uses.entry(coedge.edge_row).or_default(),
+                (node, coedge.reversed),
+                "catia_standard_orientation_edge_use_entries",
+            )?;
         }
     }
     let Some(flips) =
@@ -1082,8 +1097,18 @@ pub(crate) fn solve_boundary_orientation_constraints(
                 return Ok(None);
             }
         } else {
-            constraints[*left_node].push((*right_node, parity));
-            constraints[*right_node].push((*left_node, parity));
+            crate::resource::push(
+                ctx,
+                &mut constraints[*left_node],
+                (*right_node, parity),
+                "catia_standard_boundary_constraint_entries",
+            )?;
+            crate::resource::push(
+                ctx,
+                &mut constraints[*right_node],
+                (*left_node, parity),
+                "catia_standard_boundary_constraint_entries",
+            )?;
         }
     }
 
@@ -1091,11 +1116,17 @@ pub(crate) fn solve_boundary_orientation_constraints(
     let mut result = Vec::new();
     for root in 0..boundary_count {
         if let Some(flip) = flips[root] {
-            result.push(flip);
+            crate::resource::push(ctx, &mut result, flip, "catia_standard_boundary_result")?;
             continue;
         }
         flips[root] = Some(false);
-        let mut stack = vec![(root, false)];
+        let mut stack = Vec::new();
+        crate::resource::push(
+            ctx,
+            &mut stack,
+            (root, false),
+            "catia_standard_boundary_stack",
+        )?;
         while let Some((face, flip)) = stack.pop() {
             for &(neighbor, parity) in &constraints[face] {
                 let required = flip ^ parity;
@@ -1104,12 +1135,17 @@ pub(crate) fn solve_boundary_orientation_constraints(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        stack.push((neighbor, required));
+                        crate::resource::push(
+                            ctx,
+                            &mut stack,
+                            (neighbor, required),
+                            "catia_standard_boundary_stack",
+                        )?;
                     }
                 }
             }
         }
-        result.push(false);
+        crate::resource::push(ctx, &mut result, false, "catia_standard_boundary_result")?;
     }
     Ok(Some(result))
 }

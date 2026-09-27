@@ -257,7 +257,7 @@ fn standard_boundary_constraints_propagate_collection_refusal() {
 
 #[test]
 fn standard_boundary_flips_propagate_collection_refusal() {
-    let operation = standard_collection_limit_operation(2, |ctx| {
+    let operation = standard_collection_limit_operation(4, |ctx| {
         solve_boundary_orientation_constraints(
             ctx,
             2,
@@ -267,6 +267,71 @@ fn standard_boundary_flips_propagate_collection_refusal() {
         Ok(())
     });
     assert_eq!(operation, "catia standard boundary flips");
+}
+
+#[test]
+fn standard_boundary_inner_collections_refuse_each_limit() {
+    use std::collections::HashSet;
+
+    let edge_uses = HashMap::from([
+        (0, vec![(0, false), (1, false)]),
+        (1, vec![(1, false), (2, true)]),
+    ]);
+    let mut refused = HashSet::new();
+    for cap in 0..24 {
+        let operation = crate::test_support::with_collection_limit(cap, |ctx| {
+            solve_boundary_orientation_constraints(ctx, 4, &edge_uses, false)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = operation {
+            refused.insert(limit.operation);
+        }
+    }
+    for operation in [
+        "catia_standard_boundary_constraint_entries",
+        "catia_standard_boundary_stack",
+        "catia_standard_boundary_result",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn standard_orientation_refuses_before_unpaired_boundary() {
+    use super::{orient_face_cycles, Boundary, CoedgeUse, FaceTopology, NonEmptyCoedges};
+
+    let faces = || {
+        vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: NonEmptyCoedges::one(CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }),
+            }],
+        }]
+    };
+    assert!(crate::test_support::with_service_context(|ctx| {
+        orient_face_cycles(ctx, &mut faces())
+    })
+    .expect("service resource budget")
+    .is_none());
+    for (cap, operation) in [
+        "catia_standard_orientation_boundaries",
+        "catia_standard_orientation_edge_uses",
+        "catia_standard_orientation_edge_use_entries",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            standard_collection_limit_operation(cap as u64, |ctx| {
+                orient_face_cycles(ctx, &mut faces())?;
+                Ok(())
+            }),
+            operation
+        );
+    }
 }
 
 #[test]
