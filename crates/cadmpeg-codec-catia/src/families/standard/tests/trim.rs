@@ -34,13 +34,27 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
     bytes.extend_from_slice(&first);
     bytes.extend_from_slice(&second);
 
-    let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 2, 2)
+    })
+    .expect("service resource budget")
+    .expect("exact chain");
     assert_eq!(records[0].packet.handles(), [0, 1, 2]);
     assert_eq!(records[1].packet.handles(), [3, 4, 5]);
     assert_eq!(records[0].packet.independent_count(), 1);
     assert!(records[0].packet.strip_lengths().is_empty());
     assert!(records[0].packet.fan_lengths().is_empty());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            2,
+            3
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -71,13 +85,27 @@ fn endpoint_cycle_ordering_stops_at_its_result_limit() {
 #[test]
 fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     let bytes = triangle_packet([10, 11, 12]);
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("trim packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("trim packet layout");
     assert_eq!(layout.handle_offset, 8);
     assert_eq!(layout.handle_count, 3);
     assert_eq!(layout.end, bytes.len());
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
-    assert_eq!(record.packet.triangles(), [[10, 11, 12]]);
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("materialized trim packet");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| record
+            .packet
+            .triangles(ctx)
+            .expect("service resource budget")
+            .to_vec()),
+        [[10, 11, 12]]
+    );
 }
 
 #[test]
@@ -90,7 +118,11 @@ fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
     bytes.extend_from_slice(&strip_length.to_le_bytes());
     bytes.extend(std::iter::repeat_n(0, handle_count as usize));
 
-    let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete handle span");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 1)
+    })
+    .expect("service resource budget")
+    .expect("complete handle span");
     assert_eq!(layout.handle_count, handle_count as usize);
     assert_eq!(layout.end, bytes.len());
 }
@@ -103,16 +135,45 @@ fn trim_record_rejects_invalid_present_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
-    assert!(parse_trim_record(&bytes, 0, 2).is_none());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 1, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            1,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 
     let mut non_finite = bytes[..8].to_vec();
     for value in [f32::NAN, 0.0, 1.0] {
         non_finite.extend_from_slice(&value.to_le_bytes());
     }
     non_finite.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
-    assert!(parse_trim_record_layout(&non_finite, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx,
+            &non_finite,
+            0,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -123,7 +184,10 @@ fn trim_record_accepts_binary32_round_trip_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("binary32 unit vector");
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("binary32 unit vector");
     assert!(record.frame_vector.is_some());
 }
 
@@ -135,7 +199,13 @@ fn trim_record_rejects_frame_vector_outside_binary32_round_trip_bound() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -144,8 +214,11 @@ fn forced_trim_chain_has_no_recursive_depth_limit() {
     let packet = triangle_packet([0, 0, 0]);
     let bytes = packet.repeat(RECORD_COUNT);
 
-    let records =
-        parse_trim_chain(&bytes, bytes.len(), RECORD_COUNT, 2).expect("forced trim packet chain");
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), RECORD_COUNT, 2)
+    })
+    .expect("service resource budget")
+    .expect("forced trim packet chain");
 
     assert_eq!(records.len(), RECORD_COUNT);
     assert!(records
@@ -161,10 +234,13 @@ fn trim_packet_retains_primitive_partition_lengths() {
     for handle in 0u16..10 {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("mixed primitive packet")
-        .try_into()
-        .expect("one packet");
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("mixed primitive packet")
+    .try_into()
+    .expect("one packet");
     assert_eq!(record.packet.independent_count(), 1);
     assert_eq!(record.packet.strip_lengths(), [3]);
     assert_eq!(record.packet.fan_lengths(), [4]);
@@ -182,10 +258,13 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
 
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("width-matched primitive packet")
-        .try_into()
-        .expect("one packet");
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("width-matched primitive packet")
+    .try_into()
+    .expect("one packet");
     assert_eq!(record.packet.independent_count(), 1);
     assert_eq!(record.packet.strip_lengths(), [3]);
     assert!(record.packet.fan_lengths().is_empty());
@@ -194,7 +273,11 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         Some(crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]))
     );
 
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("unique packet layout");
     assert_eq!(layout.end, bytes.len());
 }
 

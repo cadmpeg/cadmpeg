@@ -300,7 +300,16 @@ fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
         0x01, 0x46, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00,
         0x00,
     ];
-    assert!(parse_trim_record(&oversized_primitives, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record(
+            ctx,
+            &oversized_primitives,
+            0,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]

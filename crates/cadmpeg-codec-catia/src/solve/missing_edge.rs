@@ -836,12 +836,12 @@ fn standard_mesh_analysis(
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
     let mut cycles = Vec::new();
     for trim in &trims {
-        let Some(face) = boundary_cycles(ctx, trim.packet.triangles())? else {
+        let Some(face) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
             return Ok(None);
         };
         crate::resource::push(ctx, &mut cycles, face, "catia_mesh_analysis_cycles")?;
@@ -994,7 +994,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some((edge_rows, handle_width)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
     let trim_count = u64::try_from(trims.len()).map_err(|_| {

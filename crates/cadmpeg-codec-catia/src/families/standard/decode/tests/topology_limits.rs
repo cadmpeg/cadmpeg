@@ -59,6 +59,11 @@ fn standard_topology_charges_deferred_and_ordered_endpoint_arrays() {
                 let next = error.used + error.additional;
                 assert!(next > limit, "a refusal must advance the collection cap");
                 limit = next;
+                if operations.contains("catia_deferred_port_edges")
+                    && operations.contains("catia_ordered_endpoint_pairs")
+                {
+                    limit = DecodePolicy::service().limits.max_collection_items;
+                }
             }
             Ok(Some(_)) => {
                 completed = true;
