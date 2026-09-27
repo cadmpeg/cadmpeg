@@ -1855,7 +1855,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let mut visited = 0usize;
     Ok(nurbs
-        .map_control_points(|point| {
+        .map_control_points_in_place(|point| {
             let mapped = if visited == last {
                 end
             } else if visited == 0 {
@@ -1864,7 +1864,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
                 point
             };
             visited += 1;
-            Ok(mapped)
+            Ok::<_, ()>(mapped)
         })
         .ok())
 }

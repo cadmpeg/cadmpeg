@@ -6,6 +6,38 @@ use crate::{
 };
 
 #[test]
+fn in_place_curve_pole_map_reuses_storage_and_keeps_admitted_weights() {
+    use crate::geometry::nurbs::NurbsPoles3;
+
+    let mut curve = curve();
+    let original_weights = curve.weights();
+    let NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        panic!("fixture must be rational");
+    };
+    let original_storage = points.as_ptr();
+    curve
+        .map_control_points_in_place(|point| Ok::<_, &'static str>(point.negated()))
+        .unwrap();
+    let NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        panic!("mapped curve must remain rational");
+    };
+    assert_eq!(points.as_ptr(), original_storage);
+    assert_eq!(curve.weights(), original_weights);
+    assert_eq!(curve.control_points(), [Point3::new(-1.0, -2.0, -3.0), Point3::new(-4.0, -5.0, -6.0)]);
+
+    let mut visited = 0;
+    let refusal = curve.map_control_points_in_place(|point| {
+        visited += 1;
+        if visited == 2 {
+            return Err("second pole");
+        }
+        Ok(point.negated())
+    });
+    assert_eq!(refusal, Err("second pole"));
+    assert_eq!(curve.control_points(), [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, -5.0, -6.0)]);
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;

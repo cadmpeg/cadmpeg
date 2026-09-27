@@ -1570,12 +1570,8 @@ pub(super) fn project(
         let mut placed_directrix = directrix;
         if entry.transform != 0
             && placed_directrix
-                .map_control_points(|point| {
-                    transform.apply_point(point.get()).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                            "placement produces a non-finite pole".into(),
-                        )
-                    })
+                .map_control_points_in_place(|point| {
+                    transform.apply_point(point.get()).ok_or(())
                 })
                 .is_err()
         {
@@ -2006,14 +2002,10 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let mut placed_generatrix = generatrix.clone();
+            let mut placed_generatrix = generatrix;
             if placed_generatrix
-                .map_control_points(|point| {
-                    transform.apply_point(point.get()).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                            "placement produces a non-finite pole".into(),
-                        )
-                    })
+                .map_control_points_in_place(|point| {
+                    transform.apply_point(point.get()).ok_or(())
                 })
                 .is_err()
             {
