@@ -5500,33 +5500,41 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable(
 }
 
 pub(super) fn mesh_face_endpoint_configurations(
+    ctx: &DecodeContext<'_>,
     assignments: &[MeshFaceBoundaryAssignment],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
     budget: &WorkBudget<'_>,
-) -> Option<MeshFaceEndpointConfigurations> {
+) -> Result<Option<MeshFaceEndpointConfigurations>, CodecError> {
     fn insert_pair(
+        ctx: &DecodeContext<'_>,
         configuration: &mut MeshFaceEndpointConfiguration,
         edge: usize,
         mut pair: [usize; 2],
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
         pair.sort_unstable();
         match configuration.iter().find(|(stored, _)| *stored == edge) {
-            Some((_, stored)) => *stored == pair,
+            Some((_, stored)) => Ok(*stored == pair),
             None => {
-                configuration.push((edge, pair));
-                true
+                crate::resource::push(
+                    ctx,
+                    configuration,
+                    (edge, pair),
+                    "catia_face_configuration_pairs",
+                )?;
+                Ok(true)
             }
         }
     }
 
     fn boundary_configurations(
+        ctx: &DecodeContext<'_>,
         boundary: &[MeshBoundaryEdgeCandidate],
         edge_candidates: &[Vec<[usize; 2]>],
         selected: &[Option<[usize; 2]>],
         work: &mut usize,
         budget: &WorkBudget<'_>,
-    ) -> Option<MeshFaceEndpointConfigurations> {
+    ) -> Result<Option<MeshFaceEndpointConfigurations>, CodecError> {
         let charge = |work: &mut usize| {
             *work = work.checked_add(1)?;
             (*work <= MAX_FACE_ENDPOINT_CONFIGURATION_WORK && budget.charge()).then_some(())
@@ -5536,7 +5544,7 @@ pub(super) fn mesh_face_endpoint_configurations(
                 .iter()
                 .any(|use_| edge_candidates.get(use_.edge).is_none_or(Vec::is_empty))
         {
-            return None;
+            return Ok(None);
         }
         let allowed = |edge: usize, pair: [usize; 2]| {
             selected
@@ -5554,9 +5562,16 @@ pub(super) fn mesh_face_endpoint_configurations(
             let direction_count = usize::from(left != right) + 1;
             for &(start, current) in &directions[..direction_count] {
                 let mut configuration = Vec::new();
-                if insert_pair(&mut configuration, boundary[0].edge, pair) {
-                    charge(work)?;
-                    states.push((start, current, configuration));
+                if insert_pair(ctx, &mut configuration, boundary[0].edge, pair)? {
+                    if charge(work).is_none() {
+                        return Ok(None);
+                    }
+                    crate::resource::push(
+                        ctx,
+                        &mut states,
+                        (start, current, configuration),
+                        "catia_face_configuration_initial_states",
+                    )?;
                 }
             }
         }
@@ -5578,66 +5593,136 @@ pub(super) fn mesh_face_endpoint_configurations(
                         let Some(endpoint) = endpoint else {
                             continue;
                         };
-                        charge(work)?;
-                        let mut configuration = configuration.clone();
-                        if insert_pair(&mut configuration, use_.edge, pair) {
-                            next.push((start, endpoint, configuration));
+                        if charge(work).is_none() {
+                            return Ok(None);
+                        }
+                        let mut configuration = crate::resource::copy_slice(
+                            ctx,
+                            &configuration,
+                            "catia_face_configuration_state_pairs",
+                        )?;
+                        if insert_pair(ctx, &mut configuration, use_.edge, pair)? {
+                            crate::resource::push(
+                                ctx,
+                                &mut next,
+                                (start, endpoint, configuration),
+                                "catia_face_configuration_next_states",
+                            )?;
                         }
                     }
                 }
             }
             states = next;
             if states.is_empty() {
-                return Some(Vec::new());
+                return Ok(Some(Vec::new()));
             }
         }
         let mut seen = HashSet::new();
-        Some(
-            states
-                .into_iter()
-                .filter(|(start, current, _)| start == current)
-                .filter_map(|(_, _, mut configuration)| {
-                    configuration.sort_unstable();
-                    seen.insert(configuration.clone()).then_some(configuration)
-                })
-                .collect(),
-        )
+        let mut completed = Vec::new();
+        for (_, _, mut configuration) in states
+            .into_iter()
+            .filter(|(start, current, _)| start == current)
+        {
+            configuration.sort_unstable();
+            if seen.contains(&configuration) {
+                continue;
+            }
+            let key = crate::resource::copy_slice(
+                ctx,
+                &configuration,
+                "catia_face_configuration_seen_pairs",
+            )?;
+            crate::resource::insert_set(ctx, &mut seen, key, "catia_face_configuration_seen_keys")?;
+            crate::resource::push(
+                ctx,
+                &mut completed,
+                configuration,
+                "catia_face_configuration_boundary_results",
+            )?;
+        }
+        Ok(Some(completed))
     }
 
     if selected.len() != edge_candidates.len() {
-        return None;
+        return Ok(None);
     }
     let mut work = 0usize;
     let mut configurations = HashSet::new();
     for assignment in assignments {
-        let mut combined = vec![Vec::new()];
+        let mut combined = Vec::new();
+        crate::resource::push(
+            ctx,
+            &mut combined,
+            Vec::new(),
+            "catia_face_configuration_combined_rows",
+        )?;
         for boundary in &assignment.boundaries {
-            let boundary =
-                boundary_configurations(boundary, edge_candidates, selected, &mut work, budget)?;
+            let Some(boundary) = boundary_configurations(
+                ctx,
+                boundary,
+                edge_candidates,
+                selected,
+                &mut work,
+                budget,
+            )?
+            else {
+                return Ok(None);
+            };
             let mut next = Vec::new();
             for stored in combined {
                 for candidate in &boundary {
-                    work = work.checked_add(1)?;
+                    let Some(next_work) = work.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    work = next_work;
                     if work > MAX_FACE_ENDPOINT_CONFIGURATION_WORK || !budget.charge() {
-                        return None;
+                        return Ok(None);
                     }
-                    let mut merged = stored.clone();
-                    if candidate
-                        .iter()
-                        .all(|(edge, pair)| insert_pair(&mut merged, *edge, *pair))
-                    {
+                    let mut merged = crate::resource::copy_slice(
+                        ctx,
+                        &stored,
+                        "catia_face_configuration_combined_pairs",
+                    )?;
+                    let mut compatible = true;
+                    for &(edge, pair) in candidate {
+                        if !insert_pair(ctx, &mut merged, edge, pair)? {
+                            compatible = false;
+                            break;
+                        }
+                    }
+                    if compatible {
                         merged.sort_unstable();
-                        next.push(merged);
+                        crate::resource::push(
+                            ctx,
+                            &mut next,
+                            merged,
+                            "catia_face_configuration_next_combined",
+                        )?;
                     }
                 }
             }
             combined = next;
         }
-        configurations.extend(combined);
+        for configuration in combined {
+            crate::resource::insert_set(
+                ctx,
+                &mut configurations,
+                configuration,
+                "catia_face_configuration_result_keys",
+            )?;
+        }
     }
-    let mut configurations = configurations.into_iter().collect::<Vec<_>>();
-    configurations.sort_unstable();
-    Some(configurations)
+    let mut results = Vec::new();
+    for configuration in configurations {
+        crate::resource::push(
+            ctx,
+            &mut results,
+            configuration,
+            "catia_face_configuration_result_rows",
+        )?;
+    }
+    results.sort_unstable();
+    Ok(Some(results))
 }
 
 /// Return whether an unordered endpoint configuration can close every
@@ -10326,33 +10411,44 @@ fn resolve_standard_mesh_endpoint_candidates(
         "catia_endpoint_unselected_edges",
     )?;
     let configuration_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let endpoint_configurations = assignments
-        .iter()
-        .map(|face| {
-            face.iter()
-                .map(|assignment| {
-                    if configuration_budget.exhausted() {
-                        return None;
-                    }
-                    let local_budget =
-                        configuration_budget.child_slice(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
-                    let configurations = mesh_face_endpoint_configurations(
-                        std::slice::from_ref(assignment),
-                        &edge_candidates,
-                        &unselected,
-                        &local_budget,
-                    );
-                    if !configuration_budget.charge_by(local_budget.consumed())
-                        || local_budget.exhausted()
-                    {
-                        None
-                    } else {
-                        configurations
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut endpoint_configurations = Vec::new();
+    for face in &assignments {
+        let mut face_configurations = Vec::new();
+        for assignment in face {
+            let configurations = if configuration_budget.exhausted() {
+                None
+            } else {
+                let local_budget =
+                    configuration_budget.child_slice(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
+                let configurations = mesh_face_endpoint_configurations(
+                    ctx,
+                    std::slice::from_ref(assignment),
+                    &edge_candidates,
+                    &unselected,
+                    &local_budget,
+                )?;
+                if !configuration_budget.charge_by(local_budget.consumed())
+                    || local_budget.exhausted()
+                {
+                    None
+                } else {
+                    configurations
+                }
+            };
+            crate::resource::push(
+                ctx,
+                &mut face_configurations,
+                configurations,
+                "catia_face_configuration_assignment_rows",
+            )?;
+        }
+        crate::resource::push(
+            ctx,
+            &mut endpoint_configurations,
+            face_configurations,
+            "catia_face_configuration_face_rows",
+        )?;
+    }
     let relation = resolve_endpoint_configuration_relation_streaming(
         ctx,
         &assignments,
@@ -12419,12 +12515,133 @@ fn endpoint_configurations_do_not_duplicate_closed_point_transitions() {
     let candidates = vec![vec![[0, 0]], vec![[0, 0]], vec![[0, 0]]];
     let budget = WorkBudget::new(4);
 
-    let configurations =
-        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 3], &budget)
-            .expect("closed-point transitions should be deduplicated");
+    let configurations = crate::test_support::with_service_context(|ctx| {
+        mesh_face_endpoint_configurations(
+            ctx,
+            std::slice::from_ref(&assignment),
+            &candidates,
+            &[None; 3],
+            &budget,
+        )
+    })
+    .expect("service resource budget")
+    .expect("closed-point transitions should be deduplicated");
 
     assert_eq!(configurations.len(), 1);
     assert!(!budget.exhausted());
+
+    let mut refused = HashSet::new();
+    for cap in 0..256 {
+        let limited_budget = WorkBudget::new(4);
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            mesh_face_endpoint_configurations(
+                ctx,
+                std::slice::from_ref(&assignment),
+                &candidates,
+                &[None; 3],
+                &limited_budget,
+            )
+        });
+        match result {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected face configuration result"),
+        }
+    }
+    for operation in [
+        "catia_face_configuration_pairs",
+        "catia_face_configuration_initial_states",
+        "catia_face_configuration_state_pairs",
+        "catia_face_configuration_next_states",
+        "catia_face_configuration_seen_pairs",
+        "catia_face_configuration_seen_keys",
+        "catia_face_configuration_boundary_results",
+        "catia_face_configuration_combined_rows",
+        "catia_face_configuration_next_combined",
+        "catia_face_configuration_result_keys",
+        "catia_face_configuration_result_rows",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn face_endpoint_configurations_charge_combined_pair_copy() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![
+            vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }],
+            vec![MeshBoundaryEdgeCandidate {
+                edge: 1,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }],
+        ],
+    };
+    let candidates = [vec![[0, 0]], vec![[0, 0]]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(32);
+        mesh_face_endpoint_configurations(
+            ctx,
+            std::slice::from_ref(&assignment),
+            &candidates,
+            &[None; 2],
+            &budget,
+        )
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service resource budget"),
+        Some(vec![vec![(0, [0, 0]), (1, [0, 0])]])
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..128 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => break,
+            _ => panic!("unexpected face configuration result"),
+        }
+    }
+    assert!(refused.contains("catia_face_configuration_combined_pairs"));
+}
+
+#[test]
+fn face_endpoint_configurations_refuse_before_bounded_absence() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let candidates = [vec![[0, 0], [1, 1]]];
+    let run = |ctx: &DecodeContext<'_>| {
+        let budget = WorkBudget::new(1);
+        mesh_face_endpoint_configurations(
+            ctx,
+            std::slice::from_ref(&assignment),
+            &candidates,
+            &[None],
+            &budget,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service resource budget")
+        .is_none());
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_face_configuration_combined_rows"
+    ));
 }
 
 #[test]

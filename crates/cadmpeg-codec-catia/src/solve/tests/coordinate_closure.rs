@@ -1267,12 +1267,16 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
         vec![[3, 0]],
     ];
     let budget = WorkBudget::new(4_096);
-    let configurations = mesh_face_endpoint_configurations(
-        std::slice::from_ref(&assignment),
-        &candidates,
-        &[None; 4],
-        &budget,
-    )
+    let configurations = crate::test_support::with_service_context(|ctx| {
+        mesh_face_endpoint_configurations(
+            ctx,
+            std::slice::from_ref(&assignment),
+            &candidates,
+            &[None; 4],
+            &budget,
+        )
+    })
+    .expect("service resource budget")
     .expect("bounded face configurations");
 
     assert_eq!(
@@ -1281,10 +1285,11 @@ fn mesh_face_endpoint_configurations_preserve_pair_correlation() {
     );
 
     let exhausted = WorkBudget::new(1);
-    assert!(
-        mesh_face_endpoint_configurations(&[assignment], &candidates, &[None; 4], &exhausted)
-            .is_none()
-    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        mesh_face_endpoint_configurations(ctx, &[assignment], &candidates, &[None; 4], &exhausted)
+    })
+    .expect("service resource budget")
+    .is_none());
     assert!(exhausted.exhausted());
 }
 
