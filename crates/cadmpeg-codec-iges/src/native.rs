@@ -3198,414 +3198,575 @@ pub(crate) fn store(
             })
         },
     )?;
-    let primitive_solids = directory
+    let mut primitive_solids = Vec::new();
+    for entry in directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168))
-        .filter_map(|entry| {
+    {
+        let record = by_directory.get(&entry.sequence).copied();
+        let number = |index| record.and_then(|record| record.number(index));
+        let (kind, dimension_names, origin_start, x_axis_start, z_axis_start): (
+            PrimitiveSolidKind,
+            &[&str],
+            usize,
+            Option<usize>,
+            Option<usize>,
+        ) = match entry.entity_type {
+            150 => (
+                PrimitiveSolidKind::Block,
+                &["x_length", "y_length", "z_length"],
+                4,
+                Some(7),
+                Some(10),
+            ),
+            152 => (
+                PrimitiveSolidKind::RightAngularWedge,
+                &["x_length", "y_length", "z_length", "top_x_length"],
+                5,
+                Some(8),
+                Some(11),
+            ),
+            154 => (
+                PrimitiveSolidKind::RightCircularCylinder,
+                &["height", "radius"],
+                3,
+                None,
+                Some(6),
+            ),
+            156 => (
+                PrimitiveSolidKind::RightCircularConeFrustum,
+                &["height", "large_radius", "small_radius"],
+                4,
+                None,
+                Some(7),
+            ),
+            158 => (PrimitiveSolidKind::Sphere, &["radius"], 2, None, None),
+            160 => (
+                PrimitiveSolidKind::Torus,
+                &["major_radius", "minor_radius"],
+                3,
+                None,
+                Some(6),
+            ),
+            168 => (
+                PrimitiveSolidKind::Ellipsoid,
+                &["x_radius", "y_radius", "z_radius"],
+                4,
+                Some(7),
+                Some(10),
+            ),
+            _ => continue,
+        };
+        reserve_vec_growth(
+            ctx,
+            &mut primitive_solids,
+            1,
+            "iges native primitive solid slots",
+        )?;
+        let mut dimensions = BTreeMap::new();
+        for (index, name) in dimension_names.iter().enumerate() {
+            let key = format_retained(
+                ctx,
+                format_args!("{name}"),
+                "iges native primitive dimension name",
+            )?;
+            insert_optional_btree_map(
+                Some(ctx),
+                &mut dimensions,
+                key,
+                number(index + 1),
+                "iges native primitive dimension node",
+            )?;
+        }
+        let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
+        primitive_solids.push(NativePrimitiveSolid {
+            id: format_retained(
+                ctx,
+                format_args!("iges:solid:primitive#D{}", entry.sequence),
+                "iges native primitive solid id",
+            )?,
+            source_entity: format_retained(
+                ctx,
+                format_args!("iges:entity:directory#{}", entry.sequence),
+                "iges native primitive solid source",
+            )?,
+            kind,
+            dimensions,
+            origin: axis(origin_start),
+            x_axis: x_axis_start.map(axis),
+            z_axis: z_axis_start.map(axis),
+            transformation: (entry.transform > 0)
+                .then(|| {
+                    format_retained(
+                        ctx,
+                        format_args!("iges:native:transformation#D{}", entry.transform),
+                        "iges native primitive transformation",
+                    )
+                })
+                .transpose()?,
+        });
+    }
+    let procedural_solids = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| matches!(entry.entity_type, 162 | 164)),
+        "iges native procedural solid slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let number = |index| record.and_then(|record| record.number(index));
-            let (kind, dimension_names, origin_start, x_axis_start, z_axis_start) =
-                match entry.entity_type {
-                    150 => (
-                        PrimitiveSolidKind::Block,
-                        vec!["x_length", "y_length", "z_length"],
-                        4,
-                        Some(7),
-                        Some(10),
-                    ),
-                    152 => (
-                        PrimitiveSolidKind::RightAngularWedge,
-                        vec!["x_length", "y_length", "z_length", "top_x_length"],
-                        5,
-                        Some(8),
-                        Some(11),
-                    ),
-                    154 => (
-                        PrimitiveSolidKind::RightCircularCylinder,
-                        vec!["height", "radius"],
-                        3,
-                        None,
-                        Some(6),
-                    ),
-                    156 => (
-                        PrimitiveSolidKind::RightCircularConeFrustum,
-                        vec!["height", "large_radius", "small_radius"],
-                        4,
-                        None,
-                        Some(7),
-                    ),
-                    158 => (PrimitiveSolidKind::Sphere, vec!["radius"], 2, None, None),
-                    160 => (
-                        PrimitiveSolidKind::Torus,
-                        vec!["major_radius", "minor_radius"],
-                        3,
-                        None,
-                        Some(6),
-                    ),
-                    168 => (
-                        PrimitiveSolidKind::Ellipsoid,
-                        vec!["x_radius", "y_radius", "z_radius"],
-                        4,
-                        Some(7),
-                        Some(10),
-                    ),
-                    _ => return None,
-                };
-            let dimensions = dimension_names
-                .into_iter()
-                .enumerate()
-                .map(|(index, name)| (name.to_owned(), number(index + 1)))
-                .collect();
             let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
-            Some(NativePrimitiveSolid {
-                id: format!("iges:solid:primitive#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                kind,
-                dimensions,
-                origin: axis(origin_start),
-                x_axis: x_axis_start.map(axis),
-                z_axis: z_axis_start.map(axis),
+            let revolution = entry.entity_type == 162;
+            Ok(NativeProceduralSolid {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:solid:procedural#D{}", entry.sequence),
+                    "iges native procedural solid id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native procedural solid source",
+                )?,
+                kind: if revolution {
+                    ProceduralSolidKind::Revolution
+                } else {
+                    ProceduralSolidKind::LinearExtrusion
+                },
+                form: entry.form,
+                profile: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            ReferenceExpectation::Named(ExpectationLabel::CurveEntity),
+                            |target| {
+                                matches!(
+                                    target.entity_type,
+                                    100 | 102 | 104 | 106 | 110 | 112 | 126 | 130
+                                )
+                            },
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native procedural profile",
+                        )
+                    })
+                    .transpose()?,
+                amount: number(2),
+                origin: revolution.then(|| axis(3)),
+                direction: axis(if revolution { 6 } else { 3 }),
                 transformation: (entry.transform > 0)
-                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native procedural transformation",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Vec<_>>();
-    let procedural_solids = directory
-        .iter()
-        .filter(|entry| matches!(entry.entity_type, 162 | 164))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let number = |index| record.and_then(|record| record.number(index));
-                let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
-                let revolution = entry.entity_type == 162;
-                NativeProceduralSolid {
-                    id: format!("iges:solid:procedural#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    kind: if revolution {
-                        ProceduralSolidKind::Revolution
-                    } else {
-                        ProceduralSolidKind::LinearExtrusion
-                    },
-                    form: entry.form,
-                    profile: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve(
-                                entry.sequence,
-                                1,
-                                sequence,
-                                ReferenceExpectation::Named(ExpectationLabel::CurveEntity),
-                                |target| {
-                                    matches!(
-                                        target.entity_type,
-                                        100 | 102 | 104 | 106 | 110 | 112 | 126 | 130
-                                    )
-                                },
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    amount: number(2),
-                    origin: revolution.then(|| axis(3)),
-                    direction: axis(if revolution { 6 } else { 3 }),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let boolean_trees = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
-        .map(|entry| -> Result<NativeBooleanTree, CodecError> {
+        },
+    )?;
+    let boolean_trees = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1)),
+        "iges native boolean tree slots",
+        |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 1);
-            let terms = (0..count)
-                .filter_map(|index| {
-                    record
-                        .and_then(|record| record.integer(2 + index))
-                        .map(|value| (index, value))
-                })
-                .map(|(index, value)| -> Result<NativeBooleanTerm, CodecError> {
-                    if value < 0 {
-                        Ok(NativeBooleanTerm::Operand {
-                            entity: parameter_resolver
-                                .resolve_negative(
-                                    entry.sequence,
-                                    2 + index,
-                                    value,
-                                    if entry.form == 1 {
-                                        ReferenceExpectation::Named(
-                                            ExpectationLabel::ConstructiveSolidOrType186,
-                                        )
-                                    } else {
-                                        ReferenceExpectation::Named(
-                                            ExpectationLabel::ConstructiveSolid,
-                                        )
-                                    },
-                                    |target| {
-                                        matches!(
-                                            target.entity_type,
-                                            150 | 152
-                                                | 154
-                                                | 156
-                                                | 158
-                                                | 160
-                                                | 162
-                                                | 164
-                                                | 168
-                                                | 180
-                                                | 430
-                                        ) || (entry.form == 1 && target.entity_type == 186)
-                                    },
-                                )?
-                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                            raw: value,
-                        })
-                    } else {
-                        Ok(NativeBooleanTerm::Operation { operation: value })
+            let mut terms = Vec::new();
+            for index in 0..count {
+                let Some(value) = record.and_then(|record| record.integer(2 + index)) else {
+                    continue;
+                };
+                reserve_vec_growth(ctx, &mut terms, 1, "iges native boolean term slots")?;
+                terms.push(if value < 0 {
+                    NativeBooleanTerm::Operand {
+                        entity: parameter_resolver
+                            .resolve_negative(
+                                entry.sequence,
+                                2 + index,
+                                value,
+                                if entry.form == 1 {
+                                    ReferenceExpectation::Named(
+                                        ExpectationLabel::ConstructiveSolidOrType186,
+                                    )
+                                } else {
+                                    ReferenceExpectation::Named(ExpectationLabel::ConstructiveSolid)
+                                },
+                                |target| {
+                                    matches!(
+                                        target.entity_type,
+                                        150 | 152
+                                            | 154
+                                            | 156
+                                            | 158
+                                            | 160
+                                            | 162
+                                            | 164
+                                            | 168
+                                            | 180
+                                            | 430
+                                    ) || (entry.form == 1 && target.entity_type == 186)
+                                },
+                            )?
+                            .map(|sequence| {
+                                format_retained(
+                                    ctx,
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native boolean operand",
+                                )
+                            })
+                            .transpose()?,
+                        raw: value,
                     }
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
+                } else {
+                    NativeBooleanTerm::Operation { operation: value }
+                });
+            }
             Ok(NativeBooleanTree {
-                id: format!("iges:solid:boolean-tree#D{}", entry.sequence),
-                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:solid:boolean-tree#D{}", entry.sequence),
+                    "iges native boolean tree id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native boolean tree source",
+                )?,
                 form: entry.form,
                 declared_length: record.and_then(|record| record.integer(1)),
                 terms,
                 transformation: (entry.transform > 0)
-                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native boolean transformation",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let selected_components = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 182 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                NativeSelectedComponent {
-                    id: format!("iges:solid:selected-component#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    boolean_tree: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                1,
-                                sequence,
-                                180,
-                                &[0, 1],
-                            )
+        },
+    )?;
+    let selected_components = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 182 && entry.form == 0),
+        "iges native selected component slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            Ok(NativeSelectedComponent {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:solid:selected-component#D{}", entry.sequence),
+                    "iges native selected component id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native selected component source",
+                )?,
+                boolean_tree: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 180, &[0, 1])
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:solid:boolean-tree#D{sequence}"),
+                            "iges native selected boolean tree",
+                        )
+                    })
+                    .transpose()?,
+                selection_point: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native selected transformation",
+                        )
+                    })
+                    .transpose()?,
+            })
+        },
+    )?;
+    let solid_assemblies = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1)),
+        "iges native solid assembly slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_complete(entry.sequence, record, end, 1, 2, 2);
+            Ok(NativeSolidAssembly {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:solid-assembly#D{}", entry.sequence),
+                    "iges native solid assembly id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native solid assembly source",
+                )?,
+                form: entry.form,
+                declared_count: record.and_then(|record| record.integer(1)),
+                items: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native solid assembly item slots",
+                    |index| {
+                        Ok(NativeAssemblyItem {
+                            item: record
+                                .and_then(|record| record.integer(2 + index))
+                                .map(|sequence| {
+                                    parameter_resolver.resolve(
+                                        entry.sequence,
+                                        2 + index,
+                                        sequence,
+                                        if entry.form == 1 {
+                                            ReferenceExpectation::Named(
+                                                ExpectationLabel::ConstructiveSolidOrType186,
+                                            )
+                                        } else {
+                                            ReferenceExpectation::Named(
+                                                ExpectationLabel::ConstructiveSolid,
+                                            )
+                                        },
+                                        |target| {
+                                            matches!(
+                                                target.entity_type,
+                                                150 | 152
+                                                    | 154
+                                                    | 156
+                                                    | 158
+                                                    | 160
+                                                    | 162
+                                                    | 164
+                                                    | 168
+                                                    | 180
+                                                    | 184
+                                                    | 430
+                                            ) || (entry.form == 1 && target.entity_type == 186)
+                                        },
+                                    )
+                                })
+                                .transpose()?
+                                .flatten()
+                                .map(|sequence| {
+                                    format_retained(
+                                        ctx,
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native solid assembly member",
+                                    )
+                                })
+                                .transpose()?,
+                            transformation: record
+                                .and_then(|record| record.integer(2 + count + index))
+                                .filter(|sequence| *sequence != 0)
+                                .map(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        2 + count + index,
+                                        sequence,
+                                        124,
+                                        &[],
+                                    )
+                                })
+                                .transpose()?
+                                .flatten()
+                                .map(|sequence| {
+                                    format_retained(
+                                        ctx,
+                                        format_args!("iges:native:transformation#D{sequence}"),
+                                        "iges native solid assembly item transform",
+                                    )
+                                })
+                                .transpose()?,
                         })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:solid:boolean-tree#D{sequence}")),
-                    selection_point: [
-                        record.and_then(|record| record.number(2)),
-                        record.and_then(|record| record.number(3)),
-                        record.and_then(|record| record.number(4)),
-                    ],
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
+                    },
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native solid assembly transformation",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let solid_assemblies = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count =
-                    overdeclared_counts.counted_complete(entry.sequence, record, end, 1, 2, 2);
-                NativeSolidAssembly {
-                    id: format!("iges:product:solid-assembly#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    form: entry.form,
-                    declared_count: record.and_then(|record| record.integer(1)),
-                    items: (0..count)
-                        .map(|index| -> Result<NativeAssemblyItem, CodecError> {
-                            Ok(NativeAssemblyItem {
-                                item: record
-                                    .and_then(|record| record.integer(2 + index))
-                                    .map(|sequence| {
-                                        parameter_resolver.resolve(
-                                            entry.sequence,
-                                            2 + index,
-                                            sequence,
-                                            if entry.form == 1 {
-                                                ReferenceExpectation::Named(
-                                                    ExpectationLabel::ConstructiveSolidOrType186,
-                                                )
-                                            } else {
-                                                ReferenceExpectation::Named(
-                                                    ExpectationLabel::ConstructiveSolid,
-                                                )
-                                            },
-                                            |target| {
-                                                matches!(
-                                                    target.entity_type,
-                                                    150 | 152
-                                                        | 154
-                                                        | 156
-                                                        | 158
-                                                        | 160
-                                                        | 162
-                                                        | 164
-                                                        | 168
-                                                        | 180
-                                                        | 184
-                                                        | 430
-                                                ) || (entry.form == 1 && target.entity_type == 186)
-                                            },
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                                transformation: record
-                                    .and_then(|record| record.integer(2 + count + index))
-                                    .filter(|sequence| *sequence != 0)
-                                    .map(|sequence| {
-                                        parameter_resolver.resolve_type(
-                                            entry.sequence,
-                                            2 + count + index,
-                                            sequence,
-                                            124,
-                                            &[],
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .map(|sequence| {
-                                        format!("iges:native:transformation#D{sequence}")
-                                    }),
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        },
+    )?;
     // IGES 5.3 §4.49 lays out Type 186 as SHELL at parameter index 1, the
     // orientation flag at 2, the void count N at 3, and one (VOID, VOF) pair
     // per void shell from index 4. §4.147 forbids an MSBO from pointing at a
     // Form 2 open shell, so the outer shell and every void resolve strictly
     // against Type 514 Form 1.
-    let manifold_solids = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 186 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 2);
-                let closed_shell = |index: usize| -> Result<Option<String>, CodecError> {
-                    Ok(record
-                        .and_then(|record| record.integer(index))
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(
+    let manifold_solids = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 186 && entry.form == 0),
+        "iges native manifold solid slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 2);
+            let closed_shell = |index: usize| -> Result<Option<String>, CodecError> {
+                record
+                    .and_then(|record| record.integer(index))
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, index, sequence, 514, &[1])
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native manifold shell",
+                        )
+                    })
+                    .transpose()
+            };
+            Ok(NativeManifoldSolid {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:solid:manifold-brep#D{}", entry.sequence),
+                    "iges native manifold solid id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native manifold solid source",
+                )?,
+                shell: closed_shell(1)?,
+                shell_orientation: record.and_then(|record| record.integer(2)),
+                declared_void_count: record.and_then(|record| record.integer(3)),
+                // Struct fields evaluate in written order, so the outer shell
+                // records its reference edge before any void pair records its
+                // own, pinning the serialized edge order to ascending
+                // parameter index.
+                voids: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native manifold void slots",
+                    |index| {
+                        Ok(NativeVoidShell {
+                            shell: closed_shell(4 + index * 2)?,
+                            orientation: record.and_then(|record| record.integer(5 + index * 2)),
+                        })
+                    },
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native manifold transformation",
+                        )
+                    })
+                    .transpose()?,
+            })
+        },
+    )?;
+    let solid_instances = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1)),
+        "iges native solid instance slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            Ok(NativeSolidInstance {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:solid-instance#D{}", entry.sequence),
+                    "iges native solid instance id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native solid instance source",
+                )?,
+                form: entry.form,
+                solid: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        if entry.form == 1 {
+                            parameter_resolver.resolve_type(entry.sequence, 1, sequence, 186, &[])
+                        } else {
+                            parameter_resolver.resolve(
                                 entry.sequence,
-                                index,
+                                1,
                                 sequence,
-                                514,
-                                &[1],
+                                ReferenceExpectation::Named(ExpectationLabel::ConstructiveSolid),
+                                |target| {
+                                    matches!(
+                                        target.entity_type,
+                                        150 | 152
+                                            | 154
+                                            | 156
+                                            | 158
+                                            | 160
+                                            | 162
+                                            | 164
+                                            | 168
+                                            | 180
+                                            | 184
+                                            | 430
+                                    )
+                                },
                             )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")))
-                };
-                NativeManifoldSolid {
-                    id: format!("iges:solid:manifold-brep#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    shell: closed_shell(1)?,
-                    shell_orientation: record.and_then(|record| record.integer(2)),
-                    declared_void_count: record.and_then(|record| record.integer(3)),
-                    // Struct fields evaluate in written order, so the outer shell
-                    // records its reference edge before any void pair records its
-                    // own, pinning the serialized edge order to ascending
-                    // parameter index.
-                    voids: (0..count)
-                        .map(|index| -> Result<NativeVoidShell, CodecError> {
-                            Ok(NativeVoidShell {
-                                shell: closed_shell(4 + index * 2)?,
-                                orientation: record
-                                    .and_then(|record| record.integer(5 + index * 2)),
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
+                        }
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native solid instance target",
+                        )
+                    })
+                    .transpose()?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native solid instance transformation",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let solid_instances = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                NativeSolidInstance {
-                    id: format!("iges:product:solid-instance#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    form: entry.form,
-                    solid: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            if entry.form == 1 {
-                                parameter_resolver.resolve_type(
-                                    entry.sequence,
-                                    1,
-                                    sequence,
-                                    186,
-                                    &[],
-                                )
-                            } else {
-                                parameter_resolver.resolve(
-                                    entry.sequence,
-                                    1,
-                                    sequence,
-                                    ReferenceExpectation::Named(
-                                        ExpectationLabel::ConstructiveSolid,
-                                    ),
-                                    |target| {
-                                        matches!(
-                                            target.entity_type,
-                                            150 | 152
-                                                | 154
-                                                | 156
-                                                | 158
-                                                | 160
-                                                | 162
-                                                | 164
-                                                | 168
-                                                | 180
-                                                | 184
-                                                | 430
-                                        )
-                                    },
-                                )
-                            }
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        },
+    )?;
     let subfigure_definitions = directory
         .iter()
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
