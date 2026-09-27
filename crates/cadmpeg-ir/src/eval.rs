@@ -1323,8 +1323,22 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 /// Scratch contains `degree + 1` values, at most the admitted control count.
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
-    let finite_t = FiniteReal::new(t);
     let mut values = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis").ok()?;
+    fill_bspline_basis(knots, degree, span, t, &mut values)?;
+    Some(values)
+}
+
+fn fill_bspline_basis(
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+    values: &mut [f64],
+) -> Option<()> {
+    if values.len() != degree.checked_add(1)? {
+        return None;
+    }
+    let finite_t = FiniteReal::new(t);
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
@@ -1362,7 +1376,7 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
         }
         values[j] = saved;
     }
-    Some(values)
+    Some(())
 }
 
 fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
@@ -1574,6 +1588,28 @@ pub fn nurbs_curve_point_at(
     )
 }
 
+/// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
+/// values. The caller admits the buffer before creating it.
+pub fn nurbs_curve_point_at_with_basis(
+    curve: &NurbsCurve,
+    t: f64,
+    basis: &mut [f64],
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let poles = curve.pole_rows();
+    let degree = usize::try_from(curve.degree()).map_err(|_| EvaluationFailure::NoValue)?;
+    let at = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
+    let span = bspline_span(curve.knots(), degree, poles.count(), at.get())
+        .ok_or(EvaluationFailure::NoValue)?;
+    fill_bspline_basis(curve.knots(), degree, span, at.get(), basis)
+        .ok_or(EvaluationFailure::NonFinite(UNREACHED_POINT))?;
+    nurbs_curve_point_from_basis(
+        basis,
+        span,
+        |index| poles.point_at(index),
+        |index| poles.weight_at(index),
+    )
+}
+
 /// The point at `t` of a possibly-rational B-spline over `count` poles that
 /// `pole` hands out admitted, or why it has no finite point there.
 ///
@@ -1597,11 +1633,25 @@ fn nurbs_curve_point_evaluation(
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = bspline_basis(knots, degree, span, t).ok_or(unreached)?;
+    nurbs_curve_point_from_basis(&basis, span, pole, weight)
+}
+
+fn nurbs_curve_point_from_basis(
+    basis: &[f64],
+    span: usize,
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+    weight: impl Fn(usize) -> Option<f64>,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let no_value = EvaluationFailure::NoValue;
+    let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(unreached);
     }
-    let poles = local_poles(span, degree, pole).ok_or(no_value)?;
-    let base = homogeneous_curve_sum(&basis, &poles, weight, span - degree).ok_or(no_value)?;
+    let first = span
+        .checked_add(1)
+        .and_then(|value| value.checked_sub(basis.len()))
+        .ok_or(no_value)?;
+    let base = homogeneous_curve_sum_from_pole(basis, pole, weight, first).ok_or(no_value)?;
     let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(FinitePoint3::from_coordinates(x, y, z))
@@ -1624,11 +1674,25 @@ fn homogeneous_curve_sum(
     weight: impl Fn(usize) -> Option<f64>,
     first: usize,
 ) -> Option<Homogeneous> {
+    homogeneous_curve_sum_from_pole(
+        values,
+        |index| poles.get(index - first).copied(),
+        weight,
+        first,
+    )
+}
+
+fn homogeneous_curve_sum_from_pole(
+    values: &[f64],
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+    weight: impl Fn(usize) -> Option<f64>,
+    first: usize,
+) -> Option<Homogeneous> {
     Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
         Some((
             [basis, 1.0],
             weight(first + local).unwrap_or(1.0),
-            *poles.get(local)?,
+            pole(first + local)?,
         ))
     }))
 }
