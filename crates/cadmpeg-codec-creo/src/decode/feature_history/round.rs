@@ -418,7 +418,7 @@ pub(in super::super) fn round_constant_radius(
         .map(|round| round.radius)
     {
         Some(LegacyRoundRadius::Constant(radius)) => {
-            if !legacy_round_radius_agrees(scan, ir, source_carriers, feature_id, radius) {
+            if !legacy_round_radius_agrees(ctx, scan, ir, source_carriers, feature_id, radius)? {
                 return Ok(None);
             }
             return Ok(Some(radius.get()));
@@ -426,7 +426,7 @@ pub(in super::super) fn round_constant_radius(
         Some(LegacyRoundRadius::Ambiguous) => return Ok(None),
         Some(LegacyRoundRadius::NotPresent) | None => {}
     }
-    if let Some(radius) = round_direct_radii(scan, feature_id)
+    if let Some(radius) = round_direct_radii(ctx, scan, feature_id)?
         .as_deref()
         .and_then(unique_positive_length)
     {
@@ -446,14 +446,14 @@ pub(in super::super) fn round_constant_radius(
     if generated_rows.is_empty() {
         return Ok(round_support_radius(scan, ir, source_carriers, feature_id));
     }
-    if let Some(radius) = round_replay_radius(scan, ir, source_carriers, feature_id) {
+    if let Some(radius) = round_replay_radius(ctx, scan, ir, source_carriers, feature_id)? {
         return Ok(Some(radius));
     }
     // Unequal decoded rolling-radius samples identify a variable-radius
     // round even when another generated row has no radius proof. A support
     // plane fallback must not turn that incomplete, unequal sample set into
     // a false constant radius.
-    if differing_positive_lengths(&round_observed_radii(scan, feature_id)) {
+    if differing_positive_lengths(&round_observed_radii(ctx, scan, feature_id)?) {
         return Ok(None);
     }
     let cylinder_count = generated_rows
@@ -483,7 +483,7 @@ pub(in super::super) fn round_constant_radius(
             return Ok(unique_positive_length(&radii).map(PositiveLength::get));
         }
     }
-    let cylinder_radii = round_placed_cylinder_radii(scan, ir, source_carriers, feature_id);
+    let cylinder_radii = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
     if differing_positive_lengths(&cylinder_radii) {
         // Independent placed cylinder samples remain decisive when an
         // unresolved toroidal sibling prevents the complete mixed-family
@@ -507,21 +507,22 @@ pub(in super::super) fn round_constant_radius(
 }
 
 fn round_replay_radius(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<f64> {
-    let mut samples = round_observed_radii(scan, feature_id);
-    samples.extend(round_placed_cylinder_radii(
-        scan,
-        ir,
-        source_carriers,
-        feature_id,
-    ));
-    let radius = unique_positive_length(&samples)?.get();
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    let mut samples = round_observed_radii(ctx, scan, feature_id)?;
+    let placed = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
+    ctx.try_reserve_items(&mut samples, placed.len(), "creo round replay samples")?;
+    samples.extend(placed);
+    let Some(radius) = unique_positive_length(&samples) else {
+        return Ok(None);
+    };
+    let radius = radius.get();
     let scale = radius.abs().max(1.0);
-    scan.features
+    Ok(scan.features
         .round_replay_scalars
         .iter()
         .filter(|candidate| candidate.feature_id == feature_id)
@@ -529,29 +530,27 @@ fn round_replay_radius(
             candidate.value.get() > 0.0
                 && (candidate.value.get() - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
         })
-        .then_some(radius)
+        .then_some(radius))
 }
 
 fn legacy_round_radius_agrees(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     radius: PositiveReal,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let radius = radius.get();
-    let mut samples = round_observed_radii(scan, feature_id);
-    samples.extend(round_placed_cylinder_radii(
-        scan,
-        ir,
-        source_carriers,
-        feature_id,
-    ));
+    let mut samples = round_observed_radii(ctx, scan, feature_id)?;
+    let placed = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
+    ctx.try_reserve_items(&mut samples, placed.len(), "creo legacy round samples")?;
+    samples.extend(placed);
     if samples
         .iter()
         .any(|sample| !sample.is_finite() || *sample <= 0.0)
     {
-        return false;
+        return Ok(false);
     }
     let scale = samples
         .iter()
@@ -559,9 +558,9 @@ fn legacy_round_radius_agrees(
         .map(f64::abs)
         .chain(std::iter::once(radius.abs()))
         .fold(1.0, f64::max);
-    samples
+    Ok(samples
         .iter()
-        .all(|sample| (sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale)
+        .all(|sample| (sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale))
 }
 
 fn complete_direct_placed_cylinder_radius_agreement(
@@ -892,19 +891,26 @@ fn resolved_round_support_planes(
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Vec<f64> {
-    scan.surfaces
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+    let mut radii = Vec::new();
+    for row in scan.surfaces
         .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-        .filter_map(|row| round_placed_cylinder_radius(ir, row, source_carriers))
-        .collect()
+    {
+        if let Some(radius) = round_placed_cylinder_radius(ir, row, source_carriers) {
+            ctx.try_reserve_items(&mut radii, 1, "creo placed round radii")?;
+            radii.push(radius);
+        }
+    }
+    Ok(radii)
 }
 
 fn round_placed_cylinder_radius(
@@ -929,35 +935,52 @@ fn round_placed_cylinder_radius(
     })
 }
 
-fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
+fn round_direct_radii(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let generated_count = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
         .count();
-    (generated_count != 0).then_some(())?;
-    let radii = round_observed_radii(scan, feature_id);
-    (radii.len() == generated_count).then_some(radii)
+    if generated_count == 0 {
+        return Ok(None);
+    }
+    let radii = round_observed_radii(ctx, scan, feature_id)?;
+    Ok((radii.len() == generated_count).then_some(radii))
 }
 
-pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u32) -> Vec<f64> {
-    scan.surfaces
+pub(in super::super) fn round_observed_radii(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+    let mut radii = Vec::new();
+    for row in scan.surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .filter_map(|row| {
-            let parameters = unique_surface_parameter_record(scan, row)?;
-            match row.kind {
-                crate::surface::SurfaceKind::Cylinder => parameters.type24_generated_round_radius(),
-                crate::surface::SurfaceKind::TorusOrSphere => parameters
-                    .torus_radius_overrides()
-                    .map(|overrides| overrides.radius2)
-                    .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
-                _ => None,
-            }
-        })
-        .collect()
+    {
+        let Some(parameters) = unique_surface_parameter_record(scan, row) else {
+            continue;
+        };
+        let radius = match row.kind {
+            crate::surface::SurfaceKind::Cylinder => parameters.type24_generated_round_radius(),
+            crate::surface::SurfaceKind::TorusOrSphere => parameters
+                .torus_radius_overrides()
+                .map(|overrides| overrides.radius2)
+                .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
+            _ => None,
+        };
+        if let Some(radius) = radius {
+            ctx.try_reserve_items(&mut radii, 1, "creo observed round radii")?;
+            radii.push(radius);
+        }
+    }
+    Ok(radii)
 }
 
 pub(in super::super) fn differing_positive_lengths(values: &[f64]) -> bool {

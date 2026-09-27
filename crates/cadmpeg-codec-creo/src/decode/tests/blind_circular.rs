@@ -964,7 +964,11 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         });
     }
 
-    assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| round_observed_radii(ctx, &scan, 5))
+            .expect("service profile admits observed radii"),
+        [15.0, 1.0]
+    );
     assert_eq!(
         round_support_radius(
             &scan,
@@ -1059,12 +1063,14 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     }
 
     assert_eq!(
-        round_placed_cylinder_radii(
+        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        ))
+        .expect("service profile admits placed radii"),
         [15.0, 1.0]
     );
     assert_eq!(
@@ -1165,12 +1171,14 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     }
 
     assert_eq!(
-        round_placed_cylinder_radii(
+        crate::decode::with_test_decode_ctx(|ctx| round_placed_cylinder_radii(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             5
-        ),
+        ))
+        .expect("service profile admits placed radii"),
         [15.0, 1.0]
     );
     assert_eq!(
