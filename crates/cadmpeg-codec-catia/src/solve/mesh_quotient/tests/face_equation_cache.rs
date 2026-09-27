@@ -30,10 +30,11 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments),
+        possible_face_equations: possible_face_equations(&ctx, &assignments)
+            .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments),
+            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,

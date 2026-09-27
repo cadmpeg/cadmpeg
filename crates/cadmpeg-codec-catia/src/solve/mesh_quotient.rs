@@ -5018,7 +5018,10 @@ struct MeshSelectionSearch<'a, 'ctx> {
     face_equation_cache: MeshFaceEquationCache,
 }
 
-fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec<[usize; 2]>> {
+fn possible_face_equations(
+    ctx: &DecodeContext<'_>,
+    faces: &[Vec<MeshFaceBoundaryAssignment>],
+) -> Result<Vec<Vec<[usize; 2]>>, CodecError> {
     fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
             use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
@@ -5033,35 +5036,53 @@ fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec
         }
     }
 
-    faces
-        .iter()
-        .map(|assignments| {
-            let mut equations = HashSet::new();
-            for assignment in assignments {
-                for boundary in &assignment.boundaries {
-                    if boundary.is_empty() {
-                        continue;
-                    }
-                    for index in 0..boundary.len() {
-                        let left = ports(boundary[index], true);
-                        let right = ports(boundary[(index + 1) % boundary.len()], false);
-                        for left in left.into_iter().flatten() {
-                            for right in right.into_iter().flatten() {
-                                equations.insert(if left <= right {
+    let mut faces_equations = Vec::new();
+    for assignments in faces {
+        let mut equations = HashSet::new();
+        for assignment in assignments {
+            for boundary in &assignment.boundaries {
+                if boundary.is_empty() {
+                    continue;
+                }
+                for index in 0..boundary.len() {
+                    let left = ports(boundary[index], true);
+                    let right = ports(boundary[(index + 1) % boundary.len()], false);
+                    for left in left.into_iter().flatten() {
+                        for right in right.into_iter().flatten() {
+                            ctx.charge_work(1, "catia_possible_face_equation_work")?;
+                            crate::resource::insert_set(
+                                ctx,
+                                &mut equations,
+                                if left <= right {
                                     [left, right]
                                 } else {
                                     [right, left]
-                                });
-                            }
+                                },
+                                "catia_possible_face_equation_keys",
+                            )?;
                         }
                     }
                 }
             }
-            let mut equations = equations.into_iter().collect::<Vec<_>>();
-            equations.sort_unstable();
-            equations
-        })
-        .collect()
+        }
+        let mut face_equations = Vec::new();
+        for equation in equations {
+            crate::resource::push(
+                ctx,
+                &mut face_equations,
+                equation,
+                "catia_possible_face_equation_values",
+            )?;
+        }
+        face_equations.sort_unstable();
+        crate::resource::push(
+            ctx,
+            &mut faces_equations,
+            face_equations,
+            "catia_possible_face_equation_faces",
+        )?;
+    }
+    Ok(faces_equations)
 }
 
 fn possible_face_choices_with_limit(
@@ -10493,7 +10514,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     if total_work > MAX_SELECTION_WORK {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     }
-    let face_equations = possible_face_equations(&assignments);
+    let face_equations = possible_face_equations(ctx, &assignments)?;
     let Some(face_choices) = possible_face_choices_with_limit(
         &assignments,
         &face_equations,
