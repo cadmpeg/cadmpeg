@@ -434,7 +434,7 @@ fn decode_table(
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
         push_charged(ctx, &mut guids,
             ActGuid::new(
-                crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
+                crate::ids::native_scoped_id_charged(ctx, stream, "act-guid", byte_offset)?,
                 byte_offset as u64,
                 ordinal,
                 guid,
@@ -461,7 +461,7 @@ fn decode_table(
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
         push_charged(ctx, &mut table_references,
             ActTableReference::new(
-                crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
+                crate::ids::native_scoped_id_charged(ctx, stream, "act-table-reference", byte_offset)?,
                 u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
                 byte_offset as u64,
                 target_record,
@@ -502,7 +502,7 @@ fn decode_table(
             .ok_or_else(|| malformed("channel-registry GUID"))?;
         push_charged(ctx, &mut registry_channels,
             ActRegistryChannel::new(
-                crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
+                crate::ids::native_scoped_id_charged(ctx, stream, "act-registry-channel", byte_offset)?,
                 u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
                 byte_offset as u64,
                 name,
@@ -578,7 +578,7 @@ fn merge_entities(
         )
         .map_err(CodecError::malformed)?;
         let entity = ActEntity::try_new(
-            crate::ids::native_scoped_id(stream, "act-entity", record_index),
+            crate::ids::native_scoped_id_charged(ctx, stream, "act-entity", record_index)?,
             record_index,
             entity_id,
             row,
@@ -745,7 +745,7 @@ fn decode_component_link(
     let layout = some!(layout);
     Ok(Some(ComponentLink::Root(
         some!(ActRootComponent::try_new(
-            crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
+            crate::ids::native_scoped_id_charged(ctx, stream, "act-root-component", frame.start)?,
             frame.record_index,
             frame.class_tag.clone(),
             instance_root_record,
