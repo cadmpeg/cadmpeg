@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn reserve_vec<T>(
     ctx: &DecodeContext<'_>,
@@ -83,6 +84,35 @@ pub(crate) fn copy_optional_retained(
             Ok(copy)
         }
     }
+}
+
+pub(crate) fn insert_optional_btree_set<T: Ord>(
+    ctx: Option<&DecodeContext<'_>>,
+    values: &mut BTreeSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if !values.contains(&value) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    Ok(values.insert(value))
+}
+
+pub(crate) fn insert_optional_btree_map<K: Ord, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !values.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+        }
+    }
+    Ok(values.insert(key, value))
 }
 
 pub(crate) fn collect_optional_vec<T>(

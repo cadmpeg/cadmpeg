@@ -100,6 +100,52 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
     .is_ok());
 }
 
+#[test]
+fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+    let scan = scan(&bytes).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, None).unwrap();
+    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+    let back_pointers = lines
+        .iter()
+        .map(|(sequence, line)| (*sequence, super::back_pointer(line)))
+        .collect::<BTreeMap<_, _>>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = super::resolve_ownership(
+        &directory,
+        &lines,
+        &back_pointers,
+        &mut crate::card::FramingRecoveries::default(),
+        Some(&ctx),
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 2
+                && limit.additional == 1
+                && limit.operation == "iges named parameter owners"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::resolve_ownership(
+        &directory,
+        &lines,
+        &back_pointers,
+        &mut crate::card::FramingRecoveries::default(),
+        Some(&ctx),
+    )
+    .is_ok());
+}
+
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let mut bytes = owned_test_file(&[OwnedTestEntity {
         entity_type: 116,
