@@ -2050,22 +2050,27 @@ fn mesh_face_coverage(
 }
 
 pub(crate) fn bounded_oriented_trail_orders(
+    ctx: &DecodeContext<'_>,
     trails: &[Vec<usize>],
     limit: usize,
-) -> Option<Vec<Vec<usize>>> {
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     fn visit(
+        ctx: &DecodeContext<'_>,
         trails: &[Vec<usize>],
         limit: usize,
         used: u64,
         edges: &mut Vec<usize>,
         orders: &mut Vec<Vec<usize>>,
-    ) -> bool {
+    ) -> Result<bool, CodecError> {
+        let _depth = ctx.enter_nested("catia_oriented_trail_order_depth")?;
+        ctx.charge_work(1, "catia_oriented_trail_order_work")?;
         if orders.len() > limit {
-            return false;
+            return Ok(false);
         }
         if used.count_ones() as usize == trails.len() {
-            orders.push(edges.clone());
-            return orders.len() <= limit;
+            let order = crate::resource::copy_retained_slice(ctx, edges, "catia_oriented_trail_order_copy")?;
+            crate::resource::push(ctx, orders, order, "catia_oriented_trail_orders")?;
+            return Ok(orders.len() <= limit);
         }
         for (index, trail) in trails.iter().enumerate() {
             if used & (1 << index) != 0 {
@@ -2081,28 +2086,35 @@ pub(crate) fn bounded_oriented_trail_orders(
                 } else {
                     edges.extend(trail);
                 }
-                if !visit(trails, limit, used | (1 << index), edges, orders) {
-                    return false;
+                if !visit(ctx, trails, limit, used | (1 << index), edges, orders)? {
+                    return Ok(false);
                 }
                 edges.truncate(before);
             }
         }
-        true
+        Ok(true)
     }
 
     if trails.len() > u64::BITS as usize {
-        return None;
+        return Ok(None);
     }
+    let Some(edge_count) = trails.iter().try_fold(0usize, |total, trail| total.checked_add(trail.len())) else {
+        return Err(ctx.refuse_codec_limit("catia_oriented_trail_scratch", u64::MAX, u64::MAX));
+    };
+    let mut edges = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut edges, edge_count, "catia_oriented_trail_scratch")?;
     let mut orders = Vec::new();
-    visit(trails, limit, 0, &mut Vec::new(), &mut orders).then_some(orders)
+    Ok(visit(ctx, trails, limit, 0, &mut edges, &mut orders)?.then_some(orders))
 }
 
 pub(crate) fn bounded_endpoint_cycle_orders(
+    ctx: &DecodeContext<'_>,
     missing: &[usize],
     edge_candidates: &[Vec<[usize; 2]>],
     limit: usize,
-) -> Option<Vec<Vec<usize>>> {
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     struct Search<'a> {
+        ctx: &'a DecodeContext<'a>,
         missing: &'a [usize],
         transitions: &'a HashMap<usize, Vec<(usize, usize)>>,
         limit: usize,
@@ -2117,36 +2129,41 @@ pub(crate) fn bounded_endpoint_cycle_orders(
             current_point: usize,
             used: u64,
             order: &mut Vec<usize>,
-        ) -> bool {
+        ) -> Result<bool, CodecError> {
+            let _depth = self.ctx.enter_nested("catia_endpoint_cycle_order_depth")?;
+            self.ctx.charge_work(1, "catia_endpoint_cycle_order_work")?;
             let Some(operations_left) = self.operations_left.checked_sub(1) else {
-                return false;
+                return Ok(false);
             };
             self.operations_left = operations_left;
             if order.len() == self.missing.len() {
                 if current_point == first_point {
-                    self.orders.insert(order.clone());
+                    if !self.orders.contains(order) {
+                        let saved = crate::resource::copy_retained_slice(self.ctx, order, "catia_endpoint_cycle_order_copy")?;
+                        crate::resource::insert_set(self.ctx, &mut self.orders, saved, "catia_endpoint_cycle_orders")?;
+                    }
                 }
-                return self.orders.len() <= self.limit;
+                return Ok(self.orders.len() <= self.limit);
             }
             let Some(transition_count) = self.transitions.get(&current_point).map(Vec::len) else {
-                return true;
+                return Ok(true);
             };
             for index in 0..transition_count {
                 let (rank, next_point) = self.transitions[&current_point][index];
                 let Some(operations_left) = self.operations_left.checked_sub(1) else {
-                    return false;
+                    return Ok(false);
                 };
                 self.operations_left = operations_left;
                 if used & (1 << rank) != 0 {
                     continue;
                 }
                 order.push(self.missing[rank]);
-                if !self.walk(first_point, next_point, used | (1 << rank), order) {
-                    return false;
+                if !self.walk(first_point, next_point, used | (1 << rank), order)? {
+                    return Ok(false);
                 }
                 order.pop();
             }
-            true
+            Ok(true)
         }
     }
 
@@ -2156,17 +2173,19 @@ pub(crate) fn bounded_endpoint_cycle_orders(
             .iter()
             .any(|&edge| edge_candidates.get(edge).is_none_or(Vec::is_empty))
     {
-        return None;
+        return Ok(None);
     }
-    let mut missing = missing.to_vec();
+    let mut missing = crate::resource::copy_slice(ctx, missing, "catia_endpoint_cycle_missing_edges")?;
     missing.sort_unstable();
     let first_edge = missing[0];
     let mut transitions = HashMap::<usize, Vec<(usize, usize)>>::new();
     for (rank, &edge) in missing.iter().enumerate().skip(1) {
         for &[left, right] in &edge_candidates[edge] {
-            transitions.entry(left).or_default().push((rank, right));
+            crate::resource::admit_map_entry(ctx, &mut transitions, &left, "catia_endpoint_cycle_transition_points")?;
+            crate::resource::push(ctx, transitions.entry(left).or_default(), (rank, right), "catia_endpoint_cycle_transition_steps")?;
             if left != right {
-                transitions.entry(right).or_default().push((rank, left));
+                crate::resource::admit_map_entry(ctx, &mut transitions, &right, "catia_endpoint_cycle_transition_points")?;
+                crate::resource::push(ctx, transitions.entry(right).or_default(), (rank, left), "catia_endpoint_cycle_transition_steps")?;
             }
         }
     }
@@ -2175,38 +2194,47 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         values.dedup();
     }
     let mut search = Search {
+        ctx,
         missing: &missing,
         transitions: &transitions,
         limit,
-        operations_left: limit.saturating_mul(16),
+        operations_left: match limit.checked_mul(16) {
+            Some(operations) => operations,
+            None => return Ok(None),
+        },
         orders: HashSet::new(),
     };
-    let mut first_pairs = edge_candidates[first_edge].clone();
+    let mut first_pairs = crate::resource::copy_slice(ctx, &edge_candidates[first_edge], "catia_endpoint_cycle_first_pairs")?;
     for pair in &mut first_pairs {
         pair.sort_unstable();
     }
     first_pairs.sort_unstable();
     first_pairs.dedup();
     for [first_point, current_point] in first_pairs {
-        let mut order = vec![first_edge];
-        if !search.walk(first_point, current_point, 1, &mut order) {
-            return None;
+        let mut order = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut order, missing.len(), "catia_endpoint_cycle_order_scratch")?;
+        order.push(first_edge);
+        if !search.walk(first_point, current_point, 1, &mut order)? {
+            return Ok(None);
         }
     }
     if search.orders.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut orders = search.orders.into_iter().collect::<Vec<_>>();
+    let mut orders = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut orders, search.orders.len(), "catia_endpoint_cycle_result_rows")?;
+    orders.extend(search.orders);
     orders.sort_unstable();
-    Some(orders)
+    Ok(Some(orders))
 }
 
 fn standard_mesh_missing_edge_assignment_domains(
+    ctx: &DecodeContext<'_>,
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
     defer_validation: bool,
-) -> Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)> {
+) -> Result<Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)>, CodecError> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     // A contradictory face can visit factorially many partial orders without
     // producing one complete assignment, so the assignment cap alone is not a
@@ -2519,6 +2547,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     }
 
     fn endpoint_trail_assignments(
+        ctx: &DecodeContext<'_>,
         face: usize,
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
@@ -2526,7 +2555,8 @@ fn standard_mesh_missing_edge_assignment_domains(
         rows: &[EdgeRow],
         edge_points: &[Option<[usize; 2]>],
         corner_points: &MeshCornerPoints,
-    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+    ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+        (|| -> Option<Result<Vec<Vec<MeshEdgePlacementCandidate>>, CodecError>> {
         struct EndpointTrail {
             edges: Vec<usize>,
             start: usize,
@@ -2661,7 +2691,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     offset = offset.checked_add(segment_count)?;
                 }
             }
-            return Some(vec![placements]);
+            return Some(Ok(vec![placements]));
         }
         let [gap] = gaps else {
             return None;
@@ -2678,14 +2708,19 @@ fn standard_mesh_missing_edge_assignment_domains(
         if trails.len() > u64::BITS as usize {
             return None;
         }
-        let orders = bounded_oriented_trail_orders(
+        let orders = match bounded_oriented_trail_orders(
+            ctx,
             &trails
                 .iter()
                 .map(|trail| trail.edges.clone())
                 .collect::<Vec<_>>(),
             MAX_ASSIGNMENTS_PER_FACE,
-        )?;
-        Some(
+        ) {
+            Ok(Some(orders)) => orders,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(Ok(
             orders
                 .into_iter()
                 .map(|order| {
@@ -2702,17 +2737,20 @@ fn standard_mesh_missing_edge_assignment_domains(
                         .collect()
                 })
                 .collect(),
-        )
+        ))
+        })().transpose()
     }
 
     fn endpoint_cycle_assignments(
+        ctx: &DecodeContext<'_>,
         face: usize,
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
         missing: &[usize],
         rows: &[EdgeRow],
         edge_candidates: &[Vec<[usize; 2]>],
-    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+    ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+        (|| -> Option<Result<Vec<Vec<MeshEdgePlacementCandidate>>, CodecError>> {
         let [gap] = gaps else {
             return None;
         };
@@ -2725,31 +2763,33 @@ fn standard_mesh_missing_edge_assignment_domains(
         {
             return None;
         }
-        bounded_endpoint_cycle_orders(missing, edge_candidates, MAX_ASSIGNMENTS_PER_FACE).map(
-            |orders| {
-                orders
+        let orders = match bounded_endpoint_cycle_orders(ctx, missing, edge_candidates, MAX_ASSIGNMENTS_PER_FACE) {
+            Ok(Some(orders)) => orders,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(Ok(orders
+            .into_iter()
+            .map(|order| {
+                order
                     .into_iter()
-                    .map(|order| {
-                        order
-                            .into_iter()
-                            .enumerate()
-                            .map(|(offset, edge)| MeshEdgePlacementCandidate {
-                                edge,
-                                face,
-                                cycle: 0,
-                                start: offset,
-                                segment_count: 1,
-                            })
-                            .collect()
+                    .enumerate()
+                    .map(|(offset, edge)| MeshEdgePlacementCandidate {
+                        edge,
+                        face,
+                        cycle: 0,
+                        start: offset,
+                        segment_count: 1,
                     })
                     .collect()
-            },
-        )
+            })
+            .collect()))
+        })().transpose()
     }
 
     let edge_rows = &context.analysis.edge_rows;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
-        return None;
+        return Ok(None);
     }
     let edge_point_domains = edge_candidates.map(|candidates| {
         candidates
@@ -2808,7 +2848,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             };
             for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
                 match corner_ports.insert((run.face, run.cycle, corner), port) {
-                    Some(stored) if stored != port => return None,
+                    Some(stored) if stored != port => return Ok(None),
                     Some(_) | None => {}
                 }
             }
@@ -2829,7 +2869,9 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
         }
     }
-    let assignment_results = coverage.iter().map(|face| {
+    let mut assignment_results = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut assignment_results, coverage.len(), "catia_mesh_assignment_domain_faces")?;
+    for face in coverage {
         let cycle_lengths = &context.cycle_lengths[face.face];
         let unordered_full_cycle = edge_candidates.and_then(|candidates| {
             let [gap] = face.gaps.as_slice() else {
@@ -2849,35 +2891,37 @@ fn standard_mesh_missing_edge_assignment_domains(
                     .missing_edges
                     .iter()
                     .any(|&edge| candidates[edge].len() > 1))
-            .then(|| face.missing_edges.clone())
+            .then(|| face.missing_edges.as_slice())
         });
         if let Some(edges) = unordered_full_cycle {
-            return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
+            assignment_results.push(MeshFaceAssignmentDomain::UnorderedFullCycle(
+                crate::resource::copy_retained_slice(ctx, edges, "catia_mesh_unordered_missing_edges")?,
+            ));
+            continue;
         }
-        let cycle_assignments = edge_candidates.and_then(|candidates| {
+        let cycle_assignments = if let Some(candidates) = edge_candidates {
             endpoint_cycle_assignments(
+                ctx,
                 face.face,
                 &face.gaps,
                 cycle_lengths,
                 &face.missing_edges,
                 edge_rows,
                 candidates,
-            )
-        });
-        let assignments = cycle_assignments
-            .or_else(|| {
-                singleton_edge_points.as_ref().and_then(|edge_points| {
-                    endpoint_trail_assignments(
-                        face.face,
-                        &face.gaps,
-                        cycle_lengths,
-                        &face.missing_edges,
-                        edge_rows,
-                        edge_points,
-                        &corner_points,
-                    )
-                })
-            })
+            )?
+        } else {
+            None
+        };
+        let trail_assignments = if cycle_assignments.is_none() {
+            if let Some(edge_points) = singleton_edge_points.as_ref() {
+                endpoint_trail_assignments(ctx, face.face, &face.gaps, cycle_lengths, &face.missing_edges, edge_rows, edge_points, &corner_points)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let assignments = cycle_assignments.or(trail_assignments)
             .or_else(|| {
                 enumerate_face(
                     face.face,
@@ -2922,16 +2966,20 @@ fn standard_mesh_missing_edge_assignment_domains(
                     &mut remaining_states,
                 )
             });
-        assignments
+        let domain = assignments
             .map(MeshFaceAssignmentDomain::Ordered)
             .or_else(|| {
                 defer_validation.then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
-            })
-    });
-    Some((
-        assignment_results.collect::<Option<Vec<_>>>()?,
-        edge_runs.clone(),
-    ))
+            });
+        let Some(domain) = domain else {
+            return Ok(None);
+        };
+        assignment_results.push(domain);
+    }
+    Ok(Some((
+        assignment_results,
+        crate::resource::copy_retained_slice(ctx, edge_runs, "catia_mesh_assignment_edge_runs")?,
+    )))
 }
 
 fn standard_mesh_missing_edge_assignments(
@@ -2945,11 +2993,12 @@ fn standard_mesh_missing_edge_assignments(
         return Ok(None);
     };
     Ok(standard_mesh_missing_edge_assignment_domains(
+        ctx,
         &context,
         edge_candidates,
         canonicalize_spans,
         false,
-    )
+    )?
     .map(|(domains, _)| domains)
     .and_then(|domains| {
         domains
@@ -3031,11 +3080,12 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
     defer_validation: bool,
 ) -> Result<Option<Vec<MeshFaceBoundaryDomain>>, CodecError> {
     let Some((domains, runs)) = standard_mesh_missing_edge_assignment_domains(
+        ctx,
         context,
         edge_candidates,
         true,
         defer_validation,
-    ) else {
+    )? else {
         return Ok(None);
     };
     let cycle_lengths = &context.cycle_lengths;

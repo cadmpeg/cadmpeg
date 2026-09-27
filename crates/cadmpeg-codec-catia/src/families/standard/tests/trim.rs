@@ -60,26 +60,57 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
 #[test]
 fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
-    assert!(bounded_oriented_trail_orders(&trails, 16).is_none());
-    assert_eq!(
-        bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
-        Some(vec![vec![0, 1], vec![1, 0]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert!(bounded_oriented_trail_orders(ctx, &trails, 16).expect("service budget").is_none());
+        assert_eq!(
+            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).expect("service budget"),
+            Some(vec![vec![0, 1], vec![1, 0]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    assert_eq!(
-        bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
-        Some(vec![vec![0, 1, 2]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4).expect("service budget"),
+            Some(vec![vec![0, 1, 2]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     let candidates = vec![vec![[0, 0]]; 8];
-    assert!(bounded_endpoint_cycle_orders(&(0..8).collect::<Vec<_>>(), &candidates, 16).is_none());
+    crate::test_support::with_service_context(|ctx| {
+        assert!(bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16).expect("service budget").is_none());
+    });
+}
+
+#[test]
+fn endpoint_order_helpers_refuse_before_counted_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let trails = [vec![0], vec![1]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_oriented_trail_orders(ctx, &trails, 2)
+    };
+    let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
+    };
+    assert_eq!(crate::test_support::with_service_context(trail_run).expect("service budget"), Some(vec![vec![0, 1], vec![1, 0]]));
+    assert_eq!(crate::test_support::with_service_context(cycle_run).expect("service budget"), Some(vec![vec![0, 1, 2]]));
+    for (result, operation) in [
+        (crate::test_support::with_collection_limit(0, trail_run), "catia_oriented_trail_scratch"),
+        (crate::test_support::with_collection_limit(0, cycle_run), "catia_endpoint_cycle_missing_edges"),
+    ] {
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.dimension == ResourceDimension::CollectionItems && error.operation == operation
+        ));
+    }
 }
 
 #[test]
