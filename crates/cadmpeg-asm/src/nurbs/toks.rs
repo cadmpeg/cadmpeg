@@ -396,11 +396,7 @@ pub fn owned_construction_subtype(
         .find(|name| *name != "ref")
         .map(|name| {
             let name = canonical_intcurve_kind(name);
-            ctx.charge_retained(
-                u64::try_from(name.len()).unwrap_or(u64::MAX),
-                "ASM construction subtype name",
-            )?;
-            Ok(name.into())
+            crate::decode_alloc::copy_string(ctx, name, "ASM construction subtype name")
         })
 }
 
@@ -879,6 +875,31 @@ mod tests {
 
     fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
         with_ctx(|ctx| owned_construction_subtype_ctx(ctx, toks).transpose().unwrap())
+    }
+
+    #[test]
+    fn owned_construction_subtype_refuses_retained_string_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::SubtypeOpen,
+            Token::Ident("arbitrary".into()),
+            Token::SubtypeClose,
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = owned_construction_subtype_ctx(&ctx, &tokens)
+            .expect("subtype exists")
+            .expect_err("subtype name exceeds retained limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM construction subtype name");
     }
 
     fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
