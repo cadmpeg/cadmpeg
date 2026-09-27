@@ -216,6 +216,8 @@ deferred_ids_refusal_test!(deferred_surface_ids_refuse_collection_limit, "step_d
 deferred_ids_refusal_test!(geometry_ir_curves_refuse_collection_limit, "step_geometry_ir_curves");
 deferred_ids_refusal_test!(geometry_ir_surfaces_refuse_collection_limit, "step_geometry_ir_surfaces");
 deferred_ids_refusal_test!(geometry_ir_pcurves_refuse_collection_limit, "step_geometry_ir_pcurves");
+deferred_ids_refusal_test!(composite_curve_segments_refuse_collection_limit, "step_composite_curve_segments");
+deferred_ids_refusal_test!(composite_curve_model_segments_refuse_collection_limit, "step_composite_curve_model_segments");
 
 fn deferred_dependency_refusal(limit: u64, group: &'static str, member: &'static str) -> CodecError {
     let arena = DecodeArena::new();
