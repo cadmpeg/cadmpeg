@@ -345,35 +345,15 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let extra_ranges = children
-            .len()
-            .checked_mul(2)
-            .and_then(|count| count.checked_add(1))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Rhino view checksum range count exceeds address space".to_string(),
-                )
-            })?;
-        let extra_bytes = extra_ranges
-            .checked_mul(std::mem::size_of::<std::ops::Range<usize>>())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Rhino view checksum range bytes exceed address space".to_string(),
-                )
-            })?;
-        reservation.grow(u64::try_from(extra_bytes).map_err(|_| {
-            CodecError::NotImplemented(
-                "Rhino view checksum range bytes exceed address space".to_string(),
-            )
-        })?)?;
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if matches!(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let children = match mesh_checksum_children(data, &chunk, archive) {
+        let children = match mesh_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -381,8 +361,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let children = match render_settings_checksum_children(data, &chunk, archive) {
+        let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -390,8 +371,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let children = match settings_attributes_checksum_children(data, &chunk, archive) {
+        let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -425,8 +407,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let children = match compressed_preview_checksum_children(data, &chunk, archive) {
+        let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -434,8 +417,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let children = match user_table_uuid_checksum_children(data, &chunk, archive) {
+        let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -461,14 +445,18 @@ fn checksum_warning(
 /// calls `ON_SubDDisplayParameters::Write()`. Future minor versions keep that
 /// child position; any later bytes remain direct suffix bytes.
 fn mesh_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
-    Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
-        .into_iter()
-        .collect())
+    let mut children = Vec::new();
+    if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+        crate::chunks::reserve_admitted_vec(ctx, &mut children, 1, "Rhino mesh checksum children")?;
+        children.push(child);
+    }
+    Ok(children)
 }
 
 /// Skips the direct mesh-parameter prefix and returns its nested `SubD` child.
@@ -515,6 +503,7 @@ fn mesh_subd_checksum_child(
 /// version. Modern V6-and-later settings begin with one anonymous chunk; a
 /// direct suffix after that child remains part of the outer checksum.
 fn render_settings_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -523,16 +512,17 @@ fn render_settings_checksum_children(
         return Ok(Vec::new());
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
-    Ok(vec![take_anonymous_checksum_child(
-        data,
-        &mut reader,
-        archive,
-        "modern render settings",
-    )?])
+    let child =
+        take_anonymous_checksum_child(data, &mut reader, archive, "modern render settings")?;
+    let mut children =
+        crate::chunks::admitted_vec(ctx, 1, "Rhino render settings checksum children")?;
+    children.push(child);
+    Ok(children)
 }
 
 /// Returns the complete nested chunks in a settings-attributes body.
 fn settings_attributes_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -551,38 +541,65 @@ fn settings_attributes_checksum_children(
     let minor = packed_version & 0x0f;
     let mut children = Vec::new();
     if minor >= 1 {
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes page units",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 2 {
         reader.skip(16)?;
     }
     if minor >= 3 {
         reader.skip(24)?;
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes earth anchor",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 4 {
         reader.bool()?;
     }
     if minor >= 5 {
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes IO settings",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 6 {
         if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino settings checksum children",
+            )?;
             children.push(child);
         }
     }
@@ -601,6 +618,7 @@ fn settings_attributes_checksum_children(
 /// the bytes directly. A non-contiguous bitmap writes a second buffer after a
 /// palette-only first buffer.
 fn compressed_preview_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -657,6 +675,12 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
     } else if image_size > 0 && first_size == palette_size {
@@ -667,6 +691,12 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview palette buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
         let second_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
@@ -682,6 +712,12 @@ fn compressed_preview_checksum_children(
             second_size,
             "compressed preview image buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
     } else {
@@ -741,6 +777,7 @@ fn take_anonymous_checksum_child(
 
 /// Returns the optional record-header child inside a user-table UUID record.
 fn user_table_uuid_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -761,7 +798,9 @@ fn user_table_uuid_checksum_children(
             "user-table record header must be a long chunk",
         ));
     }
-    Ok(vec![child.range()])
+    let mut children = crate::chunks::admitted_vec(ctx, 1, "Rhino user table checksum children")?;
+    children.push(child.range());
+    Ok(children)
 }
 
 /// Returns the complete nested chunks after a counted view-list prefix.
