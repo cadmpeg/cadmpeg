@@ -3,7 +3,7 @@
 
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
-use crate::design::decode::image::embedded_image_asset;
+use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::design::decode::text::lp_utf16_bounded_charged;
@@ -67,11 +67,15 @@ pub(crate) fn project_canvas_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = asset.id.clone();
+        let asset_id = copy_asset_id_charged(ctx, &asset.id)?;
         if !assets
             .iter()
             .any(|candidate: &Asset| candidate.id == asset_id)
         {
+            ctx.charge_collection_items(1, "f3d Canvas assets")?;
+            assets.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Canvas assets allocation", 0, 1)
+            })?;
             assets.push(asset);
         }
         let (opacity, frame) = image.geometry().payload.decoded();
@@ -347,5 +351,90 @@ mod tests {
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "f3d Design UTF-16 text"));
         }
+    }
+
+    #[test]
+    fn canvas_projection_refuses_asset_copy_and_output_limits() {
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
+        };
+        use std::collections::BTreeMap;
+        use std::io::{Cursor, Write};
+        use zip::CompressionMethod;
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/a.png";
+        let (bytes, scope) = fixture();
+        let image = parse_canvas_image(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            "Design/BulkStream.dat",
+            &scope,
+        )
+        .unwrap()
+        .unwrap();
+        let feature = || Feature {
+            id: crate::ids::neutral_feature_id(&scope),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Unresolved,
+                },
+            )),
+            native_ref: Some(scope.id.clone()),
+        };
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(b"PNG").unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
+            let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
+            for (retained, items, dimension, operation) in [
+                (u64::MAX, 0, ResourceDimension::CollectionItems, "f3d Canvas assets"),
+                (
+                    u64::try_from(base + asset_id_len - 1).unwrap(),
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d image feature asset identifier",
+                ),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = retained;
+                policy.limits.max_collection_items = items;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::project_canvas_images(
+                    &ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&image),
+                    &mut [feature()],
+                );
+                assert!(matches!(
+                    result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                ));
+            }
+            let assets = super::project_canvas_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                &mut [feature()],
+            )
+            .unwrap();
+            assert_eq!(assets.len(), 1);
+            assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
+        });
     }
 }
