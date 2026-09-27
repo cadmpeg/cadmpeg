@@ -1338,6 +1338,23 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
 }
 
 #[test]
+fn committed_extrusion_boundaries_refuse_collection_limit() {
+    let object = object_record(ArchiveVersion::V5, 8, [0; 16]);
+    let scan = scan_with_objects(&[object]);
+    let error = with_transaction_limits(&scan, 5, None, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
+        context
+            .commit_extrusion(0, cap_extrusion([false, false]))
+            .expect_err("two extrusion boundaries exceed remaining collection item")
+    });
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino committed extrusion boundaries"
+    ));
+}
+
+#[test]
 fn candidate_rejections_distinguish_admission_from_validation() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
@@ -1499,19 +1516,50 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             boundary: &extrusion.boundaries[0],
             directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
         }];
-        let error = stage_extrusion_caps(
+        let error = with_collection_limit(u64::MAX, |ctx| {
+            stage_extrusion_caps(
+                ctx,
+                &mut CadIr::empty(),
+                &mut cadmpeg_ir::Annotations::default(),
+                "caps",
+                &test_association(),
+                &extrusion,
+                &boundaries,
+            )
+            .expect_err("invalid cap pcurve")
+        });
+        assert!(
+            error.to_string().starts_with("extrusion cap staging: "),
+            "{error}"
+        );
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn extrusion_cap_loop_ids_refuse_collection_limit() {
+    let extrusion = cap_extrusion([true, false]);
+    let boundaries = [CommittedExtrusionBoundary {
+        boundary: &extrusion.boundaries[0],
+        directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
+    }];
+    let error = with_collection_limit(0, |ctx| {
+        stage_extrusion_caps(
+            ctx,
             &mut CadIr::empty(),
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &test_association(),
             &extrusion,
             &boundaries,
-            &mut Vec::new(),
         )
-        .expect_err("invalid cap pcurve");
-        assert!(error.starts_with("extrusion cap staging: "), "{error}");
-        assert!(error.contains(expected), "{error}");
-    }
+        .expect_err("cap loop ID exceeds collection limit")
+    });
+    assert!(matches!(
+        error,
+        super::CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "Rhino extrusion cap loop IDs"
+    ));
 }
 
 #[test]
@@ -1541,17 +1589,18 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                 }
             })
             .collect::<Vec<_>>();
-        let mut links = Vec::new();
-        assert!(stage_extrusion_caps(
-            &mut ir,
-            &mut cadmpeg_ir::Annotations::default(),
-            "caps",
-            &association,
-            &extrusion,
-            &boundaries,
-            &mut links,
-        )
-        .is_ok());
+        with_collection_limit(u64::MAX, |ctx| {
+            assert!(stage_extrusion_caps(
+                ctx,
+                &mut ir,
+                &mut cadmpeg_ir::Annotations::default(),
+                "caps",
+                &association,
+                &extrusion,
+                &boundaries,
+            )
+            .is_ok());
+        });
         assert_eq!(ir.model.faces.len(), expected_faces);
         assert_eq!(ir.model.regions.len(), expected_faces);
         assert_eq!(ir.model.shells.len(), expected_faces);
