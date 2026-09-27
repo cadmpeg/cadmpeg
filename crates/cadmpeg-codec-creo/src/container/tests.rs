@@ -144,6 +144,55 @@ fn two_chart_pcurve_count_node_refuses_before_insertion() {
     ));
 }
 
+fn current_feature_operations_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"Round id 4\0";
+    let section = super::Section::scan("MdlStatus".to_string(), 0, payload.len(), None, payload)
+        .expect("one bounded status section");
+    let sections = [section];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root input is admitted");
+    Ok(super::feature_operations(&ctx, &sections)?.len())
+}
+
+#[test]
+fn current_feature_operation_node_refuses_before_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        current_feature_operations_with_limit(3).expect("one operation admitted"),
+        1
+    );
+    let error = current_feature_operations_with_limit(1)
+        .expect_err("map node follows the aggregate operation item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo current feature operation nodes"
+    ));
+}
+
+#[test]
+fn current_feature_operation_order_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = current_feature_operations_with_limit(2)
+        .expect_err("ordered item follows aggregate and map nodes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo current feature operation order"
+    ));
+}
+
 #[test]
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
