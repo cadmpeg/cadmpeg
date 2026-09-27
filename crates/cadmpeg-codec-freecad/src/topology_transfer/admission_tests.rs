@@ -296,6 +296,14 @@ fn pcurve_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn topology_root_label_refuses_at_retained_limit() {
+    assert_empty_builder_refusal("FreeCAD topology root label", |builder| {
+        builder.root_discriminator = Some(2);
+        builder.topology_label(1, Transform::identity()).map(|_| ())
+    });
+}
+
+#[test]
 fn shell_component_key_refuses_at_retained_limit() {
     assert_empty_builder_refusal("FreeCAD shell component key", |builder| builder.shell_component_id("1", 1).map(|_| ()));
 }
