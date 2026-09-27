@@ -376,13 +376,13 @@ pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = match walk_native_markers(
         bytes,
-        |off| Ok::<_, std::convert::Infallible>(try_block(bytes, off)),
-        |off| Ok::<_, std::convert::Infallible>(try_cache_cell(bytes, off)),
-        |off| Ok::<_, std::convert::Infallible>(try_directory_entry(bytes, off)),
-        |_| Ok::<_, std::convert::Infallible>(()),
+        MarkerAdmission::Probe,
+        |off| Ok(try_block(bytes, off)),
+        |off| Ok(try_cache_cell(bytes, off)),
+        |off| Ok(try_directory_entry(bytes, off)),
     ) {
         Ok(frames) => frames,
-        Err(never) => match never {},
+        Err(_) => (Vec::new(), Vec::new(), Vec::new()),
     };
 
     completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
@@ -430,15 +430,30 @@ fn native_version(bytes: &[u8]) -> u32 {
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-type NativeWalk<E> = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E>;
+type NativeWalk = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), CodecError>;
 
-fn walk_native_markers<E>(
+enum MarkerAdmission<'a, 'ctx> {
+    Probe,
+    Decode(&'ctx DecodeContext<'a>),
+}
+
+impl MarkerAdmission<'_, '_> {
+    fn reserve<T>(&self, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+        if let Self::Decode(ctx) = self {
+            ctx.reserve_collection_vec(values, 1, operation)?;
+            ctx.charge_entities(1, operation)?;
+        }
+        Ok(())
+    }
+}
+
+fn walk_native_markers(
     bytes: &[u8],
-    mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
-    mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, E>,
-    mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, E>,
-    mut admit: impl FnMut(&'static str) -> Result<(), E>,
-) -> NativeWalk<E> {
+    admission: MarkerAdmission<'_, '_>,
+    mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
+    mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
+    mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
+) -> NativeWalk {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -450,15 +465,15 @@ fn walk_native_markers<E>(
         }
         if let Some(block) = try_one_block(i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
-            admit("admit SLDPRT block")?;
+            admission.reserve(&mut blocks, "admit SLDPRT block")?;
             blocks.push(block.into_block());
             continue;
         }
         if let Some(cell) = try_one_cell(i)? {
-            admit("admit SLDPRT cache cell")?;
+            admission.reserve(&mut cache_cells, "admit SLDPRT cache cell")?;
             cache_cells.push(cell);
         } else if let Some(entry) = try_one_directory(i)? {
-            admit("admit SLDPRT directory entry")?;
+            admission.reserve(&mut directory, "admit SLDPRT directory entry")?;
             directory.push(entry);
         }
         i += 1;
@@ -509,13 +524,10 @@ pub(crate) fn scan<'a>(
     let version = native_version(bytes);
     let (blocks, directory, cache_cells) = walk_native_markers(
         bytes,
+        MarkerAdmission::Decode(ctx),
         |off| try_block_budgeted(ctx, root, off),
         |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
         |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
-        |operation| {
-            ctx.charge_collection_items(1, operation)?;
-            ctx.charge_entities(1, operation)
-        },
     )?;
     Ok(completed_scan(
         bytes,
@@ -535,27 +547,29 @@ fn compound_streams<'a>(
     root: View<'a>,
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
-    snapshot
-        .entries()
-        .iter()
-        .filter_map(|entry| match entry {
-            CompoundEntry::Stream(stream) => Some(stream),
-            CompoundEntry::Storage(_) => None,
-        })
-        .map(|entry| {
-            let view = snapshot.open(ctx, entry)?;
-            let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
-            let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
-            compound_stream(
-                ctx,
-                entry.path().to_owned(),
-                entry.id().directory_id(),
-                entry.start_sector(),
-                payload,
-                decoded,
-            )
-        })
-        .collect()
+    let mut streams = Vec::new();
+    for entry in snapshot.entries() {
+        let CompoundEntry::Stream(entry) = entry else {
+            continue;
+        };
+        let view = snapshot.open(ctx, entry)?;
+        let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
+        let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
+        let mut path = String::new();
+        ctx.reserve_retained_string(&mut path, entry.path().len(), "retain SLDPRT stream path")?;
+        path.push_str(entry.path());
+        let stream = compound_stream(
+            ctx,
+            path,
+            entry.id().directory_id(),
+            entry.start_sector(),
+            payload,
+            decoded,
+        )?;
+        ctx.reserve_collection_vec(&mut streams, 1, "admit SLDPRT compound stream")?;
+        streams.push(stream);
+    }
+    Ok(streams)
 }
 
 fn decode_wrapped_payload_budgeted<'a>(

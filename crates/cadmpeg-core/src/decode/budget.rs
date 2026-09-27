@@ -219,6 +219,22 @@ impl DecodeBudget {
         )
     }
 
+    /// Report allocator refusal after a collection-item charge was recorded.
+    pub(super) fn collection_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse(
+            ResourceDimension::CollectionItems,
+            ResourceFailure::AllocationFailed,
+            self.policy.limits.max_collection_items,
+            self.collection_items.get().saturating_sub(charged),
+            charged,
+            operation,
+        )
+    }
+
     pub(super) fn enter_nested(
         &self,
         operation: &'static str,
