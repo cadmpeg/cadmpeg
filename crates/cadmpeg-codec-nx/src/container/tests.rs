@@ -5,6 +5,7 @@
 use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
 use crate::test_support::test_om::segment_index_payload;
 use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
+use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_prt::append_rmfastload_table;
 use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
@@ -63,6 +64,24 @@ fn container_parses_header_and_directory() {
         .entries
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span().is_some()));
+}
+
+#[test]
+fn legacy_scan_refuses_work_after_directory_traversal() {
+    let file = legacy_cfb_with_two_streams();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The CFB directory has one storage and two streams.
+    policy.limits.max_work_units = 3;
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_legacy(&ctx, root)
+        .expect_err("the legacy NX directory scan needs one more work unit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan legacy NX directory"
+    ));
 }
 
 #[test]
