@@ -32,6 +32,7 @@ use crate::presentation::texture_array;
 use crate::presentation::DimensionStyleDetails;
 use crate::presentation::EmbeddedImageCompression;
 use crate::presentation::FontWeight;
+use crate::presentation::TextStyleParseInput;
 use crate::presentation::ANONYMOUS;
 use crate::presentation::DIMSTYLE_EXTRA;
 use crate::presentation::LIGHT;
@@ -783,12 +784,15 @@ fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
     let bytes = legacy_text_style_bytes();
     let mut losses = Vec::new();
     let value = parse_text_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        None,
-        false,
-        42,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: None,
+            apple_runtime: false,
+            source_offset: 42,
+        },
         &mut losses,
     )
     .expect("legacy text style without a writer stamp");
@@ -801,12 +805,15 @@ fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
 
     let mut stamped_losses = Vec::new();
     let stamped = parse_text_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        Some(201_802_231),
-        false,
-        42,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: Some(201_802_231),
+            apple_runtime: false,
+            source_offset: 42,
+        },
         &mut stamped_losses,
     )
     .expect("legacy text style with a modern writer stamp");
@@ -837,12 +844,15 @@ fn legacy_text_style_bytes() -> Vec<u8> {
 fn legacy_text_style_preserves_font_identity_and_characteristics() {
     let bytes = legacy_text_style_bytes();
     let value = parse_text_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        Some(201_802_231),
-        false,
-        42,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: Some(201_802_231),
+            apple_runtime: false,
+            source_offset: 42,
+        },
         &mut Vec::new(),
     )
     .expect("valid legacy text style");
@@ -864,6 +874,7 @@ fn legacy_text_style_preserves_font_identity_and_characteristics() {
 fn modern_font_matches_producer_wide_string_and_future_suffix() {
     let bytes = modern_font_chunk(7, &[0xaa, 0xbb]);
     let value = parse_font(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut BoundedReader::new(&bytes, 0, bytes.len()).unwrap(),
         ArchiveVersion::V8,
@@ -894,12 +905,15 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
     body.extend([0xee, 0xff]);
     let bytes = anonymous(2, &body);
     let value = parse_text_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        None,
-        false,
-        99,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: None,
+            apple_runtime: false,
+            source_offset: 99,
+        },
         &mut Vec::new(),
     )
     .expect("modern text style with future suffixes");

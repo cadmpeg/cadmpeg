@@ -1,10 +1,252 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{object_rendering_with_negative_minor, texture_payload};
-use crate::chunks::{ArchiveVersion, FramingError};
+use super::{
+    legacy_text_style_bytes, modern_font_chunk, object_rendering_with_negative_minor,
+    texture_payload,
+};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::presentation::rendering_attributes;
+use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
+
+fn font_refusal(limit: u64) -> FramingError {
+    let bytes = modern_font_chunk(7, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("font root admitted");
+    crate::presentation::parse_font(
+        &ctx,
+        &bytes,
+        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("font bounds"),
+        ArchiveVersion::V8,
+        None,
+    )
+    .expect_err("font text exceeds retained limit")
+}
+
+macro_rules! font_text_limit {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(
+                font_refusal($limit),
+                FramingError::Resource(refusal) if refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+font_text_limit!(
+    font_wide_string_refuses_retained_limit,
+    0,
+    "Rhino wide string"
+);
+font_text_limit!(
+    font_postscript_refuses_retained_limit,
+    5,
+    "Rhino font PostScript name"
+);
+font_text_limit!(
+    font_obsolete_description_refuses_retained_limit,
+    12,
+    "Rhino font obsolete description"
+);
+font_text_limit!(
+    font_family_refuses_retained_limit,
+    25,
+    "Rhino font family name"
+);
+font_text_limit!(
+    font_locale_refuses_retained_limit,
+    30,
+    "Rhino font locale name"
+);
+font_text_limit!(
+    font_localized_postscript_refuses_retained_limit,
+    35,
+    "Rhino font localized PostScript name"
+);
+font_text_limit!(
+    font_english_postscript_refuses_retained_limit,
+    42,
+    "Rhino font English PostScript name"
+);
+font_text_limit!(
+    font_localized_logfont_refuses_retained_limit,
+    49,
+    "Rhino font localized LOGFONT name"
+);
+font_text_limit!(
+    font_english_logfont_refuses_retained_limit,
+    54,
+    "Rhino font English LOGFONT name"
+);
+font_text_limit!(
+    font_localized_family_refuses_retained_limit,
+    59,
+    "Rhino font localized family name"
+);
+font_text_limit!(
+    font_english_family_refuses_retained_limit,
+    64,
+    "Rhino font English family name"
+);
+font_text_limit!(
+    font_localized_face_refuses_retained_limit,
+    69,
+    "Rhino font localized face name"
+);
+font_text_limit!(
+    font_english_face_refuses_retained_limit,
+    76,
+    "Rhino font English face name"
+);
+
+fn legacy_text_style_refusal(limit: u64) -> FramingError {
+    let bytes = legacy_text_style_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("legacy style root admitted");
+    crate::presentation::parse_text_style(
+        &ctx,
+        &bytes,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: Some(201_802_231),
+            apple_runtime: false,
+            source_offset: 42,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("legacy style text exceeds retained limit")
+}
+
+#[test]
+fn legacy_text_style_description_refuses_retained_limit() {
+    assert!(matches!(
+        legacy_text_style_refusal(0),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino legacy text style description"
+    ));
+}
+
+#[test]
+fn legacy_font_face_refuses_retained_limit() {
+    assert!(matches!(
+        legacy_text_style_refusal(14),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino legacy font face"
+    ));
+}
+
+#[test]
+fn legacy_postscript_name_refuses_retained_limit() {
+    assert!(matches!(
+        legacy_text_style_refusal(28),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino legacy PostScript name"
+    ));
+}
+
+#[test]
+fn legacy_font_description_refuses_retained_limit() {
+    assert!(matches!(
+        legacy_text_style_refusal(42),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino legacy font description"
+    ));
+}
+
+#[test]
+fn legacy_text_style_id_refuses_retained_limit() {
+    assert!(matches!(
+        legacy_text_style_refusal(56),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino text style ID"
+    ));
+}
+
+#[test]
+fn legacy_text_style_uuid_refuses_retained_limit() {
+    let id_len = "rhino:presentation:text_style#index-7-offset-42".len();
+    assert!(matches!(
+        legacy_text_style_refusal(u64::try_from(56 + id_len).expect("budget fits")),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino text style source UUID"
+    ));
+}
+
+#[test]
+fn legacy_text_style_name_refuses_retained_limit() {
+    let id_len = "rhino:presentation:text_style#index-7-offset-42".len();
+    assert!(matches!(
+        legacy_text_style_refusal(u64::try_from(56 + id_len + 36).expect("budget fits")),
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino text style name"
+    ));
+}
+
+#[test]
+fn unstamped_font_loss_refuses_collection_limit() {
+    let bytes = legacy_text_style_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("legacy style root admitted");
+    let error = crate::presentation::parse_text_style(
+        &ctx,
+        &bytes,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: None,
+            apple_runtime: false,
+            source_offset: 42,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("unstamped loss exceeds collection limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino text style writer-stamp losses"
+    ));
+}
+
+#[test]
+fn unstamped_font_loss_text_refuses_retained_limit() {
+    let bytes = legacy_text_style_bytes();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 28;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("legacy style root admitted");
+    let error = crate::presentation::parse_text_style(
+        &ctx,
+        &bytes,
+        TextStyleParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V8,
+            writer_version: None,
+            apple_runtime: false,
+            source_offset: 42,
+        },
+        &mut Vec::new(),
+    )
+    .expect_err("unstamped loss text exceeds retained limit");
+    assert!(matches!(
+        error,
+        FramingError::Resource(refusal)
+            if refusal.operation == "Rhino text style writer-stamp loss text"
+    ));
+}
 
 #[test]
 fn texture_file_reference_refuses_retained_limit() {
