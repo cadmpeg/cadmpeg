@@ -351,8 +351,15 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let edge_candidates =
-            zero_entity_endpoint_pair_candidates_with_budget(support_runs, topology_budget)?;
+        let edge_candidates = match zero_entity_endpoint_pair_candidates_with_budget(
+            admission.context(),
+            support_runs,
+            topology_budget,
+        ) {
+            Ok(Some(candidates)) => candidates,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if edge_candidates.len().checked_mul(2)? != occurrences.len() {
             return None;
         }
@@ -372,8 +379,15 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let endpoint_loci =
-            endpoint_locus_candidates_with_budget(&edge_candidates, topology_budget)?;
+        let endpoint_loci = match endpoint_locus_candidates_with_budget(
+            admission.context(),
+            &edge_candidates,
+            topology_budget,
+        ) {
+            Ok(Some(candidates)) => candidates,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
         for (vertex_index, locus) in endpoint_loci.iter().enumerate() {
             for &(edge_index, endpoint_index) in &locus.incident_endpoint_pair_endpoints {

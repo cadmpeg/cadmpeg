@@ -9038,14 +9038,20 @@ impl CatiaNative {
             );
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
+                ctx,
                 &parsed_zero_entity_support_runs,
-            );
+            )?;
         let zero_entity_endpoint_pair_candidates =
-            zero_entity_endpoint_pair_candidates(parsed_zero_entity_endpoint_pairs.clone());
+            zero_entity_endpoint_pair_candidates(crate::resource::copy_slice(
+                ctx,
+                &parsed_zero_entity_endpoint_pairs,
+                "catia_native_zero_endpoint_pairs",
+            )?);
         let parsed_zero_entity_endpoint_loci =
             crate::families::zero_entity::topology::endpoint_locus_candidates(
+                ctx,
                 &parsed_zero_entity_endpoint_pairs,
-            );
+            )?;
         let zero_entity_endpoint_locus_candidates =
             zero_entity_endpoint_locus_candidates(parsed_zero_entity_endpoint_loci);
         let zero_entity_support_runs =

@@ -37,6 +37,10 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
         Self { ctx, admitted: 0 }
     }
 
+    pub(crate) fn context(&self) -> &DecodeContext<'b> {
+        self.ctx
+    }
+
     pub(crate) fn charge(&mut self) -> Result<(), CodecError> {
         self.ctx
             .charge_entities(1, "admit CATIA family model entity")?;
