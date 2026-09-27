@@ -437,12 +437,16 @@ pub(in super::super) fn round_constant_radius(
         }
         return Ok(Some(radius.get()));
     }
-    let generated_rows = scan
+    let mut generated_rows = Vec::new();
+    for row in scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
+    {
+        ctx.try_reserve_items(&mut generated_rows, 1, "creo generated round rows")?;
+        generated_rows.push(row);
+    }
     if generated_rows.is_empty() {
         return Ok(round_support_radius(scan, ir, source_carriers, feature_id));
     }
@@ -593,33 +597,37 @@ fn mixed_round_radius_samples(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let cylinder_rows = rows
-        .iter()
-        .copied()
-        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-        .collect::<Vec<_>>();
-    let torus_rows = rows
+    let mut torus_rows = Vec::new();
+    for row in rows
         .iter()
         .copied()
         .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
-        .collect::<Vec<_>>();
-    if cylinder_rows.is_empty() || torus_rows.is_empty() {
+    {
+        ctx.try_reserve_items(&mut torus_rows, 1, "creo mixed torus rows")?;
+        torus_rows.push(row);
+    }
+    if torus_rows.is_empty() || torus_rows.len() == rows.len() {
         return Ok(None);
     }
 
-    let Some(cylinder_radii) = cylinder_rows
+    let mut cylinder_radii = Vec::new();
+    for row in rows
         .iter()
-        .map(|row| round_cylinder_radius(scan, ir, source_carriers, row))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+        .copied()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+    {
+        let Some(radius) = round_cylinder_radius(scan, ir, source_carriers, row) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut cylinder_radii, 1, "creo mixed cylinder radii")?;
+        cylinder_radii.push(radius);
+    }
     let Some(torus_radii) = mixed_torus_radius_samples(ctx, scan, &torus_rows)? else {
         return Ok(None);
     };
-    Ok(Some(
-        cylinder_radii.into_iter().chain(torus_radii).collect(),
-    ))
+    ctx.try_reserve_items(&mut cylinder_radii, torus_radii.len(), "creo mixed round samples")?;
+    cylinder_radii.extend(torus_radii);
+    Ok(Some(cylinder_radii))
 }
 
 fn mixed_torus_radius_samples(
@@ -627,29 +635,31 @@ fn mixed_torus_radius_samples(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let Some(parameters) = rows
-        .iter()
-        .map(|row| unique_surface_parameter_record(scan, row))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    if parameters
-        .iter()
-        .all(|record| record.torus_radius_overrides().is_some())
-    {
-        return Ok(Some(
-            parameters
-                .iter()
-                .filter_map(|record| record.torus_radius_overrides())
-                .map(|overrides| overrides.radius2)
-                .collect(),
-        ));
+    let mut all_overrides = true;
+    let mut any_overrides = false;
+    for row in rows {
+        let Some(record) = unique_surface_parameter_record(scan, row) else {
+            return Ok(None);
+        };
+        let overridden = record.torus_radius_overrides().is_some();
+        all_overrides &= overridden;
+        any_overrides |= overridden;
     }
-    if parameters
-        .iter()
-        .any(|record| record.torus_radius_overrides().is_some())
-    {
+    if all_overrides {
+        let mut radii = Vec::new();
+        for row in rows {
+            let Some(record) = unique_surface_parameter_record(scan, row) else {
+                return Ok(None);
+            };
+            let Some(overrides) = record.torus_radius_overrides() else {
+                return Ok(None);
+            };
+            ctx.try_reserve_items(&mut radii, 1, "creo torus override samples")?;
+            radii.push(overrides.radius2);
+        }
+        return Ok(Some(radii));
+    }
+    if any_overrides {
         return Ok(None);
     }
     match prototype_round_radius(ctx, scan, rows)? {

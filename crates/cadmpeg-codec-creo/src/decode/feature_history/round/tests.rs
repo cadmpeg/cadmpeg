@@ -57,6 +57,121 @@ fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
     ir
 }
 
+fn mixed_round_sample_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = round_sample_scan();
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 8,
+        kind: crate::surface::SurfaceKind::TorusOrSphere,
+        feature_id: 5,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 8,
+    });
+    let body = vec![
+        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
+    ];
+    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
+        surface_id: 8,
+        body,
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::TorusOrSphere,
+        ),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 8,
+        body_offset: 8,
+    });
+    scan
+}
+
+fn mixed_round_sample_limit_error(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = mixed_round_sample_scan();
+    let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::mixed_round_radius_samples(
+        &ctx,
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &rows,
+    )
+    .expect_err("mixed round sample growth exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn generated_round_rows_refuse_collection_limit() {
+    let mut scan = round_sample_scan();
+    scan.surfaces.parameters.clear();
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::round_constant_radius(
+        &ctx,
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        5,
+    )
+    .expect_err("generated row exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo generated round rows"), "{error:?}");
+}
+
+#[test]
+fn mixed_torus_rows_refuse_collection_limit() {
+    mixed_round_sample_limit_error(0, "creo mixed torus rows");
+}
+
+#[test]
+fn mixed_cylinder_radii_refuse_collection_limit() {
+    mixed_round_sample_limit_error(1, "creo mixed cylinder radii");
+}
+
+#[test]
+fn mixed_torus_override_samples_refuse_collection_limit() {
+    mixed_round_sample_limit_error(2, "creo torus override samples");
+}
+
+#[test]
+fn mixed_combined_samples_refuse_collection_limit() {
+    mixed_round_sample_limit_error(3, "creo mixed round samples");
+}
+
+#[test]
+fn mixed_round_samples_keep_family_order_under_service_policy() {
+    let scan = mixed_round_sample_scan();
+    let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
+    let samples = crate::decode::with_test_decode_ctx(|ctx| {
+        super::mixed_round_radius_samples(
+            ctx,
+            &scan,
+            &cadmpeg_ir::document::CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &rows,
+        )
+    })
+    .expect("service profile admits mixed round samples")
+    .expect("both families resolve");
+    assert_eq!(samples.len(), 2);
+    assert_eq!(samples[0], 0.5);
+    assert_eq!(samples[1], 0.249_999_999_951_747_04);
+}
+
 fn round_sample_limit_error(
     limit: u64,
     operation: &'static str,
@@ -1230,7 +1345,7 @@ fn torus_radius_samples_refuse_collection_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 2;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
     let error = super::mixed_torus_radius_samples(&ctx, &scan, &rows)
@@ -1240,7 +1355,7 @@ fn torus_radius_samples_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo_torus_radius_samples"
-    ));
+    ), "{error:?}");
 }
 
 #[test]
