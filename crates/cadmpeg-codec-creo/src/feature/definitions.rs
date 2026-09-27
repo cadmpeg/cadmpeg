@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::{bounded_len, index_from_u32};
+use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
 
 use crate::psb;
 use crate::scalar;
@@ -6328,9 +6329,10 @@ fn positional_saved_section(
 /// definition. The owning current-state recipe must independently select a
 /// rotational sweep.
 pub(crate) fn definition_revolution_extents(
+    ctx: &DecodeContext<'_>,
     definitions: &[FeatureDefinition],
     operations: &[FeatureOperation],
-) -> Vec<FeatureRevolutionExtent> {
+) -> Result<Vec<FeatureRevolutionExtent>, CodecError> {
     const FULL_TURN: &[u8] = &[
         0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
         0x00, 0x00,
@@ -6350,19 +6352,18 @@ pub(crate) fn definition_revolution_extents(
         if !recipe_matches {
             continue;
         }
-        let offsets = definition
-            .body
-            .windows(FULL_TURN.len())
-            .enumerate()
-            .filter_map(|(offset, window)| (window == FULL_TURN).then_some(offset))
-            .collect::<Vec<_>>();
-        result.extend(offsets.into_iter().map(|offset| FeatureRevolutionExtent {
-            feature_id,
-            offset: definition.offset + offset + 6,
-        }));
+        for (offset, window) in definition.body.windows(FULL_TURN.len()).enumerate() {
+            if window == FULL_TURN {
+                ctx.try_reserve_items(&mut result, 1, "creo definition revolution extents")?;
+                result.push(FeatureRevolutionExtent {
+                    feature_id,
+                    offset: definition.offset + offset + 6,
+                });
+            }
+        }
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 fn definitions_in_ranges(

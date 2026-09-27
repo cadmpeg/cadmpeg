@@ -8,7 +8,6 @@ use crate::feature::entity::read_entries;
 use crate::feature::rows::loop_history_entries;
 use crate::feature::rows::loop_history_roster;
 use crate::feature::rows::replay_affected_ids;
-use crate::feature::rows::round_replay_scalars;
 use crate::feature::rows::rows;
 use crate::feature::rows::surface_merge_replay_affected_ids;
 use crate::feature::rows::AffectedIdKind;
@@ -41,6 +40,11 @@ fn choice_fields(choices: &[FeatureChoice]) -> Vec<super::FeatureChoiceField> {
 fn geometry_tables(rows: &[FeatureRow]) -> Vec<super::FeatureGeometryTable> {
     crate::decode::with_test_decode_ctx(|ctx| super::geometry_tables(ctx, rows))
         .expect("geometry tables are admitted")
+}
+
+fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<super::FeatureRoundReplayScalar> {
+    crate::decode::with_test_decode_ctx(|ctx| super::round_replay_scalars(ctx, rows))
+        .expect("round replay scalars are admitted")
 }
 
 fn limited_row_spans(limit: u64) -> Result<Vec<(usize, usize, u32)>, CodecError> {

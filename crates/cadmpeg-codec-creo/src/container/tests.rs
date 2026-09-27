@@ -77,6 +77,69 @@ fn feature_affected_id_aggregation_refuses_before_vec_growth() {
 }
 
 #[test]
+fn revolution_extent_aggregation_refuses_before_vec_growth() {
+    use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
+    use crate::feature::operations::{
+        FeatureOperation, FeatureRecipe, OperationKind, OperationName, RecipeResolution,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let body = [
+        0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    let definition = FeatureDefinition {
+        identity: DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(247),
+            owner_feature_id: Some(247),
+        },
+        body: body.to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let operation = FeatureOperation {
+        feature_id: 247,
+        kind: OperationKind::Revolve,
+        name: OperationName::Derived,
+        recipe: RecipeResolution::Resolved(FeatureRecipe::ProtrudeRevolve),
+        display_state_conflict: false,
+        depdb: None,
+        offset: 0,
+        state_offset: 0,
+    };
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+            .expect("root extent input is admitted");
+        super::feature_revolution_extents(
+            &ctx,
+            &[],
+            std::slice::from_ref(&definition),
+            std::slice::from_ref(&operation),
+        )
+        .map(|records| records.len())
+    };
+    assert_eq!(run(2).expect("one aggregate extent admitted"), 1);
+    let error = run(1).expect_err("aggregate extent needs another item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo revolution extent aggregation"));
+}
+
+#[test]
 fn feature_definition_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

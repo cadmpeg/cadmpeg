@@ -2147,6 +2147,25 @@ fn feature_affected_ids(
     Ok(records)
 }
 
+fn feature_revolution_extents(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+    definitions: &[FeatureDefinition],
+    operations: &[FeatureOperation],
+) -> Result<Vec<FeatureRevolutionExtent>, CodecError> {
+    let mut extents = feature::rows::revolution_extents(ctx, rows)?;
+    let definition_extents =
+        feature::definitions::definition_revolution_extents(ctx, definitions, operations)?;
+    ctx.try_reserve_items(
+        &mut extents,
+        definition_extents.len(),
+        "creo revolution extent aggregation",
+    )?;
+    extents.extend(definition_extents);
+    extents.sort_by_key(|record| record.offset);
+    Ok(extents)
+}
+
 fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
@@ -2656,7 +2675,7 @@ pub(crate) fn scan_bytes<'a>(
     let mut feature_ids = structural_feature_ids;
     feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
     let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
-    let feature_round_replay_scalars = feature::rows::round_replay_scalars(&feature_rows);
+    let feature_round_replay_scalars = feature::rows::round_replay_scalars(ctx, &feature_rows)?;
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
     let feature_choice_fields = feature::rows::choice_fields(ctx, &feature_choices)?;
     let depdb_recipe_rows = depdb_recipe_rows(ctx, &sections)?;
@@ -2667,7 +2686,8 @@ pub(crate) fn scan_bytes<'a>(
     let feature_replay_affected_ids = feature::rows::replay_affected_ids(&feature_rows);
     let surface_merge_replay_affected_ids =
         feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
-    let feature_loop_restore_directions = feature::rows::loop_restore_directions(&feature_rows);
+    let feature_loop_restore_directions =
+        feature::rows::loop_restore_directions(ctx, &feature_rows)?;
     let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
     let feature_definitions = feature_definitions(ctx, &sections)?;
     let feature_definitions =
@@ -2725,12 +2745,12 @@ pub(crate) fn scan_bytes<'a>(
             .and_then(|model| relation_model_name(&model.name)),
         &relation_dimension_symbols,
     )?;
-    let mut feature_revolution_extents = feature::rows::revolution_extents(&feature_rows);
-    feature_revolution_extents.extend(feature::definitions::definition_revolution_extents(
+    let feature_revolution_extents = feature_revolution_extents(
+        ctx,
+        &feature_rows,
         &feature_definitions,
         &feature_operations,
-    ));
-    feature_revolution_extents.sort_by_key(|record| record.offset);
+    )?;
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {

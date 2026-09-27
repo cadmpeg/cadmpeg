@@ -353,3 +353,88 @@ fn affected_id_record_refuses_before_vec_growth() {
         "creo affected-id records",
     );
 }
+
+#[test]
+fn round_replay_scalar_refuses_before_vec_growth() {
+    let body = b"\xf2\xf7\x80\xa0\x01\xf6\x29\xc9\x99\xf3\xf7\x80\x97\xe2";
+    let row = FeatureRow {
+        feature_id: 17,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
+        stream_offset: 0,
+        body: body.to_vec().try_into().expect("two-byte round row"),
+        body_offset: 0,
+        offset: 0,
+    };
+    assert_eq!(
+        run(body, 1, u64::MAX, |ctx| {
+            super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
+        })
+        .expect("one round scalar admitted")
+        .len(),
+        1
+    );
+    item(
+        run(body, 0, u64::MAX, |ctx| {
+            super::super::round_replay_scalars(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("round scalar needs one item"),
+        "creo round replay scalars",
+    );
+}
+
+#[test]
+fn loop_restore_direction_refuses_before_vec_growth() {
+    let body = b"lo_restore\0\xe0\x01direction\0\x01";
+    let row = FeatureRow {
+        feature_id: 17,
+        root_schema_class: None,
+        stream_offset: 0,
+        body: body.to_vec().try_into().expect("two-byte restore row"),
+        body_offset: 0,
+        offset: 0,
+    };
+    assert_eq!(
+        run(body, 1, u64::MAX, |ctx| {
+            super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
+        })
+        .expect("one restore direction admitted")
+        .len(),
+        1
+    );
+    item(
+        run(body, 0, u64::MAX, |ctx| {
+            super::super::loop_restore_directions(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("restore direction needs one item"),
+        "creo loop restore directions",
+    );
+}
+
+#[test]
+fn feature_revolution_extent_refuses_before_vec_growth() {
+    let body = b"\xe3\xf6\x83\x95\xe1\x02\x83\xdf\xf6\xe3\
+        \x00\x00\xea\x44\x00\x00\xf6\xf6\xf6\x00\x00\x00\x00";
+    let row = FeatureRow {
+        feature_id: 17,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 0,
+        body: body.to_vec().try_into().expect("two-byte revolution row"),
+        body_offset: 0,
+        offset: 0,
+    };
+    assert_eq!(
+        run(body, 1, u64::MAX, |ctx| {
+            super::super::revolution_extents(ctx, std::slice::from_ref(&row))
+        })
+        .expect("one revolution extent admitted")
+        .len(),
+        1
+    );
+    item(
+        run(body, 0, u64::MAX, |ctx| {
+            super::super::revolution_extents(ctx, std::slice::from_ref(&row))
+        })
+        .expect_err("revolution extent needs one item"),
+        "creo feature revolution extents",
+    );
+}

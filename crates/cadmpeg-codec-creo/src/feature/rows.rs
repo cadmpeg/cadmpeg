@@ -484,7 +484,10 @@ pub(crate) fn rows(
 /// the bounded record, `01 f6` ends the preceding compact fields and the first
 /// `0x29` token is the replayed short-form scalar lane. Other `0x29` images in
 /// the record are not assigned a field role.
-pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundReplayScalar> {
+pub(crate) fn round_replay_scalars(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureRoundReplayScalar>, CodecError> {
     const CR_FLAGS_ANCHOR: &[u8] = &[0xf2, 0xf7, 0x80, 0xa0];
     const MISC_CHOICE_ANCHOR: &[u8] = &[0xf3, 0xf7, 0x80, 0x97, 0xe2];
     let mut result = Vec::new();
@@ -492,21 +495,16 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        let record_ends = row
-            .body
-            .windows(MISC_CHOICE_ANCHOR.len())
-            .enumerate()
-            .filter_map(|(offset, bytes)| (bytes == MISC_CHOICE_ANCHOR).then_some(offset))
-            .collect::<Vec<_>>();
         for (record_start, bytes) in row.body.windows(CR_FLAGS_ANCHOR.len()).enumerate() {
             if bytes != CR_FLAGS_ANCHOR {
                 continue;
             }
-            let Some(record_end) = record_ends
-                .iter()
-                .copied()
-                .find(|offset| *offset > record_start)
-            else {
+            let Some(record_end) = find_in(
+                &row.body,
+                MISC_CHOICE_ANCHOR,
+                record_start + 1,
+                row.body.len(),
+            ) else {
                 continue;
             };
             let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
@@ -529,6 +527,7 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
             let Some(value) = FiniteReal::new(value) else {
                 continue;
             };
+            ctx.try_reserve_items(&mut result, 1, "creo round replay scalars")?;
             result.push(FeatureRoundReplayScalar {
                 feature_id: row.feature_id,
                 value,
@@ -538,7 +537,7 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
         }
     }
     result.sort_by_key(|candidate| candidate.offset);
-    result
+    Ok(result)
 }
 
 fn round_replay_short_scalar(body: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -1433,7 +1432,10 @@ pub(crate) fn surface_merge_replay_affected_ids(
 
 /// Decode named `direction` and `direction2` compact integers inside
 /// `lo_restore` records.
-pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDirection> {
+pub(crate) fn loop_restore_directions(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureLoopRestoreDirection>, CodecError> {
     const FIELDS: &[(&[u8], LoopRestoreDirectionLane)] = &[
         (b"direction", LoopRestoreDirectionLane::Primary),
         (b"direction2", LoopRestoreDirectionLane::Secondary),
@@ -1441,10 +1443,14 @@ pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRes
     let mut result = Vec::new();
     for row in rows {
         for &(label, lane) in FIELDS {
-            let needle = [label, b"\0"].concat();
             let mut from = 0;
-            while let Some(label_offset) = find_from(&row.body, &needle, from) {
-                from = label_offset + needle.len();
+            while let Some(label_offset) = find_from(&row.body, label, from) {
+                let label_end = label_offset + label.len();
+                if row.body.get(label_end) != Some(&0) {
+                    from = label_offset + 1;
+                    continue;
+                }
+                from = label_end + 1;
                 if label_offset < 2
                     || row.body[label_offset - 2] != psb::token::NAMED_RECORD
                     || row.body[label_offset - 1] != 1
@@ -1456,6 +1462,7 @@ pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRes
                 if after == from {
                     continue;
                 }
+                ctx.try_reserve_items(&mut result, 1, "creo loop restore directions")?;
                 result.push(FeatureLoopRestoreDirection {
                     feature_id: row.feature_id,
                     lane,
@@ -1466,7 +1473,7 @@ pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRes
         }
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// Decode complete ordered `lo_hist` rosters paired with named loop tables.
@@ -1618,7 +1625,10 @@ struct ParsedLoopHistoryEntry {
 
 /// Decode full-turn rotational termination from the positional
 /// `param_choice_ptr` body of section-sweep feature rows.
-pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
+pub(crate) fn revolution_extents(
+    ctx: &DecodeContext<'_>,
+    rows: &[FeatureRow],
+) -> Result<Vec<FeatureRevolutionExtent>, CodecError> {
     const PARAMETER_CHOICE_PREFIX: &[u8] = &[0x83, 0xdf, 0xf6, 0xe3];
     const FULL_TURN_CHOICES: &[u8] = &[
         0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
@@ -1661,13 +1671,14 @@ pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionEx
         {
             continue;
         }
+        ctx.try_reserve_items(&mut result, 1, "creo feature revolution extents")?;
         result.push(FeatureRevolutionExtent {
             feature_id: row.feature_id,
             offset: row.body_offset + choice_start + 2,
         });
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
