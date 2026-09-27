@@ -1696,9 +1696,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .compose(local)
                 .map_err(location_transform_error)?,
         );
-        Ok(self
-            .root_discriminator
-            .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}")))
+        match self.root_discriminator {
+            Some(ordinal) => retained_format(self.ctx,
+                format_args!("{label}~root{ordinal}"), "FreeCAD topology root label"),
+            None => Ok(label),
+        }
     }
 }
 
