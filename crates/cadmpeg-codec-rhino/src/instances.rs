@@ -375,7 +375,10 @@ fn v6_definition_kind(value: u32) -> DefinitionKind {
     }
 }
 
-fn members(reader: &mut BoundedReader<'_>) -> Result<Vec<Uuid>, FramingError> {
+fn members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<Vec<Uuid>, FramingError> {
     let count = reader.i32()?;
     let bytes = checked_count_bytes(
         count,
@@ -385,7 +388,11 @@ fn members(reader: &mut BoundedReader<'_>) -> Result<Vec<Uuid>, FramingError> {
         reader.position(),
     )?;
     let count = bytes / 16;
-    (0..count).map(|_| uuid(reader)).collect()
+    let mut values = crate::chunks::admitted_vec(ctx, count, "Rhino instance member UUIDs")?;
+    for _ in 0..count {
+        values.push(uuid(reader)?);
+    }
+    Ok(values)
 }
 
 fn anonymous_versioned<'a>(
@@ -574,40 +581,47 @@ pub(crate) fn file_reference<'a>(
     let byte_count = hash_payload.u64()?;
     let hash_time = hash_payload.u64()?;
     let content_time = hash_payload.u64()?;
-    let mut digest_ranges = Vec::with_capacity(2);
-    let mut read_sha1 = |payload: &mut BoundedReader<'a>| -> Result<[u8; 20], FramingError> {
-        let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
-        if digest.typecode != ANONYMOUS || digest.short() {
-            return Err(FramingError::structural(
-                payload.position(),
-                "missing SHA-1 chunk",
-            ));
-        }
-        crate::chunks::warn_checksum(data, &digest, "SHA-1 hash", warnings)?;
-        let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
-        let digest_major = bytes.i32()?;
-        let digest_minor = bytes.i32()?;
-        if digest_major != 1 || digest_minor < 0 {
-            return Err(FramingError::structural(
-                bytes.position(),
-                "unsupported SHA-1 version",
-            ));
-        }
-        let value = bytes.array()?;
-        bytes.skip_remaining()?;
-        digest_ranges.push(digest.range());
-        payload.skip(digest.next_offset() - payload.position())?;
-        Ok(value)
-    };
+    let mut read_sha1 =
+        |payload: &mut BoundedReader<'a>| -> Result<([u8; 20], Range<usize>), FramingError> {
+            let digest = chunk_at(data, payload.position(), payload.end(), archive, false)?;
+            if digest.typecode != ANONYMOUS || digest.short() {
+                return Err(FramingError::structural(
+                    payload.position(),
+                    "missing SHA-1 chunk",
+                ));
+            }
+            crate::chunks::warn_checksum(data, &digest, "SHA-1 hash", warnings)?;
+            let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
+            let digest_major = bytes.i32()?;
+            let digest_minor = bytes.i32()?;
+            if digest_major != 1 || digest_minor < 0 {
+                return Err(FramingError::structural(
+                    bytes.position(),
+                    "unsupported SHA-1 version",
+                ));
+            }
+            let value = bytes.array()?;
+            bytes.skip_remaining()?;
+            payload.skip(digest.next_offset() - payload.position())?;
+            Ok((value, digest.range()))
+        };
+    let (name_sha1, name_range) = read_sha1(&mut hash_payload)?;
+    let (content_sha1, content_range) = read_sha1(&mut hash_payload)?;
     let content_hash = ContentHash {
         byte_count,
         hash_time,
         content_time,
-        name_sha1: read_sha1(&mut hash_payload)?,
-        content_sha1: read_sha1(&mut hash_payload)?,
+        name_sha1,
+        content_sha1,
     };
     hash_payload.skip_remaining()?;
-    checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
+    checksum_warning_excluding(
+        data,
+        &hash,
+        &[name_range, content_range],
+        "content hash",
+        warnings,
+    )?;
     payload.skip(hash.next_offset() - payload.position())?;
     let path_status = payload.u32()?;
     let embedded_file_id = if version.1 >= 1 {
@@ -757,6 +771,7 @@ fn reference_settings<'a>(
 }
 
 fn parse_v5(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     source_range: Range<usize>,
     range: Range<usize>,
@@ -779,7 +794,7 @@ fn parse_v5(
             "definition UUID is nil",
         ));
     }
-    let member_ids = members(&mut reader)?;
+    let member_ids = members(ctx, &mut reader)?;
     let name = utf16(&mut reader)?;
     let description = utf16(&mut reader)?;
     let url = utf16(&mut reader)?;
@@ -892,7 +907,7 @@ fn parse_v6(
     let url_tag = utf16(&mut reader)?;
     let _bounds = bbox(&mut reader)?;
     let member_ids = if reader.bool()? {
-        members(&mut reader)?
+        members(ctx, &mut reader)?
     } else {
         Vec::new()
     };
@@ -984,6 +999,7 @@ fn skip_definition_child(
 }
 
 fn extract_member_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -999,7 +1015,7 @@ fn extract_member_ids(
             ));
         }
         let _definition_id = uuid(&mut outer)?;
-        return members(&mut outer);
+        return members(ctx, &mut outer);
     }
     let (_chunk, mut reader, version) = anonymous_versioned(
         data,
@@ -1031,7 +1047,7 @@ fn extract_member_ids(
     }
     reader.skip(48)?; // bounding box
     if reader.bool()? {
-        members(&mut reader)
+        members(ctx, &mut reader)
     } else {
         Ok(Vec::new())
     }
@@ -1179,13 +1195,20 @@ pub(crate) fn parse_definitions(
                 .unwrap_or_default();
             let v5_layout =
                 archive == ArchiveVersion::V5 || (archive == ArchiveVersion::V6 && first != 0x00);
-            if let Ok(member_ids) =
-                extract_member_ids(data, class.class_data_range.clone(), archive, v5_layout)
-            {
-                result.scan.member_object_ids.extend(member_ids);
+            match extract_member_ids(
+                ctx,
+                data,
+                class.class_data_range.clone(),
+                archive,
+                v5_layout,
+            ) {
+                Ok(member_ids) => result.scan.member_object_ids.extend(member_ids),
+                Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                Err(_) => {}
             }
             let mut definition = if v5_layout {
                 parse_v5(
+                    ctx,
                     data,
                     record.range.clone(),
                     class.class_data_range,
