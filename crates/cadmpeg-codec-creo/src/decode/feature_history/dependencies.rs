@@ -486,7 +486,8 @@ pub(in super::super) fn reconcile_feature_links(
             }
             pending = updates.next();
         }
-        let native_dependencies = native_feature_dependency_ids(
+        let mut native_dependencies = Vec::new();
+        for dependency in native_feature_dependency_ids(
             ctx,
             &scan.features.affected_ids,
             &scan.features.operations,
@@ -497,11 +498,22 @@ pub(in super::super) fn reconcile_feature_links(
             prototype_dependencies
                 .get(&feature_id)
                 .map_or(&[], Vec::as_slice),
-        )?
-        .into_iter()
-        .map(|dependency| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, dependency))
-        .filter(|dependency| emitted.contains(dependency))
-        .filter(|dependency| *dependency != feature.id);
+        )? {
+            let text = ctx.format_retained(
+                format_args!("creo:model:feature#{dependency}"),
+                "creo reconciled native dependency IDs",
+            )?;
+            let id = IrFeatureId::mint(text)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            if emitted.contains(&id) && id != feature.id {
+                ctx.try_reserve_items(
+                    &mut native_dependencies,
+                    1,
+                    "creo reconciled native dependencies",
+                )?;
+                native_dependencies.push(id);
+            }
+        }
         let generated_dependencies =
             feature_generated_dependencies(ctx, feature.evaluation.definition())?;
         let mut generated_ids = Vec::new();
@@ -523,7 +535,7 @@ pub(in super::super) fn reconcile_feature_links(
             ctx,
             &feature.id,
             &feature.dependencies,
-            native_dependencies.chain(generated_ids),
+            native_dependencies.into_iter().chain(generated_ids),
             &emitted,
         )?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
