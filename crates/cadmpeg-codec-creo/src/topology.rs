@@ -7,6 +7,8 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::decode::id_from_index;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -410,22 +412,31 @@ pub(crate) fn selected_body_count(
 /// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
-pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
-    let rows = uniquely_identified_rows(rows);
+pub(crate) fn build(
+    ctx: &DecodeContext<'_>,
+    rows: &[CurveTopologyRow],
+) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
+    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
-            face_sides
-                .entry(row.faces[side.index()])
-                .or_default()
-                .push(HalfEdgeId {
-                    curve_id: row.id,
-                    side,
-                });
+            let sides = match face_sides.entry(row.faces[side.index()]) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo face-side group nodes")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.try_reserve_items(sides, 1, "creo face-side group members")?;
+            sides.push(HalfEdgeId {
+                curve_id: row.id,
+                side,
+            });
         }
     }
     let mut edges = Vec::new();
     for row in rows {
+        ctx.try_reserve_items(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
             let mut candidates = face_sides
@@ -449,10 +460,12 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
         }
     }
     edges.sort_by_key(|edge| edge.id);
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge))
-        .collect::<BTreeMap<_, _>>();
+    let by_id = |id: HalfEdgeId| {
+        edges
+            .binary_search_by_key(&id, |edge| edge.id)
+            .ok()
+            .map(|index| &edges[index])
+    };
     let mut consumed = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
@@ -463,9 +476,15 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
         let mut seen = BTreeSet::new();
         let mut current = edge.id;
         loop {
-            if !seen.insert(current) {
+            if seen.contains(&current) {
                 if current == edge.id {
-                    consumed.extend(ring.iter().copied());
+                    for id in ring.iter().copied() {
+                        if !consumed.contains(&id) {
+                            ctx.charge_collection_items(1, "creo consumed topology half-edges")?;
+                            consumed.insert(id);
+                        }
+                    }
+                    ctx.try_reserve_items(&mut loops, 1, "creo topology loops")?;
                     loops.push(Loop {
                         face_id: edge.face_id,
                         half_edges: ring,
@@ -473,12 +492,14 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
                 }
                 break;
             }
+            ctx.charge_collection_items(1, "creo topology ring visit nodes")?;
+            seen.insert(current);
+            ctx.try_reserve_items(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
-            let Some(next) = by_id.get(&current).and_then(|entry| entry.next) else {
+            let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 break;
             };
-            if by_id
-                .get(&next)
+            if by_id(next)
                 .is_none_or(|entry| entry.face_id != edge.face_id)
             {
                 break;
@@ -486,7 +507,7 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
             current = next;
         }
     }
-    (edges, loops)
+    Ok((edges, loops))
 }
 
 #[cfg(test)]

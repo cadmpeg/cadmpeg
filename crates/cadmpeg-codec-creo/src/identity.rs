@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityNamespace;
 
 /// Return the rows whose native identifier, read by `id`, occurs exactly once.
@@ -18,6 +20,32 @@ pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) ->
     rows.iter()
         .filter(|row| counts.get(&id(row)) == Some(&1))
         .collect()
+}
+
+/// Return unique native rows after admitting the count map and selected rows.
+pub(crate) fn uniquely_identified_rows_checked<'a, T>(
+    ctx: &DecodeContext<'_>,
+    rows: &'a [T],
+    id: impl Fn(&T) -> u32,
+) -> Result<Vec<&'a T>, CodecError> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        match counts.entry(id(row)) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo unique-row count nodes")?;
+                entry.insert(1);
+            }
+        }
+    }
+    let mut unique = Vec::new();
+    for row in rows {
+        if counts.get(&id(row)) == Some(&1) {
+            ctx.try_reserve_items(&mut unique, 1, "creo unique-row projection")?;
+            unique.push(row);
+        }
+    }
+    Ok(unique)
 }
 
 /// Compare a numbered identity without constructing a temporary identity string.
