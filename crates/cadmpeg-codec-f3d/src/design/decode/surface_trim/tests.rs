@@ -10,6 +10,8 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
     let mut bytes = Vec::new();
@@ -70,8 +72,11 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 #[test]
 fn surface_trim_decodes_selection_chain_and_cell_table() {
     let (bytes, scope) = surface_trim_selection_and_cell_table();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let operation =
-        exact_surface_trim_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .unwrap()
             .expect("exact SurfaceTrim cell carrier");
 
     assert_eq!(operation.selection_record_index, 811);
@@ -110,6 +115,8 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
 #[test]
 fn surface_trim_rejects_cell_ordinal_outside_partition() {
     let (mut bytes, scope) = surface_trim_selection_and_cell_table();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let table_start = bytes
         .windows(11)
         .position(|window| window == [3, 0, 0, 0, b'3', b'2', b'5', 0x31, 3, 0, 0])
@@ -122,7 +129,8 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
     );
     bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
     assert!(
-        exact_surface_trim_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .unwrap()
             .is_none()
     );
 }
@@ -130,6 +138,8 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
 #[test]
 fn surface_trim_rejects_nonzero_cell_table_tail() {
     let (mut bytes, scope) = surface_trim_selection_and_cell_table();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let table_start = bytes
         .windows(11)
         .position(|window| window == [3, 0, 0, 0, b'3', b'2', b'5', 0x31, 3, 0, 0])
@@ -137,7 +147,42 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
     let tail_zero = table_start + 67;
     bytes[tail_zero] = 1;
     assert!(
-        exact_surface_trim_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .unwrap()
             .is_none()
     );
+}
+
+fn surface_trim_refusal(maximum: u64) -> CodecError {
+    let (bytes, scope) = surface_trim_selection_and_cell_table();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = maximum;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    exact_surface_trim_operation(&ctx, &bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect_err("two cell entries exceed the selected collection limit")
+}
+
+#[test]
+fn surface_trim_cell_entries_refuse_collection_limit() {
+    let error = surface_trim_refusal(1);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "f3d surface-trim cell entries"));
+}
+
+#[test]
+fn surface_trim_record_indices_refuse_collection_limit() {
+    let error = surface_trim_refusal(3);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "f3d surface-trim cell record indices"));
+}
+
+#[test]
+fn surface_trim_ordinals_refuse_collection_limit() {
+    let error = surface_trim_refusal(5);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "f3d surface-trim cell ordinals"));
 }
