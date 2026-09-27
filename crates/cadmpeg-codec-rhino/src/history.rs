@@ -903,6 +903,7 @@ fn extended_geometry_json(
         })
     } else if crate::subd::supported_class(value.class_id) {
         let subd = match crate::subd::decode(
+            expand.ctx(),
             data,
             value.class_data_range.clone(),
             archive,

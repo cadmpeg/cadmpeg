@@ -171,13 +171,21 @@ pub fn subd(data: &[u8]) {
         &cadmpeg_ir::identity_namespace!("rhino", "fuzz", "subd"),
         0_usize,
     );
-    let _probe = crate::subd::decode(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    if let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         data,
-        1..data.len(),
-        selected_archive(data[0]),
-        crate::settings::MillimeterScale::IDENTITY,
-        id,
-    );
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ) {
+        let _probe = crate::subd::decode(
+            &ctx,
+            data,
+            1..data.len(),
+            selected_archive(data[0]),
+            crate::settings::MillimeterScale::IDENTITY,
+            id,
+        );
+    }
 }
 
 /// Desktop salvage ceilings for fuzz wrappers.
