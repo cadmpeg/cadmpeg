@@ -114,7 +114,12 @@ fn type122_projection_refuses_rational_tabulated_weight_rows() {
             ..
         } if nurbs.weights().is_some()
     )));
-    for operation in ["iges tabulated weight rows", "iges tabulated weight row controls"] {
+    for operation in [
+        "iges tabulated weight rows",
+        "iges tabulated weight row controls",
+        "iges tabulated weighted rows",
+        "iges tabulated weighted row controls",
+    ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
 }
@@ -243,6 +248,8 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
         "iges NURBS surface neutral weights",
         "iges NURBS surface weight rows",
         "iges NURBS surface weight row controls",
+        "iges NURBS surface weighted rows",
+        "iges NURBS surface weighted row controls",
     ] {
         assert_surface_collection_refusal(&rational, operation);
     }
@@ -278,6 +285,8 @@ fn homogeneous_ruled_surface_refuses_control_and_knot_lanes() {
         "iges ruled span weight rows",
         "iges ruled span weight row controls",
         "iges ruled span v knots",
+        "iges ruled span weighted rows",
+        "iges ruled span weighted row controls",
     ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
@@ -440,6 +449,8 @@ fn revolution_nurbs_carrier_refuses_nested_pole_and_weight_rows() {
         "iges revolution pole row controls",
         "iges revolution weight rows",
         "iges revolution weight row controls",
+        "iges revolution weighted rows",
+        "iges revolution weighted row controls",
         "iges revolution neutral surface slots",
     ] {
         assert_surface_collection_refusal(&bytes, operation);

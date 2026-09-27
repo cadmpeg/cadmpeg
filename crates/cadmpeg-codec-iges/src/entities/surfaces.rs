@@ -20,7 +20,8 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 };
 use cadmpeg_ir::geometry::{
     nurbs::{
-        KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, WeightedPole3,
+        KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
+        WeightedPole3,
         SurfaceParameterAxis,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
@@ -845,11 +846,19 @@ fn ruled_surface_carrier(
     } else { None };
     let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled span v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
+    let poles = pair_admitted_surface_poles(
+        ctx,
+        pole_rows,
+        weight_rows,
+        "iges ruled span weighted rows",
+        "iges ruled span weighted row controls",
+    )?
+    .map_err(CodecError::malformed)?;
     Ok(Some(
-        NurbsSurface::from_checked_lanes(
+        NurbsSurface::new(
             NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
             NurbsSurfaceAxis::new(1, v_knots, false),
-            NurbsSurfaceLanes::new(pole_rows, weight_rows),
+            poles,
             false,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -1711,11 +1720,20 @@ pub(super) fn project(
             continue;
         };
         let mut pole_rows = reserve_optional_vec(ctx, pole_count, "iges tabulated pole rows")?;
+        let mut finite_poles = true;
         for index in 0..pole_count {
-            let point = placed_directrix.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?.get();
+            let point = placed_directrix.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?;
             let mut row = reserve_optional_vec(ctx, 2, "iges tabulated pole row controls")?;
-            row.extend([point, point.translated(direction.get(), 1.0)]);
+            let Some(translated) = FinitePoint3::new(point.get().translated(direction.get(), 1.0)) else {
+                finite_poles = false;
+                break;
+            };
+            row.extend([point, translated]);
             pole_rows.push(row);
+        }
+        if !finite_poles {
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("tabulated-cylinder carrier cardinalities are inconsistent: {}", NurbsError::Structure("control_points contains a non-finite point".into())))?;
+            continue;
         }
         let weights = if placed_directrix.pole_rows().weight_at(0).is_some() {
             let mut rows = reserve_optional_vec(ctx, pole_count, "iges tabulated weight rows")?;
@@ -1742,11 +1760,14 @@ pub(super) fn project(
         u_knots.extend_from_slice(placed_directrix.knots());
         let mut v_knots = reserve_optional_vec(ctx, 4, "iges tabulated v knots")?;
         v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-        let surface = match NurbsPoleGrid::from_checked_lanes(
+        let paired = pair_admitted_surface_poles(
+            ctx,
             pole_rows,
             weights,
-        )
-        .and_then(|poles| {
+            "iges tabulated weighted rows",
+            "iges tabulated weighted row controls",
+        )?;
+        let surface = match paired.and_then(|poles| {
             NurbsSurface::new(
                 NurbsSurfaceAxis::new(
                     placed_directrix.degree(),
@@ -2067,7 +2088,14 @@ pub(super) fn project(
             weight_rows.push(row);
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let surface = match NurbsSurface::from_lanes(
+        let paired = pair_admitted_surface_poles(
+            ctx,
+            pole_rows,
+            Some(weight_rows),
+            "iges revolution weighted rows",
+            "iges revolution weighted row controls",
+        )?;
+        let surface = match paired.and_then(|poles| NurbsSurface::new(
             NurbsSurfaceAxis::new(
                 generatrix.degree(),
                 u_knots,
@@ -2081,9 +2109,9 @@ pub(super) fn project(
                     std::f64::consts::TAU,
                 ),
             ),
-            NurbsSurfaceLanes::new(pole_rows, Some(weight_rows)),
+            poles,
             false,
-        ) {
+        )) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!(
@@ -2472,8 +2500,15 @@ pub(super) fn project(
             }
             Some(rows)
         } else { None };
+        let paired = pair_admitted_surface_poles(
+            ctx,
+            pole_rows,
+            weight_rows,
+            "iges NURBS surface weighted rows",
+            "iges NURBS surface weighted row controls",
+        )?;
         let surface =
-            match NurbsPoleGrid::from_checked_lanes(pole_rows, weight_rows).and_then(|poles| {
+            match paired.and_then(|poles| {
                 NurbsSurface::new(
                     NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
                     NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
