@@ -723,7 +723,7 @@ pub(in super::super) fn feature_source_properties(
     if let Some(schema_class) = schema_class {
         insert_feature_source_property(ctx, &mut properties, "featdefs_schema_class", schema_class)?;
     }
-    let row_schema_classes = feature_row_schema_classes(scan, feature_id);
+    let row_schema_classes = feature_row_schema_classes(ctx, scan, feature_id)?;
     if !row_schema_classes.is_empty() {
         insert_feature_source_property(ctx, &mut properties, "featdefs_row_schema_classes", SchemaClassList(&row_schema_classes))?;
     }

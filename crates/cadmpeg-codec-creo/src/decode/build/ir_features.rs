@@ -504,7 +504,7 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
+        let row_schema_classes = row_feature_schema_classes(ctx, &scan.features.rows, feature_id)?;
         if schema_class.is_none() {
             insert_feature_source_property(ctx, &mut source_properties, "featdefs_schema_state", if row_schema_classes.is_empty() { "absent" } else { "ambiguous" })?;
         }
