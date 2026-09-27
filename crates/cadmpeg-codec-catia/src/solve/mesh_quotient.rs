@@ -729,7 +729,7 @@ pub(super) enum MeshEndpointCandidates<'a> {
 }
 
 impl MeshCoordinateRootDomains {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+    pub(super) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             domains: Arc::new(crate::resource::copy_retained_rows(
                 ctx,
