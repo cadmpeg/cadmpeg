@@ -1307,8 +1307,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 let polygon = &self.tables.polygons3d[polygon - 1];
                 IndexedPolygon::try_new(
                     self.ctx,
-                    polygon.nodes.clone(),
-                    polygon.parameters.clone(),
+                    copied_items(self.ctx, &polygon.nodes, "FreeCAD standalone polygon nodes")?,
+                    polygon.parameters.as_ref().map(|parameters| {
+                        copied_items(self.ctx, parameters, "FreeCAD standalone polygon parameters")
+                    }).transpose()?,
                     polygon.deflection,
                 )?
             }
@@ -1328,15 +1330,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 ))
             }
         };
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
-            edge.key()
-                .colon(cadmpeg_ir::identity_key!("polygon"))
-                .colon(ordinal + 1),
-        );
+        let id = self.polygon_curve_id(edge, ordinal, false)?;
         reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
         ir.model.curves.push(Curve {
-            id: id.clone(),
+            id: CurveId::mint(retained_string(self.ctx, id.as_str(), "FreeCAD polygon curve record identity")?)
+                .map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
                 PolylineCurve::from_scaled_deflection(samples, deflection, scale)
@@ -1356,13 +1354,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             } = self.indexed_polygon(polygons[1], *triangulation)?;
             reserve_vec_items(self.ctx, &mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
-                id: CurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
-                    edge.key()
-                        .colon(cadmpeg_ir::identity_key!("polygon"))
-                        .colon(ordinal + 1)
-                        .colon(cadmpeg_ir::identity_key!("secondary")),
-                ),
+                id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
                     PolylineCurve::from_scaled_deflection(samples, deflection, scale)
@@ -1372,6 +1364,24 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             });
         }
         Ok(id)
+    }
+
+    fn polygon_curve_id(
+        &self,
+        edge: &EdgeId,
+        ordinal: usize,
+        secondary: bool,
+    ) -> Result<CurveId, CodecError> {
+        let id = if secondary {
+            retained_format(self.ctx,
+                format_args!("{}:polygon:{}:secondary", edge.as_str(), ordinal + 1),
+                "FreeCAD secondary polygon curve identity")?
+        } else {
+            retained_format(self.ctx,
+                format_args!("{}:polygon:{}", edge.as_str(), ordinal + 1),
+                "FreeCAD polygon curve identity")?
+        };
+        CurveId::mint(id).map_err(CodecError::malformed)
     }
 
     fn indexed_polygon(
