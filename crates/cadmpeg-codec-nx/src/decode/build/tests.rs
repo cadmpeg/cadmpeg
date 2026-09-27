@@ -14,6 +14,13 @@ fn preview_stream() -> crate::parasolid::Stream {
     }
 }
 
+fn preview_unknown() -> cadmpeg_ir::unknown::UnknownRecord {
+    crate::test_support::with_decode_context(|ctx| {
+        unknown_stream_metadata(ctx, 0, &preview_stream())
+            .expect("preview metadata fits the service profile")
+    })
+}
+
 #[test]
 fn geometry_unknown_records_refuse_first_collection_slot() {
     let arena = DecodeArena::new();
@@ -50,7 +57,7 @@ fn geometry_unknown_indices_refuse_second_collection_slot() {
 
 #[test]
 fn unknown_entity_links_refuse_collection_limit() {
-    let mut unknown = unknown_stream_metadata(0, &preview_stream());
+    let mut unknown = preview_unknown();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -68,7 +75,7 @@ fn unknown_entity_links_refuse_collection_limit() {
 
 #[test]
 fn unknown_entity_links_refuse_retained_text_limit() {
-    let mut unknown = unknown_stream_metadata(0, &preview_stream());
+    let mut unknown = preview_unknown();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -86,7 +93,7 @@ fn unknown_entity_links_refuse_retained_text_limit() {
 
 #[test]
 fn unknown_entity_links_keep_identity_under_service_profile() {
-    let mut unknown = unknown_stream_metadata(0, &preview_stream());
+    let mut unknown = preview_unknown();
     crate::test_support::with_decode_context(|ctx| {
         push_unknown_link(ctx, &mut unknown, "test:model:entity#surface")
             .expect("related entity fits the service profile");
