@@ -2,7 +2,8 @@
 //! STEP representation units, placements, and geometry carriers.
 
 use crate::ids::{key_word, kind};
-use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::hash::Hash;
 
 use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -82,6 +83,22 @@ fn insert_geometry_set<T: Ord>(
         ctx.charge_collection_items(1, operation)?;
     }
     values.insert(value);
+    Ok(())
+}
+
+fn insert_geometry_hash<K: Eq + Hash, V>(
+    values: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        values.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    values.insert(key, value);
     Ok(())
 }
 
@@ -1122,7 +1139,7 @@ pub(super) fn decode(
                 source_object: None,
             }, ctx, "step_geometry_ir_curves")?;
             let _attached = ir.model.add_procedural_curve(curve, procedural);
-            carrier_index.curves.insert(id, curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
                 insert_geometry_map(&mut curve_parameter_offsets, id, offset, ctx, "step_geometry_curve_parameter_offsets")?;
             }
@@ -1229,7 +1246,7 @@ pub(super) fn decode(
 
             let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
 
-            carrier_index.curves.insert(id, curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
             if parameter_offset != 0.0 {
                 insert_geometry_map(&mut curve_parameter_offsets, id, parameter_offset, ctx, "step_geometry_curve_parameter_offsets")?;
             }
@@ -1278,7 +1295,7 @@ pub(super) fn decode(
                 }),
                 source_object: None,
             }, ctx, "step_geometry_ir_curves")?;
-            carrier_index.curves.insert(id, curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
             continue;
@@ -1353,7 +1370,7 @@ pub(super) fn decode(
             source_object: None,
         }, ctx, "step_geometry_ir_curves")?;
         let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
-        carrier_index.curves.insert(id, curve_index);
+        insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
             insert_geometry_map(&mut curve_parameter_offsets, id, offset, ctx, "step_geometry_curve_parameter_offsets")?;
         }
@@ -1361,7 +1378,7 @@ pub(super) fn decode(
         wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue, ctx, "step_deferred_curve_queue")?;
     }
     for (id, _) in exchange.entities("CURVE_REPLICA") {
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
+        if !carrier_index.curves.contains_key(&id) {
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
             )), ctx, "step_geometry_losses")?;
@@ -1377,7 +1394,7 @@ pub(super) fn decode(
                 }),
                 source_object: None,
             }, ctx, "step_geometry_ir_curves")?;
-            entry.insert(curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
         }
     }
     for (id, _) in exchange
@@ -1417,7 +1434,7 @@ pub(super) fn decode(
         ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
+        if !carrier_index.curves.contains_key(&id) {
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let curve_index = CurveIndex(ir.model.curves.len());
             push_geometry_vec(&mut ir.model.curves, Curve {
@@ -1434,7 +1451,7 @@ pub(super) fn decode(
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred curve #{id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
-            entry.insert(curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, id, curve_index, ctx, "step_geometry_curve_index")?;
         }
     }
     for (id, record) in
@@ -1816,9 +1833,13 @@ pub(super) fn decode(
                     }
                 },
             );
-            carrier_index
-                .surfaces
-                .insert(id, SurfaceIndex(ir.model.surfaces.len() - 1));
+            insert_geometry_hash(
+                &mut carrier_index.surfaces,
+                id,
+                SurfaceIndex(ir.model.surfaces.len() - 1),
+                ctx,
+                "step_geometry_surface_index",
+            )?;
             claim_geometry_typed(&mut typed, id, ctx)?;
             true
         } else if record.partial("CURVE_BOUNDED_SURFACE").is_some() {
@@ -1893,7 +1914,7 @@ pub(super) fn decode(
                     None,
                 ),
             );
-            carrier_index.surfaces.insert(id, surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, id, surface_index, ctx, "step_geometry_surface_index")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
             true
         } else if record.partial("OFFSET_SURFACE").is_some() {
@@ -1937,7 +1958,7 @@ pub(super) fn decode(
                     }
                 },
             );
-            carrier_index.surfaces.insert(id, surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, id, surface_index, ctx, "step_geometry_surface_index")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
             true
         } else if record.partial("SURFACE_REPLICA").is_some() {
@@ -1993,7 +2014,7 @@ pub(super) fn decode(
                     None,
                 ),
             );
-            carrier_index.surfaces.insert(id, surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, id, surface_index, ctx, "step_geometry_surface_index")?;
             claim_geometry_typed(&mut typed, id, ctx)?;
             claim_geometry_typed(&mut typed, operator_step, ctx)?;
             true
@@ -2005,7 +2026,7 @@ pub(super) fn decode(
         }
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
+        if !carrier_index.surfaces.contains_key(&id) {
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
             )), ctx, "step_geometry_losses")?;
@@ -2021,7 +2042,7 @@ pub(super) fn decode(
                 }),
                 source_object: None,
             }, ctx, "step_geometry_ir_surfaces")?;
-            entry.insert(surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, id, surface_index, ctx, "step_geometry_surface_index")?;
         }
     }
     for (id, _) in exchange.entities("RECTANGULAR_TRIMMED_SURFACE") {
@@ -2052,7 +2073,7 @@ pub(super) fn decode(
         else {
             continue;
         };
-        if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
+        if !carrier_index.curves.contains_key(&curve_step) {
             let curve_index = CurveIndex(ir.model.curves.len());
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: CurveId::from(ids::data(kind!("curve"), curve_step)),
@@ -2068,7 +2089,7 @@ pub(super) fn decode(
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded topology curve #{curve_step} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
-            entry.insert(curve_index);
+            insert_geometry_hash(&mut carrier_index.curves, curve_step, curve_index, ctx, "step_geometry_curve_index")?;
         }
     }
     for (id, _) in exchange.entities_any(&[
@@ -2077,7 +2098,7 @@ pub(super) fn decode(
         "RECTANGULAR_TRIMMED_SURFACE",
     ]) {
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
+        if !carrier_index.surfaces.contains_key(&id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface,
@@ -2093,7 +2114,7 @@ pub(super) fn decode(
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained unresolved deferred surface #{id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
-            entry.insert(surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, id, surface_index, ctx, "step_geometry_surface_index")?;
         }
     }
     for (&face_id, face) in exchange.records() {
@@ -2107,7 +2128,7 @@ pub(super) fn decode(
         let Some(surface_step) = face_surface_reference(face) else {
             continue;
         };
-        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
+        if !carrier_index.surfaces.contains_key(&surface_step) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
@@ -2123,7 +2144,7 @@ pub(super) fn decode(
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "retained undecoded face surface #{surface_step} from face #{face_id} as an unknown carrier"
             )), ctx, "step_geometry_losses")?;
-            entry.insert(surface_index);
+            insert_geometry_hash(&mut carrier_index.surfaces, surface_step, surface_index, ctx, "step_geometry_surface_index")?;
         }
     }
     let surface_parameter_scales = ir

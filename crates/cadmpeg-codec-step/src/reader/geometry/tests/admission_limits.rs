@@ -44,6 +44,34 @@ map_refusal_test!(geometry_transformation_operators_refuse_collection_limit, "st
 map_refusal_test!(geometry_transformation_operators2_refuse_collection_limit, "step_geometry_transformation_operators2");
 map_refusal_test!(geometry_curve_parameter_offsets_refuse_collection_limit, "step_geometry_curve_parameter_offsets");
 
+macro_rules! hash_refusal_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
+            assert!(matches!(
+                super::super::insert_geometry_hash(
+                    &mut HashMap::<u64, u64>::new(),
+                    1,
+                    1,
+                    &ctx,
+                    $operation,
+                ),
+                Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation
+            ));
+        }
+    };
+}
+
+hash_refusal_test!(geometry_curve_index_refuses_collection_limit, "step_geometry_curve_index");
+hash_refusal_test!(geometry_surface_index_refuses_collection_limit, "step_geometry_surface_index");
+
 #[test]
 fn geometry_typed_ids_refuse_collection_limit() {
     let arena = DecodeArena::new();
