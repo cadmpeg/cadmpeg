@@ -18,6 +18,27 @@ use crate::test_support::exchange::{decode_inline, export};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
+fn pending_occurrence_refuses_caller_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"occurrence", &arena, &policy)
+        .expect("root fits selected policy");
+    let id = cadmpeg_ir::ids::OccurrenceId::mint("step:data:occurrence#1")
+        .expect("valid occurrence id");
+    let mut pending = std::collections::VecDeque::new();
+    let error = super::enqueue_occurrence(&mut pending, 1, id, Some(&ctx))
+        .expect_err("one pending occurrence exceeds zero collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "step_pending_occurrence"
+    ));
+    assert!(pending.is_empty());
+}
+
+#[test]
 fn product_descriptions_transfer_from_product_and_definition() {
     let decoded = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');

@@ -334,7 +334,7 @@ pub(super) fn decode(
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
         root_ordinal = root_ordinal.saturating_add(1);
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
-        pending_occurrences.push_back((definition, id));
+        enqueue_occurrence(&mut pending_occurrences, definition, id, ctx)?;
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -477,7 +477,7 @@ pub(super) fn decode(
             let mut path = parent_path;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
-            pending_occurrences.push_back((usage.child_definition, id));
+            enqueue_occurrence(&mut pending_occurrences, usage.child_definition, id, ctx)?;
             typed.insert(usage_id);
         }
     }
@@ -536,6 +536,24 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     })
+}
+
+fn enqueue_occurrence(
+    pending: &mut VecDeque<(u64, OccurrenceId)>,
+    definition: u64,
+    id: OccurrenceId,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "step_pending_occurrence";
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, OPERATION)?;
+    }
+    pending.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+    })?;
+    pending.push_back((definition, id));
+    Ok(())
 }
 
 fn admit_occurrence(
