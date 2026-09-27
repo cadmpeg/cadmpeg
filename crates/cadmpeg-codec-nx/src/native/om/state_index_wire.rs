@@ -135,7 +135,8 @@ impl TryFrom<OmOperationStateCounterWire> for OmOperationStateCounter {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct OmOperationStateSlotWire {
     ordinal: u32,
     object_index: Option<u32>,
@@ -143,6 +144,7 @@ struct OmOperationStateSlotWire {
 }
 
 impl OmOperationStateSlotWire {
+    #[cfg(test)]
     fn from_slot(ordinal: u32, value: Option<StateIndexToken>) -> Self {
         Self {
             ordinal,
@@ -167,11 +169,29 @@ impl OmOperationStateSlotWire {
     }
 }
 
+#[derive(Serialize)]
+struct OmOperationStateSlotRef<'a> {
+    ordinal: u32,
+    object_index: Option<u32>,
+    raw_object_index: &'a [u8],
+}
+
+impl<'a> OmOperationStateSlotRef<'a> {
+    fn from_slot(ordinal: u32, value: Option<&'a StateIndexToken>) -> Self {
+        Self {
+            ordinal,
+            object_index: value.copied().map(StateIndexToken::value),
+            raw_object_index: value.map_or(&[0xff], StateIndexToken::raw),
+        }
+    }
+}
+
 impl Serialize for StateSlots<Option<StateIndexToken>> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.len()))?;
         for (ordinal, slot) in self.iter() {
-            sequence.serialize_element(&OmOperationStateSlotWire::from_slot(ordinal, *slot))?;
+            sequence
+                .serialize_element(&OmOperationStateSlotRef::from_slot(ordinal, slot.as_ref()))?;
         }
         sequence.end()
     }
