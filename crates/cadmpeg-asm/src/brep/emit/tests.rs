@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{emit_carrier_curve, emit_coedges, emit_faces, emit_vertices, into_support_sides};
+use super::{emit_carrier_curve, emit_coedges, emit_containers, emit_faces, emit_vertices, into_support_sides};
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
-use crate::brep::{AsmBrep, Carriers, Reachable};
+use crate::brep::{AsmBrep, Carriers, Reachable, WireShellTopology};
 use crate::nurbs;
 use crate::nurbs::proc_curve::{
     EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout, ProceduralCurveConstruction,
@@ -15,6 +15,36 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashSet;
+
+#[test]
+fn body_source_stream_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashMap;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let records = [Record {
+        index: 1,
+        name: "body".into(),
+        tokens: vec![Token::Long(0), Token::Long(7)].into(),
+        offset: 0,
+        len: 0,
+    }];
+    let by_index = HashMap::from([(1, &records[0])]);
+    let error = emit_containers(
+        &ctx, &mut AsmBrep::default(), &records, &by_index,
+        &Reachable::default(), &WireShellTopology::default(),
+        "folder/source.brp", 1.0, crate::asm_format!("f3d"),
+    ).expect_err("stream name exceeds zero retained bytes");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "ASM body source stream");
+}
 
 fn subtype_table(records: &[Record]) -> nurbs::toks::SubtypeTable {
     let arena = cadmpeg_core::decode::DecodeArena::new();
