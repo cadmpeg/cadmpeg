@@ -2586,7 +2586,10 @@ fn push_light(
     lights.push(light);
 }
 
-fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
+fn segments(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2595,7 +2598,8 @@ fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<SourceLinetypeSegment>
         1 << 16,
         reader.position(),
     )?;
-    let mut values = Vec::with_capacity(bytes / 12);
+    let mut values = Vec::new();
+    crate::chunks::reserve_admitted_vec(ctx, &mut values, bytes / 12, "Rhino linetype segments")?;
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
@@ -2607,6 +2611,7 @@ fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<SourceLinetypeSegment>
 }
 
 fn parse_linetype(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -2623,7 +2628,7 @@ fn parse_linetype(
     let (component, values) = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = utf16(&mut reader)?;
-        let values = segments(&mut reader)?;
+        let values = segments(ctx, &mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
         } else {
@@ -2639,7 +2644,7 @@ fn parse_linetype(
         )
     } else if version.0 == 2 && version.1 >= 0 {
         let component = component(data, &mut reader, archive)?;
-        let values = segments(&mut reader)?;
+        let values = segments(ctx, &mut reader)?;
         let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
         if item == 1 {
             cap = reader.u8()?;
@@ -2667,20 +2672,28 @@ fn parse_linetype(
                     1 << 16,
                     reader.position(),
                 )?;
-                let mut points = Vec::with_capacity(bytes / 16);
+                crate::chunks::reserve_admitted_vec(
+                    ctx,
+                    &mut taper,
+                    bytes / 16,
+                    "Rhino linetype taper points",
+                )?;
+                let mut invalid = false;
                 for _ in 0..bytes / 16 {
-                    points.push([reader.f64()?, reader.f64()?]);
+                    let first = reader.f64()?;
+                    let second = reader.f64()?;
+                    match (FiniteReal::new(first), FiniteReal::new(second)) {
+                        (Some(first), Some(second)) if !invalid => taper.push([first, second]),
+                        _ => invalid = true,
+                    }
                 }
-                let admitted = points
-                    .into_iter()
-                    .map(|[first, second]| {
-                        Some([FiniteReal::new(first)?, FiniteReal::new(second)?])
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| {
-                        FramingError::structural(reader.position(), "linetype taper is not finite")
-                    })?;
-                taper.extend(admitted);
+                if invalid {
+                    return Err(FramingError::structural(
+                        reader.position(),
+                        "linetype taper is not finite",
+                    )
+                    .into());
+                }
                 item = reader.u8()?;
             }
         }
@@ -2697,26 +2710,30 @@ fn parse_linetype(
     // An unknown or out-of-order extension has no generic width. The source
     // reader consumes its identifier and leaves a bounded suffix.
     reader.skip_remaining()?;
-    let segments = values
-        .into_iter()
-        .map(|segment| {
-            let length_millimeters = if always {
-                let scale = pattern_document_scale(binding)?;
-                scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
-                    FramingError::structural(
-                        source_offset,
-                        "scaled model-distance linetype segment is invalid",
-                    )
-                })?
-            } else {
-                segment.length
-            };
-            Ok(LinetypeSegment {
-                length_millimeters,
-                segment_type: segment.segment_type,
-            })
-        })
-        .collect::<Result<Vec<_>, PatternTransferError>>()?;
+    let mut segments = Vec::new();
+    crate::chunks::reserve_admitted_vec(
+        ctx,
+        &mut segments,
+        values.len(),
+        "Rhino projected linetype segments",
+    )?;
+    for segment in values {
+        let length_millimeters = if always {
+            let scale = pattern_document_scale(binding)?;
+            scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
+                FramingError::structural(
+                    source_offset,
+                    "scaled model-distance linetype segment is invalid",
+                )
+            })?
+        } else {
+            segment.length
+        };
+        segments.push(LinetypeSegment {
+            length_millimeters,
+            segment_type: segment.segment_type,
+        });
+    }
     let id = component.id;
     let key = if id.is_nil() {
         format!("record-{source_offset}")
@@ -4448,6 +4465,7 @@ pub(crate) fn install(
             } else if table_type == LINETYPE_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, LINETYPE) {
                     match parse_linetype(
+                        ctx,
                         scan.data,
                         range,
                         scan.archive,
@@ -4455,6 +4473,9 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => linetypes.push(value),
+                        Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
+                            return Err(CodecError::ResourceLimit(limit));
+                        }
                         Err(error) => {
                             losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
                                 "linetype record at offset {} was retained as complete source: {error}",

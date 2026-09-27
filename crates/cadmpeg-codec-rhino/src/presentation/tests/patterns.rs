@@ -23,6 +23,19 @@ use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 use cadmpeg_ir::document::CadIr;
 
+fn with_collection_limit<R>(
+    bytes: &[u8],
+    limit: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    f(&ctx)
+}
+
 fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) -> Vec<u8> {
     let mut component = 1_i32.to_le_bytes().to_vec();
     component.extend(0_i32.to_le_bytes());
@@ -187,13 +200,16 @@ fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
     body.extend([0x66; 16]);
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous(15, &body);
-    let value = parse_linetype(
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-        0,
-    )
+    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+        parse_linetype(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+    })
     .expect("required invariant");
     assert_eq!(value.name, "dash");
     assert_eq!(
@@ -208,63 +224,108 @@ fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
     assert_eq!(value.segments[1].segment_type, 1);
 }
 
+fn modern_linetype(always_model_distance: bool) -> Vec<u8> {
+    let mut component = 1_i32.to_le_bytes().to_vec();
+    component.extend(0_i32.to_le_bytes());
+    component.push(0);
+    component.push(1);
+    component.extend([0x33; 16]);
+    component.push(0);
+    component.push(1);
+    component.extend(9_i32.to_le_bytes());
+    component.push(1);
+    component.extend(utf16_bytes("modern dash"));
+    component.extend(crc32fast::hash(&component).to_le_bytes());
+    let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
+    attributes.extend((component.len() as i64).to_le_bytes());
+    attributes.extend(component);
+
+    let mut body = attributes;
+    body.extend(2_i32.to_le_bytes());
+    body.extend(2.5_f64.to_le_bytes());
+    body.extend(0_u32.to_le_bytes());
+    body.extend(1.25_f64.to_le_bytes());
+    body.extend(1_u32.to_le_bytes());
+    body.extend([1, 1, 2, 2]);
+    body.push(3);
+    body.extend(2.75_f64.to_le_bytes());
+    body.extend([4, 2]);
+    body.push(5);
+    body.extend(3_i32.to_le_bytes());
+    for value in [[0.0_f64, 0.5], [0.35_f64, 1.25], [1.0_f64, 2.5]] {
+        body.extend(value[0].to_le_bytes());
+        body.extend(value[1].to_le_bytes());
+    }
+    if always_model_distance {
+        body.extend([6, 1]);
+    }
+    body.push(0);
+
+    let mut payload = 2_i32.to_le_bytes().to_vec();
+    payload.extend(3_i32.to_le_bytes());
+    payload.extend(body);
+    payload.extend(crc32fast::hash(&payload).to_le_bytes());
+    let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
+    bytes.extend((payload.len() as i64).to_le_bytes());
+    bytes.extend(payload);
+    bytes
+}
+
+fn linetype_collection_refusal(limit: u64) -> PatternTransferError {
+    let bytes = modern_linetype(false);
+    with_collection_limit(&bytes, limit, |ctx| {
+        parse_linetype(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
+            0,
+        )
+        .expect_err("linetype exceeds collection limit")
+    })
+}
+
+#[test]
+fn linetype_segments_refuse_collection_limit() {
+    assert!(matches!(
+        linetype_collection_refusal(1),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino linetype segments"
+    ));
+}
+
+#[test]
+fn linetype_taper_points_refuse_collection_limit() {
+    assert!(matches!(
+        linetype_collection_refusal(4),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino linetype taper points"
+    ));
+}
+
+#[test]
+fn projected_linetype_segments_refuse_collection_limit() {
+    assert!(matches!(
+        linetype_collection_refusal(6),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino projected linetype segments"
+    ));
+}
+
 #[test]
 fn modern_linetype_scales_only_model_distance_segments() {
-    fn modern_linetype(always_model_distance: bool) -> Vec<u8> {
-        let mut component = 1_i32.to_le_bytes().to_vec();
-        component.extend(0_i32.to_le_bytes());
-        component.push(0);
-        component.push(1);
-        component.extend([0x33; 16]);
-        component.push(0);
-        component.push(1);
-        component.extend(9_i32.to_le_bytes());
-        component.push(1);
-        component.extend(utf16_bytes("modern dash"));
-        component.extend(crc32fast::hash(&component).to_le_bytes());
-        let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-        attributes.extend((component.len() as i64).to_le_bytes());
-        attributes.extend(component);
-
-        let mut body = attributes;
-        body.extend(2_i32.to_le_bytes());
-        body.extend(2.5_f64.to_le_bytes());
-        body.extend(0_u32.to_le_bytes());
-        body.extend(1.25_f64.to_le_bytes());
-        body.extend(1_u32.to_le_bytes());
-        body.extend([1, 1, 2, 2]);
-        body.push(3);
-        body.extend(2.75_f64.to_le_bytes());
-        body.extend([4, 2]);
-        body.push(5);
-        body.extend(3_i32.to_le_bytes());
-        for value in [[0.0_f64, 0.5], [0.35_f64, 1.25], [1.0_f64, 2.5]] {
-            body.extend(value[0].to_le_bytes());
-            body.extend(value[1].to_le_bytes());
-        }
-        if always_model_distance {
-            body.extend([6, 1]);
-        }
-        body.push(0);
-
-        let mut payload = 2_i32.to_le_bytes().to_vec();
-        payload.extend(3_i32.to_le_bytes());
-        payload.extend(body);
-        payload.extend(crc32fast::hash(&payload).to_le_bytes());
-        let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
-        bytes.extend((payload.len() as i64).to_le_bytes());
-        bytes.extend(payload);
-        bytes
-    }
-
     let model_distance_bytes = modern_linetype(true);
-    let model_distance = parse_linetype(
-        &model_distance_bytes,
-        0..model_distance_bytes.len(),
-        ArchiveVersion::V8,
-        UnitBinding::Millimeters(StandardUnit::Inches.into()),
-        0,
-    )
+    let model_distance = with_collection_limit(&model_distance_bytes, u64::MAX, |ctx| {
+        parse_linetype(
+            ctx,
+            &model_distance_bytes,
+            0..model_distance_bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
+            0,
+        )
+    })
     .expect("model-distance linetype");
     assert_eq!(model_distance.name, "modern dash");
     assert_eq!(model_distance.archive_index, Some(9));
@@ -291,26 +352,32 @@ fn modern_linetype_scales_only_model_distance_segments() {
     );
     assert!(model_distance.always_model_distance);
 
-    let unbound_model_distance = parse_linetype(
-        &model_distance_bytes,
-        0..model_distance_bytes.len(),
-        ArchiveVersion::V8,
-        UnitBinding::Unavailable,
-        0,
-    );
+    let unbound_model_distance = with_collection_limit(&model_distance_bytes, u64::MAX, |ctx| {
+        parse_linetype(
+            ctx,
+            &model_distance_bytes,
+            0..model_distance_bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Unavailable,
+            0,
+        )
+    });
     assert!(matches!(
         unbound_model_distance,
         Err(PatternTransferError::UnavailableDocumentUnits)
     ));
 
     let print_distance_bytes = modern_linetype(false);
-    let print_distance = parse_linetype(
-        &print_distance_bytes,
-        0..print_distance_bytes.len(),
-        ArchiveVersion::V8,
-        UnitBinding::Millimeters(StandardUnit::Inches.into()),
-        0,
-    )
+    let print_distance = with_collection_limit(&print_distance_bytes, u64::MAX, |ctx| {
+        parse_linetype(
+            ctx,
+            &print_distance_bytes,
+            0..print_distance_bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
+            0,
+        )
+    })
     .expect("print-distance linetype");
     assert_eq!(
         print_distance.segments[0].length_millimeters,
