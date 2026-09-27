@@ -311,18 +311,35 @@ pub(crate) struct DefinitionDiagnostic {
 }
 
 impl DefinitionDiagnostic {
-    pub(crate) fn to_loss(&self) -> cadmpeg_ir::report::loss::LossNote {
-        self.diagnostic
-            .code
-            .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
-            .note(format!(
+    pub(crate) fn to_loss(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        let message = crate::wire::admitted_format(
+            ctx,
+            format_args!(
                 "instance-definition record at offset {}: {}",
                 self.source_range.start, self.diagnostic.message
-            ))
+            ),
+            "Rhino instance-definition loss text",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(message.len()),
+            "Rhino instance-definition loss message",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index("INSTANCE_DEFINITION_TABLE".len()),
+            "Rhino instance-definition loss tag",
+        )?;
+        Ok(self
+            .diagnostic
+            .code
+            .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
+            .note(&message)
             .with_provenance(
                 cadmpeg_ir::SourceProvenance::root("rhino", self.source_range.start as u64)
                     .with_tag("INSTANCE_DEFINITION_TABLE"),
-            )
+            ))
     }
 }
 

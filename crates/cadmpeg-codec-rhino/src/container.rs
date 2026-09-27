@@ -274,12 +274,6 @@ pub(crate) struct Scan<'a> {
     pub(crate) metadata: crate::settings::DocumentMetadata,
 }
 
-impl Scan<'_> {
-    fn version_note(&self) -> String {
-        format!("archive version {}", self.archive.value())
-    }
-}
-
 /// Borrows the session root bytes after the shared input budget admitted them.
 fn acquire(root: View<'_>) -> &[u8] {
     root.window()
@@ -1534,30 +1528,32 @@ pub(crate) fn container_only_result(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
 ) -> Result<Decoded, CodecError> {
-    let mut notes = vec![scan.version_note()];
-    notes.extend(scan.warnings.messages().map(str::to_owned));
-    notes.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
-    );
-    let mut losses: Vec<_> = scan
-        .warnings
-        .iter()
-        .map(|diagnostic| {
+    let mut notes = Vec::new();
+    push_container_note(ctx, &mut notes, format_args!("archive version {}", scan.archive.value()))?;
+    for warning in scan.warnings.messages() {
+        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        push_container_note(ctx, &mut notes, format_args!("{}", diagnostic.diagnostic.message))?;
+    }
+    let mut losses = Vec::new();
+    for diagnostic in scan.warnings.iter() {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(diagnostic.message.len()),
+            "Rhino container-only loss message",
+        )?;
+        losses.push(
             diagnostic
                 .code
                 .unwrap_or(crate::loss::RhinoLossCode::ContainerScanDiagnostic)
-                .note(diagnostic.message.clone())
-        })
-        .collect();
-    losses.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(crate::instances::DefinitionDiagnostic::to_loss),
-    );
+                .note(&diagnostic.message),
+        );
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        losses.push(diagnostic.to_loss(ctx)?);
+    }
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
     let ir = CadIr::decoded(source_meta(ctx, primary, SourceMetaDetail::ContainerOnly(scan))?);
