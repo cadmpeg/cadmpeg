@@ -68,11 +68,8 @@ pub(crate) struct DesignPlane {
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignCircularPatternAxisWire",
-    into = "DesignCircularPatternAxisWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignCircularPatternAxisWire")]
 pub(crate) enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
     Inline {
@@ -95,6 +92,109 @@ pub(crate) enum DesignCircularPatternAxis {
         /// Resolved model-space axis, when exact.
         resolved: Option<DesignAxis>,
     },
+}
+
+#[cfg(test)]
+thread_local! {
+    static CIRCULAR_PATTERN_AXIS_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignCircularPatternAxis {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        CIRCULAR_PATTERN_AXIS_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        match self {
+            Self::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            } => Self::Inline {
+                origin: *origin,
+                origin_offset: *origin_offset,
+                direction: *direction,
+                direction_offset: *direction_offset,
+            },
+            Self::HistoricalEdge {
+                wrappers,
+                persistent_identity,
+                resolved,
+            } => Self::HistoricalEdge {
+                wrappers: wrappers.clone(),
+                persistent_identity: *persistent_identity,
+                resolved: *resolved,
+            },
+        }
+    }
+}
+
+struct PatternAxisWrapperIndices<'a>(&'a [DesignPatternAxisWrapper]);
+struct PatternAxisIdentityOffsets<'a>(&'a [DesignPatternAxisWrapper]);
+
+impl Serialize for PatternAxisWrapperIndices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|wrapper| wrapper.record_index))
+    }
+}
+
+impl Serialize for PatternAxisIdentityOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|wrapper| wrapper.identity_offset))
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DesignCircularPatternAxisRef<'a> {
+    Inline {
+        origin: [FiniteReal; 3],
+        origin_offset: u64,
+        direction: [f64; 3],
+        direction_offset: u64,
+    },
+    HistoricalEdge {
+        wrapper_record_indices: PatternAxisWrapperIndices<'a>,
+        persistent_identities: [u64; 1],
+        identity_offsets: PatternAxisIdentityOffsets<'a>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resolved_origin: Option<FinitePoint3>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resolved_direction: Option<FiniteVector3>,
+    },
+}
+
+impl Serialize for DesignCircularPatternAxis {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let borrowed = match self {
+            Self::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            } => DesignCircularPatternAxisRef::Inline {
+                origin: *origin,
+                origin_offset: *origin_offset,
+                direction: [
+                    direction.as_raw().x,
+                    direction.as_raw().y,
+                    direction.as_raw().z,
+                ],
+                direction_offset: *direction_offset,
+            },
+            Self::HistoricalEdge {
+                wrappers,
+                persistent_identity,
+                resolved,
+            } => DesignCircularPatternAxisRef::HistoricalEdge {
+                wrapper_record_indices: PatternAxisWrapperIndices(wrappers),
+                persistent_identities: [*persistent_identity],
+                identity_offsets: PatternAxisIdentityOffsets(wrappers),
+                resolved_origin: resolved.map(|axis| axis.origin),
+                resolved_direction: resolved.map(|axis| FiniteVector3::from(axis.direction)),
+            },
+        };
+        borrowed.serialize(serializer)
+    }
 }
 
 /// One historical axis wrapper and the location of its persistent identity.
@@ -221,6 +321,7 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
     }
 }
 
+#[cfg(test)]
 impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
     fn from(axis: DesignCircularPatternAxis) -> Self {
         match axis {
@@ -663,10 +764,12 @@ impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstanc
 #[cfg(test)]
 mod tests {
     use super::{
-        DesignPatternComponentInstance, DesignPatternInstance,
+        DesignAxis, DesignCircularPatternAxis, DesignCircularPatternAxisWire,
+        DesignPatternAxisWrapper, DesignPatternComponentInstance, DesignPatternInstance,
         DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
         DesignRectangularPatternInstances, DesignRectangularPatternInstancesWire,
-        RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT, RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
+        CIRCULAR_PATTERN_AXIS_CLONE_COUNT, RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT,
+        RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
     };
     use crate::records::identity::Located;
     use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -723,6 +826,68 @@ mod tests {
             value_offsets: [10, 20, 30, 40],
             instances,
         }
+    }
+
+    fn circular_axis(resolved: bool) -> DesignCircularPatternAxis {
+        DesignCircularPatternAxis::HistoricalEdge {
+            wrappers: vec![
+                DesignPatternAxisWrapper {
+                    record_index: 1,
+                    identity_offset: 20,
+                },
+                DesignPatternAxisWrapper {
+                    record_index: 2,
+                    identity_offset: 30,
+                },
+            ],
+            persistent_identity: 7,
+            resolved: resolved.then(|| DesignAxis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
+                direction: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
+            }),
+        }
+    }
+
+    #[test]
+    fn circular_pattern_axis_borrowed_wire_matches_owned_wire_bytes() {
+        let zero = cadmpeg_ir::scalar::FiniteReal::new(0.0).unwrap();
+        let inline = DesignCircularPatternAxis::Inline {
+            origin: [zero; 3],
+            origin_offset: 10,
+            direction: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(
+                1.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            direction_offset: 20,
+        };
+        for axis in [inline, circular_axis(false), circular_axis(true)] {
+            let owned = DesignCircularPatternAxisWire::from(axis.clone());
+            assert_eq!(
+                serde_json::to_vec(&axis).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn circular_pattern_axis_native_retained_limit_refuses_before_clone() {
+        let axis = circular_axis(true);
+        let record = NestedRecord {
+            id: "f3d:native:circular-pattern-axis#0",
+            value: &axis,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "design_parameter_scopes",
+            || CIRCULAR_PATTERN_AXIS_CLONE_COUNT.with(|count| count.set(0)),
+            || CIRCULAR_PATTERN_AXIS_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 
     #[test]
