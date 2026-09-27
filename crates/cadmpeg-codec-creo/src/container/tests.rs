@@ -1000,6 +1000,94 @@ fn section_owner_range_refuses_before_counted_vec_growth() {
             && limit.operation == "creo section owner ranges"));
 }
 
+fn one_feature_definition() -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::depdb_section_definition(
+        b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0",
+        None,
+    )
+    .expect("one bounded section definition")
+}
+
+fn append_definition_with_limit(
+    limit: u64,
+    operation: &'static str,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("definition input is admitted");
+    let mut definitions = Vec::new();
+    super::append_feature_definitions(
+        &ctx,
+        &mut definitions,
+        vec![one_feature_definition()],
+        operation,
+    )?;
+    Ok(definitions.len())
+}
+
+#[test]
+fn feature_row_definition_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let operation = "creo feature row definition aggregation";
+    assert_eq!(
+        append_definition_with_limit(1, operation).expect("one definition admitted"),
+        1
+    );
+    let error = append_definition_with_limit(0, operation)
+        .expect_err("one definition needs an aggregate slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == operation));
+}
+
+#[test]
+fn replay_definition_aggregation_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let operation = "creo replay definition aggregation";
+    assert_eq!(
+        append_definition_with_limit(1, operation).expect("one definition admitted"),
+        1
+    );
+    let error = append_definition_with_limit(0, operation)
+        .expect_err("one replay definition needs an aggregate slot");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == operation));
+}
+
+#[test]
+fn claimed_definition_owner_refuses_before_btree_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut definition = one_feature_definition();
+    definition.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
+        schema_id: None,
+        owner_feature_id: Some(7),
+    };
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("definition input is admitted");
+        super::claimed_definition_owners(&ctx, std::slice::from_ref(&definition))
+    };
+    assert_eq!(run(1).expect("one owner admitted").len(), 1);
+    let error = run(0).expect_err("one owner needs a BTreeSet node");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo claimed definition owners"));
+}
+
 #[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

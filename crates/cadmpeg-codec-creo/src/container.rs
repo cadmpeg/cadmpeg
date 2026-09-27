@@ -2281,6 +2281,34 @@ fn feature_row_definitions(
     Ok(definitions)
 }
 
+fn append_feature_definitions(
+    ctx: &DecodeContext<'_>,
+    definitions: &mut Vec<FeatureDefinition>,
+    additions: Vec<FeatureDefinition>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.try_reserve_items(definitions, additions.len(), operation)?;
+    definitions.extend(additions);
+    Ok(())
+}
+
+fn claimed_definition_owners(
+    ctx: &DecodeContext<'_>,
+    definitions: &[FeatureDefinition],
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut owners = BTreeSet::new();
+    for id in definitions
+        .iter()
+        .filter_map(|definition| definition.identity.owner_feature_id())
+    {
+        if !owners.contains(&id) {
+            ctx.charge_collection_items(1, "creo claimed definition owners")?;
+            owners.insert(id);
+        }
+    }
+    Ok(owners)
+}
+
 fn feature_geometry_tables(
     ctx: &DecodeContext<'_>,
     rows: &[FeatureRow],
@@ -2865,18 +2893,25 @@ pub(crate) fn scan_bytes<'a>(
         feature_definitions,
         &feature_entity_tables,
     );
-    feature_definitions.extend(feature_row_definitions(ctx, &feature_rows)?);
+    append_feature_definitions(
+        ctx,
+        &mut feature_definitions,
+        feature_row_definitions(ctx, &feature_rows)?,
+        "creo feature row definition aggregation",
+    )?;
     feature_definitions.sort_by_key(|definition| definition.offset);
-    let claimed_definition_owners = feature_definitions
-        .iter()
-        .filter_map(|definition| definition.identity.owner_feature_id())
-        .collect();
+    let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
         positional_replay_definitions(ctx, &sections)?,
         &feature_entity_tables,
         &claimed_definition_owners,
     );
-    feature_definitions.extend(replay_definitions);
+    append_feature_definitions(
+        ctx,
+        &mut feature_definitions,
+        replay_definitions,
+        "creo replay definition aggregation",
+    )?;
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
     let feature_definitions = feature::definitions::bind_section_owners(
