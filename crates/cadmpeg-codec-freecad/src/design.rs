@@ -45,6 +45,7 @@ use cadmpeg_ir::{
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
+use crate::resource::{collection_vec, reserved_vec};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -133,6 +134,7 @@ pub(crate) fn transfer(
         let id = feature_id(object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
+                ctx,
                 &mut ir.model.parameters,
                 object,
                 &owned,
@@ -883,6 +885,7 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
 }
 
 fn append_spreadsheet(
+    ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -924,7 +927,7 @@ fn append_spreadsheet(
             records.len()
         )));
     }
-    let mut cell_ids = Vec::with_capacity(records.len());
+    let mut cell_ids = collection_vec(ctx, records.len(), "FreeCAD spreadsheet cells")?;
     let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
     for (index, cell) in records.into_iter().enumerate() {
         let address = cell.attribute("address").ok_or_else(|| {
@@ -5882,7 +5885,11 @@ fn pattern_definition(
                 transformations.links().len() as u64,
                 "freecad pattern stages",
             )?;
-            let mut stages = Vec::with_capacity(transformations.links().len());
+            let mut stages = reserved_vec(
+                ctx,
+                transformations.links().len(),
+                "freecad pattern stages",
+            )?;
             for link in transformations.links() {
                 let Some((object, owned)) = (|| {
                     let target = link.as_ref()?.object()?;
@@ -6270,7 +6277,7 @@ fn pattern_locations(
         _ => return Ok(None),
     };
     ctx.charge_collection_items(u64::from(count), "freecad pattern locations")?;
-    let mut locations = Vec::with_capacity(count as usize);
+    let mut locations = reserved_vec(ctx, count as usize, "freecad pattern locations")?;
     locations.push(FiniteReal::ZERO);
     let mut location = FiniteReal::ZERO;
     for interval in intervals {

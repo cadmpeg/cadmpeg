@@ -32,6 +32,7 @@ mod native;
 mod persistence;
 mod placement;
 mod product;
+mod resource;
 mod topology_transfer;
 mod writer;
 
@@ -926,8 +927,9 @@ impl CodecBackend for FcstdCodec {
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
-            let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
+            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
+                ctx,
                 document_bytes,
                 scan.document.file_version.value(),
                 &graph.properties,

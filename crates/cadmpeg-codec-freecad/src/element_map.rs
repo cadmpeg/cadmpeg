@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use crate::native::element_map::{
@@ -38,6 +38,7 @@ enum ElementMapCarrier<'a, 'input> {
 
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
     document: &[u8],
     file_version: usize,
     properties: &[PropertyRecord],
@@ -92,7 +93,7 @@ pub(crate) fn parse(
         } else {
             parse_count(data_node, "StringHasher")?
         };
-        let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
+        let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
         tables.push(
             StringTableRecord::try_new(
                 index,
@@ -145,7 +146,7 @@ pub(crate) fn parse(
                 } else {
                     inline_bytes.as_deref().unwrap_or_default()
                 };
-                let parsed = parse_element_map(bytes, source_entry.is_some())?;
+                let parsed = parse_element_map(ctx, bytes, source_entry.is_some())?;
                 let declared_count = match declared_count {
                     Some(count) => count,
                     None => mapped_name_count(&parsed),
@@ -157,7 +158,7 @@ pub(crate) fn parse(
                 })
             }
             ElementMapCarrier::Legacy(marker) => {
-                parse_legacy_element_map(marker, file_version, &entry_data)?
+                parse_legacy_element_map(ctx, marker, file_version, &entry_data)?
             }
         };
         let Some(payload) = payload else {
@@ -462,6 +463,7 @@ fn mapped_name_count(parsed: &ParsedMap) -> usize {
 }
 
 fn parse_legacy_element_map(
+    ctx: &DecodeContext<'_>,
     marker: roxmltree::Node<'_, '_>,
     file_version: usize,
     entry_data: &HashMap<&str, &[u8]>,
@@ -479,7 +481,7 @@ fn parse_legacy_element_map(
         let mut header = text.split_ascii_whitespace();
         let first = header.next().unwrap_or_default();
         if first == "BeginElementMap" && header.next() == Some("v1") {
-            let parsed = parse_element_map(bytes, true)?;
+            let parsed = parse_element_map(ctx, bytes, true)?;
             let declared_count = match marker.attribute("count") {
                 Some(count) => parse_usize(count, "ElementMap count")?,
                 None => element_map_size(&parsed)?,
@@ -490,7 +492,7 @@ fn parse_legacy_element_map(
                 parsed,
             }));
         }
-        let (declared_count, records) = parse_legacy_stream(bytes, None)?;
+        let (declared_count, records) = parse_legacy_stream(ctx, bytes, None)?;
         return Ok(Some(legacy_map_payload(
             records,
             declared_count,
@@ -504,7 +506,7 @@ fn parse_legacy_element_map(
     }
     let records = if file_version > 1 {
         let bytes = node_text_bytes(marker);
-        parse_legacy_stream(&bytes, Some(declared_count))?.1
+        parse_legacy_stream(ctx, &bytes, Some(declared_count))?.1
     } else {
         parse_legacy_elements(marker, declared_count)?
     };
@@ -516,6 +518,7 @@ fn parse_legacy_element_map(
 }
 
 fn parse_legacy_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     expected_count: Option<usize>,
 ) -> Result<(usize, Vec<LegacyElementRecord>), CodecError> {
@@ -531,7 +534,7 @@ fn parse_legacy_stream(
         },
         Ok,
     )?;
-    let records = parse_legacy_records(&mut tokens, count)?;
+    let records = parse_legacy_records(ctx, &mut tokens, count)?;
     if tokens.next().is_some() {
         return Err(CodecError::Malformed(
             "legacy element map has trailing data".into(),
@@ -541,6 +544,7 @@ fn parse_legacy_stream(
 }
 
 fn parse_legacy_records<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     count: usize,
 ) -> Result<Vec<LegacyElementRecord>, CodecError> {
@@ -549,7 +553,7 @@ fn parse_legacy_records<'a>(
             "legacy element-map record count exceeds limit".into(),
         ));
     }
-    let mut records = Vec::with_capacity(count);
+    let mut records = crate::resource::collection_vec(ctx, count, "FreeCAD legacy element records")?;
     for _ in 0..count {
         let indexed_name = next_token(tokens, "legacy element indexed name")?.to_owned();
         let mapped_name = next_token(tokens, "legacy mapped name")?.to_owned();
@@ -562,7 +566,7 @@ fn parse_legacy_records<'a>(
                 "legacy string-id count exceeds limit".into(),
             ));
         }
-        let mut string_ids = Vec::with_capacity(sid_count);
+        let mut string_ids = crate::resource::collection_vec(ctx, sid_count, "FreeCAD legacy string IDs")?;
         for _ in 0..sid_count {
             string_ids.push(
                 next_token(tokens, "legacy string id")?
@@ -776,6 +780,7 @@ fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
 }
 
 fn parse_string_table(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     declared_count: usize,
     side_entry: bool,
@@ -799,7 +804,7 @@ fn parse_string_table(
     // cannot exceed the table's byte length.
     let capacity = bounded_len(declared_count as u64, 1, text.len())
         .ok_or_else(|| CodecError::Malformed("string-table record count exceeds input".into()))?;
-    let mut output = Vec::with_capacity(capacity);
+    let mut output = crate::resource::collection_vec(ctx, capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
     let mut previous_components = Vec::<i64>::new();
     for _ in 0..declared_count {
@@ -955,7 +960,11 @@ struct ParsedMap {
     maps: ElementMapNodes,
 }
 
-fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecError> {
+fn parse_element_map(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    side_entry: bool,
+) -> Result<ParsedMap, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("element map is not UTF-8".into()))?;
     let mut tokens = text.split_whitespace();
@@ -975,7 +984,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
     // cannot exceed the element map's byte length.
     let map_capacity = bounded_len(map_count as u64, 1, text.len())
         .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
-    let mut maps = Vec::with_capacity(map_capacity);
+    let mut maps = crate::resource::collection_vec(ctx, map_capacity, "FreeCAD element map nodes")?;
     for expected_index in 1..=map_count {
         expect(&mut tokens, "ElementMap")?;
         let index = next_count(&mut tokens, "map index", MAX_MAP_NODES)?;
@@ -989,7 +998,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
         // Each group consumes at least one token, so its count cannot exceed the byte length.
         let group_capacity = bounded_len(group_count as u64, 1, text.len())
             .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
-        let mut groups = Vec::with_capacity(group_capacity);
+        let mut groups = crate::resource::collection_vec(ctx, group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
             let indexed_name = next_token(&mut tokens, "indexed name")?.to_owned();
             expect(&mut tokens, "ChildCount")?;
@@ -999,7 +1008,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
                 bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
                     CodecError::Malformed("element-map child count exceeds input".into())
                 })?;
-            let mut children = Vec::with_capacity(child_capacity);
+            let mut children = crate::resource::collection_vec(ctx, child_capacity, "FreeCAD element map children")?;
             for _ in 0..child_count {
                 let fields = (0..7)
                     .map(|_| next_token(&mut tokens, "child descriptor"))
@@ -1012,7 +1021,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
             let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
                 CodecError::Malformed("element-map name count exceeds input".into())
             })?;
-            let mut names = Vec::with_capacity(name_capacity);
+            let mut names = crate::resource::collection_vec(ctx, name_capacity, "FreeCAD element map names")?;
             for _ in 0..name_count {
                 let mut chain = Vec::new();
                 loop {
@@ -1159,8 +1168,78 @@ mod tests {
         archive, archive_entries, assert_valid_document, GEOMETRY,
     };
     use crate::FcstdCodec;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::{Cursor, Read};
+
+    fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within the input limit");
+        f(&ctx)
+    }
+
+    fn with_collection_limit<T>(
+        bytes: &[u8],
+        limit: u64,
+        f: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("input is within the root limit");
+        f(&ctx)
+    }
+
+    #[test]
+    fn string_table_capacity_refuses_on_collection_limit() {
+        let bytes = b"1.c name\n";
+        let result = with_collection_limit(bytes, 0, |ctx| {
+            parse_string_table(ctx, bytes, 1, false)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD string table entries"
+        ));
+    }
+
+    #[test]
+    fn element_map_group_capacity_refuses_on_collection_limit() {
+        let bytes = b"1 PostfixCount 0 MapCount 1 ElementMap 1 1 1";
+        let result = with_collection_limit(bytes, 1, |ctx| {
+            parse_element_map(ctx, bytes, false)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD element map groups"
+        ));
+    }
+
+    fn test_parse(
+        document: &[u8],
+        file_version: usize,
+        properties: &[PropertyRecord],
+        entries: &[EntryRecord],
+    ) -> Result<(crate::native::StringTables, Vec<crate::native::element_map::ElementMapRecord>), CodecError> {
+        in_decode_context(|ctx| parse(ctx, document, file_version, properties, entries))
+    }
+
+    fn test_parse_string_table(
+        bytes: &[u8],
+        count: usize,
+        side_entry: bool,
+    ) -> Result<Vec<crate::native::StringTableEntry>, CodecError> {
+        in_decode_context(|ctx| parse_string_table(ctx, bytes, count, side_entry))
+    }
+
+    fn test_parse_element_map(bytes: &[u8], side_entry: bool) -> Result<super::ParsedMap, CodecError> {
+        in_decode_context(|ctx| parse_element_map(ctx, bytes, side_entry))
+    }
 
     #[test]
     fn legacy_string_ids_keep_parse_errors_while_dropping_zero() {
@@ -1192,7 +1271,7 @@ mod tests {
 
     #[test]
     fn restores_absolute_and_relative_string_table_headers() {
-        let records = parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
+        let records = test_parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
             .expect("parse relative string table");
         assert_eq!(records[0].string_id, 10);
         assert_eq!(records[0].components, [2]);
@@ -1206,7 +1285,7 @@ mod tests {
         let input = b"7 PostfixCount 1 :tag MapCount 1\n\
             ElementMap 1 7 1 Face ChildCount 0 NameCount 2\n\
             ;Generated.0.a 0 :1.a.0.b 0 EndMap";
-        let parsed = parse_element_map(input, false).expect("parse element map");
+        let parsed = test_parse_element_map(input, false).expect("parse element map");
         assert_eq!(parsed.map_id, 7);
         assert_eq!(parsed.postfixes, [":tag"]);
         assert_eq!(parsed.maps[0].groups[0].names.len(), 2);
@@ -1219,7 +1298,7 @@ mod tests {
 
     #[test]
     fn rejects_declared_string_table_count_mismatch() {
-        assert!(parse_string_table(b"1.c name\n", 2, false).is_err());
+        assert!(test_parse_string_table(b"1.c name\n", 2, false).is_err());
     }
 
     #[test]
@@ -1241,7 +1320,7 @@ mod tests {
 
     #[test]
     fn accepts_legacy_document_string_hasher_carrier() {
-        let (tables, maps) = parse(
+        let (tables, maps) = test_parse(
             br#"<Document><StringHasher count="1">a.c legacy</StringHasher></Document>"#,
             0,
             &[],
@@ -1293,17 +1372,17 @@ mod tests {
 
     #[test]
     fn restores_multiline_length_prefixed_string() {
-        let records = parse_string_table(b"1.0 1:first\nsecond\n", 1, false)
+        let records = test_parse_string_table(b"1.0 1:first\nsecond\n", 1, false)
             .expect("parse multiline string table");
         assert_eq!(records[0].payload, "first\nsecond");
     }
 
     #[test]
     fn parses_side_entry_headers() {
-        let table = parse_string_table(b"StringTableStart v1 1\n1.c value\n", 1, true)
+        let table = test_parse_string_table(b"StringTableStart v1 1\n1.c value\n", 1, true)
             .expect("parse absolute string table");
         assert_eq!(table[0].payload, "value");
-        let map = parse_element_map(
+        let map = test_parse_element_map(
             b"BeginElementMap v1 1 PostfixCount 0 MapCount 1 ElementMap 1 1 0 EndMap",
             true,
         )
@@ -1331,7 +1410,7 @@ mod tests {
 <Element key="VertexStable" value="Vertex1"/>
 </ElementMap></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
+        let (_, maps) = test_parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
             .expect("legacy direct element map");
         assert_eq!(maps.len(), 1);
         assert_eq!(maps[0].declared_count, 3);
@@ -1356,7 +1435,7 @@ Face1 FaceStable 0
 Edge1 EdgeStable 1 7
 </ElementMap></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
+        let (_, maps) = test_parse(br#"<Document FileVersion="2"/>"#, 2, &[property], &[])
             .expect("legacy inline element map");
         assert_eq!(maps[0].declared_count, 2);
         let edge = &maps[0].maps[0].groups[0].names[1][0];
@@ -1371,7 +1450,7 @@ Edge1 EdgeStable 1 7
             "Part::PropertyPartShape",
             r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
         );
-        let (_, maps) = parse(
+        let (_, maps) = test_parse(
             br#"<Document FileVersion="1"/>"#,
             1,
             &[property],
@@ -1399,7 +1478,7 @@ EndMap\n";
             "Part::PropertyPartShape",
             r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
         );
-        let (_, maps) = parse(
+        let (_, maps) = test_parse(
             br#"<Document FileVersion="1"/>"#,
             1,
             &[property],
@@ -1421,7 +1500,7 @@ ChildCount 1\n\
 1 0 3 0 1 0 0\n\
 NameCount 0\n\
 EndMap\n";
-        let Err(error) = parse_element_map(data, true) else {
+        let Err(error) = test_parse_element_map(data, true) else {
             panic!("forward child map index")
         };
         assert!(error.to_string().contains("mapIndex"), "{error}");
@@ -1433,7 +1512,7 @@ EndMap\n";
             "Part::PropertyPartShape",
             r#"<Property><Part ElementMap="1.0"/><ElementMap/></Property>"#,
         );
-        let (_, maps) = parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
+        let (_, maps) = test_parse(br#"<Document FileVersion="1"/>"#, 1, &[property], &[])
             .expect("legacy empty element map");
         assert!(maps.is_empty());
     }
@@ -1445,7 +1524,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap count="2"><Element key="Face" value="Face1"/></ElementMap></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, 1, &[direct], &[]),
+            test_parse(br#"<Document FileVersion="1"/>"#, 1, &[direct], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1454,7 +1533,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap file="Missing.Map.txt"/></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[]),
+            test_parse(br#"<Document FileVersion="1"/>"#, 1, &[missing], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1463,7 +1542,7 @@ EndMap\n";
             r#"<Property><Part/><ElementMap count="1">Face1 FaceStable 0 trailing</ElementMap></Property>"#,
         );
         assert!(matches!(
-            parse(br#"<Document FileVersion="2"/>"#, 2, &[trailing], &[]),
+            test_parse(br#"<Document FileVersion="2"/>"#, 2, &[trailing], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1473,7 +1552,7 @@ EndMap\n";
         let xml = roxmltree::Document::parse("<Table>\n<![CDATA[1.c value\n]]>\n</Table>")
             .expect("inline table XML");
         let bytes = node_text_bytes(xml.root_element());
-        let table = parse_string_table(&bytes, 1, false).expect("inline string table");
+        let table = test_parse_string_table(&bytes, 1, false).expect("inline string table");
         assert_eq!(table[0].payload, "value");
     }
 
@@ -1670,7 +1749,7 @@ Co 1001000 +2 0 *
     #[test]
     fn rejects_interleaved_new_string_hasher_payload_when_parsed_directly() {
         let document = br#"<Document><StringHasher new="1" count="0"/><Interleaved/><StringHasher2 count="0"/></Document>"#;
-        let error = parse(document, 0, &[], &[]).expect_err("interleaved string table must fail");
+        let error = test_parse(document, 0, &[], &[]).expect_err("interleaved string table must fail");
 
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
@@ -1682,7 +1761,7 @@ Co 1001000 +2 0 *
             "<Property><Part/><Part/></Property>",
         );
         assert!(matches!(
-            parse(b"<Document/>", 0, &[duplicate_part], &[]),
+            test_parse(b"<Document/>", 0, &[duplicate_part], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
@@ -1691,7 +1770,7 @@ Co 1001000 +2 0 *
             "<Property><Part/><ElementMap2/><ElementMap2/></Property>",
         );
         assert!(matches!(
-            parse(b"<Document/>", 0, &[duplicate_map], &[]),
+            test_parse(b"<Document/>", 0, &[duplicate_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1703,7 +1782,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper><ElementMap2/></Wrapper></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", 0, &[nested_map], &[]),
+            test_parse(b"<Document/>", 0, &[nested_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1715,7 +1794,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap><Wrapper/><ElementMap2/></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", 0, &[non_adjacent_map], &[]),
+            test_parse(b"<Document/>", 0, &[non_adjacent_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1727,7 +1806,7 @@ Co 1001000 +2 0 *
             r#"<Property><Part ElementMap="1.0"/><ElementMap2/></Property>"#,
         );
         assert!(matches!(
-            parse(b"<Document/>", 0, &[unmarked_map], &[]),
+            test_parse(b"<Document/>", 0, &[unmarked_map], &[]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1738,7 +1817,7 @@ Co 1001000 +2 0 *
             "Custom::PropertyPartShape",
             "<Property><Part/><ElementMap2/></Property>",
         );
-        let (tables, maps) = parse(b"<Document/>", 0, &[custom], &[]).expect("unknown type");
+        let (tables, maps) = test_parse(b"<Document/>", 0, &[custom], &[]).expect("unknown type");
 
         assert!(tables.as_slice().is_empty());
         assert!(maps.is_empty());

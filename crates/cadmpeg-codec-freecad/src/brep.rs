@@ -7,7 +7,7 @@ use triangulation::TextTriangulation;
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -28,6 +28,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
+use crate::resource::{collection_vec, optional_collection_vec};
 
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2283,6 +2284,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
 
 /// Bind every exact-shape property to and frame its payload.
 pub(crate) fn parse_payloads(
+    ctx: &DecodeContext<'_>,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
@@ -2304,10 +2306,10 @@ pub(crate) fn parse_payloads(
         let payload = if entry.data.is_empty() {
             ShapePayload::Empty
         } else if name.to_ascii_lowercase().ends_with(".bin") {
-            let (facts, version) = parse_binary_prefix(&entry.data)?;
+            let (facts, version) = parse_binary_prefix(ctx, &entry.data)?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, version) = parse_text(&entry.data)?;
+            let (facts, version) = parse_text(ctx, &entry.data)?;
             ShapePayload::Text { facts, version }
         };
         payloads.push(ShapePayloadRecord {
@@ -2496,7 +2498,10 @@ fn census_surface(
     increment(counts, family);
 }
 
-fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
+fn parse_text(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -2560,8 +2565,9 @@ fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecErro
             shape_types.values().sum::<usize>()
         )));
     }
-    let locations = parse_locations(&tokens, &section_counts)?;
+    let locations = parse_locations(ctx, &tokens, &section_counts)?;
     let curve2ds = parse_geometry_table(
+        ctx,
         &tokens,
         &section_counts,
         "Curve2ds",
@@ -2569,18 +2575,19 @@ fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecErro
         parse_curve2d,
     )?;
     let curves =
-        parse_geometry_table(&tokens, &section_counts, "Curves", "Polygon3D", parse_curve)?;
+        parse_geometry_table(ctx, &tokens, &section_counts, "Curves", "Polygon3D", parse_curve)?;
     let surfaces = parse_geometry_table(
+        ctx,
         &tokens,
         &section_counts,
         "Surfaces",
         "Triangulations",
         parse_surface,
     )?;
-    let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
-    let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
-    let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
-    let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
+    let polygons3d = parse_polygons3d(ctx, &tokens, &section_counts)?;
+    let polygons_on_triangulations = parse_polygons_on_triangulations(ctx, &tokens, &section_counts)?;
+    let triangulations = parse_triangulations(ctx, &tokens, &section_counts, topology_version)?;
+    let (tshapes, roots) = parse_tshapes(ctx, &tokens, &section_counts, topology_version)?;
     let facts = ShapeSet {
         locations,
         curve2ds,
@@ -2641,8 +2648,11 @@ fn text_brep_section(
     Ok((index, count))
 }
 
-fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    let mut cursor = BinaryCursor::new(bytes);
+fn parse_binary_prefix(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
+    let mut cursor = BinaryCursor::new(ctx, bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
         let line = line.trim();
@@ -2660,7 +2670,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     let location_count = cursor.section_count("Locations")?;
     // Each location consumes at least its 1-byte kind discriminant.
     let mut locations: Vec<TextLocation> =
-        Vec::with_capacity(cursor.bounded(location_count, 1, "binary Locations")?);
+        collection_vec(cursor.ctx, cursor.bounded(location_count, 1, "binary Locations")?, "FreeCAD B-rep parse_binary_prefix")?;
     for index in 0..location_count {
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
@@ -2723,20 +2733,20 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     }
     let curve_count = cursor.section_count("Curve2ds")?;
     // Each parameter curve consumes at least its 1-byte kind discriminant.
-    let mut curve2ds = Vec::with_capacity(cursor.bounded(curve_count, 1, "binary Curve2ds")?);
+    let mut curve2ds = collection_vec(cursor.ctx, cursor.bounded(curve_count, 1, "binary Curve2ds")?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..curve_count {
         curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
     }
     let curve_count = cursor.section_count("Curves")?;
     // Each 3D curve consumes at least its 1-byte kind discriminant.
-    let mut curves = Vec::with_capacity(cursor.bounded(curve_count, 1, "binary Curves")?);
+    let mut curves = collection_vec(cursor.ctx, cursor.bounded(curve_count, 1, "binary Curves")?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..curve_count {
         curves.push(parse_binary_curve(&mut cursor, 0)?);
     }
     let polygon_count = cursor.section_count("Polygon3D")?;
     // Each 3D polygon consumes at least a 4-byte node count, a 1-byte flag, and an 8-byte deflection.
     let mut polygons3d =
-        Vec::with_capacity(cursor.bounded(polygon_count, 13, "binary Polygon3D")?);
+        collection_vec(cursor.ctx, cursor.bounded(polygon_count, 13, "binary Polygon3D")?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..polygon_count {
         let node_count = cursor.count("binary 3D polygon node count")?;
         let has_parameters = cursor.bool("binary 3D polygon parameter flag")?;
@@ -2759,11 +2769,11 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     }
     let indexed_polygon_count = cursor.section_count("PolygonOnTriangulations")?;
     // Each indexed polygon consumes at least a 4-byte node count, an 8-byte deflection, and a 1-byte flag.
-    let mut polygons_on_triangulations = Vec::with_capacity(cursor.bounded(
+    let mut polygons_on_triangulations = collection_vec(cursor.ctx, cursor.bounded(
         indexed_polygon_count,
         13,
         "binary PolygonOnTriangulations",
-    )?);
+    )?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..indexed_polygon_count {
         let node_count = cursor.count("binary indexed polygon node count")?;
         let nodes = (0..node_count)
@@ -2796,14 +2806,14 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     }
     let surface_count = cursor.section_count("Surfaces")?;
     // Each surface consumes at least its 1-byte kind discriminant.
-    let mut surfaces = Vec::with_capacity(cursor.bounded(surface_count, 1, "binary Surfaces")?);
+    let mut surfaces = collection_vec(cursor.ctx, cursor.bounded(surface_count, 1, "binary Surfaces")?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..surface_count {
         surfaces.push(parse_binary_surface(&mut cursor, 0)?);
     }
     let triangulation_count = cursor.section_count("Triangulations")?;
     // Each triangulation consumes at least two 4-byte counts, a 1-byte flag, and an 8-byte deflection.
     let mut triangulations =
-        Vec::with_capacity(cursor.bounded(triangulation_count, 17, "binary Triangulations")?);
+        collection_vec(cursor.ctx, cursor.bounded(triangulation_count, 17, "binary Triangulations")?, "FreeCAD B-rep parse_binary_prefix")?;
     for _ in 0..triangulation_count {
         let node_count = cursor.count("binary triangulation node count")?;
         let triangle_count = cursor.count("binary triangulation triangle count")?;
@@ -2846,7 +2856,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     }
     let tshape_count = cursor.section_count("TShapes")?;
     // Each TShape consumes at least its 1-byte kind discriminant.
-    let mut tshapes = Vec::with_capacity(cursor.bounded(tshape_count, 1, "binary TShapes")?);
+    let mut tshapes = collection_vec(cursor.ctx, cursor.bounded(tshape_count, 1, "binary TShapes")?, "FreeCAD B-rep parse_binary_prefix")?;
     for index in 0..tshape_count {
         tshapes.push(parse_binary_tshape(
             &mut cursor,
@@ -2909,7 +2919,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
 
 #[allow(clippy::too_many_arguments)]
 fn parse_binary_tshape(
-    cursor: &mut BinaryCursor<'_>,
+    cursor: &mut BinaryCursor<'_, '_, '_>,
     version: u8,
     index: usize,
     tshape_count: usize,
@@ -3146,7 +3156,7 @@ fn parse_binary_tshape(
 
 #[allow(clippy::too_many_arguments)]
 fn parse_binary_edge_representation(
-    cursor: &mut BinaryCursor<'_>,
+    cursor: &mut BinaryCursor<'_, '_, '_>,
     version: u8,
     kind: u8,
     curve_count: usize,
@@ -3369,7 +3379,7 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
 }
 
 fn parse_binary_surface(
-    cursor: &mut BinaryCursor<'_>,
+    cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3470,8 +3480,8 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier surface pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_surface")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -3518,8 +3528,8 @@ fn parse_binary_surface(
             let rational = u_rational || v_rational;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline surface pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_surface")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline surface pole")?);
                 if let Some(weights) = &mut weights {
@@ -3527,6 +3537,7 @@ fn parse_binary_surface(
                 }
             }
             TextSurface::Nurbs(normalize_periodic_surface(
+                cursor.ctx,
                 [u_degree, v_degree],
                 [
                     cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
@@ -3573,7 +3584,7 @@ fn checked_grid_count(u_count: usize, v_count: usize, label: &str) -> Result<usi
 }
 
 fn parse_binary_curve(
-    cursor: &mut BinaryCursor<'_>,
+    cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3644,8 +3655,8 @@ fn parse_binary_curve(
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary Bezier pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_curve")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -3673,8 +3684,8 @@ fn parse_binary_curve(
             let knot_count = cursor.count("binary B-spline knot count")?;
             // Each pole consumes at least a 24-byte point3.
             let capacity = cursor.bounded(pole_count, 24, "binary B-spline pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_curve")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point3("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -3682,7 +3693,7 @@ fn parse_binary_curve(
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
-            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
                 NurbsCurve::from_finite_lanes(degree, knots, control_points, weights, periodic)
@@ -3712,7 +3723,7 @@ fn parse_binary_curve(
 }
 
 fn parse_binary_curve2d(
-    cursor: &mut BinaryCursor<'_>,
+    cursor: &mut BinaryCursor<'_, '_, '_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
     if depth > MAX_GEOMETRY_NESTING_DEPTH {
@@ -3759,8 +3770,8 @@ fn parse_binary_curve2d(
                 .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
             // Each pole consumes at least a 16-byte point2.
             let capacity = cursor.bounded(pole_count, 16, "binary Bezier parameter pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_curve2d")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point2("binary Bezier pole")?);
                 if let Some(weights) = &mut weights {
@@ -3785,8 +3796,8 @@ fn parse_binary_curve2d(
             let knot_count = cursor.count("binary B-spline knot count")?;
             // Each pole consumes at least a 16-byte point2.
             let capacity = cursor.bounded(pole_count, 16, "binary B-spline parameter pole")?;
-            let mut control_points = Vec::with_capacity(capacity);
-            let mut weights = rational.then(|| Vec::with_capacity(capacity));
+            let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_binary_curve2d")?;
+            let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
             for _ in 0..pole_count {
                 control_points.push(cursor.finite_point2("binary B-spline pole")?);
                 if let Some(weights) = &mut weights {
@@ -3794,7 +3805,7 @@ fn parse_binary_curve2d(
                 }
             }
             let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
-            let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
+            let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve2d::Nurbs(NurbsCurve2d {
                 degree,
@@ -3825,14 +3836,16 @@ fn parse_binary_curve2d(
     })
 }
 
-struct BinaryCursor<'a> {
+struct BinaryCursor<'a, 'c, 'r> {
     view: View<'a>,
+    ctx: &'c DecodeContext<'r>,
 }
 
-impl<'a> BinaryCursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
+impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
+    fn new(ctx: &'c DecodeContext<'r>, bytes: &'a [u8]) -> Self {
         Self {
             view: View::over_retained(bytes),
+            ctx,
         }
     }
 
@@ -3983,6 +3996,7 @@ impl<'a> BinaryCursor<'a> {
 }
 
 fn parse_locations(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextLocation>, CodecError> {
@@ -3996,10 +4010,10 @@ fn parse_locations(
         .position(|token| *token == "Curve2ds")
         .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?;
     let count = section_counts.get("Locations").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..end]);
+    let mut cursor = TokenCursor::new(ctx, &tokens[start..end]);
     // Each location consumes at least its one type token.
     let mut locations: Vec<TextLocation> =
-        Vec::with_capacity(cursor.bounded(count, 1, "text Locations")?);
+        collection_vec(cursor.ctx, cursor.bounded(count, 1, "text Locations")?, "FreeCAD B-rep parse_locations")?;
     for index in 0..count {
         let kind = cursor.integer("location type")?;
         let location = match kind {
@@ -4069,11 +4083,12 @@ fn parse_locations(
 }
 
 fn parse_geometry_table<T>(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     table: &str,
     next_table: &str,
-    mut parse: impl FnMut(&mut TokenCursor<'_>, usize, usize) -> Result<T, CodecError>,
+    mut parse: impl FnMut(&mut TokenCursor<'_, '_, '_>, usize, usize) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let start = tokens
         .iter()
@@ -4087,11 +4102,11 @@ fn parse_geometry_table<T>(
             CodecError::malformed(format_args!("text B-rep has no {next_table} table"))
         })?;
     let count = section_counts.get(table).copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(tokens.get(start..end).ok_or_else(|| {
+    let mut cursor = TokenCursor::new(ctx, tokens.get(start..end).ok_or_else(|| {
         CodecError::malformed(format_args!("text B-rep {table} table has invalid bounds"))
     })?);
     // Every row consumes at least its type token.
-    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, &format!("text {table}"))?);
+    let mut curves = collection_vec(cursor.ctx, cursor.bounded(count, 1, &format!("text {table}"))?, "FreeCAD B-rep parse_geometry_table")?;
     for index in 0..count {
         curves.push(parse(&mut cursor, 0, index + 1)?);
     }
@@ -4104,7 +4119,7 @@ fn parse_geometry_table<T>(
 }
 
 fn parse_curve2d(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve2d, CodecError> {
@@ -4174,12 +4189,12 @@ fn parse_curve2d(
     })
 }
 
-fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
+fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve2d, CodecError> {
     let rational = cursor.boolean("2D Bezier rational flag")?;
     let degree = cursor.count("2D Bezier degree", 64)?;
     let pole_count = degree + 1;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    let mut control_points = collection_vec(cursor.ctx, pole_count, "FreeCAD B-rep parse_bezier_curve2d")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point2("2D Bezier pole")?);
         if let Some(weights) = &mut weights {
@@ -4195,7 +4210,7 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Co
     })
 }
 
-fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, CodecError> {
+fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve2d, CodecError> {
     let rational = cursor.boolean("2D B-spline rational flag")?;
     let periodic = cursor.boolean("2D B-spline periodic flag")?;
     let degree = cursor.count("2D B-spline degree", 64)?;
@@ -4203,8 +4218,8 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
     let knot_count = cursor.count("2D B-spline knot count", 1_000_000)?;
     // Each pole consumes at least its two point2 tokens.
     let capacity = cursor.bounded(pole_count, 2, "2D B-spline pole")?;
-    let mut control_points = Vec::with_capacity(capacity);
-    let mut weights = rational.then(|| Vec::with_capacity(capacity));
+    let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_nurbs_curve2d")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point2("2D B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -4212,7 +4227,7 @@ fn parse_nurbs_curve2d(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve2d, Cod
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "2D B-spline")?;
-    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     Ok(NurbsCurve2d {
         degree: degree as u32,
@@ -4255,26 +4270,27 @@ fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
 }
 
 fn parse_polygons3d(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextPolygon3d>, CodecError> {
-    let mut cursor = section_cursor(tokens, "Polygon3D", "PolygonOnTriangulations")?;
+    let mut cursor = section_cursor(ctx, tokens, "Polygon3D", "PolygonOnTriangulations")?;
     let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
     // Each polygon consumes at least a node-count, flag, and deflection token.
-    let mut polygons = Vec::with_capacity(cursor.bounded(count, 3, "text Polygon3D")?);
+    let mut polygons = collection_vec(cursor.ctx, cursor.bounded(count, 3, "text Polygon3D")?, "FreeCAD B-rep parse_polygons3d")?;
     for _ in 0..count {
         let node_count = cursor.count("3D polygon node count", 1_000_000)?;
         let has_parameters = cursor.boolean("3D polygon parameter flag")?;
         let deflection = cursor.finite_real("3D polygon deflection")?;
         // Each node consumes its three point tokens.
-        let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "3D polygon node")?);
+        let mut nodes = collection_vec(cursor.ctx, cursor.bounded(node_count, 3, "3D polygon node")?, "FreeCAD B-rep parse_polygons3d")?;
         for _ in 0..node_count {
             nodes.push(cursor.finite_point("3D polygon node")?);
         }
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
             let mut parameters =
-                Vec::with_capacity(cursor.bounded(node_count, 1, "3D polygon parameter")?);
+                collection_vec(cursor.ctx, cursor.bounded(node_count, 1, "3D polygon parameter")?, "FreeCAD B-rep parse_polygons3d")?;
             for _ in 0..node_count {
                 parameters.push(cursor.finite_real("3D polygon parameter")?);
             }
@@ -4293,22 +4309,23 @@ fn parse_polygons3d(
 }
 
 fn parse_polygons_on_triangulations(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
 ) -> Result<Vec<TextPolygonOnTriangulation>, CodecError> {
-    let mut cursor = section_cursor(tokens, "PolygonOnTriangulations", "Surfaces")?;
+    let mut cursor = section_cursor(ctx, tokens, "PolygonOnTriangulations", "Surfaces")?;
     let count = section_counts
         .get("PolygonOnTriangulations")
         .copied()
         .unwrap_or(0);
     // Each polygon consumes at least a node-count, marker, deflection, and flag token.
     let mut polygons =
-        Vec::with_capacity(cursor.bounded(count, 4, "text PolygonOnTriangulations")?);
+        collection_vec(cursor.ctx, cursor.bounded(count, 4, "text PolygonOnTriangulations")?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
     for _ in 0..count {
         let node_count = cursor.count("polygon-on-triangulation node count", 1_000_000)?;
         // Each node index consumes its one token.
         let mut nodes =
-            Vec::with_capacity(cursor.bounded(node_count, 1, "polygon-on-triangulation node")?);
+            collection_vec(cursor.ctx, cursor.bounded(node_count, 1, "polygon-on-triangulation node")?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
         for _ in 0..node_count {
             let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
             if node == 0 {
@@ -4327,11 +4344,11 @@ fn parse_polygons_on_triangulations(
         let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
         let parameters = if has_parameters {
             // Each parameter consumes its one token.
-            let mut parameters = Vec::with_capacity(cursor.bounded(
+            let mut parameters = collection_vec(cursor.ctx, cursor.bounded(
                 node_count,
                 1,
                 "polygon-on-triangulation parameter",
-            )?);
+            )?, "FreeCAD B-rep parse_polygons_on_triangulations")?;
             for _ in 0..node_count {
                 parameters.push(cursor.finite_real("polygon-on-triangulation parameter")?);
             }
@@ -4350,14 +4367,15 @@ fn parse_polygons_on_triangulations(
 }
 
 fn parse_triangulations(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<Vec<TextTriangulation>, CodecError> {
-    let mut cursor = section_cursor(tokens, "Triangulations", "TShapes")?;
+    let mut cursor = section_cursor(ctx, tokens, "Triangulations", "TShapes")?;
     let count = section_counts.get("Triangulations").copied().unwrap_or(0);
     // Each triangulation consumes at least two counts, a flag, and a deflection token.
-    let mut triangulations = Vec::with_capacity(cursor.bounded(count, 4, "text Triangulations")?);
+    let mut triangulations = collection_vec(cursor.ctx, cursor.bounded(count, 4, "text Triangulations")?, "FreeCAD B-rep parse_triangulations")?;
     for _ in 0..count {
         let node_count = cursor.count("triangulation node count", 1_000_000)?;
         let triangle_count = cursor.count("triangulation triangle count", 1_000_000)?;
@@ -4365,14 +4383,14 @@ fn parse_triangulations(
         let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
         let deflection = cursor.finite_real("triangulation deflection")?;
         // Each node consumes its three point tokens.
-        let mut nodes = Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation node")?);
+        let mut nodes = collection_vec(cursor.ctx, cursor.bounded(node_count, 3, "triangulation node")?, "FreeCAD B-rep parse_triangulations")?;
         for _ in 0..node_count {
             nodes.push(cursor.finite_point("triangulation node")?);
         }
         let uv_nodes = if has_uv {
             // Each UV node consumes its two point2 tokens.
             let mut uv_nodes =
-                Vec::with_capacity(cursor.bounded(node_count, 2, "triangulation UV node")?);
+                collection_vec(cursor.ctx, cursor.bounded(node_count, 2, "triangulation UV node")?, "FreeCAD B-rep parse_triangulations")?;
             for _ in 0..node_count {
                 uv_nodes.push(cursor.finite_point2("triangulation UV node")?);
             }
@@ -4382,7 +4400,7 @@ fn parse_triangulations(
         };
         // Each triangle consumes its three index tokens.
         let mut triangles =
-            Vec::with_capacity(cursor.bounded(triangle_count, 3, "triangulation triangle")?);
+            collection_vec(cursor.ctx, cursor.bounded(triangle_count, 3, "triangulation triangle")?, "FreeCAD B-rep parse_triangulations")?;
         for _ in 0..triangle_count {
             let mut triangle = [0_u32; 3];
             for node in &mut triangle {
@@ -4399,7 +4417,7 @@ fn parse_triangulations(
         let normals = if has_normals {
             // Each normal consumes its three vector tokens.
             let mut normals =
-                Vec::with_capacity(cursor.bounded(node_count, 3, "triangulation normal")?);
+                collection_vec(cursor.ctx, cursor.bounded(node_count, 3, "triangulation normal")?, "FreeCAD B-rep parse_triangulations")?;
             for _ in 0..node_count {
                 normals.push(cursor.finite_vector("triangulation normal")?);
             }
@@ -4416,11 +4434,12 @@ fn parse_triangulations(
     Ok(triangulations)
 }
 
-fn section_cursor<'a>(
+fn section_cursor<'a, 'c, 'r>(
+    ctx: &'c DecodeContext<'r>,
     tokens: &'a [&'a str],
     section: &str,
     following: &str,
-) -> Result<TokenCursor<'a>, CodecError> {
+) -> Result<TokenCursor<'a, 'c, 'r>, CodecError> {
     let start = tokens
         .iter()
         .position(|token| *token == section)
@@ -4432,10 +4451,10 @@ fn section_cursor<'a>(
         .ok_or_else(|| {
             CodecError::malformed(format_args!("text B-rep has no {following} table"))
         })?;
-    Ok(TokenCursor::new(&tokens[start..end]))
+    Ok(TokenCursor::new(ctx, &tokens[start..end]))
 }
 
-fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<(), CodecError> {
+fn ensure_section_consumed(cursor: &TokenCursor<'_, '_, '_>, section: &str) -> Result<(), CodecError> {
     if cursor.is_empty() {
         Ok(())
     } else {
@@ -4446,6 +4465,7 @@ fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<()
 }
 
 fn parse_tshapes(
+    ctx: &DecodeContext<'_>,
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
     topology_version: u8,
@@ -4456,9 +4476,9 @@ fn parse_tshapes(
         .ok_or_else(|| CodecError::Malformed("text B-rep has no TShapes table".into()))?
         + 2;
     let count = section_counts.get("TShapes").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..]);
+    let mut cursor = TokenCursor::new(ctx, &tokens[start..]);
     // Each TShape consumes at least its one kind token.
-    let mut shapes = Vec::with_capacity(cursor.bounded(count, 1, "text TShapes")?);
+    let mut shapes = collection_vec(cursor.ctx, cursor.bounded(count, 1, "text TShapes")?, "FreeCAD B-rep parse_tshapes")?;
     for index in 1..=count {
         let kind = parse_shape_kind(cursor.next("TShape kind")?)?;
         let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
@@ -4518,7 +4538,7 @@ fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
 
 fn parse_tshape_geometry(
     kind: TextShapeKind,
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
@@ -4535,7 +4555,7 @@ fn parse_tshape_geometry(
 }
 
 fn parse_vertex_geometry(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let tolerance = cursor.finite_real("vertex tolerance")?;
@@ -4552,7 +4572,7 @@ fn parse_vertex_geometry(
                 "vertex representation-count limit exceeded".into(),
             ));
         }
-        let location_of = |cursor: &mut TokenCursor<'_>| {
+        let location_of = |cursor: &mut TokenCursor<'_, '_, '_>| {
             parse_reference(cursor, "vertex location", counts["Locations"], true)
         };
         let representation = match kind {
@@ -4594,7 +4614,7 @@ fn parse_vertex_geometry(
 }
 
 fn parse_edge_geometry(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextTShapeGeometry, CodecError> {
@@ -4631,7 +4651,7 @@ fn parse_edge_geometry(
 
 fn parse_edge_representation(
     kind: i64,
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     counts: &BTreeMap<String, usize>,
     topology_version: u8,
 ) -> Result<TextEdgeRepresentation, CodecError> {
@@ -4778,7 +4798,7 @@ fn parse_edge_representation(
 }
 
 fn parse_face_geometry(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let natural_restriction = cursor.boolean("face natural-restriction flag")?;
@@ -4825,7 +4845,7 @@ fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], Cod
 }
 
 fn parse_shape_use(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     shape_count: usize,
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextShapeUse, CodecError> {
@@ -4859,7 +4879,7 @@ fn parse_shape_use(
 }
 
 fn parse_reference(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     label: &str,
     maximum: usize,
     allow_zero: bool,
@@ -4872,7 +4892,7 @@ fn parse_reference(
 }
 
 fn parse_reference_suffix(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     label: &str,
     maximum: usize,
 ) -> Result<(usize, Option<String>), CodecError> {
@@ -4892,7 +4912,7 @@ fn parse_reference_suffix(
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
 
-fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
+fn parse_range(cursor: &mut TokenCursor<'_, '_, '_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
     let range = [
         cursor.finite_real(&format!("{label} first parameter"))?,
         cursor.finite_real(&format!("{label} last parameter"))?,
@@ -4906,7 +4926,7 @@ fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[FiniteReal;
 }
 
 fn parse_surface(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextSurface, CodecError> {
@@ -4994,7 +5014,7 @@ enum AnalyticSurfaceKind {
 
 fn parse_analytic_surface(
     kind: AnalyticSurfaceKind,
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
 ) -> Result<TextSurface, CodecError> {
     let origin = cursor.finite_point("surface origin")?;
     let axis = cursor.finite_vector("surface axis")?;
@@ -5053,7 +5073,7 @@ fn frame_v_reversed(axis: Vector3, x_axis: Vector3, y_axis: Vector3) -> bool {
     ) < 0.0
 }
 
-fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
+fn parse_nurbs_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurface, CodecError> {
     let u_rational = cursor.boolean("B-spline u rational flag")?;
     let v_rational = cursor.boolean("B-spline v rational flag")?;
     let rational = u_rational || v_rational;
@@ -5071,8 +5091,8 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
         .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline surface pole")?;
-    let mut control_points = Vec::with_capacity(capacity);
-    let mut weights = rational.then(|| Vec::with_capacity(capacity));
+    let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_nurbs_surface")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5082,6 +5102,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
     normalize_periodic_surface(
+        cursor.ctx,
         [u_degree as u32, v_degree as u32],
         [u_knots, v_knots],
         [u_count, v_count],
@@ -5091,7 +5112,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     )
 }
 
-fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
+fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSurface, CodecError> {
     let u_rational = cursor.boolean("Bezier u rational flag")?;
     let v_rational = cursor.boolean("Bezier v rational flag")?;
     let rational = u_rational || v_rational;
@@ -5102,8 +5123,8 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
     let pole_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| CodecError::Malformed("Bezier surface pole count overflow".into()))?;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    let mut control_points = collection_vec(cursor.ctx, pole_count, "FreeCAD B-rep parse_bezier_surface")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier surface pole")?);
         if let Some(weights) = &mut weights {
@@ -5131,7 +5152,7 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
 }
 
 fn parse_knots(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     knot_count: usize,
     degree: usize,
     label: &str,
@@ -5153,6 +5174,7 @@ fn parse_knots(
 }
 
 fn normalize_periodic_knots(
+    ctx: &DecodeContext<'_>,
     knots: Vec<FiniteReal>,
     degree: u32,
     periodic: bool,
@@ -5192,10 +5214,10 @@ fn normalize_periodic_knots(
             "periodic B-spline has insufficient interior knots".into(),
         ));
     }
-    let mut normalized =
-        Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
-            CodecError::Malformed("periodic B-spline knot limit exceeded".into())
-        })?);
+    let normalized_count = knots.len().checked_add(2 * padding).ok_or_else(|| {
+        CodecError::Malformed("periodic B-spline knot limit exceeded".into())
+    })?;
+    let mut normalized = collection_vec(ctx, normalized_count, "FreeCAD periodic B-rep knots")?;
     let overflow =
         || CodecError::Malformed("periodic B-spline extension exceeds finite knot range".into());
     normalized.extend(
@@ -5244,6 +5266,7 @@ fn append_periodic_curve_poles<T: Clone>(
 }
 
 fn normalize_periodic_surface(
+    ctx: &DecodeContext<'_>,
     degrees: [u32; 2],
     knots: [Vec<FiniteReal>; 2],
     counts: [usize; 2],
@@ -5252,8 +5275,8 @@ fn normalize_periodic_surface(
     periodic: [bool; 2],
 ) -> Result<NurbsSurface, CodecError> {
     let [u_source_knots, v_source_knots] = knots;
-    let (u_knots, u_padding) = normalize_periodic_knots(u_source_knots, degrees[0], periodic[0])?;
-    let (v_knots, v_padding) = normalize_periodic_knots(v_source_knots, degrees[1], periodic[1])?;
+    let (u_knots, u_padding) = normalize_periodic_knots(ctx, u_source_knots, degrees[0], periodic[0])?;
+    let (v_knots, v_padding) = normalize_periodic_knots(ctx, v_source_knots, degrees[1], periodic[1])?;
     let [old_u, old_v] = counts;
     let source_count = checked_grid_count(old_u, old_v, "B-spline")?;
     if control_points.len() != source_count
@@ -5283,8 +5306,13 @@ fn normalize_periodic_surface(
     let (control_points, weights) = if u_padding != 0 || v_padding != 0 {
         let old_points = &control_points;
         let old_weights = weights.as_deref();
-        let mut points = Vec::with_capacity(new_count);
-        let mut weights = old_weights.map(|_| Vec::with_capacity(new_count));
+        let mut points = collection_vec(ctx, new_count, "FreeCAD periodic B-rep surface poles")?;
+        let mut weights = optional_collection_vec(
+            ctx,
+            old_weights.is_some(),
+            new_count,
+            "FreeCAD periodic B-rep surface weights",
+        )?;
         for u in 0..new_u {
             for v in 0..new_v {
                 let source = (u % old_u) * old_v + v % old_v;
@@ -5316,7 +5344,7 @@ fn normalize_periodic_surface(
 }
 
 fn parse_curve(
-    cursor: &mut TokenCursor<'_>,
+    cursor: &mut TokenCursor<'_, '_, '_>,
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve, CodecError> {
@@ -5420,7 +5448,7 @@ fn parse_curve(
     })
 }
 
-fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
+fn parse_nurbs_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve, CodecError> {
     let rational = cursor.boolean("B-spline rational flag")?;
     let periodic = cursor.boolean("B-spline periodic flag")?;
     let degree = cursor.count("B-spline degree", 64)?;
@@ -5428,8 +5456,8 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let knot_count = cursor.count("B-spline knot count", 1_000_000)?;
     // Each pole consumes its three point tokens.
     let capacity = cursor.bounded(pole_count, 3, "B-spline pole")?;
-    let mut control_points = Vec::with_capacity(capacity);
-    let mut weights = rational.then(|| Vec::with_capacity(capacity));
+    let mut control_points = collection_vec(cursor.ctx, capacity, "FreeCAD B-rep parse_nurbs_curve")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, capacity, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("B-spline pole")?);
         if let Some(weights) = &mut weights {
@@ -5437,18 +5465,18 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
         }
     }
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
-    let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
+    let (knots, padding) = normalize_periodic_knots(cursor.ctx, knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
     NurbsCurve::from_finite_lanes(degree as u32, knots, control_points, weights, periodic)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
-fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecError> {
+fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve, CodecError> {
     let rational = cursor.boolean("Bezier rational flag")?;
     let degree = cursor.count("Bezier degree", 64)?;
     let pole_count = degree + 1;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    let mut control_points = collection_vec(cursor.ctx, pole_count, "FreeCAD B-rep parse_bezier_curve")?;
+    let mut weights = optional_collection_vec(cursor.ctx, rational, pole_count, "FreeCAD B-rep weights")?;
     for _ in 0..pole_count {
         control_points.push(cursor.finite_point("Bezier pole")?);
         if let Some(weights) = &mut weights {
@@ -5471,14 +5499,19 @@ fn clamped_bezier_knots(degree: usize) -> Vec<FiniteReal> {
         .collect()
 }
 
-struct TokenCursor<'a> {
+struct TokenCursor<'a, 'c, 'r> {
     tokens: &'a [&'a str],
     index: usize,
+    ctx: &'c DecodeContext<'r>,
 }
 
-impl<'a> TokenCursor<'a> {
-    fn new(tokens: &'a [&'a str]) -> Self {
-        Self { tokens, index: 0 }
+impl<'a, 'c, 'r> TokenCursor<'a, 'c, 'r> {
+    fn new(ctx: &'c DecodeContext<'r>, tokens: &'a [&'a str]) -> Self {
+        Self {
+            tokens,
+            index: 0,
+            ctx,
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -6188,6 +6221,8 @@ pub(crate) mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_ir::transform::Transform;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
 
     use super::{
         normalize_periodic_surface, parse_analytic_surface, parse_binary_edge_representation,
@@ -6201,6 +6236,83 @@ pub(crate) mod tests {
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within the input limit");
+        f(&ctx)
+    }
+
+    fn with_collection_limit<T>(
+        bytes: &[u8],
+        limit: u64,
+        f: impl FnOnce(&DecodeContext<'_>) -> T,
+    ) -> T {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("input is within the root limit");
+        f(&ctx)
+    }
+
+    #[test]
+    fn binary_brep_location_capacity_refuses_on_collection_limit() {
+        let mut bytes = b"Open CASCADE Topology V1\nLocations 1\n".to_vec();
+        bytes.push(1);
+        let result = with_collection_limit(&bytes, 0, |ctx| parse_binary_prefix(ctx, &bytes));
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD B-rep parse_binary_prefix"
+        ));
+    }
+
+    #[test]
+    fn text_brep_location_capacity_refuses_on_collection_limit() {
+        let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 1 1 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0";
+        let result = with_collection_limit(bytes, 0, |ctx| parse_text(ctx, bytes));
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD B-rep parse_locations"
+        ));
+    }
+
+    #[test]
+    fn periodic_brep_knot_capacity_refuses_on_collection_limit() {
+        let knots = [0.0, 0.0, 0.5, 1.0, 1.0]
+            .into_iter()
+            .map(|value| FiniteReal::new(value).expect("finite knot"))
+            .collect();
+        let result = with_collection_limit(&[], 0, |ctx| {
+            super::normalize_periodic_knots(ctx, knots, 2, true)
+        });
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.operation == "FreeCAD periodic B-rep knots"
+        ));
+    }
+
+    fn test_parse_text(bytes: &[u8]) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
+        in_decode_context(|ctx| parse_text(ctx, bytes))
+    }
+
+    fn test_parse_binary_prefix(
+        bytes: &[u8],
+    ) -> Result<(super::ShapeSet, super::BinaryTopologyVersion), CodecError> {
+        in_decode_context(|ctx| parse_binary_prefix(ctx, bytes))
+    }
+
+    fn test_parse_payloads(
+        properties: &[PropertyRecord],
+        entries: &[EntryRecord],
+    ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
+        in_decode_context(|ctx| parse_payloads(ctx, properties, entries))
+    }
 
     #[test]
     fn indexed_polygon_admits_only_aligned_parameters() {
@@ -6242,7 +6354,7 @@ pub(crate) mod tests {
             let text = format!(
                 "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n1 0 {value} 0 0 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
             );
-            let error = super::parse_text(text.as_bytes()).expect_err("invalid source deflection");
+        let error = test_parse_text(text.as_bytes()).expect_err("invalid source deflection");
             assert!(error.to_string().contains(expected), "{error}");
         }
 
@@ -6514,7 +6626,9 @@ pub(crate) mod tests {
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
+        in_decode_context(|ctx| {
         let normalized = normalize_periodic_surface(
+            ctx,
             [3, 1],
             [
                 vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
@@ -6557,6 +6671,7 @@ pub(crate) mod tests {
         assert!((start.x - end.x).abs() <= 1.0e-12);
         assert!((start.y - end.y).abs() <= 1.0e-12);
         assert!((start.z - end.z).abs() <= 1.0e-12);
+        });
     }
 
     fn text_brep(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> String {
@@ -6567,6 +6682,7 @@ pub(crate) mod tests {
 
     #[test]
     fn binary_edge_continuity_retains_decimal_byte_spelling() {
+        in_decode_context(|ctx| {
         for (byte, spelling) in [(0, "0"), (2, "2")] {
             for kind in [3, 4] {
                 let mut bytes = Vec::new();
@@ -6584,7 +6700,7 @@ pub(crate) mod tests {
                     bytes.extend_from_slice(&1_i32.to_le_bytes());
                     bytes.extend_from_slice(&0_i32.to_le_bytes());
                 }
-                let mut cursor = BinaryCursor::new(&bytes);
+                let mut cursor = BinaryCursor::new(ctx, &bytes);
                 let record =
                     parse_binary_edge_representation(&mut cursor, 1, kind, 0, 2, 1, 0, 0, 0, 0)
                         .unwrap();
@@ -6597,12 +6713,14 @@ pub(crate) mod tests {
                 assert_eq!(cursor.remaining(), 0);
             }
         }
+        });
     }
 
     #[test]
     fn parses_joined_seam_pcurve_continuity_token() {
+        in_decode_context(|ctx| {
         let tokens = ["1", "2CN", "1", "0", "0", "10"];
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         let counts = BTreeMap::from([
             ("Curve2ds".to_owned(), 2),
             ("Surfaces".to_owned(), 1),
@@ -6619,14 +6737,16 @@ pub(crate) mod tests {
         assert_eq!(curves, [1, 2]);
         assert_eq!(continuity, "CN");
         assert!(cursor.is_empty());
+        });
     }
 
     #[test]
     fn retains_indirect_analytic_surface_parameter_frames() {
+        in_decode_context(|ctx| {
         let tokens = [
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",
         ];
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         let cone =
             parse_analytic_surface(AnalyticSurfaceKind::Cone, &mut cursor).expect("indirect cone");
         assert!(matches!(
@@ -6642,7 +6762,7 @@ pub(crate) mod tests {
         let tokens = [
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2",
         ];
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         let sphere = parse_analytic_surface(AnalyticSurfaceKind::Sphere, &mut cursor)
             .expect("indirect sphere");
         assert!(matches!(
@@ -6657,7 +6777,7 @@ pub(crate) mod tests {
         let tokens = [
             "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "4", "1",
         ];
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         let torus = parse_analytic_surface(AnalyticSurfaceKind::Torus, &mut cursor)
             .expect("indirect torus");
         assert!(matches!(
@@ -6669,6 +6789,7 @@ pub(crate) mod tests {
                 ..
             } if major_radius.get() == 4.0 && minor_radius.get() == 1.0
         ));
+        });
     }
 
     #[test]
@@ -6709,7 +6830,7 @@ pub(crate) mod tests {
             data: Vec::new(),
         };
         let payloads =
-            parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
+            test_parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
         assert!(matches!(payloads[0].payload, ShapePayload::Empty));
@@ -6737,7 +6858,7 @@ pub(crate) mod tests {
             )
             .unwrap(),
         };
-        let payloads = parse_payloads(&[property], &[]).expect("nested carrier is ignored");
+        let payloads = test_parse_payloads(&[property], &[]).expect("nested carrier is ignored");
         assert!(payloads.is_empty());
     }
 
@@ -6763,7 +6884,7 @@ pub(crate) mod tests {
             )
             .unwrap(),
         };
-        assert!(parse_payloads(&[property], &[]).is_err());
+        assert!(test_parse_payloads(&[property], &[]).is_err());
     }
 
     #[test]
@@ -6784,7 +6905,7 @@ pub(crate) mod tests {
             )
             .unwrap(),
         };
-        let payloads = parse_payloads(&[property], &[]).expect("transient shape is retained");
+        let payloads = test_parse_payloads(&[property], &[]).expect("transient shape is retained");
         assert!(payloads.is_empty());
     }
 
@@ -6807,14 +6928,14 @@ pub(crate) mod tests {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
         };
 
-        let payloads = parse_payloads(&[property], &[]).expect("unknown type is retained");
+        let payloads = test_parse_payloads(&[property], &[]).expect("unknown type is retained");
         assert!(payloads.is_empty());
     }
 
     #[test]
     fn normalizes_rational_bezier_curve_to_nurbs() {
         let input = text_brep("6 1 2 0 0 0 1 5 0 0 2 10 0 0 1", 1, "", 0);
-        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve").0;
+        let facts = test_parse_text(input.as_bytes()).expect("valid Bezier curve").0;
         let TextCurve::Nurbs(curve) = &facts.curves[0] else {
             panic!("Bezier curve was not normalized to NURBS")
         };
@@ -6826,7 +6947,7 @@ pub(crate) mod tests {
     #[test]
     fn normalizes_bezier_surface_to_nurbs() {
         let input = text_brep("", 0, "8 0 0 1 1 0 0 0 0 1 0 1 0 0 1 1 0", 1);
-        let facts = parse_text(input.as_bytes())
+        let facts = test_parse_text(input.as_bytes())
             .expect("valid Bezier surface")
             .0;
         let TextSurface::Nurbs(surface) = &facts.surfaces[0] else {
@@ -6842,11 +6963,11 @@ pub(crate) mod tests {
     #[test]
     fn rejects_invalid_recursive_curve_domains() {
         let reversed = text_brep("8 2 1 1 0 0 0 1 0 0", 1, "", 0);
-        let error = parse_text(reversed.as_bytes()).expect_err("reversed trim must fail");
+        let error = test_parse_text(reversed.as_bytes()).expect_err("reversed trim must fail");
         assert!(error.to_string().contains("parameter range is reversed"));
 
         let zero_normal = text_brep("9 2 0 0 0 1 0 0 0 1 0 0", 1, "", 0);
-        let error = parse_text(zero_normal.as_bytes()).expect_err("zero normal must fail");
+        let error = test_parse_text(zero_normal.as_bytes()).expect_err("zero normal must fail");
         assert!(error.to_string().contains("direction is zero"));
     }
 
@@ -6858,7 +6979,7 @@ pub(crate) mod tests {
             "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
             3,
         );
-        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
+        let facts = test_parse_text(input.as_bytes()).expect("recursive surfaces").0;
         let TextSurface::Extrusion {
             direction,
             directrix,
@@ -6892,7 +7013,7 @@ pub(crate) mod tests {
     fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
         for curve_text in ["8 0 1 1 0 0 0 1 0 0", "9 2 0 0 1 1 0 0 0 1 0 0"] {
             let input = text_brep(curve_text, 1, "", 0);
-            let facts = parse_text(input.as_bytes()).expect("recursive curve").0;
+            let facts = test_parse_text(input.as_bytes()).expect("recursive curve").0;
             let wire = serde_json::to_value(&facts.curves[0]).unwrap();
             let admitted: TextCurve = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
@@ -6904,7 +7025,7 @@ pub(crate) mod tests {
             "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
             3,
         );
-        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
+        let facts = test_parse_text(input.as_bytes()).expect("recursive surfaces").0;
         for surface in facts.surfaces {
             let wire = serde_json::to_value(&surface).unwrap();
             let admitted: TextSurface = serde_json::from_value(wire.clone()).unwrap();
@@ -6915,7 +7036,7 @@ pub(crate) mod tests {
     #[test]
     fn resolves_elementary_and_compound_locations_in_source_order() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 3\n1 1 0 0 5 0 1 0 0 0 0 1 0\n2 1 2 0\n2 1 -1 2 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("location table").0;
+        let facts = test_parse_text(input.as_bytes()).expect("location table").0;
         assert_eq!(facts.locations.len(), 3);
         assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
@@ -6926,13 +7047,13 @@ pub(crate) mod tests {
     #[test]
     fn checked_location_rows_keep_signed_zero_and_source_refusals() {
         let text = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 1\n1 1 -0 0 5 0 1 0 0 0 0 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(text.as_bytes()).expect("finite text location").0;
+        let facts = test_parse_text(text.as_bytes()).expect("finite text location").0;
         assert_eq!(
             facts.locations[0].transform.affine_rows()[0][1].to_bits(),
             (-0.0_f64).to_bits()
         );
         let invalid = text.replace("1 -0 0 5", "1 NaN 0 5");
-        let error = parse_text(invalid.as_bytes()).expect_err("non-finite text location");
+        let error = test_parse_text(invalid.as_bytes()).expect_err("non-finite text location");
         assert!(error
             .to_string()
             .contains("non-finite location transform value"));
@@ -6948,14 +7069,14 @@ pub(crate) mod tests {
             bytes.extend_from_slice(b"Curve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n");
             bytes
         };
-        let facts = parse_binary_prefix(&binary(1.0))
+        let facts = test_parse_binary_prefix(&binary(1.0))
             .expect("finite binary location")
             .0;
         assert_eq!(
             facts.locations[0].transform.affine_rows()[0][1].to_bits(),
             (-0.0_f64).to_bits()
         );
-        let error = parse_binary_prefix(&binary(f64::NAN)).expect_err("non-finite binary location");
+        let error = test_parse_binary_prefix(&binary(f64::NAN)).expect_err("non-finite binary location");
         assert!(error
             .to_string()
             .contains("non-finite binary location transform"));
@@ -7038,7 +7159,7 @@ pub(crate) mod tests {
         }
         bytes.extend_from_slice(b"TShapes 0\n");
 
-        let (facts, version) = parse_binary_prefix(&bytes).expect("binary prefix");
+        let (facts, version) = test_parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(version.number(), 3);
         assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
@@ -7066,7 +7187,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_analytic_spline_and_recursive_parameter_curves() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 3\n1 0 0 1 0\n6 1 2 0 0 1 5 0 2 10 0 1\n8 0 6.28 9 2 2 0 0 1 0 0 1 3\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("2D curve table").0;
+        let facts = test_parse_text(input.as_bytes()).expect("2D curve table").0;
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[1] else {
             panic!("expected normalized 2D Bezier")
@@ -7101,7 +7222,7 @@ pub(crate) mod tests {
     #[test]
     fn expands_periodic_parameter_curve_knots_and_poles() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 1\n7 1 1 6 6 2 0 0 1 1 0 1 1 1 1 0 1 1 -1 0 1 -1 -1 1 0 6 6.283185307179586 6\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes())
+        let facts = test_parse_text(input.as_bytes())
             .expect("periodic parameter curve")
             .0;
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[0] else {
@@ -7125,7 +7246,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_polygonal_carriers_and_version_three_normals() {
         let input = "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n2 1 0.1 0 0 0 1 0 0 0 1\nPolygonOnTriangulations 1\n2 1 2 p 0.2 1 0 1\nSurfaces 0\nTriangulations 1\n3 1 1 1 0.01 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 1 2 3 0 0 1 0 0 1 0 0 1\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("polygonal carriers").0;
+        let facts = test_parse_text(input.as_bytes()).expect("polygonal carriers").0;
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
             facts.polygons3d[0].parameters.as_deref(),
@@ -7163,7 +7284,7 @@ pub(crate) mod tests {
             let input = format!(
                 "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\n{polygon_section}\nSurfaces 0\nTriangulations 0\nTShapes 0\n*"
             );
-            let error = parse_text(input.as_bytes()).unwrap_err();
+            let error = test_parse_text(input.as_bytes()).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
     }
@@ -7171,7 +7292,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_subshape_first_topology_and_reverse_references() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
-        let facts = parse_text(input.as_bytes()).expect("topology table").0;
+        let facts = test_parse_text(input.as_bytes()).expect("topology table").0;
         assert_eq!(facts.tshapes.len(), 8);
         assert_eq!(facts.tshapes[2].kind(), TextShapeKind::Edge);
         assert_eq!(facts.tshapes[2].children[0].shape, 1);
@@ -7199,14 +7320,14 @@ pub(crate) mod tests {
                 "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\nVe 0.001 {point} 0 0 1001000 *\n+1 0 *"
             )
         };
-        let facts = parse_text(table("1 -2.5 3").as_bytes())
+        let facts = test_parse_text(table("1 -2.5 3").as_bytes())
             .expect("vertex table")
             .0;
         let TextTShapeGeometry::Vertex { point, .. } = facts.tshapes[0].geometry else {
             panic!("expected vertex geometry")
         };
         assert_eq!(point, Point3::new(1.0, -2.5, 3.0));
-        let error = parse_text(table("1 inf 3").as_bytes()).expect_err("non-finite vertex");
+        let error = test_parse_text(table("1 inf 3").as_bytes()).expect_err("non-finite vertex");
         assert!(
             error
                 .to_string()
@@ -7218,13 +7339,13 @@ pub(crate) mod tests {
     #[test]
     fn rejects_oversized_and_out_of_order_text_tables() {
         let oversized = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 1000001\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(parse_text(oversized)
+        assert!(test_parse_text(oversized)
             .expect_err("oversized table")
             .to_string()
             .contains("count limit"));
 
         let out_of_order = b"CASCADE Topology V1, (c) Matra-Datavision\nCurve2ds 0\nLocations 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(parse_text(out_of_order)
+        assert!(test_parse_text(out_of_order)
             .expect_err("out-of-order table")
             .to_string()
             .contains("out of order"));
@@ -7234,13 +7355,13 @@ pub(crate) mod tests {
     fn rejects_duplicate_text_headers_and_section_markers() {
         let duplicate_header = b"CASCADE Topology V1, (c) Matra-Datavision\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
         assert!(matches!(
-            parse_text(duplicate_header),
+            test_parse_text(duplicate_header),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
 
         let duplicate_section = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
         assert!(matches!(
-            parse_text(duplicate_section),
+            test_parse_text(duplicate_section),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -7595,7 +7716,9 @@ pub(crate) mod tests {
 
     #[test]
     fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
+        in_decode_context(|ctx| {
         let (knots, padding) = super::normalize_periodic_knots(
+            ctx,
             vec![-1e308, -9e307, 9e307, 1e308]
                 .into_iter()
                 .map(|value| FiniteReal::new(value).unwrap())
@@ -7608,6 +7731,7 @@ pub(crate) mod tests {
         assert!((knots[0].get() / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!((knots[5].get() / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!(super::normalize_periodic_knots(
+            ctx,
             vec![-1e308, 0.0, 1e308]
                 .into_iter()
                 .map(|value| FiniteReal::new(value).unwrap())
@@ -7616,6 +7740,7 @@ pub(crate) mod tests {
             true
         )
         .is_err());
+        });
     }
 
     /// `wrappers` offset surface records over one plane leaf, as text tokens.
@@ -7708,18 +7833,19 @@ pub(crate) mod tests {
 
     #[test]
     fn a_directrix_spends_the_same_budget_as_its_surface_on_both_routes() {
+        in_decode_context(|ctx| {
         // The extrusion record and the line leaf are two of the records.
         let admitted = super::MAX_GEOMETRY_NESTING_DEPTH - 1;
 
         let tokens = text_extrusion_tokens(admitted);
         let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         super::parse_surface(&mut cursor, 0, 1).expect("the budget is admitted");
         assert!(cursor.is_empty());
 
         let tokens = text_extrusion_tokens(admitted + 1);
         let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
-        let error = super::parse_surface(&mut TokenCursor::new(&tokens), 0, 1)
+        let error = super::parse_surface(&mut TokenCursor::new(ctx, &tokens), 0, 1)
             .expect_err("one record past the budget is refused");
         assert!(
             error
@@ -7729,12 +7855,12 @@ pub(crate) mod tests {
         );
 
         let bytes = binary_extrusion_bytes(admitted);
-        let mut cursor = BinaryCursor::new(&bytes);
+        let mut cursor = BinaryCursor::new(ctx, &bytes);
         super::parse_binary_surface(&mut cursor, 0).expect("the budget is admitted");
         assert_eq!(cursor.remaining(), 0);
 
         let bytes = binary_extrusion_bytes(admitted + 1);
-        let error = super::parse_binary_surface(&mut BinaryCursor::new(&bytes), 0)
+        let error = super::parse_binary_surface(&mut BinaryCursor::new(ctx, &bytes), 0)
             .expect_err("one record past the budget is refused");
         assert!(
             error
@@ -7742,13 +7868,15 @@ pub(crate) mod tests {
                 .contains("binary 3D curve nesting exceeds 64"),
             "{error}"
         );
+        });
     }
 
     #[test]
     fn the_text_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        in_decode_context(|ctx| {
         let admitted = text_offset_surface_tokens(super::MAX_GEOMETRY_NESTING_DEPTH);
         let tokens: Vec<&str> = admitted.iter().map(String::as_str).collect();
-        let mut cursor = TokenCursor::new(&tokens);
+        let mut cursor = TokenCursor::new(ctx, &tokens);
         let surface = super::parse_surface(&mut cursor, 0, 1).expect("the budget is admitted");
         assert_eq!(
             text_offset_surface_wrappers(&surface),
@@ -7758,7 +7886,7 @@ pub(crate) mod tests {
 
         let refused = text_offset_surface_tokens(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
         let tokens: Vec<&str> = refused.iter().map(String::as_str).collect();
-        let error = super::parse_surface(&mut TokenCursor::new(&tokens), 0, 1)
+        let error = super::parse_surface(&mut TokenCursor::new(ctx, &tokens), 0, 1)
             .expect_err("one record past the budget is refused");
         assert!(
             error
@@ -7766,12 +7894,14 @@ pub(crate) mod tests {
                 .contains("text B-rep surface nesting exceeds 64"),
             "{error}"
         );
+        });
     }
 
     #[test]
     fn the_binary_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        in_decode_context(|ctx| {
         let admitted = binary_offset_surface_bytes(super::MAX_GEOMETRY_NESTING_DEPTH);
-        let mut cursor = BinaryCursor::new(&admitted);
+        let mut cursor = BinaryCursor::new(ctx, &admitted);
         let surface = super::parse_binary_surface(&mut cursor, 0).expect("the budget is admitted");
         assert_eq!(
             text_offset_surface_wrappers(&surface),
@@ -7780,7 +7910,7 @@ pub(crate) mod tests {
         assert_eq!(cursor.remaining(), 0);
 
         let refused = binary_offset_surface_bytes(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
-        let error = super::parse_binary_surface(&mut BinaryCursor::new(&refused), 0)
+        let error = super::parse_binary_surface(&mut BinaryCursor::new(ctx, &refused), 0)
             .expect_err("one record past the budget is refused");
         assert!(
             error
@@ -7788,12 +7918,14 @@ pub(crate) mod tests {
                 .contains("binary surface nesting exceeds 64"),
             "{error}"
         );
+        });
     }
 
     #[test]
     fn the_binary_parameter_curve_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        in_decode_context(|ctx| {
         let admitted = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_NESTING_DEPTH);
-        let mut cursor = BinaryCursor::new(&admitted);
+        let mut cursor = BinaryCursor::new(ctx, &admitted);
         let curve = super::parse_binary_curve2d(&mut cursor, 0).expect("the budget is admitted");
         assert_eq!(
             binary_offset_curve2d_wrappers(&curve),
@@ -7802,7 +7934,7 @@ pub(crate) mod tests {
         assert_eq!(cursor.remaining(), 0);
 
         let refused = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
-        let error = super::parse_binary_curve2d(&mut BinaryCursor::new(&refused), 0)
+        let error = super::parse_binary_curve2d(&mut BinaryCursor::new(ctx, &refused), 0)
             .expect_err("one record past the budget is refused");
         assert!(
             error
@@ -7810,6 +7942,7 @@ pub(crate) mod tests {
                 .contains("binary parameter-curve nesting exceeds 64"),
             "{error}"
         );
+        });
     }
 
     /// `wrappers` offset surface records over one plane leaf, built through the
