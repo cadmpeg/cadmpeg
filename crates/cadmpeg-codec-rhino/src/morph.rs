@@ -11,7 +11,7 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
+use crate::chunks::{admitted_vec, checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform, MillimeterScale};
@@ -132,6 +132,7 @@ fn count(
 }
 
 fn captive_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -150,7 +151,7 @@ fn captive_ids(
         });
     }
     let count = count(&mut ids, 16, MAX_CAPTIVES)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = admitted_vec(ctx, count, "Rhino morph captive IDs")?;
     for _ in 0..count {
         values.push(uuid(&mut ids)?);
     }
@@ -327,7 +328,7 @@ pub(crate) fn decode(
     }
     if major == 1 {
         let end = cage_at(expand, &mut outer, scale, archive)?;
-        let captive_ids = captive_ids(data, &mut outer, archive)?;
+        let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
         let start_transform = scaled_transform(&mut outer, scale)?;
         outer.skip_remaining()?;
         return Ok(Morph {
@@ -380,28 +381,9 @@ pub(crate) fn decode(
             ))
         }
     };
-    let captive_ids = captive_ids(data, &mut outer, archive)?;
+    let captive_ids = captive_ids(expand.ctx(), data, &mut outer, archive)?;
 
-    let (mut list, list_next, list_major, list_minor) = anonymous(
-        data,
-        outer.position(),
-        outer.end(),
-        archive,
-        "morph localizers",
-    )?;
-    if list_major != 1 || list_minor < 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: list.position() - 8,
-            message: format!("unsupported morph-localizer-list version {list_major}.{list_minor}"),
-        });
-    }
-    let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
-    let mut localizers = Vec::new();
-    for _ in 0..localizer_count {
-        localizers.push(localizer(expand.ctx(), data, &mut list, scale, archive)?);
-    }
-    list.skip_remaining()?;
-    outer.skip(list_next - outer.position())?;
+    let localizers = localizers(expand.ctx(), data, &mut outer, scale, archive)?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
             .and_then(NonNegativeReal::from_finite)
@@ -422,6 +404,36 @@ pub(crate) fn decode(
         quick_preview,
         preserve_structure,
     })
+}
+
+fn localizers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    outer: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    archive: ArchiveVersion,
+) -> Result<Vec<Localizer>, GeometryError> {
+    let (mut list, list_next, list_major, list_minor) = anonymous(
+        data,
+        outer.position(),
+        outer.end(),
+        archive,
+        "morph localizers",
+    )?;
+    if list_major != 1 || list_minor < 0 {
+        return Err(GeometryError::UnsupportedVersion {
+            offset: list.position() - 8,
+            message: format!("unsupported morph-localizer-list version {list_major}.{list_minor}"),
+        });
+    }
+    let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
+    let mut localizers = admitted_vec(ctx, localizer_count, "Rhino morph localizers")?;
+    for _ in 0..localizer_count {
+        localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
+    }
+    list.skip_remaining()?;
+    outer.skip(list_next - outer.position())?;
+    Ok(localizers)
 }
 
 fn points(values: &[cadmpeg_ir::math::Point3]) -> String {
@@ -645,7 +657,9 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
+    use super::{
+        captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
+    };
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::settings::MillimeterScale;
@@ -691,6 +705,60 @@ mod tests {
         }
         bytes.push(0);
         bytes
+    }
+
+    #[test]
+    fn captive_ids_refuse_collection_limit() {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend([0; 16]);
+        let bytes = anonymous(1, 0, &body);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let error = captive_ids(&ctx, &bytes, &mut reader, ArchiveVersion::V5)
+            .expect_err("one captive exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino morph captive IDs"
+        ));
+    }
+
+    #[test]
+    fn localizers_refuse_collection_limit() {
+        let mut localizer_body = 6_i32.to_le_bytes().to_vec();
+        for value in [1.0_f64, 2.0, 3.0, 0.0, 0.0, 1.0, 4.0, 5.0] {
+            localizer_body.extend(value.to_le_bytes());
+        }
+        localizer_body.extend(anonymous(1, 0, &[0]));
+        localizer_body.extend(anonymous(1, 0, &[0]));
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(anonymous(1, 0, &localizer_body));
+        let bytes = anonymous(1, 0, &body);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let error = localizers(
+            &ctx,
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+        )
+        .expect_err("one localizer exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino morph localizers"
+        ));
     }
 
     #[test]
