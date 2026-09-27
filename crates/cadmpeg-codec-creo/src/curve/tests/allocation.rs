@@ -117,3 +117,24 @@ fn curve_parameter_scalar_cache_refuses_before_unique_image_growth() {
                 && limit.operation == "creo scalar cache unique images"
     ));
 }
+
+#[test]
+fn depdb_curve_scalar_cache_refuses_before_unique_image_growth() {
+    let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x46\x08\0\0\0\0\0\0";
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("root input is admitted");
+        super::super::depdb_cross_section_rows(&ctx, payload)
+    };
+    assert!(run(100).expect("service admits scalar image").is_empty());
+    let error = run(0).expect_err("scalar image requires a set node");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo scalar cache unique images"
+    ));
+}
