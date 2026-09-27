@@ -49,7 +49,8 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01)
+    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, None)
+        .unwrap()
         .expect("finite wide NURBS profile samples");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
@@ -66,7 +67,9 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
         false,
     )
     .expect("wide finite NURBS pcurve");
-    let tubes = super::certified_nurbs_tubes(&curve, 0.5).expect("finite wide-domain tubes");
+    let tubes = super::certified_nurbs_tubes(&curve, 0.5, None)
+        .unwrap()
+        .expect("finite wide-domain tubes");
     assert_eq!(
         tubes.first().map(|tube| tube.start),
         Some(Point2::new(0.0, 0.0))
@@ -97,7 +100,8 @@ fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01)
+    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, None)
+        .unwrap()
         .expect("finite midpoint near the float limit");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
@@ -258,11 +262,25 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(12.0, 21.0, 12.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(15.0, 21.0, 12.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
 
@@ -290,7 +308,9 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             &entities,
             &[Point3::new(12.0, 21.0, 12.0)],
             1.0e-6,
-        ),
+            None
+        )
+        .unwrap(),
         None
     );
 }
@@ -352,15 +372,36 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(3.0, 3.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(5.0, 5.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
@@ -369,11 +410,20 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
             &entities,
             &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
             1.0e-6,
-        ),
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(2.0, 5.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         None
     );
 }
@@ -465,7 +515,14 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     };
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
 }
@@ -623,26 +680,26 @@ fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::Code
 
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(787);
+    let error = arrangement_refusal_with_collection_limit(1826);
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "f3d_arrangement_outgoing"
-                && limit.used == 786
+                && limit.used == 1825
                 && limit.additional == 2
     ));
 }
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(790);
+    let error = arrangement_refusal_with_collection_limit(1829);
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "f3d arrangement edge visits"
-                && limit.used == 788
+                && limit.used == 1827
                 && limit.additional == 3
     ));
 }
@@ -729,11 +786,25 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(4.0, 0.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
+        region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(0.0, 0.0, 0.0)],
+            1.0e-6,
+            None
+        )
+        .unwrap(),
         Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
 }
@@ -1297,8 +1368,35 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
             false,
         )
         .unwrap();
-        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
+        assert_eq!(super::nurbs_speed_bound(&curve, None).unwrap(), Some(1.0));
     }
+}
+
+#[test]
+fn nurbs_speed_bound_refuses_unit_weight_allocation_limit() {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::nurbs_speed_bound(&curve, Some(&ctx))
+        .err()
+        .expect("two unit weights exceed three admitted items after two points");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d_nurbs_weights"
+                && limit.used == 2
+                && limit.additional == 2
+    ));
 }
 
 #[test]
@@ -1427,7 +1525,9 @@ fn numerical_0922b_large_line_split() {
             [0., 1.],
             &[Point2::new(0.5 * scale, 0.)],
             LARGE_LINE_TOLERANCE,
+            None,
         )
+        .unwrap()
         .unwrap();
         println!("Fusion split scale{scale:e}: {r:?}");
         assert_eq!(r, vec![0., 0.5, 1.]);

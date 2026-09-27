@@ -18,6 +18,15 @@ const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1.0e-6;
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
 
+macro_rules! geometric {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// Format-side work cap for arrangement edge retention walks.
 ///
 /// Session `work_budget` callers take `min(this, policy.max_work_units)`.
@@ -87,15 +96,6 @@ fn sketch_arrangement_faces(
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
-
-    macro_rules! geometric {
-        ($value:expr) => {
-            match $value {
-                Some(value) => value,
-                None => return Ok(None),
-            }
-        };
-    }
 
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
@@ -216,7 +216,8 @@ fn sketch_arrangement_faces(
             boundary.parameter_range.endpoints(),
             &nodes,
             tolerance,
-        ));
+            ctx,
+        )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
             split_pending.push((
@@ -232,8 +233,9 @@ fn sketch_arrangement_faces(
                     entity,
                     range,
                     boundary.reversed,
-                    tolerance
-                )),
+                    tolerance,
+                    ctx,
+                )?),
             ));
         }
     }
@@ -265,11 +267,16 @@ fn sketch_arrangement_faces(
     if edges.len() < 3 {
         return Ok(None);
     }
-    let edge_tubes = edges
-        .iter()
-        .map(|edge| arrangement_edge_tubes(edge, entities, tolerance))
-        .collect::<Option<Vec<_>>>();
-    let edge_tubes = geometric!(edge_tubes);
+    let mut edge_tubes = Vec::new();
+    for edge in &edges {
+        let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, ctx)? else {
+            return Ok(None);
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d arrangement edge tube set")?;
+        }
+        edge_tubes.push(tubes);
+    }
     let edge_bounds = edge_tubes
         .iter()
         .map(|tubes| certified_tube_bounds(tubes))
@@ -805,26 +812,33 @@ fn arrangement_split_parameters(
     range: [f64; 2],
     nodes: &[Point2],
     tolerance: f64,
-) -> Option<Vec<f64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<f64>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(2, "f3d arrangement split endpoints")?;
+    }
     let mut parameters = vec![range[0], range[1]];
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             if point_distance(start.get(), end.get()) <= tolerance {
-                return None;
+                return Ok(None);
             }
             for point in nodes {
-                let parameter = cadmpeg_ir::math::planar::line_projection_parameter(
+                let parameter = geometric!(cadmpeg_ir::math::planar::line_projection_parameter(
                     start.get(),
                     end.get(),
                     *point,
-                )?
+                ))
                 .get();
                 if parameter > 0.0
                     && parameter < 1.0
                     && point_segment_distance(*point, (start.get(), end.get())) <= tolerance
                 {
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                    }
                     parameters.push(parameter);
                 }
             }
@@ -837,6 +851,9 @@ fn arrangement_split_parameters(
                 let angle = (point.v - center.v).atan2(point.u - center.u);
                 if let Some(parameter) = directed_angle_parameter(angle, range[0], range[1]) {
                     if parameter > 0.0 && parameter < 1.0 {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                        }
                         parameters.push(range[0] + parameter * (range[1] - range[0]));
                     }
                 }
@@ -849,9 +866,9 @@ fn arrangement_split_parameters(
             .total_cmp(&((right - range[0]) / (range[1] - range[0])))
     });
     let parameter_tolerance =
-        tolerance / sketch_geometry_speed_bound(geometry, range)?.max(tolerance);
+        tolerance / geometric!(sketch_geometry_speed_bound(geometry, range, ctx)?).max(tolerance);
     parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
-    (parameters.len() >= 2).then_some(parameters)
+    Ok((parameters.len() >= 2).then_some(parameters))
 }
 
 fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> usize {
@@ -1091,22 +1108,23 @@ fn arrangement_edge_tubes(
     edge: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<Vec<CertifiedCurveTube>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let entity = entities
+    let entity = geometric!(entities
         .iter()
-        .find(|entity| entity.id() == &edge.boundary.entity)?;
+        .find(|entity| entity.id() == &edge.boundary.entity));
     let scale = edge
         .polyline
         .iter()
         .flat_map(|point| [point.u.abs(), point.v.abs()])
         .fold(1.0_f64, f64::max);
     let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
-    match entity.geometry.definition() {
+    Ok(match entity.geometry.definition() {
         SketchGeometryDefinition::Line { .. } => Some(vec![CertifiedCurveTube {
             start: edge.polyline[0],
-            end: *edge.polyline.last()?,
+            end: *geometric!(edge.polyline.last()),
             error: 0.0,
         }]),
         SketchGeometryDefinition::Circle { center, radius }
@@ -1122,10 +1140,10 @@ fn arrangement_edge_tubes(
                 && sketch_geometry_parameter_range(&entity.geometry)
                     == Some(edge.boundary.parameter_range.endpoints()) =>
         {
-            certified_nurbs_tubes(curve, target_error)
+            return certified_nurbs_tubes(curve, target_error, ctx);
         }
         _ => None,
-    }
+    })
 }
 
 fn arrangement_analytic_segment(
@@ -1184,19 +1202,20 @@ fn profile_use_polyline(
     range: [f64; 2],
     reversed: bool,
     tolerance: f64,
-) -> Option<Vec<Point2>> {
-    let travel =
-        sketch_geometry_speed_bound(&entity.geometry, range)? * (range[1] - range[0]).abs();
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Point2>>, CodecError> {
+    let travel = geometric!(sketch_geometry_speed_bound(&entity.geometry, range, ctx)?)
+        * (range[1] - range[0]).abs();
     let ordinary_midpoint = (range[0] + range[1]) * 0.5;
     let midpoint = if ordinary_midpoint.is_finite() {
         ordinary_midpoint
     } else {
-        cadmpeg_ir::math::interpolate(range[0], range[1], 0.5)?.get()
+        geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], 0.5)).get()
     };
     let scale = [
-        sketch_geometry_point(&entity.geometry, range[0])?,
-        sketch_geometry_point(&entity.geometry, range[1])?,
-        sketch_geometry_point(&entity.geometry, midpoint)?,
+        geometric!(sketch_geometry_point(&entity.geometry, range[0])),
+        geometric!(sketch_geometry_point(&entity.geometry, range[1])),
+        geometric!(sketch_geometry_point(&entity.geometry, midpoint)),
     ]
     .into_iter()
     .flat_map(|point| [point.u.abs(), point.v.abs()])
@@ -1210,7 +1229,10 @@ fn profile_use_polyline(
     } else {
         256
     };
-    let mut points = (0..=count)
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items((count + 1) as u64, "f3d profile use polyline")?;
+    }
+    let points = (0..=count)
         .map(|index| {
             let fraction = index as f64 / count as f64;
             let ordinary = range[0] + (range[1] - range[0]) * fraction;
@@ -1221,20 +1243,24 @@ fn profile_use_polyline(
             };
             sketch_geometry_point(&entity.geometry, parameter)
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let Some(mut points) = points else {
+        return Ok(None);
+    };
     if reversed {
         points.reverse();
     }
-    Some(points)
+    Ok(Some(points))
 }
 
 fn sketch_geometry_speed_bound(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
-) -> Option<f64> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<f64>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry.definition() {
+    Ok(match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             Some(point_distance(start.get(), end.get()))
         }
@@ -1245,10 +1271,12 @@ fn sketch_geometry_speed_bound(
             minor_radius,
             ..
         } => Some(major_radius.get().max(minor_radius.get())),
-        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
+        SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            return nurbs_speed_bound(curve, ctx)
+        }
         _ if range[0] == range[1] => None,
         _ => None,
-    }
+    })
 }
 
 fn sketch_geometry_point(
@@ -1343,14 +1371,20 @@ pub(super) fn region_containing_points(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
-) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let boundaries = sketch
-        .profiles
-        .iter()
-        .map(|profile| profile_boundary(profile, entities, tolerance))
-        .collect::<Option<Vec<_>>>()?;
+    let mut boundaries = Vec::new();
+    for profile in &sketch.profiles {
+        let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
+            return Ok(None);
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d profile boundaries")?;
+        }
+        boundaries.push(boundary);
+    }
     let containment = boundaries
         .iter()
         .enumerate()
@@ -1367,7 +1401,8 @@ pub(super) fn region_containing_points(
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>();
+    let projected = geometric!(projected);
     let incidences = projected
         .iter()
         .map(|point| {
@@ -1405,14 +1440,11 @@ pub(super) fn region_containing_points(
     };
     let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
     if let [(outer, holes)] = closure_matches.as_slice() {
-        return SketchProfileRegion::loops(
-            u32::try_from(*outer).ok()?,
-            holes
-                .iter()
-                .map(|hole| u32::try_from(*hole).ok())
-                .collect::<Option<Vec<_>>>()?,
-        )
-        .ok();
+        let holes = geometric!(holes
+            .iter()
+            .map(|hole| u32::try_from(*hole).ok())
+            .collect::<Option<Vec<_>>>());
+        return Ok(SketchProfileRegion::loops(geometric!(u32::try_from(*outer).ok()), holes).ok());
     }
     if projected.iter().any(|point| {
         sketch.profiles.iter().any(|profile| {
@@ -1424,7 +1456,7 @@ pub(super) fn region_containing_points(
             })
         })
     }) {
-        return None;
+        return Ok(None);
     }
     let containing = boundaries
         .iter()
@@ -1442,18 +1474,18 @@ pub(super) fn region_containing_points(
             .skip(left_index + 1)
             .any(|right| !containment[*left][*right] && !containment[*right][*left])
     }) {
-        return None;
+        return Ok(None);
     }
-    let &outer = containing.iter().find(|candidate| {
+    let &outer = geometric!(containing.iter().find(|candidate| {
         containing
             .iter()
             .all(|other| other == *candidate || containment[*other][**candidate])
-    })?;
+    }));
     let holes = immediate_containment_children(outer, &containment)
         .into_iter()
         .map(|candidate| u32::try_from(candidate).ok())
-        .collect::<Option<Vec<_>>>()?;
-    SketchProfileRegion::loops(u32::try_from(outer).ok()?, holes).ok()
+        .collect::<Option<Vec<_>>>();
+    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), geometric!(holes)).ok())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -1463,23 +1495,30 @@ pub(super) fn profile_loops_are_independent(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     profiles: &[u32],
     tolerance: f64,
-) -> bool {
-    let boundaries = profiles
-        .iter()
-        .map(|profile| {
-            let profile = usize::try_from(*profile).ok()?;
-            profile_boundary(sketch.profiles.get(profile)?, entities, tolerance)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(boundaries) = boundaries else {
-        return false;
-    };
-    boundaries.iter().enumerate().all(|(left_index, left)| {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let mut boundaries = Vec::new();
+    for profile in profiles {
+        let Ok(index) = usize::try_from(*profile) else {
+            return Ok(false);
+        };
+        let Some(profile) = sketch.profiles.get(index) else {
+            return Ok(false);
+        };
+        let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
+            return Ok(false);
+        };
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d independent profile boundaries")?;
+        }
+        boundaries.push(boundary);
+    }
+    Ok(boundaries.iter().enumerate().all(|(left_index, left)| {
         boundaries
             .iter()
             .skip(left_index + 1)
             .all(|right| left.is_provably_disjoint(right))
-    })
+    }))
 }
 
 fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Vec<usize> {
@@ -1692,34 +1731,35 @@ fn profile_boundary(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<ProfileBoundary> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ProfileBoundary>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let [use_] = profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
-            return Some(ProfileBoundary::Circle {
+            return Ok(Some(ProfileBoundary::Circle {
                 center: center.get(),
                 radius,
-            });
+            }));
         }
     }
-    line_profile_vertices(profile, entities, tolerance)
-        .map(ProfileBoundary::Polygon)
-        .or_else(|| {
-            circular_arc_profile_segments(profile, entities, tolerance)
-                .map(ProfileBoundary::CircularArcLoop)
-        })
-        .or_else(|| {
-            certified_profile_loop(profile, entities, tolerance).map(ProfileBoundary::CertifiedLoop)
-        })
+    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance) {
+        return Ok(Some(ProfileBoundary::Polygon(polygon)));
+    }
+    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance) {
+        return Ok(Some(ProfileBoundary::CircularArcLoop(arc_loop)));
+    }
+    Ok(certified_profile_loop(profile, entities, tolerance, ctx)?
+        .map(ProfileBoundary::CertifiedLoop))
 }
 
 fn certified_profile_loop(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<CertifiedProfileLoop> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let scale = entities
@@ -1736,7 +1776,7 @@ fn certified_profile_loop(
     let mut tubes = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         let mut entity_tubes = match entity.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => vec![CertifiedCurveTube {
                 start: start.get(),
@@ -1748,17 +1788,17 @@ fn certified_profile_loop(
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(
+            } => geometric!(certified_arc_tubes(
                 center.get(),
                 *radius,
                 start_angle.get(),
                 end_angle.get(),
                 target_error,
-            )?,
+            )),
             SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-                certified_nurbs_tubes(curve, target_error)?
+                geometric!(certified_nurbs_tubes(curve, target_error, ctx)?)
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         if use_.reversed {
             entity_tubes.reverse();
@@ -1766,11 +1806,14 @@ fn certified_profile_loop(
                 std::mem::swap(&mut tube.start, &mut tube.end);
             }
         }
-        let first = entity_tubes.first()?.start;
+        let first = geometric!(entity_tubes.first()).start;
         if previous_end.is_some_and(|end| point_distance(end, first) > tolerance) {
-            return None;
+            return Ok(None);
         }
         previous_end = entity_tubes.last().map(|tube| tube.end);
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(entity_tubes.len() as u64, "f3d certified profile tubes")?;
+        }
         tubes.extend(entity_tubes);
     }
     if previous_end.is_none_or(|end| {
@@ -1778,9 +1821,9 @@ fn certified_profile_loop(
             .first()
             .is_none_or(|first| point_distance(end, first.start) > tolerance)
     }) {
-        return None;
+        return Ok(None);
     }
-    CertifiedProfileLoop::new(tubes)
+    Ok(CertifiedProfileLoop::new(tubes))
 }
 
 fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
@@ -1854,10 +1897,20 @@ fn certified_arc_tubes(
 fn certified_nurbs_tubes(
     curve: &PcurveNurbs,
     target_error: f64,
-) -> Option<Vec<CertifiedCurveTube>> {
-    let speed = nurbs_speed_bound(curve)?;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
+    let speed = geometric!(nurbs_speed_bound(curve, ctx)?);
     let degree = curve.degree() as usize;
     let knots = curve.knots();
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(curve.control_points().len() as u64, "f3d nurbs tube points")?;
+        if curve.weights().is_some() {
+            ctx.charge_collection_items(
+                curve.control_points().len() as u64,
+                "f3d nurbs tube weights",
+            )?;
+        }
+    }
     let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let count = control_points.len();
@@ -1872,9 +1925,9 @@ fn certified_nurbs_tubes(
         } else if speed <= 1.0 {
             speed * span[1] - speed * span[0]
         } else {
-            return None;
+            return Ok(None);
         };
-        let subdivisions = subdivision_count(travel_bound, target_error)?;
+        let subdivisions = geometric!(subdivision_count(travel_bound, target_error));
         let error = travel_bound / subdivisions as f64;
         for index in 0..subdivisions {
             let parameter = |ordinal: usize| {
@@ -1885,30 +1938,31 @@ fn certified_nurbs_tubes(
                     span[0].mul_add(1.0 - fraction, span[1] * fraction)
                 }
             };
-            tubes.push(CertifiedCurveTube {
-                start: *cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    degree as u32,
-                    knots,
-                    &control_points,
-                    weights.as_deref(),
-                    parameter(index),
-                )
-                .ok()?
-                .as_raw(),
-                end: *cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    degree as u32,
-                    knots,
-                    &control_points,
-                    weights.as_deref(),
-                    parameter(index + 1),
-                )
-                .ok()?
-                .as_raw(),
-                error,
-            });
+            let start = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                degree as u32,
+                knots,
+                &control_points,
+                weights.as_deref(),
+                parameter(index),
+            )
+            .ok())
+            .as_raw();
+            let end = *geometric!(cadmpeg_ir::eval::nurbs_pcurve_uv(
+                degree as u32,
+                knots,
+                &control_points,
+                weights.as_deref(),
+                parameter(index + 1),
+            )
+            .ok())
+            .as_raw();
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d certified nurbs tube")?;
+            }
+            tubes.push(CertifiedCurveTube { start, end, error });
         }
     }
-    (!tubes.is_empty()).then_some(tubes)
+    Ok((!tubes.is_empty()).then_some(tubes))
 }
 
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
@@ -1926,24 +1980,41 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     (count <= MAX_SUBDIVISIONS as f64).then_some(count as usize)
 }
 
-fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
+fn nurbs_speed_bound(
+    curve: &PcurveNurbs,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<f64>, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            curve.control_points().len() as u64,
+            "f3d nurbs bound points",
+        )?;
+    }
     let points = curve
         .control_points()
         .iter()
         .map(|p| [p.u, p.v])
         .collect::<Vec<_>>();
     let weights = match curve.pole_rows().weights() {
-        Some(weights) => weights,
-        None => alloc_filled(points.len(), 1.0, "f3d_nurbs_weights").ok()?,
+        Some(weights) => {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(weights.len() as u64, "f3d nurbs bound weights")?;
+            }
+            weights
+        }
+        None => match ctx {
+            Some(ctx) => ctx.alloc_filled(points.len(), 1.0, "f3d_nurbs_weights")?,
+            None => alloc_filled(points.len(), 1.0, "f3d_nurbs_weights")?,
+        },
     };
-    cadmpeg_ir::geometry::nurbs::bounds::speed_bound(
+    Ok(cadmpeg_ir::geometry::nurbs::bounds::speed_bound(
         curve.degree(),
         curve.knots(),
         &points,
         &weights,
         [0.0, 0.0],
     )
-    .map(cadmpeg_ir::scalar::FiniteReal::get)
+    .map(cadmpeg_ir::scalar::FiniteReal::get))
 }
 
 fn circular_arc_profile_segments(
