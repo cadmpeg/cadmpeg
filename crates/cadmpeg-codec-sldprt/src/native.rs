@@ -877,7 +877,7 @@ impl SldprtNative {
                 }
                 let _reference_reservation = admit_validation_candidates(
                     ctx,
-                    lane.native_payload.len(),
+                    selection_payload_span(lane, record.offset),
                     "validate SLDPRT edge reference candidates",
                 )?;
                 let disagreement = usize::try_from(record.offset)
@@ -1082,16 +1082,8 @@ impl SldprtNative {
                         record.id
                     )));
                 }
-                let _state_reservation = admit_validation_candidates(
-                    Some(ctx),
-                    lane.native_payload.len(),
-                    "validate SLDPRT body state candidates",
-                )?;
-                let invalid =
-                    crate::resolved_features::selections::compact_body_state_ids_for_selection(
-                        lane, record,
-                    ) != record.body_state_ids
-                        || body_selection_disagrees_with_payload(Some(ctx), lane, record)?;
+                let invalid = body_state_ids_disagree_with_payload(Some(ctx), lane, record)?
+                    || body_selection_disagrees_with_payload(Some(ctx), lane, record)?;
                 if invalid {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input body selection {} has inconsistent ownership",
@@ -1436,6 +1428,33 @@ fn generated_surface_identities_disagree_with_payload(
         != crate::resolved_features::selections::generated_surface_identities(lane))
 }
 
+fn selection_payload_span(lane: &FeatureInputLane, offset: u64) -> usize {
+    usize::try_from(offset)
+        .ok()
+        .and_then(|start| lane.native_payload.len().checked_sub(start))
+        .unwrap_or(0)
+}
+
+fn body_state_ids_disagree_with_payload(
+    ctx: Option<&DecodeContext<'_>>,
+    lane: &FeatureInputLane,
+    record: &FeatureInputBodySelection,
+) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    let source_units = lane
+        .names
+        .iter()
+        .find(|name| name.id == record.object_name_ref)
+        .and_then(|name| record.offset.checked_sub(name.offset))
+        .and_then(|span| usize::try_from(span).ok())
+        .unwrap_or(0);
+    let _reservation =
+        admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
+    Ok(
+        crate::resolved_features::selections::compact_body_state_ids_for_selection(lane, record)
+            != record.body_state_ids,
+    )
+}
+
 /// `true` when a body selection disagrees with the compact selection in its lane payload.
 fn body_selection_disagrees_with_payload(
     ctx: Option<&DecodeContext<'_>>,
@@ -1444,7 +1463,7 @@ fn body_selection_disagrees_with_payload(
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
         ctx,
-        lane.native_payload.len(),
+        selection_payload_span(lane, record.offset),
         "validate SLDPRT body selection candidates",
     )?;
     Ok(usize::try_from(record.offset)
@@ -1473,7 +1492,7 @@ fn edge_selection_disagrees_with_payload(
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
         ctx,
-        lane.native_payload.len(),
+        selection_payload_span(lane, record.offset),
         "validate SLDPRT edge selection candidates",
     )?;
     Ok(usize::try_from(record.offset)
@@ -1531,7 +1550,7 @@ fn surface_selection_disagrees_with_payload(
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let _reservation = admit_validation_candidates(
         ctx,
-        lane.native_payload.len(),
+        selection_payload_span(lane, record.offset),
         "validate SLDPRT surface selection candidates",
     )?;
     // An offset no index can name names no byte of the payload in memory, so
