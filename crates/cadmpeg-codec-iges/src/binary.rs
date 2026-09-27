@@ -9,7 +9,8 @@
 //! passed to the reader, so normalization does not replace source fidelity.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use crate::decode_resource::{copy_optional_retained, reserve_vec, reserve_vec_growth};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -246,7 +247,11 @@ impl<'a> BitReader<'a> {
             .ok_or_else(|| malformed("a Binary real is not finite"))
     }
 
-    fn read_string(&mut self, lengths: PrimitiveLengths) -> Result<Vec<u8>, CodecError> {
+    fn read_string(
+        &mut self,
+        lengths: PrimitiveLengths,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Vec<u8>, CodecError> {
         let mut output = Vec::new();
         loop {
             let count = self.read_integer(lengths.single_integer)?;
@@ -260,6 +265,16 @@ impl<'a> BitReader<'a> {
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
+            }
+            output.try_reserve(count).map_err(|_| {
+                refuse_local_limit(
+                    "iges binary string payload",
+                    u64_from_index(count),
+                    u64_from_index(count),
+                )
+            })?;
             for _ in 0..count {
                 let byte = self.read_bits(8)?;
                 let byte =
@@ -276,18 +291,24 @@ impl<'a> BitReader<'a> {
     }
 }
 
-struct ValueStream<'a> {
+struct ValueStream<'a, 'ctx, 'arena> {
     bits: BitReader<'a>,
     lengths: PrimitiveLengths,
     pending: VecDeque<BinaryValue>,
+    ctx: Option<&'ctx DecodeContext<'arena>>,
 }
 
-impl<'a> ValueStream<'a> {
-    fn new(bytes: &'a [u8], lengths: PrimitiveLengths) -> Self {
+impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
+    fn new(
+        bytes: &'a [u8],
+        lengths: PrimitiveLengths,
+        ctx: Option<&'ctx DecodeContext<'arena>>,
+    ) -> Self {
         Self {
             bits: BitReader::new(bytes),
             lengths,
             pending: VecDeque::new(),
+            ctx,
         }
     }
 
@@ -311,7 +332,7 @@ impl<'a> ValueStream<'a> {
                 .read_real(self.lengths.double_exponent, self.lengths.double_fraction)
                 .map(BinaryValue::Real),
             5 => self.bits.read_pointer().map(BinaryValue::Pointer),
-            6 => self.bits.read_string(self.lengths).map(BinaryValue::String),
+            6 => self.bits.read_string(self.lengths, self.ctx).map(BinaryValue::String),
             _ => Err(malformed("a Binary control byte has an invalid format")),
         }
     }
@@ -335,14 +356,41 @@ impl<'a> ValueStream<'a> {
         if physically_present {
             for _ in 1..repeat {
                 let value = self.one(format)?;
+                self.reserve_pending()?;
                 self.pending.push_back(value);
             }
         } else {
             for _ in 1..repeat {
-                self.pending.push_back(first.clone());
+                self.reserve_pending()?;
+                let cloned = self.clone_value(&first)?;
+                self.pending.push_back(cloned);
             }
         }
         Ok(Some(first))
+    }
+
+    fn reserve_pending(&mut self) -> Result<(), CodecError> {
+        if let Some(ctx) = self.ctx {
+            ctx.charge_collection_items(1, "iges binary repeated values")?;
+        }
+        self.pending
+            .try_reserve(1)
+            .map_err(|_| refuse_local_limit("iges binary repeated values", 1, 1))
+    }
+
+    fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
+        match value {
+            BinaryValue::Default => Ok(BinaryValue::Default),
+            BinaryValue::Integer(value) => Ok(BinaryValue::Integer(*value)),
+            BinaryValue::Real(value) => Ok(BinaryValue::Real(*value)),
+            BinaryValue::Pointer(value) => Ok(BinaryValue::Pointer(*value)),
+            BinaryValue::String(bytes) => copy_optional_retained(
+                self.ctx,
+                bytes,
+                "iges binary repeated string",
+            )
+            .map(BinaryValue::String),
+        }
     }
 
     fn finish(&self) -> Result<(), CodecError> {
@@ -571,7 +619,7 @@ fn validate_terminate(payload: &[u8], expected: [usize; 5]) -> Result<(), CodecE
     Ok(())
 }
 
-fn one_value(stream: &mut ValueStream<'_>, what: &str) -> Result<BinaryValue, CodecError> {
+fn one_value(stream: &mut ValueStream<'_, '_, '_>, what: &str) -> Result<BinaryValue, CodecError> {
     stream
         .next()?
         .ok_or_else(|| malformed(format!("Binary {what} section ends before its fields")))
@@ -604,9 +652,13 @@ fn positive_pointer(value: i64, what: &str) -> Result<u32, CodecError> {
     u32::try_from(value).map_err(|_| malformed(format!("Binary {what} pointer is out of range")))
 }
 
-fn read_global(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryValue>, CodecError> {
-    let mut stream = ValueStream::new(payload, lengths);
-    let mut values = Vec::with_capacity(24);
+fn read_global(
+    payload: &[u8],
+    lengths: PrimitiveLengths,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<BinaryValue>, CodecError> {
+    let mut stream = ValueStream::new(payload, lengths, Some(ctx));
+    let mut values = reserve_vec(ctx, 24, "iges binary global values")?;
     for _ in 0..24 {
         values.push(one_value(&mut stream, "Global")?);
     }
@@ -617,6 +669,7 @@ fn read_global(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryVa
 fn read_directory(
     payload: &[u8],
     lengths: PrimitiveLengths,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
     let mut records = Vec::new();
     let mut cursor = 0_usize;
@@ -634,13 +687,15 @@ fn read_directory(
         if body_end > payload.len() {
             return Err(malformed("Binary Directory entity exceeds its section"));
         }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
+        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, Some(ctx));
         let mut values = std::array::from_fn(|_| BinaryValue::Default);
         for value in &mut values {
             *value = one_value(&mut stream, "Directory")?;
         }
         stream.finish()?;
-        records.push(BinaryDirectory::new(offset, values)?);
+        let record = BinaryDirectory::new(offset, values)?;
+        reserve_vec_growth(ctx, &mut records, 1, "iges binary directory records")?;
+        records.push(record);
         cursor = body_end;
     }
     Ok(records)
@@ -809,8 +864,12 @@ fn render_terminate(
     Ok(())
 }
 
-fn normalize_start(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<u8>, CodecError> {
-    let mut stream = ValueStream::new(payload, lengths);
+fn normalize_start(
+    payload: &[u8],
+    lengths: PrimitiveLengths,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<u8>, CodecError> {
+    let mut stream = ValueStream::new(payload, lengths, Some(ctx));
     let mut text = Vec::new();
     while let Some(value) = stream.next()? {
         let BinaryValue::String(mut value) = value else {
@@ -886,6 +945,7 @@ fn read_parameters(
     payload: &[u8],
     lengths: PrimitiveLengths,
     directory_by_offset: &BTreeMap<u32, usize>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
     let mut records = Vec::new();
     let mut cursor = 0_usize;
@@ -903,7 +963,7 @@ fn read_parameters(
         if body_end > payload.len() {
             return Err(malformed("Binary Parameter entity exceeds its section"));
         }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
+        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths, Some(ctx));
         let entity_type = integer_value(
             &one_value(&mut stream, "Parameter")?,
             "Parameter entity type",
@@ -914,6 +974,7 @@ fn read_parameters(
         )?;
         let mut values = Vec::new();
         while let Some(value) = stream.next()? {
+            reserve_vec_growth(ctx, &mut values, 1, "iges binary parameter values")?;
             values.push(value);
         }
         stream.finish()?;
@@ -923,6 +984,7 @@ fn read_parameters(
                 "Binary Parameter Directory pointer does not resolve",
             ));
         }
+        reserve_vec_growth(ctx, &mut records, 1, "iges binary parameter records")?;
         records.push(BinaryParameter {
             offset,
             entity_type,
@@ -1211,16 +1273,16 @@ fn charge_normalization(
 /// typed reader.
 pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
     let sections = parse_sections(source)?;
-    let start_text = normalize_start(sections.start, sections.lengths)?;
-    let global_values = read_global(sections.global, sections.lengths)?;
+    let start_text = normalize_start(sections.start, sections.lengths, ctx)?;
+    let global_values = read_global(sections.global, sections.lengths, ctx)?;
     let global_text = normalize_global(&global_values)?;
-    let directory = read_directory(sections.directory, sections.lengths)?;
+    let directory = read_directory(sections.directory, sections.lengths, ctx)?;
     let directory_by_offset = directory
         .iter()
         .enumerate()
         .map(|(index, record)| (record.offset, index))
         .collect::<BTreeMap<_, _>>();
-    let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
+    let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset, ctx)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -1301,6 +1363,7 @@ mod tests {
 
     use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
     use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -1652,7 +1715,7 @@ mod tests {
             physical.integer(value, lengths.single_integer);
         }
         let physical_bytes = physical.bytes();
-        let mut stream = ValueStream::new(&physical_bytes, lengths);
+        let mut stream = ValueStream::new(&physical_bytes, lengths, None);
         assert_eq!(
             stream.next().expect("physical value"),
             Some(BinaryValue::Integer(1))
@@ -1672,7 +1735,7 @@ mod tests {
         implicit.control_repeat(false, 3, 1);
         implicit.integer(7, lengths.single_integer);
         let implicit_bytes = implicit.bytes();
-        let mut stream = ValueStream::new(&implicit_bytes, lengths);
+        let mut stream = ValueStream::new(&implicit_bytes, lengths, None);
         for _ in 0..3 {
             assert_eq!(
                 stream.next().expect("implicit value"),
@@ -1681,6 +1744,115 @@ mod tests {
         }
         assert_eq!(stream.next().expect("end of implicit values"), None);
         stream.finish().expect("implicit repetitions consumed");
+    }
+
+    #[test]
+    fn binary_string_refuses_retained_limit_before_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let lengths = PrimitiveLengths {
+            single_integer: 8,
+            double_integer: 8,
+            single_exponent: 8,
+            single_fraction: 7,
+            double_exponent: 8,
+            double_fraction: 7,
+        };
+        let mut writer = BitWriter::default();
+        writer.control(6);
+        writer.string_part(b"abc", false, lengths);
+        let bytes = writer.bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert!(matches!(
+            stream.next(),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 0
+                    && limit.additional == 3
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert_eq!(stream.next().unwrap(), Some(BinaryValue::String(b"abc".to_vec())));
+    }
+
+    #[test]
+    fn binary_repetition_refuses_collection_limit_before_queue_growth() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let lengths = PrimitiveLengths {
+            single_integer: 8,
+            double_integer: 8,
+            single_exponent: 8,
+            single_fraction: 7,
+            double_exponent: 8,
+            double_fraction: 7,
+        };
+        let mut writer = BitWriter::default();
+        writer.control_repeat(false, 3, 1);
+        writer.integer(7, lengths.single_integer);
+        let bytes = writer.bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert!(matches!(
+            stream.next(),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 1
+                    && limit.additional == 1
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert_eq!(stream.next().unwrap(), Some(BinaryValue::Integer(7)));
+    }
+
+    #[test]
+    fn binary_repeated_string_refuses_retained_limit_before_clone() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let lengths = PrimitiveLengths {
+            single_integer: 8,
+            double_integer: 8,
+            single_exponent: 8,
+            single_fraction: 7,
+            double_exponent: 8,
+            double_fraction: 7,
+        };
+        let mut writer = BitWriter::default();
+        writer.control_repeat(false, 2, 6);
+        writer.string_part(b"ab", false, lengths);
+        let bytes = writer.bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert!(matches!(
+            stream.next(),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == 2
+                    && limit.additional == 2
+                    && limit.operation == "iges binary repeated string"
+        ));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut stream = ValueStream::new(&bytes, lengths, Some(&ctx));
+        assert_eq!(stream.next().unwrap(), Some(BinaryValue::String(b"ab".to_vec())));
     }
 
     #[test]
@@ -1708,7 +1880,7 @@ mod tests {
         writer.string_part(b"de", false, lengths);
         let bytes = writer.bytes();
 
-        let mut stream = ValueStream::new(&bytes, lengths);
+        let mut stream = ValueStream::new(&bytes, lengths, None);
         assert_eq!(
             stream.next().expect("default value"),
             Some(BinaryValue::Default)
