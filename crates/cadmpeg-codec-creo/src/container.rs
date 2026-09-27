@@ -2898,7 +2898,7 @@ pub(crate) fn scan_bytes<'a>(
             &legacy_geometry.pcurves,
         )?;
     }
-    let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
+    let fc_curve_coordinates = curve::fc_coordinates(ctx, &curve_parameters)?;
     let fc05_circles = curve::fc05_circles(ctx, &curve_parameters)?;
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(ctx, &fc05_circles, &curve_topology_rows, &surface_rows)?;

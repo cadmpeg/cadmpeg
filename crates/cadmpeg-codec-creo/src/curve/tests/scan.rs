@@ -57,6 +57,93 @@ fn assert_fc05_circle_collection_refusal(limit: u64, operation: &'static str) {
             && resource.operation == operation));
 }
 
+fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
+    let mut payload = visibgeom_payload(0, 1);
+    payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x08");
+    payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
+    payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut scan = container::scan_bytes_ok(data);
+    scan.curves.parameters.remove(0)
+}
+
+fn fc_coordinates_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<crate::curve::FcCurveCoordinates>, CodecError> {
+    let parameter = fc_curve_parameter();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::curve::fc_coordinates(&ctx, &[parameter])
+}
+
+fn assert_fc_coordinate_collection_refusal(limit: u64, operation: &'static str) {
+    let error = fc_coordinates_with_limits(limit, u64::MAX)
+        .expect_err("one FC coordinate row exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn assert_fc_coordinate_retained_refusal(limit: u64, operation: &'static str) {
+    let error = fc_coordinates_with_limits(u64::MAX, limit)
+        .expect_err("one FC coordinate row exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == operation));
+}
+
+#[test]
+fn fc_coordinates_refuse_unique_parameter_count_node() {
+    assert_fc_coordinate_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn fc_coordinates_refuse_unique_parameter_projection() {
+    assert_fc_coordinate_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn fc_coordinates_refuse_token_vector() {
+    assert_fc_coordinate_collection_refusal(2, "creo fc coordinate tokens");
+}
+
+#[test]
+fn fc_coordinates_refuse_opaque_span_vector() {
+    assert_fc_coordinate_collection_refusal(6, "creo fc opaque spans");
+}
+
+#[test]
+fn fc_coordinates_refuse_value_vector() {
+    assert_fc_coordinate_collection_refusal(8, "creo fc coordinate values");
+}
+
+#[test]
+fn fc_coordinates_refuse_output_vector() {
+    assert_fc_coordinate_collection_refusal(12, "creo fc coordinate rows");
+}
+
+#[test]
+fn fc_coordinates_refuse_token_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(0, "creo fc coordinate token bytes");
+}
+
+#[test]
+fn fc_coordinates_refuse_span_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(32, "creo fc opaque span bytes");
+}
+
+#[test]
+fn fc_coordinates_refuse_body_retained_bytes() {
+    assert_fc_coordinate_retained_refusal(35, "creo fc coordinate body");
+}
+
 #[test]
 fn fc05_circles_refuse_unique_parameter_count_node() {
     assert_fc05_circle_collection_refusal(0, "creo unique-row count nodes");

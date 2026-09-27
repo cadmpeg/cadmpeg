@@ -6542,9 +6542,14 @@ pub(crate) fn fc02_short_pcurve_endpoints(
 }
 
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
-pub(crate) fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
+pub(crate) fn fc_coordinates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &[CurveParameterRecord],
+) -> Result<Vec<FcCurveCoordinates>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in uniquely_bounded_parameter_records(parameters) {
+    for record in
+        crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| record.curve_id)?
+    {
         let Some((&0xfc, tail)) = record.body.split_first() else {
             continue;
         };
@@ -6556,9 +6561,13 @@ pub(crate) fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurve
         while cursor < lane.len() {
             if matches!(lane[cursor], 0x46 | 0x2d) {
                 if let Some((value, next)) = scalar::decode(lane, cursor) {
+                    ctx.try_reserve_items(&mut tokens, 1, "creo fc coordinate tokens")?;
                     tokens.push(FcCurveCoordinateToken {
                         value_mm: value,
-                        raw: lane[cursor..next].to_vec(),
+                        raw: ctx.copy_retained(
+                            &lane[cursor..next],
+                            "creo fc coordinate token bytes",
+                        )?,
                         offset: cursor + 2,
                     });
                     cursor = next;
@@ -6572,24 +6581,37 @@ pub(crate) fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurve
             let mut unclaimed = 0;
             for token in &tokens {
                 if unclaimed < token.offset {
+                    ctx.try_reserve_items(&mut opaque_spans, 1, "creo fc opaque spans")?;
                     opaque_spans.push(FcCurveOpaqueSpan {
-                        raw: record.body[unclaimed..token.offset].to_vec(),
+                        raw: ctx.copy_retained(
+                            &record.body[unclaimed..token.offset],
+                            "creo fc opaque span bytes",
+                        )?,
                         offset: unclaimed,
                     });
                 }
                 unclaimed = token.offset + token.raw.len();
             }
             if unclaimed < record.body.len() {
+                ctx.try_reserve_items(&mut opaque_spans, 1, "creo fc opaque spans")?;
                 opaque_spans.push(FcCurveOpaqueSpan {
-                    raw: record.body[unclaimed..].to_vec(),
+                    raw: ctx.copy_retained(
+                        &record.body[unclaimed..],
+                        "creo fc opaque span bytes",
+                    )?,
                     offset: unclaimed,
                 });
             }
+            let mut values_mm = Vec::new();
+            ctx.try_reserve_items(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
+            values_mm.extend(tokens.iter().map(|token| token.value_mm));
+            let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
+            ctx.try_reserve_items(&mut result, 1, "creo fc coordinate rows")?;
             result.push(FcCurveCoordinates {
                 curve_id: record.curve_id,
                 subtype,
-                body: record.body.clone(),
-                values_mm: tokens.iter().map(|token| token.value_mm).collect(),
+                body,
+                values_mm,
                 tokens,
                 opaque_spans,
                 offset: record.offset,
@@ -6597,7 +6619,7 @@ pub(crate) fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurve
         }
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
