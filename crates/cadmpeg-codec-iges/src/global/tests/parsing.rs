@@ -111,6 +111,41 @@ fn global_d_exponent_refuses_temporary_limit_before_normalization() {
 }
 
 #[test]
+fn global_supplied_string_refuses_retained_limit_before_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
+    let resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: vec![crate::global::Value::String(b"abc".to_vec())],
+        losses: Vec::new(),
+    };
+    let result = resolution.supplied_string(0);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == 3
+                && limit.operation == "iges global supplied string"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service()).unwrap();
+    let resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: vec![crate::global::Value::String(b"abc".to_vec())],
+        losses: Vec::new(),
+    };
+    assert!(matches!(
+        resolution.supplied_string(0).unwrap(),
+        crate::global::Supplied::Value(value) if value == "abc"
+    ));
+}
+
+#[test]
 fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let first = [b'A'; CARD_DATA_COLUMNS];
     let second = [b'B'; CARD_DATA_COLUMNS];
