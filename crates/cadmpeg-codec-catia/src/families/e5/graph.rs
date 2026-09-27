@@ -2,6 +2,7 @@
 //! Native topology records in the E5 `0D 03` stream family.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::mem::size_of;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -154,6 +155,7 @@ pub(in crate::families::e5) struct E5PcurveJetSite {
     pub(super) second_derivatives: [FiniteReal; 2],
 }
 
+#[cfg(test)]
 impl E5PcurveJetSite {
     pub(super) fn zip(
         knots: Vec<FiniteReal>,
@@ -456,7 +458,11 @@ pub(crate) fn parse_topology(
                 edges.insert(record.id, edge);
             }
             if matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa) {
-                let pcurve = parse_pcurve(record)?;
+                let pcurve = match parse_pcurve(ctx, record) {
+                    Ok(Some(pcurve)) => pcurve,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 if let Err(error) = ctx.charge_collection_items(1, "catia_e5_topology_pcurves") {
                     return Some(Err(error));
                 }
@@ -866,46 +872,55 @@ fn parse_bounds(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E
     Ok(view.is_empty().then_some(E5Bounds { entries }))
 }
 
-fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
+fn parse_pcurve(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5Pcurve>, CodecError> {
     if record.payload.first() != Some(&0x81) {
-        return None;
+        return Ok(None);
     }
     let mut position = 1;
-    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else { return Ok(None); };
     let mut view = View::over_retained(record.payload);
-    view.seek(position)?;
+    if view.seek(position).is_none() { return Ok(None); }
     match record.class {
         0x96 => {
-            let values = view.read_counted(6, 8, finite_f64_le)?;
+            let Some(values) = (|| Some([
+                finite_f64_le(&mut view)?, finite_f64_le(&mut view)?,
+                finite_f64_le(&mut view)?, finite_f64_le(&mut view)?,
+                finite_f64_le(&mut view)?, finite_f64_le(&mut view)?,
+            ]))() else { return Ok(None); };
             if !view.is_empty() {
-                return None;
+                return Ok(None);
             }
-            Some(E5Pcurve::Line {
+            Ok(Some(E5Pcurve::Line {
                 surface,
                 origin: [values[0], values[1]],
                 direction: [values[2], values[3]],
                 range: [values[4], values[5]],
-            })
+            }))
         }
         0x97 => {
-            let center = view.read_counted(2, 8, finite_f64_le)?;
-            let codes = [view.u32_le()?, view.u32_le()?];
-            let values = view.read_counted(5, 8, finite_f64_le)?;
+            let Some((center, codes, values)) = (|| {
+                Some((
+                    [finite_f64_le(&mut view)?, finite_f64_le(&mut view)?],
+                    [view.u32_le()?, view.u32_le()?],
+                    [finite_f64_le(&mut view)?, finite_f64_le(&mut view)?, finite_f64_le(&mut view)?, finite_f64_le(&mut view)?, finite_f64_le(&mut view)?],
+                ))
+            })() else { return Ok(None); };
             if !view.is_empty() {
-                return None;
+                return Ok(None);
             }
-            Some(E5Pcurve::Circle {
+            let Some(radius) = PositiveReal::new(values[0].get()) else { return Ok(None); };
+            Ok(Some(E5Pcurve::Circle {
                 surface,
                 center: [center[0], center[1]],
                 codes,
-                radius: PositiveReal::new(values[0].get())?,
+                radius,
                 range: [values[1], values[2]],
                 tail: [values[3], values[4]],
-            })
+            }))
         }
-        0xa0 => parse_jet_pcurve(record.payload, position, surface),
-        0xaa => parse_nurbs_pcurve(record.payload, position, surface),
-        _ => None,
+        0xa0 => parse_jet_pcurve(ctx, record.payload, position, surface),
+        0xaa => parse_nurbs_pcurve(ctx, record.payload, position, surface),
+        _ => Ok(None),
     }
 }
 
@@ -915,149 +930,212 @@ fn finite_f64_le(view: &mut View<'_>) -> Option<FiniteReal> {
     FiniteReal::new(view.f64_le()?)
 }
 
-fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
+fn parse_nurbs_pcurve(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    position: usize,
+    surface: u32,
+) -> Result<Option<E5Pcurve>, CodecError> {
     let mut view = View::over_retained(payload);
-    view.seek(position)?;
-    if view.u16_le()? != 0 {
-        return None;
+    if view.seek(position).is_none() || view.u16_le() != Some(0) {
+        return Ok(None);
     }
-    let degree = view.u32_le()?;
-    let zero0 = view.u32_le()?;
-    let zero1 = view.u32_le()?;
-    let knot_count = usize::try_from(view.u32_le()?).ok()?;
-    let zero2 = view.u32_le()?;
+    let Some((degree, zero0, zero1, knot_count, zero2)) = (|| {
+        Some((view.u32_le()?, view.u32_le()?, view.u32_le()?, usize::try_from(view.u32_le()?).ok()?, view.u32_le()?))
+    })() else { return Ok(None); };
     if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
-        return None;
+        return Ok(None);
     }
-    let knot_count_u64 = u64::try_from(knot_count).ok()?;
-    let knots = view.read_counted(knot_count_u64, 8, View::f64_le)?;
-    let multiplicities = view.read_counted(knot_count_u64, 4, View::u32_le)?;
-    let max_control_count = view.remaining().checked_sub(E5_NURBS_PCURVE_TAIL_BYTES)? / 16;
-    let knots = knots
-        .into_iter()
-        .map(FiniteReal::new)
-        .collect::<Option<Vec<_>>>()?;
-    let (expanded_knots, control_count) =
-        expand_nurbs_knots_limited(degree, &knots, &multiplicities, max_control_count)?;
-    let control_points = view.read_counted(u64::try_from(control_count).ok()?, 16, |view| {
-        Some([finite_f64_le(view)?, finite_f64_le(view)?])
-    })?;
+    let Some(knot_count_u64) = u64::try_from(knot_count).ok() else { return Ok(None); };
+    if view.counted(knot_count_u64, 12).is_none() { return Ok(None); }
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, knot_count, "catia_e5_pcurve_knots")?;
+    for _ in 0..knot_count {
+        let Some(knot) = finite_f64_le(&mut view) else { return Ok(None); };
+        knots.push(knot);
+    }
+    let mut multiplicities = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut multiplicities, knot_count, "catia_e5_pcurve_multiplicities")?;
+    for _ in 0..knot_count {
+        let Some(multiplicity) = view.u32_le() else { return Ok(None); };
+        multiplicities.push(multiplicity);
+    }
+    let Some(max_control_count) = view.remaining().checked_sub(E5_NURBS_PCURVE_TAIL_BYTES).map(|remaining| remaining / 16) else { return Ok(None); };
+    let Some((expanded_knots, control_count)) = expand_nurbs_knots_limited(ctx, degree, &knots, &multiplicities, max_control_count)? else { return Ok(None); };
+    let Some(control_count_u64) = u64::try_from(control_count).ok() else { return Ok(None); };
+    if view.counted(control_count_u64, 16).is_none() { return Ok(None); }
+    let Some(bytes) = control_count_u64.checked_mul(16) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_pcurve_controls", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_pcurve_controls")?;
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count, "catia_e5_pcurve_controls")?;
+    for _ in 0..control_count {
+        let Some(point) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))() else { return Ok(None); };
+        control_points.push(point);
+    }
     if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
-        return None;
+        return Ok(None);
     }
-    let range = [
-        *expanded_knots.get(usize::try_from(degree).ok()?)?,
-        *expanded_knots.get(control_count)?,
-    ];
+    let Some(range) = usize::try_from(degree).ok().and_then(|degree| Some([*expanded_knots.get(degree)?, *expanded_knots.get(control_count)?])) else { return Ok(None); };
     if range[0] >= range[1] {
-        return None;
+        return Ok(None);
     }
-    view.skip(E5_NURBS_PCURVE_TAIL_BYTES)?;
-    view.is_empty().then_some(E5Pcurve::Nurbs {
+    if view.skip(E5_NURBS_PCURVE_TAIL_BYTES).is_none() { return Ok(None); }
+    Ok(view.is_empty().then_some(E5Pcurve::Nurbs {
         surface,
         degree,
         knots: expanded_knots,
         control_points,
         range,
-    })
+    }))
 }
 
 fn expand_nurbs_knots_limited(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[FiniteReal],
     multiplicities: &[u32],
     max_control_count: usize,
-) -> Option<(Vec<FiniteReal>, usize)> {
+) -> Result<Option<(Vec<FiniteReal>, usize)>, CodecError> {
     if knots.len() != multiplicities.len()
         || knots.is_empty()
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities.contains(&0)
     {
-        return None;
+        return Ok(None);
     }
-    let total = multiplicities
+    let Some(total) = multiplicities
         .iter()
         .try_fold(0usize, |total, multiplicity| {
             total.checked_add(usize::try_from(*multiplicity).ok()?)
-        })?;
-    let degree = usize::try_from(degree).ok()?;
-    let control_count = total.checked_sub(degree.checked_add(1)?)?;
+        }) else { return Ok(None); };
+    let Some((degree, control_count)) = usize::try_from(degree).ok().and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?))) else { return Ok(None); };
     if control_count <= degree || control_count > max_control_count {
-        return None;
+        return Ok(None);
     }
-    let mut expanded = Vec::with_capacity(total);
+    let Some(bytes) = total.checked_mul(size_of::<FiniteReal>()).and_then(|bytes| u64::try_from(bytes).ok()) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_pcurve_expanded_knots")?;
+    let mut expanded = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut expanded, total, "catia_e5_pcurve_expanded_knots")?;
     for (knot, multiplicity) in knots.iter().zip(multiplicities) {
-        expanded.extend(std::iter::repeat_n(
-            *knot,
-            usize::try_from(*multiplicity).ok()?,
-        ));
+        let Ok(count) = usize::try_from(*multiplicity) else { return Ok(None); };
+        expanded.extend(std::iter::repeat_n(*knot, count));
     }
-    (expanded.len() == total).then_some((expanded, control_count))
+    Ok((expanded.len() == total).then_some((expanded, control_count)))
 }
 
-fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
+fn read_finite_lane(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    let Some(count_u64) = u64::try_from(count).ok() else { return Ok(None); };
+    if view.counted(count_u64, 8).is_none() { return Ok(None); }
+    let mut values = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut values, count, operation)?;
+    for _ in 0..count {
+        let Some(value) = finite_f64_le(view) else { return Ok(None); };
+        values.push(value);
+    }
+    Ok(Some(values))
+}
+
+fn read_u32_lane(
+    ctx: &DecodeContext<'_>,
+    view: &mut View<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let Some(count_u64) = u64::try_from(count).ok() else { return Ok(None); };
+    if view.counted(count_u64, 4).is_none() { return Ok(None); }
+    let mut values = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut values, count, operation)?;
+    for _ in 0..count {
+        let Some(value) = view.u32_le() else { return Ok(None); };
+        values.push(value);
+    }
+    Ok(Some(values))
+}
+
+fn parse_jet_pcurve(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    position: usize,
+    surface: u32,
+) -> Result<Option<E5Pcurve>, CodecError> {
     let mut view = View::over_retained(payload);
-    view.seek(position)?;
-    let degree = view.u32_le()?;
-    let zero0 = view.u32_le()?;
-    let zero1 = view.u32_le()?;
-    let site_count = usize::try_from(view.u32_le()?).ok()?;
-    let zero2 = view.u32_le()?;
-    let zero3 = view.u32_le()?;
-    let zero4 = view.u32_le()?;
+    if view.seek(position).is_none() { return Ok(None); }
+    let Some((degree, zero0, zero1, site_count, zero2, zero3, zero4)) = (|| {
+        Some((view.u32_le()?, view.u32_le()?, view.u32_le()?, usize::try_from(view.u32_le()?).ok()?, view.u32_le()?, view.u32_le()?, view.u32_le()?))
+    })() else { return Ok(None); };
     if degree != 5 || site_count == 0 || [zero0, zero1, zero2, zero3, zero4] != [0; 5] {
-        return None;
+        return Ok(None);
     }
-    let site_count_u64 = u64::try_from(site_count).ok()?;
-    let mut knots = vec![FiniteReal::ZERO];
-    knots.extend(view.read_counted(site_count_u64.checked_sub(1)?, 8, finite_f64_le)?);
-    let multiplicities = view.read_counted(site_count_u64, 4, View::u32_le)?;
-    if usize::try_from(view.u32_le()?).ok()? != site_count {
-        return None;
+    let Some(knot_tail_count) = site_count.checked_sub(1) else { return Ok(None); };
+    let Some(knot_tail) = read_finite_lane(ctx, &mut view, knot_tail_count, "catia_e5_jet_knots")? else { return Ok(None); };
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, site_count, "catia_e5_jet_knots")?;
+    knots.push(FiniteReal::ZERO);
+    knots.extend(knot_tail);
+    let Some(multiplicities) = read_u32_lane(ctx, &mut view, site_count, "catia_e5_jet_multiplicities")? else { return Ok(None); };
+    if view.u32_le().and_then(|count| usize::try_from(count).ok()) != Some(site_count) {
+        return Ok(None);
     }
-    let x = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    let y = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    let dx = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    let dy = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    if view.u16_le()? != 1 {
-        return None;
+    let Some(x) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_x")? else { return Ok(None); };
+    let Some(y) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_y")? else { return Ok(None); };
+    let Some(dx) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_dx")? else { return Ok(None); };
+    let Some(dy) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_dy")? else { return Ok(None); };
+    if view.u16_le() != Some(1) {
+        return Ok(None);
     }
-    let ddx = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    let ddy = view.read_counted(site_count_u64, 8, finite_f64_le)?;
-    let range_values = view.read_counted(2, 8, finite_f64_le)?;
-    // `site_count == 0` is refused above and `site_count == 1` takes the first
-    // arm, so the interior station count is the exact difference. The checked
-    // subtraction refuses a stated count this arm cannot span instead of
-    // saturating it to an interior run of zero.
-    let expected_multiplicities: Vec<u32> = if site_count == 1 {
-        vec![degree + 1]
-    } else {
-        std::iter::once(degree + 1)
-            .chain(std::iter::repeat_n(3, site_count.checked_sub(2)?))
-            .chain(std::iter::once(degree + 1))
-            .collect()
-    };
-    let final_knot = knots.last()?.get();
+    let Some(ddx) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_ddx")? else { return Ok(None); };
+    let Some(ddy) = read_finite_lane(ctx, &mut view, site_count, "catia_e5_jet_ddy")? else { return Ok(None); };
+    let Some(range_values) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))() else { return Ok(None); };
+    let Some(final_knot) = knots.last().map(|knot| knot.get()) else { return Ok(None); };
+    let expected_sum = u32::try_from(site_count)
+        .ok()
+        .and_then(|count| count.checked_mul(3))
+        .and_then(|interior| (degree + 1).checked_add(interior));
     if !view.is_empty()
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
-        || multiplicities != expected_multiplicities
-        || multiplicities.iter().sum::<u32>() != degree + 1 + 3 * u32::try_from(site_count).ok()?
+        || multiplicities.iter().enumerate().any(|(index, multiplicity)| *multiplicity != if site_count == 1 || index == 0 || index == site_count - 1 { degree + 1 } else { 3 })
+        || multiplicities.iter().try_fold(0_u32, |sum, multiplicity| sum.checked_add(*multiplicity)) != expected_sum
         || range_values[0].get() != 0.0
         || (range_values[1].get() - final_knot).abs() > EPS_PARAMETER_ENDPOINT * final_knot.abs()
     {
-        return None;
+        return Ok(None);
     }
-    Some(E5Pcurve::Jet {
+    let Some(bytes) = site_count.checked_mul(size_of::<E5PcurveJetSite>()).and_then(|bytes| u64::try_from(bytes).ok()) else {
+        return Err(ctx.refuse_codec_limit("catia_e5_jet_sites", u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, "catia_e5_jet_sites")?;
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, site_count, "catia_e5_jet_sites")?;
+    for ((((((knot, multiplicity), u), v), du), dv), (ddu, ddv)) in knots.into_iter()
+        .zip(multiplicities)
+        .zip(x)
+        .zip(y)
+        .zip(dx)
+        .zip(dy)
+        .zip(ddx.into_iter().zip(ddy))
+    {
+        sites.push(E5PcurveJetSite {
+            knot,
+            multiplicity,
+            point: [u, v],
+            first_derivatives: [du, dv],
+            second_derivatives: [ddu, ddv],
+        });
+    }
+    Ok(Some(E5Pcurve::Jet {
         surface,
-        sites: E5PcurveJetSite::zip(
-            knots,
-            multiplicities,
-            x.into_iter().zip(y).map(|(u, v)| [u, v]).collect(),
-            dx.into_iter().zip(dy).map(|(u, v)| [u, v]).collect(),
-            ddx.into_iter().zip(ddy).map(|(u, v)| [u, v]).collect(),
-        ),
+        sites,
         range: [range_values[0], range_values[1]],
-    })
+    }))
 }
 
 /// Derive the exact global-sense anchor for a plane-cap split circle.
@@ -1882,7 +1960,8 @@ mod tests {
         payload.extend_from_slice(&[0; 37]);
         let mut truncated = payload.clone();
         truncated.pop();
-        assert!(parse_nurbs_pcurve(&truncated, 2, 7).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(ctx, &truncated, 2, 7))
+            .expect("service resource budget").is_none());
 
         let E5Pcurve::Nurbs {
             surface,
@@ -1890,7 +1969,8 @@ mod tests {
             knots,
             control_points,
             range,
-        } = parse_nurbs_pcurve(&payload, 2, 7).expect("AA NURBS pcurve")
+        } = crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(ctx, &payload, 2, 7))
+            .expect("service resource budget").expect("AA NURBS pcurve")
         else {
             panic!("AA record did not produce a NURBS pcurve");
         };
@@ -1905,6 +1985,41 @@ mod tests {
     }
 
     #[test]
+    fn aa_nurbs_pcurve_refuses_before_each_counted_lane() {
+        let mut payload = vec![0x81, 0x87, 0, 0];
+        for value in [1_u32, 0, 0, 2, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [2_u32, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for point in [[0.0_f64, 0.0], [1.0, 1.0]] {
+            for value in point {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0; 37]);
+        for (cap, operation) in [
+            (0, "catia_e5_pcurve_knots"),
+            (2, "catia_e5_pcurve_multiplicities"),
+            (4, "catia_e5_pcurve_expanded_knots"),
+            (8, "catia_e5_pcurve_controls"),
+        ] {
+            assert!(matches!(
+                crate::test_support::with_collection_limit(cap, |ctx| parse_nurbs_pcurve(ctx, &payload, 2, 7)),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+            ));
+        }
+        assert!(matches!(
+            crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(ctx, &payload, 2, 7)),
+            Ok(Some(E5Pcurve::Nurbs { .. }))
+        ));
+    }
+
+    #[test]
     fn circle_pcurve_admits_only_a_finite_positive_radius() {
         let parse = |radius: f64| {
             let mut payload = vec![0x81, 0x18];
@@ -1916,11 +2031,11 @@ mod tests {
             for value in [radius, 0.0, 1.0, 0.0, 0.0] {
                 payload.extend_from_slice(&value.to_le_bytes());
             }
-            parse_pcurve(&Record {
+            crate::test_support::with_service_context(|ctx| parse_pcurve(ctx, &Record {
                 class: 0x97,
                 id: 20,
                 payload: &payload,
-            })
+            })).expect("service resource budget")
         };
         assert!(matches!(
             parse(0.5),
@@ -1974,7 +2089,8 @@ mod tests {
         payload.extend_from_slice(&final_knot.to_le_bytes());
 
         assert!(matches!(
-            parse_jet_pcurve(&payload, 0, 7),
+            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(ctx, &payload, 0, 7))
+                .expect("service resource budget"),
             Some(E5Pcurve::Jet { range, .. }) if range == finite_pair([0.0, final_knot])
         ));
 
@@ -1982,16 +2098,60 @@ mod tests {
         let lower_offset = nonzero_lower.len() - 16;
         nonzero_lower[lower_offset..lower_offset + 8]
             .copy_from_slice(&(0.5 * final_knot).to_le_bytes());
-        assert!(parse_jet_pcurve(&nonzero_lower, 0, 7).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| parse_jet_pcurve(ctx, &nonzero_lower, 0, 7))
+            .expect("service resource budget").is_none());
 
         let mut wrong_upper = payload.clone();
         let upper_offset = wrong_upper.len() - 8;
         wrong_upper[upper_offset..].copy_from_slice(&(2.0 * final_knot).to_le_bytes());
-        assert!(parse_jet_pcurve(&wrong_upper, 0, 7).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| parse_jet_pcurve(ctx, &wrong_upper, 0, 7))
+            .expect("service resource budget").is_none());
 
         let mut nonfinite_knot = payload;
         nonfinite_knot[28..36].copy_from_slice(&f64::NAN.to_le_bytes());
-        assert!(parse_jet_pcurve(&nonfinite_knot, 0, 7).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| parse_jet_pcurve(ctx, &nonfinite_knot, 0, 7))
+            .expect("service resource budget").is_none());
+    }
+
+    #[test]
+    fn jet_pcurve_refuses_before_each_counted_lane() {
+        let mut payload = Vec::new();
+        for value in [5_u32, 0, 0, 2, 0, 0, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        for value in [6_u32, 6, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for _ in 0..8 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        for _ in 0..4 {
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        for (cap, operation) in [
+            (0, "catia_e5_jet_knots"),
+            (3, "catia_e5_jet_multiplicities"),
+            (5, "catia_e5_jet_x"),
+            (7, "catia_e5_jet_y"),
+            (9, "catia_e5_jet_dx"),
+            (11, "catia_e5_jet_dy"),
+            (13, "catia_e5_jet_ddx"),
+            (15, "catia_e5_jet_ddy"),
+            (17, "catia_e5_jet_sites"),
+        ] {
+            assert!(matches!(
+                crate::test_support::with_collection_limit(cap, |ctx| parse_jet_pcurve(ctx, &payload, 0, 7)),
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
+            ));
+        }
+        assert!(matches!(
+            crate::test_support::with_service_context(|ctx| parse_jet_pcurve(ctx, &payload, 0, 7)),
+            Ok(Some(E5Pcurve::Jet { .. }))
+        ));
     }
 
     #[test]
