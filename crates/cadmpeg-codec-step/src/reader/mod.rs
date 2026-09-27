@@ -365,7 +365,8 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+        session.ctx,
+    )?;
     session.charge_stage("step_representation_association")?;
     geometry::associate_free_representation_members(
         exchange,
@@ -373,7 +374,8 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+        session.ctx,
+    )?;
     session.charge_stage("step_presentation_carrier_association")?;
     geometry::associate_free_presentation_carriers(
         exchange,
@@ -381,7 +383,8 @@ fn decode_exchange_mode(
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+        session.ctx,
+    )?;
     session.charge_stage("step_surface_curve_association")?;
     geometry::associate_surface_curve_supports(
         exchange,
