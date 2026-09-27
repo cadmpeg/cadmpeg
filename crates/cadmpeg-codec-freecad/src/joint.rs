@@ -522,8 +522,13 @@ fn scalar_parameter(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Resul
             property.id
         ), "fcstd joint diagnostic")
     })?;
-    crate::native::joint::validate_parameter_value(&property.name, value)
-        .map_err(|error| crate::resource::malformed_charged(ctx, format_args!("joint parameter property {}: {error}", property.id), "fcstd joint diagnostic"))?;
+    if expected_tag == "Float" && value.parse::<f64>().ok()
+        .and_then(FiniteReal::new).is_none() {
+        return Err(crate::resource::malformed_charged(ctx, format_args!(
+            "joint parameter property {}: joint parameter {} has an invalid value {value:?}",
+            property.id, property.name,
+        ), "fcstd joint diagnostic"));
+    }
     Ok(Some(retained_string(ctx, value, "fcstd joint scalar parameter")?))
 }
 
@@ -695,6 +700,26 @@ pub(crate) mod tests {
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && failure.operation == "fcstd joint diagnostic"), "{xml}: {error:?}");
         }
+    }
+
+    #[test]
+    fn joint_invalid_scalar_value_refuses_before_copy() {
+        let property = scalar_property("App::PropertyAngle",
+            "<Property><Float value=\"bad\"/></Property>");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let service = cadmpeg_core::decode::DecodePolicy::service();
+        let admitted = diagnostic_context(&arena, &service);
+        let message = super::scalar_parameter(&admitted, &property)
+            .expect_err("invalid source scalar").to_string();
+        assert_eq!(message, "malformed container: joint parameter property property: joint parameter Angle has an invalid value \"bad\"");
+        let mut constrained = cadmpeg_core::decode::DecodePolicy::service();
+        constrained.limits.max_retained_bytes = 0;
+        let refused = diagnostic_context(&arena, &constrained);
+        let error = super::scalar_parameter(&refused, &property)
+            .expect_err("diagnostic must be admitted before allocation");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "fcstd joint diagnostic"), "{error:?}");
     }
 
     #[test]
