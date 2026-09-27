@@ -494,11 +494,7 @@ fn transfer_schema_one(
                 &mut losses,
             )?;
         }
-        let payload_prefixes = payloads_by_owner
-            .iter()
-            .filter(|(owner, property, _)| *owner == object_id && *property == "Shape")
-            .map(|(_, _, payload)| format!("{}:", crate::native::id_key(payload)))
-            .collect::<Vec<_>>();
+        let payload_prefixes = shape_payload_prefixes(ctx, &payloads_by_owner, object_id)?;
         if let Some(color) = values
             .get("LineColor")
             .and_then(|value| value.attribute("value"))
@@ -1037,6 +1033,21 @@ struct PrimitiveAppearanceSource<'a> {
     provenance: SourceProvenance,
 }
 
+fn shape_payload_prefixes(
+    ctx: &DecodeContext<'_>,
+    payloads_by_owner: &[(&str, &str, &str)],
+    object_id: &str,
+) -> Result<Vec<String>, CodecError> {
+    let mut prefixes = Vec::new();
+    for (_, _, payload) in payloads_by_owner.iter()
+        .filter(|(owner, property, _)| *owner == object_id && *property == "Shape") {
+        reserve_vec_items(ctx, &mut prefixes, 1, "FCStd GUI payload prefixes")?;
+        prefixes.push(crate::resource::retained_suffix(ctx,
+            crate::native::id_key(payload), ":", "FCStd GUI payload prefix text")?);
+    }
+    Ok(prefixes)
+}
+
 fn transfer_primitive_appearance(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1052,30 +1063,27 @@ fn transfer_primitive_appearance(
         payload_prefixes,
         provenance,
     } = source;
-    let targets = match style {
-        PrimitiveStyle::Line(_) => ir
-            .model
-            .edges
-            .iter()
-            .filter(|edge| {
-                payload_prefixes
-                    .iter()
-                    .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
-            })
-            .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
-            .collect::<Vec<_>>(),
-        PrimitiveStyle::Point(_) => ir
-            .model
-            .vertices
-            .iter()
-            .filter(|vertex| {
-                payload_prefixes
-                    .iter()
-                    .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
-            })
-            .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))
-            .collect::<Vec<_>>(),
-    };
+    let mut targets = Vec::new();
+    match style {
+        PrimitiveStyle::Line(_) => {
+            for edge in ir.model.edges.iter().filter(|edge| payload_prefixes.iter()
+                .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))) {
+                reserve_vec_items(ctx, &mut targets, 1, "FCStd GUI primitive targets")?;
+                targets.push(AppearanceTarget::Edge(crate::resource::copied_identity(
+                    ctx, edge.id.as_str(), "FCStd GUI primitive target identity",
+                )?));
+            }
+        }
+        PrimitiveStyle::Point(_) => {
+            for vertex in ir.model.vertices.iter().filter(|vertex| payload_prefixes.iter()
+                .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))) {
+                reserve_vec_items(ctx, &mut targets, 1, "FCStd GUI primitive targets")?;
+                targets.push(AppearanceTarget::Vertex(crate::resource::copied_identity(
+                    ctx, vertex.id.as_str(), "FCStd GUI primitive target identity",
+                )?));
+            }
+        }
+    }
     if targets.is_empty() {
         return Ok(());
     }

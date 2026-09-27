@@ -137,6 +137,97 @@ fn gui_body_update_identity_refuses_at_caller_retained_limit() {
             && failure.operation == "FCStd GUI body update identity"), "{error:?}");
 }
 
+fn primitive_target_refusal(collection_limit: u64, retained_limit: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex = VertexId::mint("fcstd:model:vertex#shape:v1").expect("valid vertex");
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point: PointId::mint("fcstd:model:point#shape:p1").expect("valid point"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("fcstd:model:edge#shape:e1").expect("valid edge"),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    super::super::transfer_primitive_appearance(
+        &ctx,
+        &ir,
+        &mut super::super::AppearancePlan::default(),
+        &mut Vec::new(),
+        super::super::PrimitiveAppearanceSource {
+            provider_name: "Model",
+            object_id: "shape",
+            packed_color: 0x1122_3344,
+            style: super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
+            payload_prefixes: &[String::from("shape:")],
+            provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                17,
+            ),
+        },
+    )
+    .expect_err("primitive target must be admitted")
+}
+
+#[test]
+fn gui_primitive_target_refuses_at_caller_collection_limit() {
+    let error = primitive_target_refusal(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI primitive targets"), "{error:?}");
+}
+
+#[test]
+fn gui_primitive_target_identity_refuses_at_caller_retained_limit() {
+    let error = primitive_target_refusal(u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI primitive target identity"), "{error:?}");
+}
+
+#[test]
+fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::shape_payload_prefixes(
+        &ctx, &[("object", "Shape", "fcstd:payload#shape")], "object",
+    ).expect_err("prefix slot must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI payload prefixes"), "{error:?}");
+}
+
+#[test]
+fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::shape_payload_prefixes(
+        &ctx, &[("object", "Shape", "fcstd:payload#shape")], "object",
+    ).expect_err("prefix text must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd GUI payload prefix text"), "{error:?}");
+}
+
 #[test]
 fn gui_color_list_refuses_at_caller_limit() {
     let bytes = [1_u32.to_le_bytes(), 0x1122_3344_u32.to_le_bytes()].concat();
