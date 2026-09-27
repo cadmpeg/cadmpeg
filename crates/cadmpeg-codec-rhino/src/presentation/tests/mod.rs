@@ -1142,13 +1142,15 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
     };
     let mut losses = Vec::new();
     let (geometry_values, attribute_values) = first_user_string_records(
+        &cadmpeg_test_support::service_decode_context(),
         &data,
         ArchiveVersion::V8,
         &[descriptor(geometry_start..attributes_start)],
         &[attribute_descriptor(attributes_start..data.len())],
         42,
         &mut losses,
-    );
+    )
+    .expect("user strings fit the service profile");
     assert!(losses.is_empty());
     assert_eq!(geometry_values.len(), 1);
     assert_eq!(geometry_values[0].key, "GeometryKey");
@@ -1163,6 +1165,25 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
             ("MixedCase", "mixed value")
         ]
     );
+}
+
+#[test]
+fn projected_user_string_entries_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = crate::presentation::user_string_records(
+        &ctx,
+        vec![("key".to_string(), "value".to_string())],
+    )
+    .expect_err("projected entry exceeds collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.operation == "Rhino projected user-string entries"
+    ));
 }
 
 #[test]

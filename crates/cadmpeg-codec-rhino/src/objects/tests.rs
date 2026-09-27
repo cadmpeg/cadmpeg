@@ -1128,8 +1128,13 @@ fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
     let mut payload = anonymous_chunk(archive, 3, &list_body);
     payload.extend([0xde, 0xad]);
 
-    let values = crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive)
-        .expect("user-string list");
+    let values = crate::objects::parse_user_string_list(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        0..payload.len(),
+        archive,
+    )
+    .expect("user-string list");
     assert_eq!(
         values,
         [
@@ -1143,7 +1148,51 @@ fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
 fn user_string_list_rejects_a_negative_count() {
     let archive = ArchiveVersion::V5;
     let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
-    assert!(crate::objects::parse_user_string_list(&payload, 0..payload.len(), archive).is_err());
+    assert!(crate::objects::parse_user_string_list(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        0..payload.len(),
+        archive,
+    )
+    .is_err());
+}
+
+fn user_string_list_refusal(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> crate::chunks::FramingError {
+    let archive = ArchiveVersion::V5;
+    let mut entry = utf16_bytes("key");
+    entry.extend(utf16_bytes("value"));
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(anonymous_chunk(archive, 0, &entry));
+    let bytes = anonymous_chunk(archive, 0, &body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root bytes admitted");
+    crate::objects::parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive)
+        .expect_err("user strings exceed configured limit")
+}
+
+#[test]
+fn user_string_entries_refuse_collection_limit() {
+    assert_attribute_resource(
+        &user_string_list_refusal(0, 100),
+        "Rhino user-string entries",
+    );
+}
+
+#[test]
+fn user_string_key_refuses_retained_limit() {
+    assert_attribute_resource(&user_string_list_refusal(100, 2), "Rhino user-string key");
+}
+
+#[test]
+fn user_string_value_refuses_retained_limit() {
+    assert_attribute_resource(&user_string_list_refusal(100, 3), "Rhino user-string value");
 }
 
 #[test]

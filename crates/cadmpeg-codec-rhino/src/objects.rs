@@ -686,6 +686,7 @@ pub(crate) fn parse_userdata(
 
 /// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
 pub(crate) fn parse_user_string_list(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
@@ -709,7 +710,7 @@ pub(crate) fn parse_user_string_list(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let mut values = Vec::with_capacity(count_bytes);
+    let mut values = crate::chunks::admitted_vec(ctx, count_bytes, "Rhino user-string entries")?;
     for _ in 0..count_bytes {
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
@@ -722,8 +723,8 @@ pub(crate) fn parse_user_string_list(
                 "user-string entry version is unsupported",
             ));
         }
-        let key = settings::utf16(&mut entry_reader)?;
-        let value = settings::utf16(&mut entry_reader)?;
+        let key = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string key")?;
+        let value = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
         entry_reader.skip_remaining()?;
         values.push((key, value));
         reader.skip(entry.next_offset() - reader.position())?;

@@ -1159,61 +1159,89 @@ struct UserStringRecord {
     value: String,
 }
 
-fn user_string_records(entries: Vec<(String, String)>) -> Vec<UserStringRecord> {
-    entries
-        .into_iter()
-        .map(|(key, value)| UserStringRecord { key, value })
-        .collect()
+fn user_string_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entries: Vec<(String, String)>,
+) -> Result<Vec<UserStringRecord>, CodecError> {
+    let mut records = crate::wire::admitted_collection(
+        ctx,
+        entries.len(),
+        "Rhino projected user-string entries",
+    )?;
+    for (key, value) in entries {
+        records.push(UserStringRecord { key, value });
+    }
+    Ok(records)
+}
+
+fn read_user_string_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    archive: ArchiveVersion,
+    payload_range: Option<Range<usize>>,
+    source_offset: usize,
+    label: &str,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<UserStringRecord>, CodecError> {
+    let Some(payload_range) = payload_range else {
+        return Ok(Vec::new());
+    };
+    match parse_user_string_list(ctx, data, payload_range, archive) {
+        Ok(entries) => user_string_records(ctx, entries),
+        Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+        Err(error) => {
+            losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
+                "{label} at offset {source_offset} could not be transferred: {error}"
+            )));
+            Ok(Vec::new())
+        }
+    }
 }
 
 fn first_user_string_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     archive: ArchiveVersion,
     class_userdata: &[UserdataDescriptor],
     attribute_userdata: &[AttributeUserdataDescriptor],
     source_offset: usize,
     losses: &mut Vec<LossNote>,
-) -> (Vec<UserStringRecord>, Vec<UserStringRecord>) {
-    let geometry = class_userdata
-        .iter().filter_map(UserdataDescriptor::known)
+) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
+    let geometry_range = class_userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
-        .and_then(|value| {
-            match parse_user_string_list(data, value.payload_range.clone(), archive) {
-                Ok(entries) => Some(user_string_records(entries)),
-                Err(error) => {
-                    losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
-                        "object user-string userdata at offset {source_offset} could not be transferred: {error}"
-                    )));
-                    None
-                }
-            }
-        })
-        .unwrap_or_default();
-    let mut attributes = attribute_userdata
-        .iter().filter_map(AttributeUserdataDescriptor::known)
-        .find(|value| {
-            value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST
-        })
-        .and_then(|value| {
-            let payload_range = value.payload_range.clone();
-            match parse_user_string_list(data, payload_range, archive) {
-                Ok(entries) => Some(user_string_records(entries)),
-                Err(error) => {
-                    losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
-                        "object-attributes user-string userdata at offset {source_offset} could not be transferred: {error}"
-                    )));
-                    None
-                }
-            }
-        })
-        .unwrap_or_default();
+        .map(|value| value.payload_range.clone());
+    let geometry = read_user_string_records(
+        ctx,
+        data,
+        archive,
+        geometry_range,
+        source_offset,
+        "object user-string userdata",
+        losses,
+    )?;
+    let attributes_range = attribute_userdata
+        .iter()
+        .filter_map(AttributeUserdataDescriptor::known)
+        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
+        .map(|value| value.payload_range.clone());
+    let mut attributes = read_user_string_records(
+        ctx,
+        data,
+        archive,
+        attributes_range,
+        source_offset,
+        "object-attributes user-string userdata",
+        losses,
+    )?;
     if let Some(index) = attributes
         .iter()
         .position(|value| value.key.eq_ignore_ascii_case("$temp_object$"))
     {
         attributes.remove(index);
     }
-    (geometry, attributes)
+    Ok((geometry, attributes))
 }
 
 #[allow(
@@ -1221,6 +1249,7 @@ fn first_user_string_records(
     reason = "the projection keeps source data, both userdata owners, and loss reporting explicit"
 )]
 fn object_attributes_presentation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     attributes: &ObjectAttributes,
     class_userdata: &[UserdataDescriptor],
@@ -1229,7 +1258,7 @@ fn object_attributes_presentation(
     source_offset: usize,
     source_uuid: String,
     losses: &mut Vec<LossNote>,
-) -> ObjectAttributesPresentation {
+) -> Result<ObjectAttributesPresentation, CodecError> {
     let rendering = rendering_attributes(
         data,
         attributes.rendering_range.clone(),
@@ -1243,14 +1272,15 @@ fn object_attributes_presentation(
         RenderingAttributesPresentation::default()
     });
     let (user_strings, attribute_user_strings) = first_user_string_records(
+        ctx,
         data,
         archive,
         class_userdata,
         attribute_userdata,
         source_offset,
         losses,
-    );
-    ObjectAttributesPresentation {
+    )?;
+    Ok(ObjectAttributesPresentation {
         source_uuid,
         name: attributes.name.clone(),
         url: attributes.url.clone(),
@@ -1306,7 +1336,7 @@ fn object_attributes_presentation(
             .mesh_modifiers
             .as_ref()
             .map(mesh_modifiers_record),
-    }
+    })
 }
 
 fn read_color_f32(
@@ -1813,17 +1843,25 @@ fn parse_light_record_attributes(
         .map(|range| parse_attribute_userdata(ctx, data, range.clone(), archive, &mut warnings))
         .transpose()?
         .unwrap_or_default();
-    let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
+    let mut userdata_requires_opaque = false;
+    for descriptor in &attributes_userdata {
         let Some(descriptor) = descriptor.known() else {
-            return true;
+            userdata_requires_opaque = true;
+            break;
         };
         let is_user_string =
             descriptor.class_uuid == USER_STRING_LIST && descriptor.item_uuid == USER_STRING_LIST;
-        if !is_user_string {
-            return false;
+        if is_user_string {
+            match parse_user_string_list(ctx, data, descriptor.payload_range.clone(), archive) {
+                Ok(_) => {}
+                Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                Err(_) => {
+                    userdata_requires_opaque = true;
+                    break;
+                }
+            }
         }
-        parse_user_string_list(data, descriptor.payload_range.clone(), archive).is_err()
-    });
+    }
     if attributes.is_none() && !attributes_userdata.is_empty() {
         return Err(FramingError::structural(
             record.range.start,
@@ -1858,6 +1896,7 @@ fn parse_light_record_attributes(
         &mut warnings,
     );
     let presentation = object_attributes_presentation(
+        ctx,
         data,
         attributes,
         &[],
@@ -1866,7 +1905,8 @@ fn parse_light_record_attributes(
         record.range.start,
         attributes.object_id.to_string(),
         losses,
-    );
+    )
+    .map_err(FramingError::from)?;
     for warning in warnings {
         losses.push(
             warning
@@ -4742,6 +4782,7 @@ pub(crate) fn install(
                 identity.object_id.to_string()
             };
             let attributes_presentation = object_attributes_presentation(
+                ctx,
                 scan.data,
                 attributes,
                 &object.userdata,
@@ -4750,7 +4791,7 @@ pub(crate) fn install(
                 object.range.start,
                 identity.object_id.to_string(),
                 &mut losses,
-            );
+            )?;
             object_presentation.push(ObjectPresentationRecord {
                 id: format!("rhino:presentation:object#{key}"),
                 source_offset: object.range.start as u64,
