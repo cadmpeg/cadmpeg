@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::sketch_table_headers;
+use super::{owning_feature_definition_ref, sketch_table_headers};
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureTrimBucket, FeatureTrimEntityTable,
@@ -29,6 +29,21 @@ fn definition() -> FeatureDefinition {
         saved_section: None,
         offset: 0,
     }
+}
+
+#[test]
+fn owning_definition_lookup_keeps_unique_owner_rule() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut owned = definition();
+    owned.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(17),
+        owner_feature_id: Some(40),
+    };
+    scan.features.definitions.push(owned.clone());
+    assert_eq!(owning_feature_definition_ref(&scan, 40).as_deref(),
+        Some("creo:featdefs:feature_definition#17"));
+    scan.features.definitions.push(owned);
+    assert_eq!(owning_feature_definition_ref(&scan, 40), None);
 }
 
 fn bucket() -> FeatureTrimBucket {

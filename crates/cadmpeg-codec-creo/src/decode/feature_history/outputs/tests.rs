@@ -17,6 +17,43 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use super::{insert_feature_parameter, insert_feature_source_property, replace_feature_parameter};
 
 #[test]
+fn section_feature_lookups_keep_unique_source_selection() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 40,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
+        stream_offset: 0,
+        body: vec![0; 8].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(17),
+            owner_feature_id: Some(40),
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 4,
+    });
+    assert_eq!(super::owned_section_feature_id(&scan, 17), Some(40));
+    assert_eq!(super::section_definition_for_history_feature(&scan, 40).map(|value| value.offset), Some(4));
+    scan.features.definitions.push(scan.features.definitions[0].clone());
+    assert_eq!(super::owned_section_feature_id(&scan, 17), None);
+    assert!(super::section_definition_for_history_feature(&scan, 40).is_none());
+}
+
+#[test]
 fn feature_parameter_refuses_before_btree_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

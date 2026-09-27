@@ -9,6 +9,7 @@ use crate::container::ContainerScan;
 
 use super::feature_history::outputs::owned_section_feature_id;
 use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoSketchTableKind};
+use super::uniqueness::exactly_one;
 
 pub(super) fn feature_definition_has_sketch_design(
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -322,15 +323,11 @@ pub(super) fn owning_feature_definition_ref(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<String> {
-    let definitions = scan
+    let definition = exactly_one(scan
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
-        .collect::<Vec<_>>();
-    let [definition] = definitions.as_slice() else {
-        return None;
-    };
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)))?;
     Some(feature_definition_record_id(scan, definition))
 }
 
