@@ -300,6 +300,46 @@ fn scan_warning_and_diagnostic_refuse_collection_limit() {
 }
 
 #[test]
+fn typed_report_loss_and_prefixed_diagnostic_refuse_collection_limit() {
+    let refusal = with_collection_limit(0, |ctx| {
+        super::push_report_loss(
+            ctx,
+            &mut Vec::new(),
+            RhinoLossCode::DimensionOverrideDropped,
+            format_args!("override dropped"),
+        )
+        .expect_err("typed loss requires a collection slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino typed decode losses"
+    ));
+    let mut source = Diagnostics::new();
+    source.push("repaired");
+    let refusal = with_collection_limit(0, |ctx| {
+        Diagnostics::new()
+            .append_prefixed_admitted(ctx, source, "object")
+            .expect_err("prefixed diagnostic requires a collection slot")
+    });
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut losses = Vec::new();
+    super::push_report_loss(
+        &ctx,
+        &mut losses,
+        RhinoLossCode::DimensionOverrideDropped,
+        format_args!("override dropped"),
+    )
+    .expect("service profile admits the typed loss");
+    assert_eq!(losses[0].message, "override dropped");
+}
+
+#[test]
 fn candidate_validation_propagates_entity_limit() {
     let scan = scan_with_objects(&[]);
     let refusal = with_entity_limit(&scan, 0, |expand| {
