@@ -404,47 +404,107 @@ fn adjacency_for<'a>(
 /// topology rows.
 ///
 /// A curve contributes to a component when either of its sides names a face.
-pub(crate) fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
-    let rows = uniquely_identified_rows(rows);
+pub(crate) fn face_components(
+    ctx: &DecodeContext<'_>,
+    rows: &[CurveTopologyRow],
+) -> Result<Vec<FaceComponent>, CodecError> {
+    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
         let [left, right] = row.faces;
         for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
-            adjacency.entry(face).or_default();
-            face_curves.entry(face).or_default().insert(row.id);
+            face_set(ctx, &mut adjacency, face, "creo face adjacency nodes")?;
+            let curves = face_set(ctx, &mut face_curves, face, "creo face curve group nodes")?;
+            if !curves.contains(&row.id) {
+                ctx.charge_collection_items(1, "creo face curve member nodes")?;
+                curves.insert(row.id);
+            }
         }
         if let (Some(left), Some(right)) = (left, right) {
             if left != right {
-                adjacency.entry(left.get()).or_default().insert(right.get());
-                adjacency.entry(right.get()).or_default().insert(left.get());
+                let neighbors = face_set(
+                    ctx,
+                    &mut adjacency,
+                    left.get(),
+                    "creo face adjacency nodes",
+                )?;
+                if !neighbors.contains(&right.get()) {
+                    ctx.charge_collection_items(1, "creo face adjacency links")?;
+                    neighbors.insert(right.get());
+                }
+                let neighbors = face_set(
+                    ctx,
+                    &mut adjacency,
+                    right.get(),
+                    "creo face adjacency nodes",
+                )?;
+                if !neighbors.contains(&left.get()) {
+                    ctx.charge_collection_items(1, "creo face adjacency links")?;
+                    neighbors.insert(left.get());
+                }
             }
         }
     }
     let mut seen = BTreeSet::new();
     let mut components = Vec::new();
     for start in adjacency.keys().copied() {
-        if !seen.insert(start) {
+        if seen.contains(&start) {
             continue;
         }
-        let mut pending = vec![start];
+        ctx.charge_collection_items(1, "creo seen component faces")?;
+        seen.insert(start);
+        let mut pending = Vec::new();
+        ctx.try_reserve_items(&mut pending, 1, "creo pending component faces")?;
+        pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
         while let Some(face) = pending.pop() {
+            ctx.charge_collection_items(1, "creo component face nodes")?;
             faces.insert(face);
-            curves.extend(face_curves.get(&face).into_iter().flatten().copied());
+            for curve in face_curves.get(&face).into_iter().flatten().copied() {
+                if !curves.contains(&curve) {
+                    ctx.charge_collection_items(1, "creo component curve nodes")?;
+                    curves.insert(curve);
+                }
+            }
             for neighbour in adjacency.get(&face).into_iter().flatten().copied() {
-                if seen.insert(neighbour) {
+                if !seen.contains(&neighbour) {
+                    ctx.charge_collection_items(1, "creo seen component faces")?;
+                    seen.insert(neighbour);
+                    ctx.try_reserve_items(&mut pending, 1, "creo pending component faces")?;
                     pending.push(neighbour);
                 }
             }
         }
+        let mut face_ids = Vec::new();
+        ctx.try_reserve_items(&mut face_ids, faces.len(), "creo component face IDs")?;
+        face_ids.extend(faces);
+        let mut curve_ids = Vec::new();
+        ctx.try_reserve_items(&mut curve_ids, curves.len(), "creo component curve IDs")?;
+        curve_ids.extend(curves);
+        ctx.try_reserve_items(&mut components, 1, "creo face components")?;
         components.push(FaceComponent {
-            face_ids: faces.into_iter().collect(),
-            curve_ids: curves.into_iter().collect(),
+            face_ids,
+            curve_ids,
         });
     }
-    components
+    Ok(components)
+}
+
+fn face_set<'a>(
+    ctx: &DecodeContext<'_>,
+    groups: &'a mut BTreeMap<u32, BTreeSet<u32>>,
+    id: u32,
+    operation: &'static str,
+) -> Result<&'a mut BTreeSet<u32>, CodecError> {
+    Ok(match groups.entry(id) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, operation)?;
+            entry.insert(BTreeSet::new())
+        }
+    })
 }
 
 /// Select the model body count using the settled metadata precedence.
