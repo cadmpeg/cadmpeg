@@ -57,3 +57,32 @@ fn pmi_shape_aspects_refuse_collection_limit() {
 fn pmi_targeted_aspects_refuse_collection_limit() {
     pmi_refuses("#1=DATUM('D');", "step_pmi_targeted_aspects");
 }
+
+fn target_refusal(limit: u64) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    super::super::targets([1, 2], Some(&ctx)).expect_err("two target IDs exceed the limit")
+}
+
+#[test]
+fn pmi_target_ids_refuse_collection_limit() {
+    assert!(matches!(
+        target_refusal(0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_target_ids"
+    ));
+}
+
+#[test]
+fn pmi_target_items_refuse_collection_limit() {
+    assert!(matches!(
+        target_refusal(1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_pmi_target_items"
+    ));
+}
