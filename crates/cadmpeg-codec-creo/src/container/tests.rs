@@ -605,6 +605,91 @@ fn scanned_section_succeeds_under_service_policy() {
     assert_eq!(sections[0].section.raw_name, "Body");
 }
 
+fn one_toc_section(marker_name: &str, entry_name: &str) -> Vec<u8> {
+    let mut data = format!("{:<80}\n", "#UGC_TOC 2 1 81 17").into_bytes();
+    let section = format!("#{marker_name}\nabc");
+    let offset = 2 * 81;
+    data.extend_from_slice(
+        format!(
+            "{:<80}\n",
+            format!("{entry_name} {offset:x} {:x} 0", section.len())
+        )
+        .as_bytes(),
+    );
+    assert_eq!(data.len(), offset);
+    data.extend_from_slice(section.as_bytes());
+    data
+}
+
+#[test]
+fn toc_section_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_toc_section("Body", "Body");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
+    let error = super::toc_sections(&ctx, &data, 0)
+        .err()
+        .expect("TOC name needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo TOC section names"));
+}
+
+#[test]
+fn modelview_toc_name_refuses_before_retained_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_toc_section("ModelView#1", "ModelView 1");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
+    let error = super::toc_sections(&ctx, &data, 0)
+        .err()
+        .expect("ModelView name needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo TOC section names"));
+}
+
+#[test]
+fn toc_section_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = one_toc_section("Body", "Body");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&data, &arena, &policy).expect("TOC input is admitted");
+    let error = super::toc_sections(&ctx, &data, 0)
+        .err()
+        .expect("one TOC section needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo TOC sections"));
+}
+
+#[test]
+fn toc_section_succeeds_under_service_policy() {
+    let data = one_toc_section("ModelView#1", "ModelView 1");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+        .expect("TOC input is admitted");
+    let sections = super::toc_sections(&ctx, &data, 0).expect("TOC section is admitted");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name, "ModelView#1");
+}
+
 #[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
