@@ -43,7 +43,7 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -1129,7 +1129,7 @@ impl<'a> Section<'a> {
     /// bounded operation-state counter map.
     pub(crate) fn operation_state_group_table(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<OperationStateGroupTable>, CodecError> {
         if !self
             .fields
@@ -1180,7 +1180,7 @@ impl<'a> Section<'a> {
 
     fn operation_state_block(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<OperationStateBlock<'a>>, CodecError> {
         let Some(map) = self.operation_state_counter_map() else {
             return Ok(None);
@@ -1225,7 +1225,7 @@ impl<'a> Section<'a> {
     /// Decode the bounded per-object status lane after the operation records.
     pub(crate) fn operation_state_status_table(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<OperationStateStatusTable<'a>>, CodecError> {
         Ok(self
             .operation_state_block(ctx)?
@@ -1236,7 +1236,7 @@ impl<'a> Section<'a> {
     /// the roll-forward table or counter-map boundary.
     pub(crate) fn operation_state_messages(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
         Ok(self
             .operation_state_block(ctx)?
@@ -2666,7 +2666,7 @@ fn operation_state_messages(bytes: &[u8], base_offset: usize) -> Vec<OperationSt
 }
 
 fn operation_state_group_table_before_counter_map(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     map_start: usize,
     base_offset: usize,
@@ -2683,15 +2683,14 @@ fn operation_state_group_table_before_counter_map(
     }
     let mut candidates = Vec::new();
     for at in 0..map_start.saturating_sub(2) {
+        ctx.charge_work(1, "nx operation-state group scan")?;
         if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
             continue;
         }
         let Some(end) = operation_state_group_end_at(bytes, at, map_start, base_offset) else {
             continue;
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-        }
+        ctx.charge_collection_items(1, "nx operation-state group candidates")?;
         reserve_group_vec(
             ctx,
             &mut candidates,
@@ -2702,20 +2701,28 @@ fn operation_state_group_table_before_counter_map(
     }
     candidates.sort_by_key(|(start, end)| (*end, *start));
 
-    let mut predecessors = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            candidates.len(),
-            None,
-            "nx operation-state group predecessors",
-        )?,
-        None => alloc_filled(
-            candidates.len(),
-            None,
-            "nx operation-state group predecessors",
-        )?,
-    };
+    let predecessor_bytes = candidates
+        .len()
+        .checked_mul(std::mem::size_of::<Option<usize>>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "nx operation-state group predecessors",
+                0,
+                cadmpeg_core::decode::u64_from_index(candidates.len()),
+            )
+        })?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(predecessor_bytes),
+        "nx operation-state group predecessors",
+    )?;
+    let mut predecessors = ctx.alloc_filled(
+        candidates.len(),
+        None,
+        "nx operation-state group predecessors",
+    )?;
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
     for (candidate_index, (start, end)) in candidates.iter().enumerate() {
+        ctx.charge_work(1, "nx operation-state group paths")?;
         let previous = best_by_end.get(start).copied();
         let path = GroupPath {
             last_candidate: candidate_index,
@@ -2728,10 +2735,12 @@ fn operation_state_group_table_before_counter_map(
                 || (path.length == current.length && path.first_start < current.first_start)
         });
         if replace {
-            if let Some(ctx) = ctx {
-                if !best_by_end.contains_key(end) {
-                    ctx.charge_collection_items(1, "nx operation-state group paths")?;
-                }
+            if !best_by_end.contains_key(end) {
+                ctx.charge_collection_items(1, "nx operation-state group paths")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, GroupPath)>()),
+                    "nx operation-state group paths",
+                )?;
             }
             best_by_end.insert(*end, path);
         }
@@ -2746,9 +2755,10 @@ fn operation_state_group_table_before_counter_map(
     let Some(terminal) = best_by_end.get(&trailing_start).copied() else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(terminal.length as u64, "nx operation-state group path")?;
-    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(terminal.length),
+        "nx operation-state group path",
+    )?;
     let mut path = Vec::new();
     reserve_group_vec(
         ctx,
@@ -2765,9 +2775,10 @@ fn operation_state_group_table_before_counter_map(
     let Some(&last) = path.last() else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(path.len() as u64, "nx operation-state groups")?;
-    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(path.len()),
+        "nx operation-state groups",
+    )?;
     let mut groups = Vec::new();
     reserve_group_vec(ctx, &mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
@@ -2785,22 +2796,27 @@ fn operation_state_group_table_before_counter_map(
 }
 
 fn reserve_group_vec<T>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    values.try_reserve_exact(additional).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(
+    let bytes = additional
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                operation,
+                0,
+                cadmpeg_core::decode::u64_from_index(additional),
+            )
+        })?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
+    values.try_reserve_exact(additional).map_err(|_| {
+        ctx.refuse_codec_limit(
             operation,
             0,
             cadmpeg_core::decode::u64_from_index(additional),
-        ),
-        None => cadmpeg_core::decode::refuse_local_limit(
-            operation,
-            cadmpeg_core::decode::u64_from_index(additional),
-            cadmpeg_core::decode::u64_from_index(additional),
-        ),
+        )
     })
 }
 

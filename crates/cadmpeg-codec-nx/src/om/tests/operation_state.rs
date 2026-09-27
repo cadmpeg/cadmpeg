@@ -78,7 +78,9 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     bytes.extend([0x99; 16]);
 
     let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
-    let table = operation_state_group_table_before_counter_map(None, &bytes, map.offset(), 0)
+    let table = crate::test_support::with_decode_context(|ctx| {
+        operation_state_group_table_before_counter_map(ctx, &bytes, map.offset(), 0)
+    })
         .unwrap()
         .expect("group table");
     assert_eq!(table.offset(), 3);
@@ -114,7 +116,9 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
     bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
 
-    let table = operation_state_group_table_before_counter_map(None, &bytes, map_start, 0)
+    let table = crate::test_support::with_decode_context(|ctx| {
+        operation_state_group_table_before_counter_map(ctx, &bytes, map_start, 0)
+    })
         .unwrap()
         .expect("long adjacent group run");
     assert_eq!(table.groups().len(), GROUP_COUNT);
@@ -126,7 +130,7 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
     policy.limits.max_collection_items = (GROUP_COUNT - 1) as u64;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = operation_state_group_table_before_counter_map(Some(&ctx), &bytes, map_start, 0)
+    let error = operation_state_group_table_before_counter_map(&ctx, &bytes, map_start, 0)
         .expect_err("the final group exceeds the admitted collection count");
     assert!(matches!(
         error,

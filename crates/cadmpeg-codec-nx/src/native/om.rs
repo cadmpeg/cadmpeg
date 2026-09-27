@@ -333,7 +333,7 @@ pub(super) fn operation_state_journal_groups(
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
 pub(super) fn operation_state_groups(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections();
@@ -384,7 +384,7 @@ pub(super) fn operation_state_groups(
 
 /// Decode standalone operation-state messages from canonical feature-history areas.
 pub(super) fn operation_state_messages(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
     let sections = container.om_sections();
@@ -431,7 +431,7 @@ pub(super) fn operation_state_messages(
 
 /// Decode exact per-object operation-state status rows from feature-history areas.
 pub(super) fn operation_state_statuses(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
     let sections = container.om_sections();
@@ -482,7 +482,7 @@ pub(super) fn operation_state_statuses(
 
 /// Decode exact feature-record slot lanes from feature-history status blocks.
 pub(super) fn operation_state_slot_lanes(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
     let sections = container.om_sections();
