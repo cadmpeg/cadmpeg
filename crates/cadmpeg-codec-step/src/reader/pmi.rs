@@ -2449,20 +2449,22 @@ fn measure_inner(
                 active.remove(id);
                 return Ok(None);
             };
-            let quantity = record
-                .partials
-                .iter()
-                .flat_map(|partial| &partial.parameters)
-                .find_map(measure_quantity)
-                .unwrap_or_else(|| {
-                    if record.display_name().contains("LENGTH") {
-                        PmiQuantity::Length
-                    } else if record.display_name().contains("ANGLE") {
-                        PmiQuantity::Angle
-                    } else {
-                        PmiQuantity::Ratio
-                    }
-                });
+            let mut quantity = None;
+            for parameter in record.partials.iter().flat_map(|partial| &partial.parameters) {
+                quantity = measure_quantity(parameter, ctx)?;
+                if quantity.is_some() {
+                    break;
+                }
+            }
+            let quantity = quantity.unwrap_or_else(|| {
+                if record.display_name().contains("LENGTH") {
+                    PmiQuantity::Length
+                } else if record.display_name().contains("ANGLE") {
+                    PmiQuantity::Angle
+                } else {
+                    PmiQuantity::Ratio
+                }
+            });
             let unit = record
                 .partials
                 .iter()
@@ -2547,8 +2549,14 @@ fn measure_inner(
     })
 }
 
-fn measure_quantity(value: &Value) -> Option<PmiQuantity> {
-    match value {
+fn measure_quantity(
+    value: &Value,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<PmiQuantity>, CodecError> {
+    let _depth = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_measure_quantity_walk"))
+        .transpose()?;
+    Ok(match value {
         Value::Typed(name, value) => {
             if name.contains("LENGTH") {
                 Some(PmiQuantity::Length)
@@ -2557,12 +2565,21 @@ fn measure_quantity(value: &Value) -> Option<PmiQuantity> {
             } else if name.contains("RATIO") {
                 Some(PmiQuantity::Ratio)
             } else {
-                measure_quantity(value)
+                measure_quantity(value, ctx)?
             }
         }
-        Value::List(values) => values.iter().find_map(measure_quantity),
+        Value::List(values) => {
+            let mut quantity = None;
+            for value in values {
+                quantity = measure_quantity(value, ctx)?;
+                if quantity.is_some() {
+                    break;
+                }
+            }
+            quantity
+        }
         _ => None,
-    }
+    })
 }
 
 #[cfg(test)]
