@@ -599,7 +599,9 @@ fn collect_invisible_body_ids(
         active.remove(&id);
         return false;
     };
-    let references = if record
+    let mut found_reference = false;
+    let mut supported = true;
+    if record
         .partials
         .iter()
         .any(|partial| partial.name == "STYLED_ITEM")
@@ -608,36 +610,40 @@ fn collect_invisible_body_ids(
             .iter()
             .any(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
     {
-        styled_item_parts(record)
+        if let Some(reference) = styled_item_parts(record)
             .and_then(|parts| parts.target.reference())
-            .into_iter()
-            .collect::<Vec<_>>()
+        {
+            found_reference = true;
+            supported &= collect_invisible_body_ids(
+                reference,
+                exchange,
+                topology,
+                body_indices,
+                active,
+                body_ids,
+            );
+        }
     } else if record
         .partials
         .iter()
         .any(|partial| super::representation::is_representation_name(&partial.name))
     {
-        super::representation::items(record).unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    if references.is_empty() {
-        active.remove(&id);
-        return false;
-    }
-    let mut supported = true;
-    for reference in references {
-        supported &= collect_invisible_body_ids(
-            reference,
-            exchange,
-            topology,
-            body_indices,
-            active,
-            body_ids,
-        );
+        if let Some(references) = super::representation::items(record) {
+            for reference in references {
+                found_reference = true;
+                supported &= collect_invisible_body_ids(
+                    reference,
+                    exchange,
+                    topology,
+                    body_indices,
+                    active,
+                    body_ids,
+                );
+            }
+        }
     }
     active.remove(&id);
-    supported
+    found_reference && supported
 }
 
 fn expand_style_targets(
