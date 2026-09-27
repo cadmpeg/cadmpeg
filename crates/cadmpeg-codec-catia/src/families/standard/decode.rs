@@ -5832,27 +5832,38 @@ fn validate_standard_topology(
 /// The face's loop ids and their classification, built once from the boundary
 /// rows the solved topology states for this face.
 fn standard_face_loops(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     topology: &crate::families::standard::topology::StandardTopology,
     face_index: usize,
     point_assignment: &[usize],
-) -> cadmpeg_ir::topology::FaceLoops {
+) -> Result<cadmpeg_ir::topology::FaceLoops, CodecError> {
     let Some(face_topology) = topology.faces().get(face_index) else {
-        return cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+        return Ok(cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()));
     };
-    let ids: Vec<LoopId> = (0..face_topology.boundaries.len())
-        .map(|loop_index| {
-            LoopId::compose(
+    let mut ids = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut ids, face_topology.boundaries.len(), "catia_standard_face_loop_ids")?;
+    for loop_index in 0..face_topology.boundaries.len() {
+        ids.push(LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
                 cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
-            )
-        })
-        .collect();
-    let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
+            ));
+    }
+    let unspecified = || -> Result<_, CodecError> {
+        let mut copy = Vec::new();
+        for id in &ids {
+            let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_standard_unspecified_loop_id_copy")?;
+            crate::resource::push(ctx, &mut copy, id, "catia_standard_unspecified_loop_ids")?;
+        }
+        Ok(cadmpeg_ir::topology::FaceLoops::unspecified(copy))
+    };
     if let [single] = ids.as_slice() {
-        return cadmpeg_ir::topology::FaceLoops::classified(single.clone(), Vec::new());
+        return Ok(cadmpeg_ir::topology::FaceLoops::classified(
+            crate::resource::copy_id(ctx, single.as_str(), LoopId::mint, "catia_standard_single_loop_id_copy")?,
+            Vec::new(),
+        ));
     }
     let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
         return unspecified();
@@ -5863,28 +5874,22 @@ fn standard_face_loops(
     let Some(surface) = ir.model.surfaces.get(surface_index) else {
         return unspecified();
     };
-    let Some(rows) = face_topology
-        .boundaries
-        .iter()
-        .zip(&ids)
-        .map(|(boundary, id)| {
-            Some((
-                id.clone(),
-                boundary
-                    .coedges
-                    .iter()
-                    .map(|coedge| {
-                        let point_index = *point_assignment.get(coedge.start_vertex)?;
-                        Some(ir.model.points.get(point_index)?.position().get())
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            ))
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return unspecified();
-    };
-    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
+    let mut rows = Vec::new();
+    for (boundary, id) in face_topology.boundaries.iter().zip(&ids) {
+        let mut points = Vec::new();
+        for coedge in &boundary.coedges {
+            let Some(point) = point_assignment
+                .get(coedge.start_vertex)
+                .and_then(|index| ir.model.points.get(*index))
+            else {
+                return unspecified();
+            };
+            crate::resource::push(ctx, &mut points, point.position().get(), "catia_standard_planar_loop_points")?;
+        }
+        let id = crate::resource::copy_id(ctx, id.as_str(), LoopId::mint, "catia_standard_planar_loop_id_copy")?;
+        crate::resource::push(ctx, &mut rows, (id, points), "catia_standard_planar_loop_rows")?;
+    }
+    crate::boundary_roles::classify_planar_boundaries(ctx, &surface.geometry, &rows)
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
@@ -6001,13 +6006,14 @@ fn emit_standard_topology(
     let vertex_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "v");
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let face_loops = standard_face_loops(
+            admission.context(),
             ir,
             bindings,
             surface_indices,
             topology,
             face_index,
             point_assignment,
-        );
+        )?;
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
             let loop_id = LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
