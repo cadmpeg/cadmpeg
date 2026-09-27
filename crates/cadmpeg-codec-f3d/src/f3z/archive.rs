@@ -83,12 +83,30 @@ impl ArchiveSession<'_> {
 }
 
 /// Resolves the archive manifest to the F3D member that owns the model.
-pub(super) fn model_root(scan: &ContainerScan<'_>) -> Result<(String, Option<String>), CodecError> {
+pub(super) fn model_root(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<(String, Option<String>), CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
             CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
-    model_root_member(scan, &manifest.root)
+    model_root_member(ctx, scan, &manifest.root)
+}
+
+fn copy_member_name(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let length = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 /// Classifies all F3D members and attaches each nested layer to its archive path.
@@ -177,11 +195,12 @@ pub(super) fn merge_member_layers(
 }
 
 fn model_root_member(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
     if crate::container::is_f3d_name(archive_root) {
-        return Ok((archive_root.to_owned(), None));
+        return Ok((copy_member_name(ctx, archive_root, "retain F3Z model root")?, None));
     }
 
     let description: DesignDescriptionJson =
@@ -197,26 +216,50 @@ fn model_root_member(
         }) else {
             continue;
         };
-        let derived_ids = root
-            .references
-            .iter()
-            .filter(|reference| reference.reference_type == "DERIVED")
-            .flat_map(|reference| reference.ids.iter().copied())
-            .collect::<Vec<_>>();
         for object in &graph.design_objects {
-            if derived_ids.contains(&object.id)
-                && object.content_type.eq_ignore_ascii_case("f3d")
-                && crate::container::is_f3d_name(&object.relative_path)
-                && scan.entry_view(&object.relative_path).is_some()
+            if !object.content_type.eq_ignore_ascii_case("f3d")
+                || !crate::container::is_f3d_name(&object.relative_path)
+                || scan.entry_view(&object.relative_path).is_none()
             {
-                candidates.push(object.relative_path.clone());
+                continue;
+            }
+            let mut derived = false;
+            for reference in root
+                .references
+                .iter()
+                .filter(|reference| reference.reference_type == "DERIVED")
+            {
+                for id in &reference.ids {
+                    ctx.charge_work(1, "match F3Z derived model reference")?;
+                    if *id == object.id {
+                        derived = true;
+                        break;
+                    }
+                }
+                if derived {
+                    break;
+                }
+            }
+            if derived {
+                ctx.charge_collection_items(1, "collect F3Z model candidates")?;
+                candidates.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3Z model candidates", 0, 1)
+                })?;
+                candidates.push(copy_member_name(
+                    ctx,
+                    &object.relative_path,
+                    "retain F3Z model candidate name",
+                )?);
             }
         }
     }
     candidates.sort();
     candidates.dedup();
     match candidates.as_slice() {
-        [model_root] => Ok((model_root.clone(), Some(archive_root.to_owned()))),
+        [model_root] => Ok((
+            copy_member_name(ctx, model_root, "retain F3Z selected model root")?,
+            Some(copy_member_name(ctx, archive_root, "retain F3Z drawing root")?),
+        )),
         _ => Err(CodecError::malformed(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
             candidates.len()
