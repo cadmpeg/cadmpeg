@@ -29,10 +29,12 @@ const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOper
 
 /// Decode every structurally complete Decal image record.
 pub(crate) fn decode_decal_images(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
     super::image::decode_scoped_images(
+        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Decal,
