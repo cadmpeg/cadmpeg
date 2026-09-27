@@ -127,7 +127,7 @@ pub(crate) fn scan(
     ctx: &DecodeContext<'_>,
     persistence: &Persistence,
 ) -> Result<LegacyGeometryScan, CodecError> {
-    let object_ids = object_id_index(&persistence.objects);
+    let object_ids = object_id_index(ctx, &persistence.objects)?;
     let children = child_index(ctx, &persistence.objects)?;
     let integer_fields = value_index(&persistence.integer_values.rows);
     let real_fields = value_index(&persistence.real_values.rows);
@@ -184,12 +184,13 @@ fn curve_namespace(
     real_fields: &RealFieldIndex<'_>,
 ) -> Result<(Vec<CurveTopologyRow>, Vec<PcurveEndpoints>), CodecError> {
     let Some(elements) = geometry_array_elements(
+        ctx,
         objects,
         object_ids,
         "Sld_VisGeom",
         "active_geom",
         "crv_array",
-    ) else {
+    )? else {
         return Ok((Vec::new(), Vec::new()));
     };
     let mut topology_rows = Vec::new();
@@ -213,23 +214,32 @@ fn curve_namespace(
 }
 
 fn geometry_array_elements<'a>(
+    ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
     object_ids: &ObjectIdIndex<'a>,
     root_name: &str,
     branch_name: &str,
     array_name: &str,
-) -> Option<Vec<&'a ObjectRecord>> {
+) -> Result<Option<Vec<&'a ObjectRecord>>, CodecError> {
     let mut roots = objects
         .iter()
         .filter(|object| object.name == root_name && object.parent.is_none());
-    let root = roots.next()?;
-    roots.next().is_none().then_some(())?;
+    let Some(root) = roots.next() else {
+        return Ok(None);
+    };
+    if roots.next().is_some() {
+        return Ok(None);
+    }
 
     let mut branches = objects
         .iter()
         .filter(|object| object.parent == Some(root.offset) && object.name == branch_name);
-    let branch = branches.next()?;
-    branches.next().is_none().then_some(())?;
+    let Some(branch) = branches.next() else {
+        return Ok(None);
+    };
+    if branches.next().is_some() {
+        return Ok(None);
+    }
 
     let mut arrays = objects.iter().filter_map(|object| {
         let ObjectPayload::Array { elements, .. } = &object.payload else {
@@ -240,17 +250,25 @@ fn geometry_array_elements<'a>(
             && object.payload.is_complete())
         .then_some((object, elements))
     });
-    let (array, elements) = arrays.next()?;
-    arrays.next().is_none().then_some(())?;
+    let Some((array, elements)) = arrays.next() else {
+        return Ok(None);
+    };
+    if arrays.next().is_some() {
+        return Ok(None);
+    }
 
-    elements
-        .iter()
-        .map(|element_id| {
-            let element = object_ids.get(element_id.as_str()).copied()?;
-            (element.parent == Some(array.offset) && element.name == array_name).then_some(())?;
-            Some(element)
-        })
-        .collect()
+    let mut rows = Vec::new();
+    ctx.try_reserve_items(&mut rows, elements.len(), "creo legacy geometry array elements")?;
+    for element_id in elements {
+        let Some(element) = object_ids.get(element_id.as_str()).copied() else {
+            return Ok(None);
+        };
+        if element.parent != Some(array.offset) || element.name != array_name {
+            return Ok(None);
+        }
+        rows.push(element);
+    }
+    Ok(Some(rows))
 }
 
 fn curve_topology_row(
@@ -357,7 +375,7 @@ fn namespace(
     namespace: LegacySurfaceNamespace,
 ) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
     let Some(elements) =
-        geometry_array_elements(objects, object_ids, root_name, branch_name, "srf_array")
+        geometry_array_elements(ctx, objects, object_ids, root_name, branch_name, "srf_array")?
     else {
         return Ok((Vec::new(), Vec::new()));
     };
@@ -653,8 +671,24 @@ fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
     )
 }
 
-fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
-    objects.iter().map(|object| (object.id(), object)).collect()
+fn object_id_index<'a>(
+    ctx: &DecodeContext<'_>,
+    objects: &'a [ObjectRecord],
+) -> Result<ObjectIdIndex<'a>, CodecError> {
+    let mut index = BTreeMap::new();
+    for object in objects {
+        let id = legacy::checked_object_node_id(ctx, object.offset)?;
+        match index.entry(id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo legacy object index nodes")?;
+                entry.insert(object);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(object);
+            }
+        }
+    }
+    Ok(index)
 }
 
 fn child_index<'a>(
@@ -773,6 +807,18 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        scan_checked(&ctx, persistence)
+    }
+
+    fn scan_with_retained_limit(
+        persistence: &Persistence,
+        limit: u64,
+    ) -> Result<super::LegacyGeometryScan, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         scan_checked(&ctx, persistence)
@@ -1637,6 +1683,32 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy child index nodes");
+    }
+
+    #[test]
+    fn legacy_object_index_ids_refuse_before_string_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert!(matches!(
+            scan_with_retained_limit(&persistence, 0),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "creo legacy object index IDs"
+        ));
+    }
+
+    #[test]
+    fn legacy_object_index_nodes_refuse_before_btree_insertion() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy object index nodes");
+    }
+
+    #[test]
+    fn legacy_geometry_array_elements_refuse_before_vec_growth() {
+        let persistence = cylinder_persistence(false);
+        assert_eq!(scan(&persistence).rows.len(), 1);
+        assert_collection_refusal(&persistence, "creo legacy geometry array elements");
     }
 
     #[test]

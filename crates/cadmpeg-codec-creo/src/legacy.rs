@@ -954,6 +954,25 @@ pub(crate) fn object_node_id(offset: usize) -> String {
     format!("creo:legacy_ascii:object#{offset}")
 }
 
+pub(crate) fn checked_object_node_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    offset: usize,
+) -> Result<String, CodecError> {
+    const PREFIX: &str = "creo:legacy_ascii:object#";
+    let mut remaining = offset;
+    let mut digits = 1;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let mut id = String::new();
+    ctx.try_reserve_retained_text(&mut id, PREFIX.len() + digits, "creo legacy object index IDs")?;
+    id.push_str(PREFIX);
+    std::fmt::Write::write_fmt(&mut id, format_args!("{offset}"))
+        .map_err(|_| CodecError::Malformed(String::new()))?;
+    Ok(id)
+}
+
 fn parent_object_offsets(scopes: &[Scope]) -> BTreeMap<usize, usize> {
     let mut parents = BTreeMap::new();
     for scope in scopes {
