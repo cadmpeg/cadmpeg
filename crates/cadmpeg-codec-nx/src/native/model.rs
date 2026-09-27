@@ -1141,7 +1141,7 @@ impl NativeModel {
             &feature_surface_construction_payloads,
         );
         let feature_surface_construction_strings =
-            feature_surface_construction_strings(container, &feature_surface_construction_payloads);
+            feature_surface_construction_strings(ctx, container, &feature_surface_construction_payloads)?;
         let feature_surface_construction_branches =
             feature_surface_construction_branches(container);
         let feature_swp104_leading_branches = feature_swp104_leading_branches(container);

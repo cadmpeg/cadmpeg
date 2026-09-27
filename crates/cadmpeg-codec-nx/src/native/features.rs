@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 pub(super) mod delete;
 pub(super) mod draft;
@@ -6961,35 +6963,38 @@ pub(super) fn feature_surface_construction_scalar_pairs(
 
 /// Decode exact printable string frames from reconstructed surface payloads.
 pub(super) fn feature_surface_construction_strings(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
-) -> Vec<FeatureSurfaceConstructionString> {
+) -> Result<Vec<FeatureSurfaceConstructionString>, CodecError> {
     let blocks = offset_data_block_bytes(container);
-    payloads
-        .iter()
-        .flat_map(|payload| {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+    let mut strings = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+            continue;
+        };
+        for (ordinal, value) in crate::om::surface_payload_strings(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            crate::om::surface_payload_strings(joined.bytes())
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, value)| {
-                    let payload_offset = value.offset as u64;
-                    Some(FeatureSurfaceConstructionString {
-                        id: format!("{}-string-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        surface_construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        payload_offset,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect()
-        })
-        .collect()
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX))?;
+            strings.push(FeatureSurfaceConstructionString {
+                id: format!("{}-string-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                surface_construction_payload: payload.id.clone(),
+                ordinal,
+                value: value.value.into_owned(),
+                payload_offset,
+                source_offset,
+            });
+        }
+    }
+    Ok(strings)
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.

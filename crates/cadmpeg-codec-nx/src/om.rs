@@ -3406,22 +3406,58 @@ mod uuid_string_value_tests {
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
-pub(crate) fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
+pub(crate) fn surface_payload_strings<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<SurfacePayloadString<'a>>, CodecError> {
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
-    bytes
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "scan NX surface payload strings",
+    )?;
+    let mut strings = Vec::new();
+    for (offset, _) in bytes
         .windows(MARKER.len())
         .enumerate()
         .filter(|(_, window)| *window == MARKER)
-        .filter_map(|(offset, _)| {
-            let text_len = usize::from(*bytes.get(offset + MARKER.len())?);
-            let start = offset.checked_add(MARKER.len() + 1)?;
-            let end = start.checked_add(text_len)?;
-            let raw = bytes.get(start..end)?;
-            let value =
-                crate::payload_text::PayloadText::new(std::str::from_utf8(raw).ok()?).ok()?;
-            (bytes.get(end) == Some(&0)).then_some(SurfacePayloadString { offset, value })
-        })
-        .collect()
+    {
+        let Some(text_len) = bytes.get(offset + MARKER.len()).copied().map(usize::from) else {
+            continue;
+        };
+        let Some(start) = offset.checked_add(MARKER.len() + 1) else {
+            continue;
+        };
+        let Some(end) = start.checked_add(text_len) else {
+            continue;
+        };
+        let Some(raw) = bytes.get(start..end) else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(raw.len()),
+            "parse NX surface payload string",
+        )?;
+        let Ok(text) = std::str::from_utf8(raw) else {
+            continue;
+        };
+        let Ok(value) = crate::payload_text::PayloadText::new(text) else {
+            continue;
+        };
+        if bytes.get(end) != Some(&0) {
+            continue;
+        }
+        let value = SurfacePayloadString { offset, value };
+        ctx.charge_collection_items(1, "nx surface payload strings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SurfacePayloadString<'_>>()),
+            "retain NX surface payload string frame",
+        )?;
+        strings
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx surface payload strings", 0, 1))?;
+        strings.push(value);
+    }
+    Ok(strings)
 }
 
 /// Decode every strictly length-framed numeric expression in an OM payload.
