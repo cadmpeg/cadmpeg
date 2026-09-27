@@ -108,7 +108,7 @@ fn split_patch_table_is_counterbore(
         return false;
     }
     let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
-        table.non_surface_entity_ids().contains(&entry.entity_id)
+        table.contains_non_surface_entity_id(entry.entity_id)
             && !table.contains_surface_id(entry.entity_id)
     };
     if !table.entries.windows(2).any(|entries| {
@@ -200,7 +200,7 @@ fn paired_hole_replay_surfaces_by_source(
                     .kind,
             ))
         } else {
-            (table.non_surface_entity_ids().contains(&entry.entity_id)
+            (table.contains_non_surface_entity_id(entry.entity_id)
                 && !table.contains_surface_id(entry.entity_id))
             .then_some(None)
         }

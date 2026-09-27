@@ -511,8 +511,7 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
         .surface_ids_iter()
         .chain(table.non_surface_entity_ids_iter())
         .collect::<BTreeSet<_>>();
-    table.entry_ids().len() == entry_ids.len()
-        && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
+    table.entries.len() == entry_ids.len()
         && roster == entry_ids
         && table.surface_ids_iter().all(|id| {
             !table.non_surface_entity_ids_iter().any(|candidate| candidate == id)

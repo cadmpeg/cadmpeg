@@ -112,7 +112,7 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
                 && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
         });
     }
-    table.non_surface_entity_ids().contains(&entry.entity_id)
+    table.contains_non_surface_entity_id(entry.entity_id)
         && generated_profile_table_shape(table)
         && table.entries.iter().skip(2).any(|candidate| {
             table.contains_surface_id(candidate.entity_id)
@@ -195,10 +195,8 @@ pub(in super::super) fn section_entity_is_generated_profile(
                 && cylinder.source_entity_id().is_none()
                 && table.contains_surface_id(cap.entity_id)
                 && table.contains_surface_id(cylinder.entity_id)
-                && table
-                    .non_surface_entity_ids()
-                    .contains(&rowless_cap.entity_id)
-                && table.non_surface_entity_ids().contains(&profile.entity_id)
+                && table.contains_non_surface_entity_id(rowless_cap.entity_id)
+                && table.contains_non_surface_entity_id(profile.entity_id)
                 && crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(
                     |row| {
                         row.feature_id == feature_id
@@ -231,19 +229,14 @@ fn generated_profile_table_shape(table: &crate::feature::entity::FeatureEntityTa
         .surface_ids_iter()
         .chain(table.non_surface_entity_ids_iter())
         .collect::<BTreeSet<_>>();
-    table.entry_ids().len() == entry_ids.len()
-        && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
+    table.entries.len() == entry_ids.len()
         && roster == entry_ids
         && table
             .surface_ids_iter()
             .all(|id| !table.non_surface_entity_ids_iter().any(|candidate| candidate == id))
         && table.unique_surface_ids().len() == table.surface_ids_iter().count()
-        && table
-            .non_surface_entity_ids()
-            .iter()
-            .collect::<BTreeSet<_>>()
-            .len()
-            == table.non_surface_entity_ids().len()
+        && table.non_surface_entity_ids_iter().collect::<BTreeSet<_>>().len()
+            == table.non_surface_entity_ids_iter().count()
 }
 
 pub(in super::super) fn section_generated_profile_surface_kinds(
