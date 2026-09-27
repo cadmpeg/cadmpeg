@@ -21,6 +21,95 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn normalized_inspection_notes_refuse_text_and_slot_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let summary = super::inspect(
+        &parse_ctx,
+        &bytes,
+        crate::representation::Representation::FixedAscii,
+        bytes.len(),
+    )
+    .unwrap();
+    let mut low = summary.clone();
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::annotate_representation(&ctx, &mut low, crate::representation::Representation::Binary, bytes.len()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges normalized source byte note"
+    ));
+
+    let mut low = summary.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::annotate_representation(&ctx, &mut low, crate::representation::Representation::Binary, bytes.len()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges normalized representation notes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut normalized = summary;
+    super::annotate_representation(
+        &ctx,
+        &mut normalized,
+        crate::representation::Representation::Binary,
+        bytes.len(),
+    )
+    .unwrap();
+    assert!(normalized
+        .notes
+        .iter()
+        .any(|note| note == &format!("source_bytes={}", bytes.len())));
+    assert!(normalized
+        .notes
+        .iter()
+        .any(|note| note == "normalized_representation=binary"));
+}
+
+#[test]
+fn quarantined_placement_rejections_refuse_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (mut directory, _) = directory_fixture();
+    directory[0].entity_type = 408;
+    directory[0].form = 0;
+    let quarantined = std::collections::BTreeSet::from([directory[0].sequence]);
+    let mut projection = crate::entities::geometry::Projection::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges quarantined placement rejections"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::mark_quarantined_placements(&ctx, &mut projection, &directory, &quarantined).unwrap();
+    assert_eq!(
+        projection.placement_rejections.get(&directory[0].sequence),
+        Some(&crate::entities::structure::PlacementRejection::MissingRecord)
+    );
+}
+
+#[test]
 fn transfer_ledger_refuses_row_and_note_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
