@@ -3533,19 +3533,19 @@ fn parse_binary_surface(
                         u32::try_from(u_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier u degree exceeds u32".into())
                         })?,
-                        clamped_bezier_knots(u_degree),
+                        clamped_bezier_knots(cursor.ctx, u_degree)?,
                         false,
                     ),
                     NurbsSurfaceAxis::new(
                         u32::try_from(v_degree).map_err(|_| {
                             CodecError::Malformed("binary Bezier v degree exceeds u32".into())
                         })?,
-                        clamped_bezier_knots(v_degree),
+                        clamped_bezier_knots(cursor.ctx, v_degree)?,
                         false,
                     ),
                     NurbsSurfaceLanes::new(
-                        control_points.chunks(v_count).map(<[_]>::to_vec).collect(),
-                        weights.map(|values| values.chunks(v_count).map(<[_]>::to_vec).collect()),
+                        grid_rows(cursor.ctx, control_points, v_count)?,
+                        weights.map(|values| grid_rows(cursor.ctx, values, v_count)).transpose()?,
                     ),
                     false,
                 )
@@ -3707,7 +3707,7 @@ fn parse_binary_curve(
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
-                    clamped_bezier_knots(degree),
+                    clamped_bezier_knots(cursor.ctx, degree)?,
                     control_points,
                     weights,
                     false,
@@ -3821,7 +3821,7 @@ fn parse_binary_curve2d(
                 degree: u32::try_from(degree).map_err(|_| {
                     CodecError::Malformed("binary Bezier degree exceeds u32".into())
                 })?,
-                knots: clamped_bezier_knots(degree),
+                knots: clamped_bezier_knots(cursor.ctx, degree)?,
                 control_points,
                 weights,
                 periodic: false,
@@ -4244,7 +4244,7 @@ fn parse_bezier_curve2d(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCur
     }
     Ok(NurbsCurve2d {
         degree: degree as u32,
-        knots: clamped_bezier_knots(degree),
+        knots: clamped_bezier_knots(cursor.ctx, degree)?,
         control_points,
         weights,
         periodic: false,
@@ -5177,19 +5177,11 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsSur
         }
     }
     NurbsSurface::from_finite_lanes(
-        NurbsSurfaceAxis::new(u_degree as u32, clamped_bezier_knots(u_degree), false),
-        NurbsSurfaceAxis::new(v_degree as u32, clamped_bezier_knots(v_degree), false),
+        NurbsSurfaceAxis::new(u_degree as u32, clamped_bezier_knots(cursor.ctx, u_degree)?, false),
+        NurbsSurfaceAxis::new(v_degree as u32, clamped_bezier_knots(cursor.ctx, v_degree)?, false),
         NurbsSurfaceLanes::new(
-            control_points
-                .chunks(v_count as u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| {
-                values
-                    .chunks(v_count as u32 as usize)
-                    .map(<[_]>::to_vec)
-                    .collect()
-            }),
+            grid_rows(cursor.ctx, control_points, v_count)?,
+            weights.map(|values| grid_rows(cursor.ctx, values, v_count)).transpose()?,
         ),
         false,
     )
@@ -5378,11 +5370,8 @@ fn normalize_periodic_surface(
         NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
         NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
         NurbsSurfaceLanes::new(
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+            grid_rows(ctx, control_points, v_count as usize)?,
+            weights.map(|values| grid_rows(ctx, values, v_count as usize)).transpose()?,
         ),
         false,
     )
@@ -5531,7 +5520,7 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
     }
     NurbsCurve::from_finite_lanes(
         degree as u32,
-        clamped_bezier_knots(degree),
+        clamped_bezier_knots(cursor.ctx, degree)?,
         control_points,
         weights,
         false,
@@ -5539,10 +5528,29 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_, '_, '_>) -> Result<NurbsCurve
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
-fn clamped_bezier_knots(degree: usize) -> Vec<FiniteReal> {
-    std::iter::repeat_n(FiniteReal::ZERO, degree + 1)
-        .chain(std::iter::repeat_n(FiniteReal::ONE, degree + 1))
-        .collect()
+fn clamped_bezier_knots(ctx: &DecodeContext<'_>, degree: usize) -> Result<Vec<FiniteReal>, CodecError> {
+    let half = degree.checked_add(1)
+        .ok_or_else(|| crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD Bezier knots"))?;
+    let count = half.checked_mul(2)
+        .ok_or_else(|| crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD Bezier knots"))?;
+    let mut knots = collection_vec(ctx, count, "FreeCAD Bezier knots")?;
+    knots.extend(std::iter::repeat_n(FiniteReal::ZERO, half));
+    knots.extend(std::iter::repeat_n(FiniteReal::ONE, half));
+    Ok(knots)
+}
+
+fn grid_rows<T>(ctx: &DecodeContext<'_>, values: Vec<T>, width: usize) -> Result<Vec<Vec<T>>, CodecError> {
+    if width == 0 || values.len() % width != 0 {
+        return Err(CodecError::malformed("surface grid dimensions do not match pole count"));
+    }
+    let mut rows = collection_vec(ctx, values.len() / width, "FreeCAD B-rep surface rows")?;
+    let mut values = values.into_iter();
+    while values.len() != 0 {
+        let mut row = collection_vec(ctx, width, "FreeCAD B-rep surface row values")?;
+        row.extend(values.by_ref().take(width));
+        rows.push(row);
+    }
+    Ok(rows)
 }
 
 struct TokenCursor<'a, 'c, 'r> {
@@ -6302,6 +6310,20 @@ pub(crate) mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("input is within the root limit");
         f(&ctx)
+    }
+
+    #[test]
+    fn bezier_knot_vector_refuses_at_caller_limit() {
+        let result = with_collection_limit(&[], 3, |ctx| super::clamped_bezier_knots(ctx, 1));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD Bezier knots"));
+    }
+
+    #[test]
+    fn surface_grid_rows_refuse_at_caller_limit() {
+        let result = with_collection_limit(&[], 3, |ctx| super::grid_rows(ctx, vec![1_u8, 2, 3, 4], 2));
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD B-rep surface row values"));
     }
 
     #[test]
