@@ -381,3 +381,26 @@ fn geometric_set_omission_text_refuses_retained_limit() {
                 && refusal.operation == "step_geometric_set_omission_text"
     ));
 }
+
+#[test]
+fn built_outcome_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let mut outcome = super::super::BuildOutcome::Built(Vec::new());
+    let built = super::super::Built {
+        typed: std::collections::HashSet::new(),
+        draft: cadmpeg_ir::draft::ModelDraft::new(),
+        body_id: body_id(),
+        shell_sources: std::collections::BTreeSet::new(),
+        pcurve_admissions: Vec::new(),
+    };
+    assert!(matches!(
+        outcome.push(built, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_built_outcome"
+    ));
+}

@@ -658,7 +658,8 @@ pub(super) fn decode(
             &edges,
             point_positions,
             &mut losses,
-        );
+            ctx,
+        )?;
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
@@ -706,7 +707,8 @@ pub(super) fn decode(
             point_positions,
             scope_root,
             &mut losses,
-        );
+            ctx,
+        )?;
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
@@ -1090,9 +1092,11 @@ struct BuildFailures {
 }
 
 impl BuildOutcome {
-    fn push(&mut self, value: Built) {
+    fn push(&mut self, value: Built, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         match self {
-            Self::Built(built) | Self::Partial { built, .. } => built.push(value),
+            Self::Built(built) | Self::Partial { built, .. } => {
+                push_topology_vec(built, value, ctx, "step_topology_built_outcome")
+            }
         }
     }
 
@@ -1247,24 +1251,25 @@ fn build_wire(
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     point_positions: &CarrierIndex,
     losses: &mut Vec<LossNote>,
-) -> BuildOutcome {
+    ctx: &DecodeContext<'_>,
+) -> Result<BuildOutcome, CodecError> {
     let Some(model) = exchange.records().get(&id) else {
-        return BuildOutcome::Partial {
+        return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
                 count: NonZeroUsize::MIN,
                 first: None,
             },
-        };
+        });
     };
     let Some(sets) = named_refs(model, "EDGE_BASED_WIREFRAME_MODEL", 1) else {
-        return BuildOutcome::Partial {
+        return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
                 count: NonZeroUsize::MIN,
                 first: None,
             },
-        };
+        });
     };
     let scoped = sets.len() > 1;
     let mut outcome = BuildOutcome::Built(Vec::new());
@@ -1279,11 +1284,11 @@ fn build_wire(
             scoped,
             losses,
         ) {
-            Some(value) => outcome.push(value),
+            Some(value) => outcome.push(value, ctx)?,
             None => outcome.fail(None),
         }
     }
-    outcome
+    Ok(outcome)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1441,24 +1446,25 @@ fn build_shell_wire(
     point_positions: &CarrierIndex,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
-) -> BuildOutcome {
+    ctx: &DecodeContext<'_>,
+) -> Result<BuildOutcome, CodecError> {
     let Some(model) = exchange.records().get(&id) else {
-        return BuildOutcome::Partial {
+        return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
                 count: NonZeroUsize::MIN,
                 first: None,
             },
-        };
+        });
     };
     let Some(shell_ids) = named_refs(model, "SHELL_BASED_WIREFRAME_MODEL", 1) else {
-        return BuildOutcome::Partial {
+        return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
                 count: NonZeroUsize::MIN,
                 first: None,
             },
-        };
+        });
     };
     let scoped = shell_ids.len() > 1;
     let mut outcome = BuildOutcome::Built(Vec::new());
@@ -1474,11 +1480,11 @@ fn build_shell_wire(
             scope_root,
             losses,
         ) {
-            Some(value) => outcome.push(value),
+            Some(value) => outcome.push(value, ctx)?,
             None => outcome.fail(None),
         }
     }
-    outcome
+    Ok(outcome)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2521,7 +2527,7 @@ fn build(
             &mut failure,
             ctx,
         ) {
-            Ok(value) => outcome.push(value),
+            Ok(value) => outcome.push(value, ctx)?,
             Err(BuildError::Absent) => outcome.fail(failure),
             Err(BuildError::Resource(error)) => return Err(error),
         }
