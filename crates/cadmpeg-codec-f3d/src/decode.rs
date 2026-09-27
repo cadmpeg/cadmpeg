@@ -2862,6 +2862,7 @@ impl<'a> F3dDecodeSession<'a> {
         );
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
+                self.ctx,
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
                 self.ir.model.occurrences.len(),
