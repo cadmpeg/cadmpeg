@@ -190,6 +190,25 @@ fn metadata_document_attributes_refuse_collection_limit() {
 }
 
 #[test]
+fn metadata_linear_unit_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body());
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT linear unit name");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT linear unit name"
+    ));
+}
+
+#[test]
 fn native_loss_validation_propagates_typed_load_retained_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 

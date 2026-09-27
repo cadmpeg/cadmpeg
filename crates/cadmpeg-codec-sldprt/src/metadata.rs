@@ -135,14 +135,25 @@ fn scan_length_user_units(
         if bytes.is_empty() || bytes.len() % 2 != 0 {
             continue;
         }
-        let mut view = View::over_retained(bytes);
-        let mut units = Vec::new();
-        while let Some(unit) = view.u16_le() {
-            units.push(unit);
-        }
-        let value = String::from_utf16_lossy(&units);
-        if value.trim().is_empty() {
+        let scalars = || {
+            char::decode_utf16(
+                (0..bytes.len() / 2)
+                    .filter_map(|index| View::u16_le_at(bytes, index * 2)),
+            )
+            .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
+        };
+        if scalars().all(char::is_whitespace) {
             continue;
+        }
+        let text_bytes = scalars().try_fold(0_usize, |size, scalar| {
+            size.checked_add(scalar.len_utf8()).ok_or_else(|| {
+                ctx.refuse_codec_limit("retain SLDPRT linear unit name", u64::MAX, u64::MAX)
+            })
+        })?;
+        let mut value = String::new();
+        ctx.reserve_retained_string(&mut value, text_bytes, "retain SLDPRT linear unit name")?;
+        for scalar in scalars() {
+            value.push(scalar);
         }
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
         out.push(attribute(
