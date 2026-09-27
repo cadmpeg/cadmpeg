@@ -2194,7 +2194,7 @@ fn feature_reference_names(
         .filter(|section| section.section.name() == "MdlRefInfo")
     {
         let section_bytes = section.region;
-        let decoded = feature::operations::reference_names(section_bytes);
+        let decoded = feature::operations::reference_names(ctx, section_bytes)?;
         ctx.try_reserve_items(&mut records, decoded.len(), "creo feature reference names")?;
         records.extend(decoded.into_iter().map(|mut record| {
             record.offset += section.section.offset();

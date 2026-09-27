@@ -4,6 +4,9 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 use super::schema::SchemaClass;
 use crate::psb;
 
@@ -378,7 +381,10 @@ impl FeatureReferenceName {
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
-pub(crate) fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
+pub(crate) fn reference_names(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut names = Vec::new();
     for offset in 0..payload.len().saturating_sub(2) {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
@@ -414,15 +420,16 @@ pub(crate) fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
         {
             continue;
         }
+        ctx.try_reserve_items(&mut names, 1, "creo reference name entries")?;
         names.push(FeatureReferenceName {
             feature_id,
-            name_bytes: name_bytes.to_vec(),
+            name_bytes: ctx.copy_retained(name_bytes, "creo reference name bytes")?,
             own_reference_id,
             reference_type,
             offset,
         });
     }
-    names
+    Ok(names)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -741,11 +748,54 @@ pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
 #[cfg(test)]
 mod tests {
     use super::reference_names;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use std::borrow::Cow;
 
     #[test]
+    fn reference_name_entry_refuses_before_vec_growth() {
+        let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+                .expect("root input is admitted");
+            reference_names(&ctx, data)
+        };
+        assert_eq!(run(1).expect("one entry admitted").len(), 1);
+        let error = run(0).expect_err("entry needs one Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo reference name entries"));
+    }
+
+    #[test]
+    fn reference_name_bytes_refuse_before_retained_copy() {
+        let data = b"\xf7\x71\x01\x05\x02Name\0\x01\x01";
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
+                .expect("root input is admitted");
+            reference_names(&ctx, data)
+        };
+        assert_eq!(run(4).expect("four name bytes admitted").len(), 1);
+        let error = run(3).expect_err("fourth retained byte exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo reference name bytes"));
+    }
+
+    #[test]
     fn reference_name_text_follows_stored_bytes() {
-        let mut names = reference_names(b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01");
+        let data = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("root input is admitted");
+        let mut names = reference_names(&ctx, data).expect("one reference name");
         let [record] = names.as_mut_slice() else {
             panic!("one closed reference name");
         };
