@@ -6,6 +6,7 @@ use super::geometry::{
     declared_unit_vector, resolve_transform, source_object, unit_vector,
     DeclaredInterval, ProjectionOutcome,
 };
+use crate::decode_resource::{reserve_optional_vec, reserve_optional_vec_growth};
 use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -2139,9 +2140,7 @@ pub(super) fn project(
             }
             Some(_) => {}
         }
-        let flags = (5..=9)
-            .map(|index| record.integer(index))
-            .collect::<Vec<_>>();
+        let flags: [Option<i64>; 5] = std::array::from_fn(|offset| record.integer(5 + offset));
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "one or more surface flags are not 0 or 1"))?;
             continue;
@@ -2150,7 +2149,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole count overflows"))?;
             continue;
         };
-        let (Ok(_), Ok(v_count_u32)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
+        let (Ok(_), Ok(_)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole dimensions exceed u32"))?;
             continue;
         };
@@ -2200,38 +2199,47 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter-range offset overflows"))?;
             continue;
         };
-        let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
-            (start..start.checked_add(count)?)
-                .map(|index| record.number(index).and_then(FiniteReal::new))
-                .collect()
+        let collect_numbers = |start: usize, count: usize, operation: &'static str| -> Result<Option<Vec<FiniteReal>>, CodecError> {
+            let Some(end) = start.checked_add(count) else { return Ok(None); };
+            let mut values = reserve_optional_vec(ctx, count, operation)?;
+            for index in start..end {
+                let Some(value) = record.number(index).and_then(FiniteReal::new) else { return Ok(None); };
+                values.push(value);
+            }
+            Ok(Some(values))
         };
-        let Some(finite_u_knots) = collect_numbers(u_knot_start, u_knot_count) else {
+        let Some(finite_u_knots) = collect_numbers(u_knot_start, u_knot_count, "iges NURBS surface source u knots")? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u-knot vector is truncated or non-finite"))?;
             continue;
         };
-        let Some(finite_v_knots) = collect_numbers(v_knot_start, v_knot_count) else {
+        let Some(finite_v_knots) = collect_numbers(v_knot_start, v_knot_count, "iges NURBS surface source v knots")? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot vector is truncated or non-finite"))?;
             continue;
         };
+        let u_domain = [finite_u_knots[u_degree_usize], finite_u_knots[u_count]];
+        let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]];
         let (Ok(u_knots), Ok(v_knots)) = (
-            KnotVector::from_finite_lanes(finite_u_knots.clone()),
-            KnotVector::from_finite_lanes(finite_v_knots.clone()),
+            KnotVector::from_finite_lanes(finite_u_knots),
+            KnotVector::from_finite_lanes(finite_v_knots),
         ) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface knot vector is decreasing"))?;
             continue;
         };
-        let Some(native_weights) = collect_numbers(weight_start, pole_count) else {
+        let Some(native_weights) = collect_numbers(weight_start, pole_count, "iges NURBS surface source weights")? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weight vector is truncated or non-finite"))?;
             continue;
         };
-        let Some(native_weights) = native_weights
-            .into_iter()
-            .map(|weight| PositiveReal::try_from(weight).ok())
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut positive_weights = reserve_optional_vec(ctx, native_weights.len(), "iges NURBS surface positive weights")?;
+        let mut valid_weights = true;
+        for weight in native_weights {
+            let Some(weight) = PositiveReal::try_from(weight).ok() else { valid_weights = false; break; };
+            positive_weights.push(weight);
+        }
+        if !valid_weights {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weights are not strictly positive"))?;
             continue;
-        };
+        }
+        let native_weights = positive_weights;
         let precision = global.real_precision();
         let uncertainty =
             |index: usize, value: f64| record.number_uncertainty(index, value, precision);
@@ -2259,11 +2267,11 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "rational surface has equal weights but PROP3 declares rational"))?;
             continue;
         }
-        let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
+        let Some(native_poles) = collect_numbers(pole_start, pole_value_count, "iges NURBS surface source poles")? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface poles are truncated or non-finite"))?;
             continue;
         };
-        let Some(ranges) = collect_numbers(range_start, 4) else {
+        let Some(ranges) = collect_numbers(range_start, 4, "iges NURBS surface source ranges")? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter ranges are missing"))?;
             continue;
         };
@@ -2294,7 +2302,7 @@ pub(super) fn project(
         let Some(u_range) = clamp_range(
             range_start,
             [ranges[0], ranges[1]],
-            [finite_u_knots[u_degree_usize], finite_u_knots[u_count]],
+            u_domain,
         ) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u parameter range is empty or lies outside its knot domain"))?;
             continue;
@@ -2302,7 +2310,7 @@ pub(super) fn project(
         let Some(v_range) = clamp_range(
             range_start + 2,
             [ranges[2], ranges[3]],
-            [finite_v_knots[v_degree_usize], finite_v_knots[v_count]],
+            v_domain,
         ) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v parameter range is empty or lies outside its knot domain"))?;
             continue;
@@ -2323,24 +2331,21 @@ pub(super) fn project(
                 continue;
             }
         };
-        let native_points = native_poles
-            .chunks_exact(3)
-            .map(|point| {
-                Point3::new(
-                    point[0].get() * factor,
-                    point[1].get() * factor,
-                    point[2].get() * factor,
-                )
-            })
-            .collect::<Vec<_>>();
-        let mut control_points = Vec::with_capacity(pole_count);
-        let mut weights = (!polynomial).then(|| Vec::with_capacity(pole_count));
+        let mut control_points = reserve_optional_vec(ctx, pole_count, "iges NURBS surface placed controls")?;
+        let mut weights = if polynomial { None } else {
+            Some(reserve_optional_vec(ctx, pole_count, "iges NURBS surface neutral weights")?)
+        };
         for u in 0..u_count {
             for v in 0..v_count {
                 let native_index = v * u_count + u;
+                let point = &native_poles[native_index * 3..native_index * 3 + 3];
                 control_points.push(
                     transform
-                        .apply_point(native_points[native_index])
+                        .apply_point(Point3::new(
+                            point[0].get() * factor,
+                            point[1].get() * factor,
+                            point[2].get() * factor,
+                        ))
                         .ok_or_else(|| {
                             CodecError::malformed("placement produces a non-finite surface pole")
                         })?,
@@ -2350,16 +2355,21 @@ pub(super) fn project(
                 }
             }
         }
-        let pole_rows = control_points
-            .chunks(v_count_u32 as usize)
-            .map(<[_]>::to_vec)
-            .collect();
-        let weight_rows = weights.map(|values| {
-            values
-                .chunks(v_count_u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect()
-        });
+        let mut pole_rows = reserve_optional_vec(ctx, u_count, "iges NURBS surface pole rows")?;
+        for points in control_points.chunks(v_count) {
+            let mut row = reserve_optional_vec(ctx, points.len(), "iges NURBS surface pole row controls")?;
+            row.extend_from_slice(points);
+            pole_rows.push(row);
+        }
+        let weight_rows = if let Some(values) = weights {
+            let mut rows = reserve_optional_vec(ctx, u_count, "iges NURBS surface weight rows")?;
+            for values in values.chunks(v_count) {
+                let mut row = reserve_optional_vec(ctx, values.len(), "iges NURBS surface weight row controls")?;
+                row.extend_from_slice(values);
+                rows.push(row);
+            }
+            Some(rows)
+        } else { None };
         let surface =
             match NurbsPoleGrid::from_checked_lanes(pole_rows, weight_rows).and_then(|poles| {
                 NurbsSurface::new(
@@ -2410,6 +2420,7 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges NURBS surface neutral slots")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
