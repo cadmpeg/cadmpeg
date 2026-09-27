@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::decode_resource::{format_retained, insert_optional_btree_map, reserve_vec_growth};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
+};
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
@@ -128,13 +130,20 @@ fn occurrence_loss(
     }
 }
 
-fn attributed_sequences(losses: &[LossNote]) -> BTreeSet<u32> {
+fn attributed_sequences(
+    losses: &[LossNote],
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u32>, CodecError> {
     fn rendered_sequence(rendered: &str) -> Option<u32> {
-        let sequence = rendered.parse::<u32>().ok()?;
-        (sequence.to_string() == rendered).then_some(sequence)
+        if rendered.len() > 1 && rendered.starts_with('0')
+            || !rendered.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        rendered.parse::<u32>().ok()
     }
 
-    losses
+    let sequences = losses
         .iter()
         .filter_map(|loss| loss.provenance.as_ref()?.tag.as_deref())
         .filter_map(|tag| {
@@ -144,8 +153,52 @@ fn attributed_sequences(losses: &[LossNote]) -> BTreeSet<u32> {
                     let (head, _) = tag.split_once(':')?;
                     rendered_sequence(head.strip_prefix('D')?)
                 })
-        })
-        .collect()
+        });
+    let mut attributed = BTreeSet::new();
+    for sequence in sequences {
+        insert_optional_btree_set(
+            Some(ctx),
+            &mut attributed,
+            sequence,
+            "iges attributed loss sequences",
+        )?;
+    }
+    Ok(attributed)
+}
+
+fn projection_directory(
+    directory: &[directory::DirectoryEntry],
+    quarantined: &BTreeSet<u32>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<directory::DirectoryEntry>>, CodecError> {
+    if quarantined.is_empty() {
+        return Ok(None);
+    }
+    let mut projected = Vec::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| !quarantined.contains(&entry.sequence))
+    {
+        reserve_vec_growth(ctx, &mut projected, 1, "iges projected directory entries")?;
+        projected.push(entry.clone());
+    }
+    Ok(Some(projected))
+}
+
+fn quarantined_parameter_sequences(
+    records: &[parameter::QuarantinedParameterRecord],
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut sequences = BTreeSet::new();
+    for record in records {
+        insert_optional_btree_set(
+            Some(ctx),
+            &mut sequences,
+            record.sequence,
+            "iges quarantined parameter sequence index",
+        )?;
+    }
+    Ok(sequences)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -378,19 +431,10 @@ fn decode_with_occurrence_limits(
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
-    let quarantined_parameter_sequences = parse
-        .quarantined_parameters
-        .iter()
-        .map(|record| record.sequence)
-        .collect::<BTreeSet<_>>();
-    let projected_directory = (!quarantined_parameter_sequences.is_empty()).then(|| {
-        parse
-            .directory
-            .iter()
-            .filter(|entry| !quarantined_parameter_sequences.contains(&entry.sequence))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
+    let quarantined_parameter_sequences =
+        quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
+    let projected_directory =
+        projection_directory(&parse.directory, &quarantined_parameter_sequences, ctx)?;
     let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
@@ -570,7 +614,7 @@ fn decode_with_occurrence_limits(
     }
     let global_table = parse.global.global_table();
     if !ctx.container_only() {
-        let attributed_before_generic = attributed_sequences(&losses);
+        let attributed_before_generic = attributed_sequences(&losses, ctx)?;
         let generic_losses = parse
             .directory
             .iter()
@@ -610,7 +654,7 @@ fn decode_with_occurrence_limits(
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        attributed_sequences(&losses)
+        attributed_sequences(&losses, ctx)?
     };
     let mut transfer_ledger = TransferLedger::default();
     for entry in parse

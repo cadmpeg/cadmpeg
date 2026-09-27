@@ -462,9 +462,104 @@ fn tagged_loss(tag: &str) -> LossNote {
         )
 }
 
+fn attributed_index(losses: &[LossNote]) -> std::collections::BTreeSet<u32> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    crate::reader::attributed_sequences(losses, &ctx).unwrap()
+}
+
+#[test]
+fn attributed_loss_index_refuses_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges attributed loss sequences"
+    ));
+    assert_eq!(attributed_index(&[tagged_loss("D7:parameter")]).len(), 1);
+}
+
+#[test]
+fn projected_directory_refuses_entry_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let quarantined = std::collections::BTreeSet::from([99]);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::projection_directory(&directory, &quarantined, &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges projected directory entries"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let projected = super::projection_directory(&directory, &quarantined, &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(projected.len(), directory.len());
+    assert_eq!(projected[0].sequence, directory[0].sequence);
+}
+
+#[test]
+fn quarantined_parameter_sequence_index_refuses_node_limit() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3x4,0;".into(),
+    }]);
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let parse = super::PhysicalParse::run(&bytes, &parse_ctx, super::ParseMode::Decode).unwrap();
+    assert_eq!(parse.quarantined_parameters.len(), 1);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::quarantined_parameter_sequences(&parse.quarantined_parameters, &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges quarantined parameter sequence index"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let sequences =
+        super::quarantined_parameter_sequences(&parse.quarantined_parameters, &ctx).unwrap();
+    assert!(sequences.contains(&1));
+}
+
 #[test]
 fn attribution_indexes_a_parameter_tag_under_its_exact_sequence() {
-    let index = crate::reader::attributed_sequences(&[tagged_loss("D7:parameter")]);
+    let index = attributed_index(&[tagged_loss("D7:parameter")]);
 
     assert!(index.contains(&7));
     assert!(!index.contains(&70));
@@ -473,7 +568,7 @@ fn attribution_indexes_a_parameter_tag_under_its_exact_sequence() {
 
 #[test]
 fn attribution_indexes_directory_entry_and_indexed_parameter_tags() {
-    let index = crate::reader::attributed_sequences(&[
+    let index = attributed_index(&[
         tagged_loss("directory_entry:D12"),
         tagged_loss("D3:parameter[4]"),
         tagged_loss("directory_entry:D12"),
@@ -484,7 +579,7 @@ fn attribution_indexes_directory_entry_and_indexed_parameter_tags() {
 
 #[test]
 fn attribution_ignores_tags_that_do_not_render_a_sequence() {
-    let index = crate::reader::attributed_sequences(&[
+    let index = attributed_index(&[
         tagged_loss("D007:parameter"),
         tagged_loss("directory_entry:D12:extra"),
         tagged_loss("directory_entry:D007"),
