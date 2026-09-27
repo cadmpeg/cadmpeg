@@ -90,6 +90,27 @@ fn generated_surface_face_refs_with_service(
     .expect("service profile admits generated surface references")
 }
 
+fn knit_class_100_operand_entity_ids_with_service(
+    feature_id: u32,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+) -> Option<Vec<u32>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        knit_class_100_operand_entity_ids(ctx, feature_id, tables)
+    })
+    .expect("service profile admits knit class 100 operands")
+}
+
+fn knit_operand_surface_ids_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+    quilt_ids: &[u32],
+) -> Option<Vec<u32>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        knit_operand_surface_ids(ctx, scan, feature_id, quilt_ids)
+    })
+    .expect("service profile admits knit operand surfaces")
+}
+
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 fn placed_tabulated_cylinder_directrix(
@@ -550,16 +571,16 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[duplicate_owned_producer, consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[duplicate_owned_producer, consumer.clone()]),
         None
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])
     );
     let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[source_missing_entry.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[source_missing_entry.clone(), consumer.clone()]),
         Some(vec![192])
     );
     assert_eq!(
@@ -567,7 +588,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(416, &[consumer.clone(), producer.clone()]),
+        knit_class_100_operand_entity_ids_with_service(416, &[consumer.clone(), producer.clone()]),
         None
     );
     assert_eq!(
@@ -593,7 +614,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     )
     .is_empty());
     assert_eq!(
-        knit_class_100_operand_entity_ids(
+        knit_class_100_operand_entity_ids_with_service(
             416,
             &[producer.clone(), conflicting.clone(), consumer.clone()]
         ),
@@ -627,19 +648,19 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [175, 176]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids(419, &[producer.clone(), mixed_consumer]),
+        knit_class_100_operand_entity_ids_with_service(419, &[producer.clone(), mixed_consumer]),
         None
     );
     let missing = table(417, 100, vec![entry(193, 98, None)]);
-    assert_eq!(knit_class_100_operand_entity_ids(417, &[missing]), None);
+    assert_eq!(knit_class_100_operand_entity_ids_with_service(417, &[missing]), None);
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(418, &[producer.clone(), duplicate]),
+        knit_class_100_operand_entity_ids_with_service(418, &[producer.clone(), duplicate]),
         None
     );
     let self_reference = table(175, 100, vec![entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids(175, &[producer, self_reference]),
+        knit_class_100_operand_entity_ids_with_service(175, &[producer, self_reference]),
         None
     );
 }
@@ -882,14 +903,14 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         .push(replay(416, vec![103, 150], 100));
 
     assert_eq!(
-        knit_operand_surface_ids(&scan, 416, &[103, 150]),
+        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
         Some(vec![98, 145])
     );
 
     scan.features
         .entity_tables
         .push(table(312, 67, vec![entry(103, 200, Some(312), 51)], 50));
-    assert_eq!(knit_operand_surface_ids(&scan, 416, &[103, 150]), None);
+    assert_eq!(knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]), None);
 
     scan.features
         .entity_tables
@@ -897,7 +918,7 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(417, vec![777], 100));
-    assert_eq!(knit_operand_surface_ids(&scan, 417, &[777]), None);
+    assert_eq!(knit_operand_surface_ids_with_service(&scan, 417, &[777]), None);
 }
 
 #[test]
