@@ -1036,14 +1036,20 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut records, record.directory_sequence, record,
+            "iges annotation parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut entries, entry.sequence, entry,
+            "iges annotation directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -1135,7 +1141,7 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges annotation decoded sequences")?;
         } else {
             let message = match kind {
                 AnnotationKind::AngularDimension

@@ -235,14 +235,20 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges splines parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges splines directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -610,7 +616,7 @@ pub(super) fn project(
                 )
                 .with_provenance(entry.loss_provenance()),
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
     }
 
     for entry in directory
@@ -896,7 +902,7 @@ pub(super) fn project(
                 .note("Type 114 curve and patch types are retained only in native parameters")
                 .with_provenance(entry.loss_provenance()),
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges splines decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {

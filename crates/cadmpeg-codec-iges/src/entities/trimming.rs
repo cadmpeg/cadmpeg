@@ -1648,14 +1648,20 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges trimming parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges trimming directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
@@ -1730,7 +1736,7 @@ pub(super) fn project(
                 }],
             },
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -1816,7 +1822,7 @@ pub(super) fn project(
         }
         if valid {
             boundaries.insert(entry.sequence, BoundaryDefinition { surface, segments });
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
         }
     }
     for entry in directory
@@ -2450,7 +2456,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed sheet candidate failed neutral validation"))?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
         boundary_vertex_derivations.extend(derivations);
     }
 

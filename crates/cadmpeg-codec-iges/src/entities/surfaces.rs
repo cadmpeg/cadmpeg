@@ -1131,14 +1131,20 @@ pub(super) fn project(
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut records, record.directory_sequence, record,
+            "iges surfaces parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        crate::decode_resource::insert_optional_btree_map(
+            ctx, &mut entries, entry.sequence, entry,
+            "iges surfaces directory index",
+        )?;
+    }
     let composite_index = CompositeIndex::from_ir(ir);
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -1250,7 +1256,7 @@ pub(super) fn project(
             )),
             source_object: Some(source_object(entry, ctx)?),
         });
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     for entry in directory
@@ -1382,7 +1388,7 @@ pub(super) fn project(
                 .note("Type 118 developability is retained only in the native entity record")
                 .with_provenance(entry.loss_provenance()),
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     for entry in directory
@@ -1553,7 +1559,7 @@ pub(super) fn project(
                     Some(bounds),
                 ),
             );
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
             continue;
         };
         let carrier_interval = bounded_parameter_range_for_curve(
@@ -1702,7 +1708,7 @@ pub(super) fn project(
                 Some(bounds),
             ),
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     for entry in directory
@@ -1880,7 +1886,7 @@ pub(super) fn project(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
-            decoded.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
             continue;
         };
         let carrier_interval = bounded_parameter_range_for_curve(
@@ -2075,7 +2081,7 @@ pub(super) fn project(
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     'surface: for entry in directory
@@ -2426,7 +2432,7 @@ pub(super) fn project(
                 ])),
             ),
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     // No `ModelIndex` can be hoisted out of this loop: every accepted offset
@@ -2550,7 +2556,7 @@ pub(super) fn project(
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
-        decoded.insert(entry.sequence);
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })
