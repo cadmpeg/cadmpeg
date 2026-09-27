@@ -1757,7 +1757,7 @@ fn select_boundary_edge(
     }
 }
 
-fn clone_boundary_edge(edge: &Edge, ctx: &DecodeContext<'_>) -> Result<Edge, CodecError> {
+pub(super) fn clone_boundary_edge(edge: &Edge, ctx: &DecodeContext<'_>) -> Result<Edge, CodecError> {
     let carrier = match &edge.carrier {
         cadmpeg_ir::topology::EdgeCarrier::Free => cadmpeg_ir::topology::EdgeCarrier::Free,
         cadmpeg_ir::topology::EdgeCarrier::Endpoints(range) => cadmpeg_ir::topology::EdgeCarrier::Endpoints(*range),
