@@ -157,137 +157,150 @@ const RAW_VISUALIZATION_POINT_STRIDE: usize = 12;
 /// every decoded vertex coordinate must be selected by at least one terminal
 /// handle. Unsupported table modes are left unbound.
 pub(crate) fn visualization_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     source: &[u8],
     edge_rows: &[EdgeRow],
     point_coordinates: &[[f32; 3]],
-) -> Option<Vec<[usize; 2]>> {
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let mut markers = source
         .windows(INDEXED_VISUALIZATION_POINT_MARKER.len())
         .enumerate()
         .filter_map(|(offset, bytes)| {
             (bytes == INDEXED_VISUALIZATION_POINT_MARKER).then_some(offset)
         });
-    let marker = markers.next()?;
+    let Some(marker) = markers.next() else { return Ok(None) };
     if markers.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let count = usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?;
-    let indexed_count = usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?;
-    let mode = *source.get(marker.checked_add(18)?)?;
-    if source.get(marker.checked_add(10)?)? != &0xff
-        || source.get(marker.checked_add(15)?..marker.checked_add(18)?)? != [0, 0, 0]
+    let Some((count, indexed_count, mode, marker_valid, table)) = (|| {
+        Some((
+            usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?,
+            usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?,
+            *source.get(marker.checked_add(18)?)?,
+            source.get(marker.checked_add(10)?)? == &0xff
+                && source.get(marker.checked_add(15)?..marker.checked_add(18)?)? == [0, 0, 0],
+            marker.checked_add(INDEXED_VISUALIZATION_POINT_HEADER_LEN)?,
+        ))
+    })() else { return Ok(None) };
+    if !marker_valid
         || indexed_count > count
     {
-        return None;
+        return Ok(None);
     }
-    let table = marker.checked_add(INDEXED_VISUALIZATION_POINT_HEADER_LEN)?;
 
-    let mut point_by_bits = HashMap::with_capacity(point_coordinates.len());
+    let mut point_by_bits = HashMap::new();
     for (point, coordinates) in point_coordinates.iter().enumerate() {
         let key = coordinates.map(f32::to_bits);
-        if point_by_bits.insert(key, point).is_some() {
-            return None;
+        if crate::resource::insert_map(ctx, &mut point_by_bits, key, point, "catia_visualization_point_bits")?.is_some() {
+            return Ok(None);
         }
     }
-    let terminal_handles = edge_rows
-        .iter()
-        .flat_map(|row| [row.handles.first(), row.handles.last()])
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>();
+    let mut terminal_handles = HashSet::new();
+    for row in edge_rows {
+        for handle in [row.handles.first(), row.handles.last()].into_iter().flatten() {
+            crate::resource::insert_set(ctx, &mut terminal_handles, *handle, "catia_visualization_terminal_handles")?;
+        }
+    }
     if terminal_handles
         .iter()
         .any(|handle| usize::try_from(*handle).map_or(true, |handle| handle >= count))
     {
-        return None;
+        return Ok(None);
     }
     let point_by_handle = match mode {
         0 => compressed_visualization_point_bindings(
+            ctx,
             source,
             table,
             count,
             &terminal_handles,
             &point_by_bits,
         )?,
-        1 if count.saturating_sub(indexed_count) <= 1 => raw_visualization_point_bindings(
+        1 if count - indexed_count <= 1 => raw_visualization_point_bindings(
+            ctx,
             source,
             table,
             count,
             &terminal_handles,
             &point_by_bits,
         )?,
-        _ => return None,
+        _ => return Ok(None),
     };
-    if point_by_handle
-        .values()
-        .copied()
-        .collect::<HashSet<_>>()
-        .len()
-        != point_coordinates.len()
-    {
-        return None;
+    let Some(point_by_handle) = point_by_handle else { return Ok(None) };
+    let mut matched_points = HashSet::new();
+    for point in point_by_handle.values().copied() {
+        crate::resource::insert_set(ctx, &mut matched_points, point, "catia_visualization_matched_points")?;
+    }
+    if matched_points.len() != point_coordinates.len() {
+        return Ok(None);
     }
 
-    edge_rows
-        .iter()
-        .map(|row| {
-            Some([
-                *point_by_handle.get(row.handles.first()?)?,
-                *point_by_handle.get(row.handles.last()?)?,
-            ])
-        })
-        .collect()
+    let mut pairs = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut pairs, edge_rows.len(), "catia_visualization_endpoint_pairs")?;
+    for row in edge_rows {
+        let Some(pair) = (|| Some([
+            *point_by_handle.get(row.handles.first()?)?,
+            *point_by_handle.get(row.handles.last()?)?,
+        ]))() else { return Ok(None) };
+        pairs.push(pair);
+    }
+    Ok(Some(pairs))
 }
 
 fn raw_visualization_point_bindings(
+    ctx: &DecodeContext<'_>,
     source: &[u8],
     table: usize,
     count: usize,
     terminal_handles: &HashSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Option<HashMap<u32, usize>> {
-    let extent = count
-        .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?
-        .checked_add(table)?;
-    source.get(table..extent)?;
-    terminal_handles
-        .iter()
-        .map(|handle| {
+) -> Result<Option<HashMap<u32, usize>>, CodecError> {
+    let Some(extent) = count
+        .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)
+        .and_then(|bytes| bytes.checked_add(table)) else { return Ok(None) };
+    if source.get(table..extent).is_none() { return Ok(None) }
+    let mut bindings = HashMap::new();
+    for handle in terminal_handles {
+        let Some(key) = (|| {
             let index = usize::try_from(*handle).ok()?;
             let at = table.checked_add(index.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
-            let key = [
+            Some([
                 View::f32_le_at(source, at)?.to_bits(),
                 View::f32_le_at(source, at.checked_add(4)?)?.to_bits(),
                 View::f32_le_at(source, at.checked_add(8)?)?.to_bits(),
-            ];
-            Some((*handle, *point_by_bits.get(&key)?))
-        })
-        .collect()
+            ])
+        })() else { return Ok(None) };
+        let Some(&point) = point_by_bits.get(&key) else { return Ok(None) };
+        crate::resource::insert_map(ctx, &mut bindings, *handle, point, "catia_raw_visualization_bindings")?;
+    }
+    Ok(Some(bindings))
 }
 
 fn compressed_visualization_point_bindings(
+    ctx: &DecodeContext<'_>,
     source: &[u8],
     controls: usize,
     count: usize,
     terminal_handles: &HashSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Option<HashMap<u32, usize>> {
-    let packed_len = count.checked_add(3)? / 4;
-    let delimiter = controls.checked_add(packed_len)?;
-    if *source.get(delimiter)? != 0xff {
-        return None;
-    }
-    let scalar_count_at = delimiter.checked_add(1)?;
-    let scalar_count = usize::try_from(View::u32_le_at(source, scalar_count_at)?).ok()?;
-    let scalars = scalar_count_at.checked_add(4)?;
-    let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;
-    source.get(controls..scalar_extent)?;
+) -> Result<Option<HashMap<u32, usize>>, CodecError> {
+    let Some((scalar_count, scalars)) = (|| {
+        let packed_len = count.checked_add(3)? / 4;
+        let delimiter = controls.checked_add(packed_len)?;
+        if *source.get(delimiter)? != 0xff { return None }
+        let scalar_count_at = delimiter.checked_add(1)?;
+        let scalar_count = usize::try_from(View::u32_le_at(source, scalar_count_at)?).ok()?;
+        let scalars = scalar_count_at.checked_add(4)?;
+        let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;
+        source.get(controls..scalar_extent)?;
+        Some((scalar_count, scalars))
+    })() else { return Ok(None) };
 
     let mut previous = None::<[u32; 3]>;
     let mut scalar = 0usize;
-    let mut bindings = HashMap::with_capacity(terminal_handles.len());
+    let mut bindings = HashMap::new();
     for index in 0..count {
-        let packed = *source.get(controls.checked_add(index / 4)?)?;
+        let Some(packed) = controls.checked_add(index / 4).and_then(|at| source.get(at)).copied() else { return Ok(None) };
         let code = (packed >> (2 * (index % 4))) & 3;
         let mut read_scalar = || {
             if scalar >= scalar_count {
@@ -297,20 +310,21 @@ fn compressed_visualization_point_bindings(
             scalar = scalar.checked_add(1)?;
             Some(View::f32_le_at(source, at)?.to_bits())
         };
-        let point = match (code, previous) {
+        let Some(point) = (|| Some(match (code, previous) {
             (0, _) => [read_scalar()?, read_scalar()?, read_scalar()?],
             (1, Some(previous)) => previous,
             (2, Some(previous)) => [previous[0], previous[1], read_scalar()?],
             (3, Some(previous)) => [previous[0], read_scalar()?, read_scalar()?],
             _ => return None,
-        };
+        }))() else { return Ok(None) };
         previous = Some(point);
-        let handle = u32::try_from(index).ok()?;
+        let Some(handle) = u32::try_from(index).ok() else { return Ok(None) };
         if terminal_handles.contains(&handle) {
-            bindings.insert(handle, *point_by_bits.get(&point)?);
+            let Some(&point) = point_by_bits.get(&point) else { return Ok(None) };
+            crate::resource::insert_map(ctx, &mut bindings, handle, point, "catia_compressed_visualization_bindings")?;
         }
     }
-    (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
+    Ok((scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings))
 }
 
 fn standard_edge_port_identities(
