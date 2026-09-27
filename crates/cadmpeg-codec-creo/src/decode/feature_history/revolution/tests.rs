@@ -7,6 +7,71 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;
 
+#[test]
+fn revolution_generating_ids_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(&ctx, &mut ids, 9)
+        .expect_err("one generating ID exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"), "{error:?}");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::insert_generating_segment_id(ctx, &mut ids, 9)
+    })
+    .expect("service profile admits one generating ID");
+    assert_eq!(ids, std::collections::BTreeSet::from([9]));
+}
+
+#[test]
+fn revolution_profile_id_merge_refuses_second_node() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 9,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let profiles = [vec![cadmpeg_ir::sketches::SketchEntityUse {
+        entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+            "creo:featdefs:sketch_entity#2:9".to_string(),
+        )
+        .expect("profile entity identity"),
+        reversed: false,
+    }]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let profile_ids = crate::decode::feature_history::link::profile_segment_ids(
+        &ctx,
+        2,
+        &[&segment],
+        &profiles,
+    )
+    .expect("one profile ID is admitted");
+    let mut generating_ids = std::collections::BTreeSet::new();
+    let error = super::insert_generating_segment_id(
+        &ctx,
+        &mut generating_ids,
+        *profile_ids.first().expect("one profile ID"),
+    )
+    .expect_err("a second BTreeSet node exceeds the limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo revolution generating segment IDs"), "{error:?}");
+}
+
 fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
     crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {

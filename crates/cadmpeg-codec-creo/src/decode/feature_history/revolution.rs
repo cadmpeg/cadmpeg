@@ -38,6 +38,18 @@ use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn insert_generating_segment_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ids: &mut BTreeSet<u32>,
+    id: u32,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !ids.contains(&id) {
+        ctx.charge_collection_items(1, "creo revolution generating segment IDs")?;
+        ids.insert(id);
+    }
+    Ok(())
+}
+
 /// Transfer one exact surface carrier per resolved revolution generator.
 ///
 /// A saved spline whose revolved lanes the IR carrier refuses states no
@@ -94,12 +106,15 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             continue;
         };
         let points = resolved_section_points(ctx, definition)?;
-        let mut generating_ids = definition
+        let mut generating_ids = BTreeSet::new();
+        for id in definition
             .trim_entities
             .iter()
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
-            .collect::<BTreeSet<_>>();
+        {
+            insert_generating_segment_id(ctx, &mut generating_ids, id)?;
+        }
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
@@ -110,17 +125,19 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 .filter(|sketch| sketch.id == sketch_id),
         ) {
             let segments = complete_section_segment_rows(definition);
-            generating_ids.extend(profile_segment_ids(
+            for id in profile_segment_ids(
+                ctx,
                 definition.identity.id(),
                 &segments,
                 &sketch.profiles,
-            ));
+            )? {
+                insert_generating_segment_id(ctx, &mut generating_ids, id)?;
+            }
         }
-        let arc_bindings = definition
-            .order_table
-            .as_ref()
-            .map_or_else(BTreeMap::new, |order| {
-                ordered_family_surface_bindings_for_feature(
+        let arc_bindings = match definition.order_table.as_ref() {
+            None => BTreeMap::new(),
+            Some(order) => ordered_family_surface_bindings_for_feature(
+                    ctx,
                     &scan.surfaces.rows,
                     feature_id,
                     &scan.features.entity_tables,
@@ -136,13 +153,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         })
                         .map(|segment| segment.external_id),
                     crate::surface::SurfaceKind::TorusOrSphere,
-                )
-            });
-        let spline_bindings = definition
-            .order_table
-            .as_ref()
-            .map_or_else(BTreeMap::new, |order| {
-                ordered_family_surface_bindings_for_feature(
+                )?,
+        };
+        let spline_bindings = match definition.order_table.as_ref() {
+            None => BTreeMap::new(),
+            Some(order) => ordered_family_surface_bindings_for_feature(
+                    ctx,
                     &scan.surfaces.rows,
                     feature_id,
                     &scan.features.entity_tables,
@@ -154,8 +170,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         _ => None,
                     }),
                     crate::surface::SurfaceKind::Spline,
-                )
-            });
+                )?,
+        };
         for segment in complete_section_segment_rows(definition)
             .iter()
             .filter(|segment| generating_ids.contains(&segment.external_id))

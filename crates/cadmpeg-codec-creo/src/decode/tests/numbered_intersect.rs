@@ -1323,7 +1323,10 @@ fn closed_fallback_profile_selects_revolution_segments() {
     ]];
 
     assert_eq!(
-        profile_segment_ids(2, &segments.iter().collect::<Vec<_>>(), &profiles),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            profile_segment_ids(ctx, 2, &segments.iter().collect::<Vec<_>>(), &profiles)
+        })
+        .expect("service profile admits two segment ID nodes"),
         BTreeSet::from([9, 11])
     );
 }
