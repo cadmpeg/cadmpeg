@@ -227,6 +227,68 @@ fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
 }
 
 #[test]
+fn scan_notes_refuse_first_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = crate::scan_notes::summarize(&ctx, &scan)
+        .err()
+        .expect("the first note needs one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx scan notes"
+    ));
+}
+
+#[test]
+fn scan_notes_refuse_text_at_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = one_preview_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = crate::scan_notes::summarize(&ctx, &scan)
+        .err()
+        .expect("the first note needs retained text bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx scan note text"
+    ));
+}
+
+#[test]
+fn inspect_summary_refuses_combined_storage_note_slot_at_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let scan = invalid_legacy_storage_summary_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 8;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+    let error = crate::inspect::summarize(&ctx, &scan)
+        .expect_err("entry, views, attributes, storage and two scan notes use eight slots");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx combined inspection notes"
+    ));
+}
+
+#[test]
 fn inspect_summary_refuses_storage_note_slot_at_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
