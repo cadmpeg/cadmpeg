@@ -2269,11 +2269,8 @@ pub(super) struct FeatureSketchPointGroup {
 }
 
 /// Named two-scalar point object spanning consecutive offset-store blocks.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "OffsetStoreNamedPointWire",
-    into = "OffsetStoreNamedPointWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "OffsetStoreNamedPointWire")]
 pub(super) struct OffsetStoreNamedPoint {
     /// Globally unique point-object identity.
     pub(super) id: String,
@@ -2305,6 +2302,7 @@ struct OffsetStoreNamedPointWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<OffsetStoreNamedPoint> for OffsetStoreNamedPointWire {
     fn from(value: OffsetStoreNamedPoint) -> Self {
         Self {
@@ -2382,11 +2380,8 @@ pub(super) struct FeatureSketchPrecedingNamedPointUse {
 }
 
 /// Exact identity of one solved sketch point across its payload and reference lanes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchPointUseWire",
-    into = "FeatureSketchPointUseWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSketchPointUseWire")]
 pub(super) struct FeatureSketchPointUse {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -2420,6 +2415,7 @@ struct FeatureSketchPointUseWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchPointUse> for FeatureSketchPointUseWire {
     fn from(value: FeatureSketchPointUse) -> Self {
         Self {
@@ -2731,11 +2727,8 @@ pub(super) struct FeatureExtrudeProfileReference {
 }
 
 /// Fixed shifted-IEEE scalar header from a bounded extrusion payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudePayloadHeaderWire",
-    into = "FeatureExtrudePayloadHeaderWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureExtrudePayloadHeaderWire")]
 pub(super) struct FeatureExtrudePayloadHeader {
     /// Globally unique header identity.
     pub(super) id: String,
@@ -2761,6 +2754,7 @@ struct FeatureExtrudePayloadHeaderWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudePayloadHeader> for FeatureExtrudePayloadHeaderWire {
     fn from(value: FeatureExtrudePayloadHeader) -> Self {
         Self {
@@ -2790,11 +2784,8 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
 }
 
 /// Ordered member index in a branch-`11` operation body clause.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyMemberWire",
-    into = "FeatureOperationBodyMemberWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyMemberWire")]
 pub(super) struct FeatureOperationBodyMember {
     /// Globally unique member identity.
     pub(super) id: String,
@@ -2830,6 +2821,7 @@ struct FeatureOperationBodyMemberWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
     fn from(value: FeatureOperationBodyMember) -> Self {
         Self {
@@ -2865,11 +2857,8 @@ impl TryFrom<FeatureOperationBodyMemberWire> for FeatureOperationBodyMember {
 }
 
 /// Wrapped operation member resolved in the feature-body identity namespace.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyOperandWire",
-    into = "FeatureOperationBodyOperandWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyOperandWire")]
 pub(super) struct FeatureOperationBodyOperand {
     /// Globally unique operand identity.
     pub(super) id: String,
@@ -2919,6 +2908,7 @@ struct FeatureOperationBodyOperandWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
     fn from(value: FeatureOperationBodyOperand) -> Self {
         Self {
