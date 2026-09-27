@@ -907,12 +907,7 @@ pub(crate) fn resolve_standard_edge_faces(
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
     let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
-        charge_collection_items(
-            ctx,
-            serialized.len(),
-            "catia standard serialized edge faces",
-        )?;
-        return Ok(Some(serialized.to_vec()));
+        return Ok(Some(crate::resource::copy_retained_slice(ctx, serialized, "catia standard serialized edge faces")?));
     };
     resolve_edge_faces_from_runs(ctx, serialized, &runs)
 }
@@ -1024,16 +1019,14 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
         })?;
         ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
     }
-    let face_handles = trims
-        .into_iter()
-        .map(|trim| {
-            trim.packet
-                .handles()
-                .iter()
-                .copied()
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut face_handles = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut face_handles, trims.len(), "catia repeated edge face handles")?;
+    for trim in trims {
+        let mut handles = HashSet::new();
+        crate::resource::reserve_admitted_set(&mut handles, trim.packet.handles().len(), "catia repeated edge face handle set")?;
+        handles.extend(trim.packet.handles().iter().copied());
+        face_handles.push(handles);
+    }
     repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
 
@@ -1044,12 +1037,13 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
 /// carrier and handle candidates are preferred, while handle evidence supplies
 /// the domain when carrier geometry abstains.
 pub(crate) fn refine_repeated_edge_face_candidates(
+    ctx: &DecodeContext<'_>,
     edge_faces: &[[usize; 2]],
     allowed_faces: &mut [Vec<usize>],
     handle_face_candidates: &[Vec<usize>],
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     if edge_faces.len() != allowed_faces.len() || edge_faces.len() != handle_face_candidates.len() {
-        return None;
+        return Ok(None);
     }
     for (edge, (allowed, handle_candidates)) in allowed_faces
         .iter_mut()
@@ -1063,18 +1057,17 @@ pub(crate) fn refine_repeated_edge_face_candidates(
         if handle_candidates.is_empty() {
             continue;
         }
-        let intersection = allowed
-            .iter()
-            .copied()
-            .filter(|face| handle_candidates.contains(face))
-            .collect::<Vec<_>>();
+        let mut intersection = Vec::new();
+        for face in allowed.iter().copied().filter(|face| handle_candidates.contains(face)) {
+            crate::resource::push(ctx, &mut intersection, face, "catia_repeated_face_intersection")?;
+        }
         *allowed = if intersection.is_empty() {
-            handle_candidates.clone()
+            crate::resource::copy_retained_slice(ctx, handle_candidates, "catia_repeated_face_handle_copy")?
         } else {
             intersection
         };
     }
-    Some(())
+    Ok(Some(()))
 }
 
 /// Resolve optional second-face incidences by complete endpoint-degree closure.
@@ -1198,13 +1191,10 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if self.solutions.len() == MAX_SOLUTIONS {
                         self.exhausted = true;
                     } else {
-                        charge_collection_items(
-                            self.ctx,
-                            assignment.len(),
-                            "catia missing-edge solution assignment",
+                        let solution = crate::resource::copy_retained_slice(
+                            self.ctx, assignment, "catia missing-edge solution assignment",
                         )?;
-                        charge_collection_items(self.ctx, 1, "catia missing-edge solution list")?;
-                        self.solutions.push(assignment.to_vec());
+                        crate::resource::push(self.ctx, &mut self.solutions, solution, "catia missing-edge solution list")?;
                     }
                 }
                 return Ok(());
@@ -1221,16 +1211,11 @@ pub(crate) fn repeated_face_endpoint_closures(
                         continue;
                     }
                     for &candidate in faces.iter().filter(|candidate| **candidate == face) {
-                        charge_collection_items(self.ctx, 1, "catia missing-edge search choices")?;
-                        choices.push((branch, candidate));
+                        crate::resource::push(self.ctx, &mut choices, (branch, candidate), "catia missing-edge search choices")?;
                     }
                 }
             } else {
-                charge_collection_items(
-                    self.ctx,
-                    self.branches[unassigned_branch].1.len(),
-                    "catia missing-edge search choices",
-                )?;
+                crate::resource::reserve_vec(self.ctx, &mut choices, self.branches[unassigned_branch].1.len(), "catia missing-edge search choices")?;
                 choices.extend(
                     self.branches[unassigned_branch]
                         .1
@@ -1305,16 +1290,11 @@ pub(crate) fn repeated_face_endpoint_closures(
         if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
             continue;
         }
-        charge_collection_items(ctx, 1, "catia missing-edge branch choices")?;
-        let mut choices = vec![faces[0]];
-        charge_collection_items(
-            ctx,
-            allowed_faces[edge]
+        let mut choices = ctx.alloc_filled(1, faces[0], "catia missing-edge branch choices")?;
+        crate::resource::reserve_vec(ctx, &mut choices, allowed_faces[edge]
                 .iter()
                 .filter(|face| **face != faces[0])
-                .count(),
-            "catia missing-edge branch choices",
-        )?;
+                .count(), "catia missing-edge branch choices")?;
         choices.extend(
             allowed_faces[edge]
                 .iter()
@@ -1323,26 +1303,22 @@ pub(crate) fn repeated_face_endpoint_closures(
         );
         choices.sort_unstable();
         choices.dedup();
-        charge_collection_items(ctx, 1, "catia missing-edge branches")?;
-        branches.push((edge, choices));
+        crate::resource::push(ctx, &mut branches, (edge, choices), "catia missing-edge branches")?;
     }
     if branches.is_empty() {
         let closed = degrees
             .iter()
             .all(|face| face.values().all(|degree| *degree == 2));
+        let mut solutions = Vec::new();
         if closed {
-            charge_collection_items(ctx, edge_faces.len(), "catia missing-edge closed faces")?;
-            charge_collection_items(ctx, 1, "catia missing-edge closed solutions")?;
+            let completed = crate::resource::copy_retained_slice(ctx, edge_faces, "catia missing-edge closed faces")?;
+            crate::resource::push(ctx, &mut solutions, completed, "catia missing-edge closed solutions")?;
         }
-        return Ok(Some(
-            closed.then(|| edge_faces.to_vec()).into_iter().collect(),
-        ));
+        return Ok(Some(solutions));
     }
-    charge_collection_items(ctx, branches.len(), "catia missing-edge branch owners")?;
-    let owners = branches
-        .iter()
-        .map(|(edge, _)| edge_faces[*edge][0])
-        .collect::<Vec<_>>();
+    let mut owners = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut owners, branches.len(), "catia missing-edge branch owners")?;
+    owners.extend(branches.iter().map(|(edge, _)| edge_faces[*edge][0]));
     let mut search = Search {
         ctx,
         branches: &branches,
@@ -1359,27 +1335,16 @@ pub(crate) fn repeated_face_endpoint_closures(
     if search.exhausted {
         return Ok(None);
     }
-    charge_collection_items(
-        ctx,
-        search.solutions.len(),
-        "catia missing-edge completed solutions",
-    )?;
-    for _ in &search.solutions {
-        charge_collection_items(ctx, edge_faces.len(), "catia missing-edge completed faces")?;
+    let mut completed_solutions = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut completed_solutions, search.solutions.len(), "catia missing-edge completed solutions")?;
+    for solution in search.solutions {
+        let mut completed = crate::resource::copy_retained_slice(ctx, edge_faces, "catia missing-edge completed faces")?;
+        for ((edge, _), face) in branches.iter().zip(solution) {
+            completed[*edge][1] = face;
+        }
+        completed_solutions.push(completed);
     }
-    Ok(Some(
-        search
-            .solutions
-            .into_iter()
-            .map(|solution| {
-                let mut completed = edge_faces.to_vec();
-                for ((edge, _), face) in branches.iter().zip(solution) {
-                    completed[*edge][1] = face;
-                }
-                completed
-            })
-            .collect(),
-    ))
+    Ok(Some(completed_solutions))
 }
 
 /// The admitted second faces for one repeated edge incidence slot.
@@ -1698,8 +1663,7 @@ pub(super) fn resolve_edge_faces_from_runs(
             crate::resource::push(ctx, faces, run.face, "catia edge run occurrence faces")?;
         }
     }
-    charge_collection_items(ctx, serialized.len(), "catia resolved edge faces")?;
-    let mut resolved = serialized.to_vec();
+    let mut resolved = crate::resource::copy_retained_slice(ctx, serialized, "catia resolved edge faces")?;
     for (faces, occurrences) in resolved.iter_mut().zip(occurrence_faces) {
         if faces[0] != faces[1] || occurrences.len() < 2 {
             continue;

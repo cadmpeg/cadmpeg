@@ -529,16 +529,37 @@ fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
 
 #[test]
 fn handle_face_candidates_do_not_reopen_resolved_incidence() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 2], [1, 1], [3, 3]];
     let mut allowed = [vec![2], vec![2, 4], Vec::new()];
     let handles = [vec![2], vec![4, 5], vec![5]];
 
-    refine_repeated_edge_face_candidates(&edge_faces, &mut allowed, &handles)
+    refine_repeated_edge_face_candidates(&ctx, &edge_faces, &mut allowed, &handles)
+        .expect("service budget")
         .expect("aligned face domains");
 
     assert!(allowed[0].is_empty());
     assert_eq!(allowed[1], vec![4]);
     assert_eq!(allowed[2], vec![5]);
+}
+
+#[test]
+fn repeated_face_refinement_refuses_before_intersection_and_copy() {
+    use cadmpeg_core::CodecError;
+    for (allowed_face, expected_operation) in [
+        (vec![2usize], "catia_repeated_face_intersection"),
+        (vec![3usize], "catia_repeated_face_handle_copy"),
+    ] {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut allowed = [allowed_face.clone()];
+            refine_repeated_edge_face_candidates(ctx, &[[0, 0]], &mut allowed, &[vec![2]])
+        };
+        assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(()));
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, run),
+            Err(CodecError::ResourceLimit(limit)) if limit.operation == expected_operation
+        ));
+    }
 }
 
 #[test]
@@ -623,6 +644,39 @@ fn endpoint_degree_closure_charges_branch_search_arrays() {
     );
     assert!(operations.contains("catia missing-edge branch assignment"));
     assert!(operations.contains("catia missing-edge used branches"));
+    for operation in [
+        "catia missing-edge branch choices",
+        "catia missing-edge branches",
+        "catia missing-edge branch owners",
+        "catia missing-edge search choices",
+        "catia missing-edge solution assignment",
+        "catia missing-edge solution list",
+        "catia missing-edge completed solutions",
+        "catia missing-edge completed faces",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
+fn endpoint_degree_closure_refuses_closed_face_copy() {
+    let faces = [[0usize, 0], [0, 0], [0, 0]];
+    let allowed = [Vec::new(), Vec::new(), Vec::new()];
+    let pairs = [[0, 1], [1, 2], [2, 0]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        repeated_face_endpoint_closures(ctx, &faces, &allowed, &pairs, 1)
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(vec![faces.to_vec()]));
+    let mut operations = HashSet::new();
+    for limit in 0..=32 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected closed-face result: {outcome:?}"),
+        }
+    }
+    assert!(operations.contains("catia missing-edge closed faces"));
+    assert!(operations.contains("catia missing-edge closed solutions"));
 }
 
 #[test]
