@@ -715,7 +715,11 @@ fn scan_sections<'a>(
     Ok(sections)
 }
 
-fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
+fn toc_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    header_base: usize,
+) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut sections = Vec::new();
     let mut toc_from = 0;
     while let Some(toc_offset) = find(data, TOC_START, toc_from) {
@@ -727,10 +731,10 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
             continue;
         };
         let header = header.trim_end_matches('#');
-        let fields = header.split_whitespace().collect::<Vec<_>>();
+        let mut fields = header.split_whitespace();
         let (Some(count), Some(row_width)) = (
-            fields.get(2).and_then(|value| value.parse::<usize>().ok()),
-            fields.get(3).and_then(|value| value.parse::<usize>().ok()),
+            fields.nth(2).and_then(|value| value.parse::<usize>().ok()),
+            fields.next().and_then(|value| value.parse::<usize>().ok()),
         ) else {
             continue;
         };
@@ -746,11 +750,10 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
             let Ok(row) = std::str::from_utf8(row) else {
                 continue;
             };
-            let fields = row
+            let mut fields = row
                 .trim_end_matches(['#', '\n', '\r', ' '])
-                .split_whitespace()
-                .collect::<Vec<_>>();
-            let Some(name) = fields.first().copied() else {
+                .split_whitespace();
+            let Some(name) = fields.next() else {
                 continue;
             };
             if name == "NEXT_TOC_ENTRY" {
@@ -758,18 +761,30 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
             }
             let (raw_name, offset_field, length_field, expanded_field) = if name == "ModelView" {
                 let (Some(id), Some(offset), Some(length), Some(expanded)) =
-                    (fields.get(1), fields.get(2), fields.get(3), fields.get(4))
+                    (fields.next(), fields.next(), fields.next(), fields.next())
                 else {
                     continue;
                 };
-                (format!("ModelView#{id}"), *offset, *length, *expanded)
+                let Some(name_len) = "ModelView#".len().checked_add(id.len()) else {
+                    continue;
+                };
+                let mut raw_name = String::new();
+                ctx.try_reserve_retained_text(&mut raw_name, name_len, "creo TOC section names")?;
+                raw_name.push_str("ModelView#");
+                raw_name.push_str(id);
+                (raw_name, offset, length, expanded)
             } else {
                 let (Some(offset), Some(length), Some(expanded)) =
-                    (fields.get(1), fields.get(2), fields.get(3))
+                    (fields.next(), fields.next(), fields.next())
                 else {
                     continue;
                 };
-                (name.to_string(), *offset, *length, *expanded)
+                (
+                    ctx.copy_retained_text(name, "creo TOC section names")?,
+                    offset,
+                    length,
+                    expanded,
+                )
             };
             let (Ok(relative_offset), Ok(length), Ok(expanded_length)) = (
                 usize::from_str_radix(offset_field, 16),
@@ -781,16 +796,26 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
             let Some(offset) = header_base.checked_add(relative_offset) else {
                 continue;
             };
-            let marker = [b"#".as_slice(), raw_name.as_bytes(), b"\n"].concat();
-            let Some(marker_end) = offset.checked_add(marker.len()) else {
+            let Some(marker_len) = raw_name.len().checked_add(2) else {
+                continue;
+            };
+            let Some(marker_end) = offset.checked_add(marker_len) else {
                 continue;
             };
             let Some(end) = offset.checked_add(length) else {
                 continue;
             };
-            if length < marker.len() || data.get(offset..marker_end) != Some(marker.as_slice()) {
+            let Some(marker) = data.get(offset..marker_end) else {
+                continue;
+            };
+            if length < marker_len
+                || marker.first() != Some(&b'#')
+                || marker.get(1..1 + raw_name.len()) != Some(raw_name.as_bytes())
+                || marker.last() != Some(&b'\n')
+            {
                 continue;
             }
+            ctx.try_reserve_items(&mut sections, 1, "creo TOC sections")?;
             sections.extend(Section::scan(
                 raw_name,
                 offset,
@@ -802,7 +827,7 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<ScannedSection<'_>> {
     }
     sections.sort_by_key(|section| section.section.offset());
     sections.dedup_by_key(|section| section.section.offset());
-    sections
+    Ok(sections)
 }
 
 fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<ScannedSection<'_>> {
@@ -2488,10 +2513,11 @@ pub(crate) fn scan_bytes<'a>(
     let body_start = toc_end.or(header_end).unwrap_or(0);
 
     let mut legacy_ascii = legacy_ascii_framing(&data);
-    let sections = legacy_ascii.as_ref().map_or_else(
-        || toc_sections(&data, header_end.unwrap_or(0)),
-        |legacy| legacy_toc_sections(&data, legacy.banner_offset),
-    );
+    let sections = if let Some(legacy) = legacy_ascii.as_ref() {
+        legacy_toc_sections(&data, legacy.banner_offset)
+    } else {
+        toc_sections(ctx, &data, header_end.unwrap_or(0))?
+    };
     let sections = if sections.is_empty() {
         scan_sections(ctx, &data, body_start)?
     } else {
@@ -3190,7 +3216,11 @@ mod feature_row_definition_tests {
     fn zero_width_toc_has_no_rows() {
         let data = b"#UGC_TOC 2 18446744073709551615 0#\n";
 
-        assert!(toc_sections(data, 0).is_empty());
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| toc_sections(ctx, data, 0))
+                .expect("empty TOC admitted")
+                .is_empty()
+        );
     }
 
     #[test]
