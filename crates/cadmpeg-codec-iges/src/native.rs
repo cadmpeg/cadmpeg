@@ -364,10 +364,11 @@ fn resolve_display_ref(
 }
 
 fn resolved_label_display_definition(
+    ctx: &DecodeContext<'_>,
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
     pointer: i64,
-) -> Option<String> {
+) -> Result<Option<String>, CodecError> {
     (pointer > 0)
         .then(|| {
             references
@@ -378,7 +379,14 @@ fn resolved_label_display_definition(
                 })
         })
         .flatten()
-        .map(|sequence| format!("iges:structure:associativity#D{sequence}"))
+        .map(|sequence| {
+            format_retained(
+                ctx,
+                format_args!("iges:structure:associativity#D{sequence}"),
+                "iges native label display definition",
+            )
+        })
+        .transpose()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -3767,286 +3775,408 @@ pub(crate) fn store(
             })
         },
     )?;
-    let subfigure_definitions = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 308 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 1);
-                NativeSubfigureDefinition {
-                    id: format!("iges:product:subfigure-definition#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    depth: record.and_then(|record| record.integer(1)),
-                    name: record
-                        .and_then(|record| record.string(2))
-                        .map(<[u8]>::to_vec),
-                    declared_member_count: record.and_then(|record| record.integer(3)),
-                    members: (0..count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
-                                record
-                                    .and_then(|record| record.integer(4 + index))
-                                    .map(|sequence| {
-                                        parameter_resolver.resolve_any(
-                                            entry.sequence,
-                                            4 + index,
-                                            sequence,
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+    let subfigure_definitions = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 308 && entry.form == 0),
+        "iges native subfigure definition slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 1);
+            Ok(NativeSubfigureDefinition {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:subfigure-definition#D{}", entry.sequence),
+                    "iges native subfigure definition id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native subfigure definition source",
+                )?,
+                depth: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native subfigure name"))
+                    .transpose()?,
+                declared_member_count: record.and_then(|record| record.integer(3)),
+                members: collect_result_vec(
+                    ctx,
+                    count,
+                    "iges native subfigure member slots",
+                    |index| {
+                        record
+                            .and_then(|record| record.integer(4 + index))
+                            .map(|sequence| {
+                                parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
                             })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                    label_display: resolved_label_display_definition(
-                        references,
-                        entry.sequence,
-                        entry.label_display,
-                    ),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let subfigure_instances = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 408 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                NativeSubfigureInstance {
-                    id: format!("iges:product:subfigure-instance#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    definition: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(entry.sequence, 1, sequence, 308, &[0])
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:product:subfigure-definition#D{sequence}")),
-                    translation: [
-                        record.and_then(|record| record.number(2)),
-                        record.and_then(|record| record.number(3)),
-                        record.and_then(|record| record.number(4)),
-                    ],
-                    scale: record.and_then(|record| record.number(5)),
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let network_definitions = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 320 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let member_count = record.and_then(|record| {
-                    let end = clamped_primary_end(entry.sequence, record);
-                    let count = record.count_with_stride_before(3, 1, end)?;
-                    let type_flag = 4 + count;
-                    let primary_reference_designator = type_flag + 1;
-                    let display_template = type_flag + 2;
-                    let connect_count = type_flag + 3;
-                    (record.integer(type_flag).is_some()
-                        && record
-                            .string_or_empty(primary_reference_designator)
-                            .is_some()
-                        && record.integer_or(display_template, 0).is_some()
-                        && record.integer(connect_count).is_some())
-                    .then_some(count)
-                });
-                let connect_count_index = member_count.map(|count| 7 + count);
-                let connect_count = record.zip(connect_count_index).and_then(|(record, index)| {
-                    record.count_with_stride_before(
-                        index,
-                        1,
-                        clamped_primary_end(entry.sequence, record),
-                    )
-                });
-                NativeNetworkDefinition {
-                    id: format!("iges:product:network-definition#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    depth: record.and_then(|record| record.integer(1)),
-                    name: record
-                        .and_then(|record| record.string(2))
-                        .map(<[u8]>::to_vec),
-                    declared_member_count: record.and_then(|record| record.integer(3)),
-                    members: if let Some(member_count) = member_count {
-                        (0..member_count)
-                            .map(|index| {
-                                Ok::<_, CodecError>({
-                                    record
-                                        .and_then(|record| record.integer(4 + index))
-                                        .map(|sequence| {
-                                            parameter_resolver.resolve_any(
-                                                entry.sequence,
-                                                4 + index,
-                                                sequence,
-                                            )
-                                        })
-                                        .transpose()?
-                                        .flatten()
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
+                            .transpose()?
+                            .flatten()
+                            .map(|sequence| {
+                                format_retained(
+                                    ctx,
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native subfigure member",
+                                )
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()?
-                    } else {
-                        Vec::new()
+                            .transpose()
                     },
-                    type_flag: member_count.and_then(|member_count| {
-                        record.and_then(|record| record.integer(4 + member_count))
-                    }),
-                    primary_reference_designator: member_count
-                        .and_then(|member_count| {
-                            record.and_then(|record| record.string_or_empty(5 + member_count))
-                        })
-                        .filter(|value| !value.is_empty())
-                        .map(<[u8]>::to_vec),
-                    display_template: member_count
-                        .and_then(|member_count| {
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native subfigure definition transform",
+                        )
+                    })
+                    .transpose()?,
+                label_display: resolved_label_display_definition(
+                    ctx,
+                    references,
+                    entry.sequence,
+                    entry.label_display,
+                )?,
+            })
+        },
+    )?;
+    let subfigure_instances = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 408 && entry.form == 0),
+        "iges native subfigure instance slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            Ok(NativeSubfigureInstance {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:subfigure-instance#D{}", entry.sequence),
+                    "iges native subfigure instance id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native subfigure instance source",
+                )?,
+                definition: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 308, &[0])
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:product:subfigure-definition#D{sequence}"),
+                            "iges native subfigure instance definition",
+                        )
+                    })
+                    .transpose()?,
+                translation: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                scale: record.and_then(|record| record.number(5)),
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native subfigure instance transform",
+                        )
+                    })
+                    .transpose()?,
+            })
+        },
+    )?;
+    let network_definitions = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 320 && entry.form == 0),
+        "iges native network definition slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let member_count = record.and_then(|record| {
+                let end = clamped_primary_end(entry.sequence, record);
+                let count = record.count_with_stride_before(3, 1, end)?;
+                let type_flag = 4 + count;
+                let primary_reference_designator = type_flag + 1;
+                let display_template = type_flag + 2;
+                let connect_count = type_flag + 3;
+                (record.integer(type_flag).is_some()
+                    && record
+                        .string_or_empty(primary_reference_designator)
+                        .is_some()
+                    && record.integer_or(display_template, 0).is_some()
+                    && record.integer(connect_count).is_some())
+                .then_some(count)
+            });
+            let connect_count_index = member_count.map(|count| 7 + count);
+            let connect_count = record.zip(connect_count_index).and_then(|(record, index)| {
+                record.count_with_stride_before(
+                    index,
+                    1,
+                    clamped_primary_end(entry.sequence, record),
+                )
+            });
+            Ok(NativeNetworkDefinition {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:network-definition#D{}", entry.sequence),
+                    "iges native network definition id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native network definition source",
+                )?,
+                depth: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native network name"))
+                    .transpose()?,
+                declared_member_count: record.and_then(|record| record.integer(3)),
+                members: if let Some(member_count) = member_count {
+                    collect_result_vec(
+                        ctx,
+                        member_count,
+                        "iges native network member slots",
+                        |index| {
                             record
-                                .and_then(|record| record.integer_or(6 + member_count, 0))
-                                .filter(|sequence| *sequence != 0)
-                                .map(|sequence| (6 + member_count, sequence))
-                        })
-                        .map(|(index, sequence)| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                index,
-                                sequence,
-                                312,
-                                &[0, 1],
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    declared_connect_point_count: member_count.and_then(|member_count| {
-                        record.and_then(|record| record.integer(7 + member_count))
-                    }),
-                    connect_points: if let Some((member_count, connect_count)) =
-                        member_count.zip(connect_count)
-                    {
-                        (0..connect_count)
-                            .map(|index| {
-                                Ok::<_, CodecError>({
-                                    record
-                                        .and_then(|record| record.integer(8 + member_count + index))
-                                        .filter(|sequence| *sequence != 0)
-                                        .map(|sequence| {
-                                            parameter_resolver.resolve_type(
-                                                entry.sequence,
-                                                8 + member_count + index,
-                                                sequence,
-                                                132,
-                                                &[0],
-                                            )
-                                        })
-                                        .transpose()?
-                                        .flatten()
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                .and_then(|record| record.integer(4 + index))
+                                .map(|sequence| {
+                                    parameter_resolver.resolve_any(
+                                        entry.sequence,
+                                        4 + index,
+                                        sequence,
+                                    )
                                 })
+                                .transpose()?
+                                .flatten()
+                                .map(|sequence| {
+                                    format_retained(
+                                        ctx,
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native network member",
+                                    )
+                                })
+                                .transpose()
+                        },
+                    )?
+                } else {
+                    Vec::new()
+                },
+                type_flag: member_count.and_then(|member_count| {
+                    record.and_then(|record| record.integer(4 + member_count))
+                }),
+                primary_reference_designator: member_count
+                    .and_then(|member_count| {
+                        record.and_then(|record| record.string_or_empty(5 + member_count))
+                    })
+                    .filter(|value| !value.is_empty())
+                    .map(|bytes| ctx.copy_retained(bytes, "iges native network designator"))
+                    .transpose()?,
+                display_template: member_count
+                    .and_then(|member_count| {
+                        record
+                            .and_then(|record| record.integer_or(6 + member_count, 0))
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| (6 + member_count, sequence))
+                    })
+                    .map(|(index, sequence)| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            index,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native network template",
+                        )
+                    })
+                    .transpose()?,
+                declared_connect_point_count: member_count.and_then(|member_count| {
+                    record.and_then(|record| record.integer(7 + member_count))
+                }),
+                connect_points: if let Some((member_count, connect_count)) =
+                    member_count.zip(connect_count)
+                {
+                    collect_result_vec(
+                        ctx,
+                        connect_count,
+                        "iges native network connect point slots",
+                        |index| {
+                            record
+                                .and_then(|record| record.integer(8 + member_count + index))
+                                .filter(|sequence| *sequence != 0)
+                                .map(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        8 + member_count + index,
+                                        sequence,
+                                        132,
+                                        &[0],
+                                    )
+                                })
+                                .transpose()?
+                                .flatten()
+                                .map(|sequence| {
+                                    format_retained(
+                                        ctx,
+                                        format_args!("iges:entity:directory#{sequence}"),
+                                        "iges native network connect point",
+                                    )
+                                })
+                                .transpose()
+                        },
+                    )?
+                } else {
+                    Vec::new()
+                },
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native network definition transform",
+                        )
+                    })
+                    .transpose()?,
+                label_display: resolved_label_display_definition(
+                    ctx,
+                    references,
+                    entry.sequence,
+                    entry.label_display,
+                )?,
+            })
+        },
+    )?;
+    let network_instances = collect_native_items(
+        ctx,
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 420 && entry.form == 0),
+        "iges native network instance slots",
+        |entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
+            let connect_count =
+                overdeclared_counts.counted_tail(entry.sequence, record, end, 11, 1);
+            Ok(NativeNetworkInstance {
+                id: format_retained(
+                    ctx,
+                    format_args!("iges:product:network-instance#D{}", entry.sequence),
+                    "iges native network instance id",
+                )?,
+                source_entity: format_retained(
+                    ctx,
+                    format_args!("iges:entity:directory#{}", entry.sequence),
+                    "iges native network instance source",
+                )?,
+                definition: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 1, sequence, 320, &[0])
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:product:network-definition#D{sequence}"),
+                            "iges native network instance definition",
+                        )
+                    })
+                    .transpose()?,
+                translation: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                scale: [
+                    record.and_then(|record| record.number(5)),
+                    record.and_then(|record| record.number(6)),
+                    record.and_then(|record| record.number(7)),
+                ],
+                type_flag: record.and_then(|record| record.integer(8)),
+                primary_reference_designator: record
+                    .and_then(|record| record.string_or_empty(9))
+                    .filter(|value| !value.is_empty())
+                    .map(|bytes| {
+                        ctx.copy_retained(bytes, "iges native network instance designator")
+                    })
+                    .transpose()?,
+                display_template: record
+                    .and_then(|record| record.integer_or(10, 0))
+                    .filter(|sequence| *sequence != 0)
+                    .map(|sequence| {
+                        parameter_resolver.resolve_type(entry.sequence, 10, sequence, 312, &[0, 1])
+                    })
+                    .transpose()?
+                    .flatten()
+                    .map(|sequence| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:entity:directory#{sequence}"),
+                            "iges native network instance template",
+                        )
+                    })
+                    .transpose()?,
+                declared_connect_point_count: record.and_then(|record| record.integer(11)),
+                connect_points: collect_result_vec(
+                    ctx,
+                    connect_count,
+                    "iges native network instance connect point slots",
+                    |index| {
+                        record
+                            .and_then(|record| record.integer(12 + index))
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    12 + index,
+                                    sequence,
+                                    132,
+                                    &[0],
+                                )
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()?
-                    } else {
-                        Vec::new()
+                            .transpose()?
+                            .flatten()
+                            .map(|sequence| {
+                                format_retained(
+                                    ctx,
+                                    format_args!("iges:entity:directory#{sequence}"),
+                                    "iges native network instance connect point",
+                                )
+                            })
+                            .transpose()
                     },
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                    label_display: resolved_label_display_definition(
-                        references,
-                        entry.sequence,
-                        entry.label_display,
-                    ),
-                }
+                )?,
+                transformation: (entry.transform > 0)
+                    .then(|| {
+                        format_retained(
+                            ctx,
+                            format_args!("iges:native:transformation#D{}", entry.transform),
+                            "iges native network instance transform",
+                        )
+                    })
+                    .transpose()?,
             })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let network_instances = directory
-        .iter()
-        .filter(|entry| entry.entity_type == 420 && entry.form == 0)
-        .map(|entry| {
-            Ok::<_, CodecError>({
-                let record = by_directory.get(&entry.sequence).copied();
-                let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
-                let connect_count =
-                    overdeclared_counts.counted_tail(entry.sequence, record, end, 11, 1);
-                NativeNetworkInstance {
-                    id: format!("iges:product:network-instance#D{}", entry.sequence),
-                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                    definition: record
-                        .and_then(|record| record.integer(1))
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(entry.sequence, 1, sequence, 320, &[0])
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:product:network-definition#D{sequence}")),
-                    translation: [
-                        record.and_then(|record| record.number(2)),
-                        record.and_then(|record| record.number(3)),
-                        record.and_then(|record| record.number(4)),
-                    ],
-                    scale: [
-                        record.and_then(|record| record.number(5)),
-                        record.and_then(|record| record.number(6)),
-                        record.and_then(|record| record.number(7)),
-                    ],
-                    type_flag: record.and_then(|record| record.integer(8)),
-                    primary_reference_designator: record
-                        .and_then(|record| record.string_or_empty(9))
-                        .filter(|value| !value.is_empty())
-                        .map(<[u8]>::to_vec),
-                    display_template: record
-                        .and_then(|record| record.integer_or(10, 0))
-                        .filter(|sequence| *sequence != 0)
-                        .map(|sequence| {
-                            parameter_resolver.resolve_type(
-                                entry.sequence,
-                                10,
-                                sequence,
-                                312,
-                                &[0, 1],
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .map(|sequence| format!("iges:entity:directory#{sequence}")),
-                    declared_connect_point_count: record.and_then(|record| record.integer(11)),
-                    connect_points: (0..connect_count)
-                        .map(|index| {
-                            Ok::<_, CodecError>({
-                                record
-                                    .and_then(|record| record.integer(12 + index))
-                                    .filter(|sequence| *sequence != 0)
-                                    .map(|sequence| {
-                                        parameter_resolver.resolve_type(
-                                            entry.sequence,
-                                            12 + index,
-                                            sequence,
-                                            132,
-                                            &[0],
-                                        )
-                                    })
-                                    .transpose()?
-                                    .flatten()
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                            })
-                        })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
-                    transformation: (entry.transform > 0)
-                        .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        },
+    )?;
     let connect_points = directory
         .iter()
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
