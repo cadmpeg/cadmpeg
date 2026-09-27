@@ -3,21 +3,22 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 /// The required root member name from Part 21 Annex A.4.
 pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum ReferenceTarget {
+enum ReferenceTarget<'a> {
     Internal {
         member: String,
-        query: Option<String>,
-        fragment: Option<String>,
+        query: Option<&'a str>,
+        fragment: Option<&'a str>,
     },
     External,
 }
@@ -80,37 +81,47 @@ pub(crate) fn open_root<'a>(
 }
 
 /// Resolves one archive URI against the directory of its referencing member.
-fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecError> {
+fn resolve_uri<'a>(
+    ctx: &DecodeContext<'_>,
+    member_bytes: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    base_member: &'a str,
+    uri: &'a str,
+) -> Result<ReferenceTarget<'a>, CodecError> {
     if has_uri_scheme(uri) || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
     let (uri, fragment) = uri.split_once('#').map_or((uri, None), |(uri, fragment)| {
-        (uri, Some(fragment.to_owned()))
+        (uri, Some(fragment))
     });
-    if fragment
-        .as_deref()
-        .is_some_and(|fragment| fragment.contains('#'))
-    {
+    if fragment.is_some_and(|fragment| fragment.contains('#')) {
         return Err(CodecError::malformed(format_args!(
             "invalid STEP ZIP URI fragment {uri:?}"
         )));
     }
     let (path, query) = uri
         .split_once('?')
-        .map_or((uri, None), |(path, query)| (path, Some(query.to_owned())));
+        .map_or((uri, None), |(path, query)| (path, Some(query)));
     if path.starts_with('/') {
         return Err(CodecError::malformed(format_args!(
             "STEP ZIP URI escapes the archive root: {uri:?}"
         )));
     }
-    let mut components = base_member
-        .rsplit_once('/')
-        .map_or_else(Vec::new, |(directory, _)| {
-            directory.split('/').map(str::to_owned).collect()
-        });
+    let mut components = Vec::new();
+    let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
+    if let Some((directory, _)) = base_member.rsplit_once('/') {
+        for component in directory.split('/') {
+            push_component(ctx, &mut component_bytes, &mut components, component)?;
+        }
+    }
     if path.is_empty() {
+        member_bytes.grow(u64_from_index(base_member.len()))?;
+        let mut member = String::new();
+        member
+            .try_reserve_exact(base_member.len())
+            .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
+        member.push_str(base_member);
         return Ok(ReferenceTarget::Internal {
-            member: base_member.to_owned(),
+            member,
             query,
             fragment,
         });
@@ -130,7 +141,7 @@ fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecErr
                     )));
                 }
             }
-            component => components.push(component.to_owned()),
+            component => push_component(ctx, &mut component_bytes, &mut components, component)?,
         }
     }
     if components.is_empty() {
@@ -138,15 +149,45 @@ fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecErr
             "STEP ZIP URI resolves to no member: {uri:?}"
         )));
     }
+    let member_len = components.iter().try_fold(0_usize, |total, component| {
+        total.checked_add(component.len())
+    }).and_then(|total| total.checked_add(components.len() - 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
+    member_bytes.grow(u64_from_index(member_len))?;
+    let mut member = String::new();
+    member.try_reserve_exact(member_len).map_err(|_| {
+        ctx.refuse_codec_limit("step_zip_uri_member", 0, 1)
+    })?;
+    for (index, component) in components.iter().enumerate() {
+        if index != 0 {
+            member.push('/');
+        }
+        member.push_str(component);
+    }
     Ok(ReferenceTarget::Internal {
-        member: components.join("/"),
+        member,
         query,
         fragment,
     })
 }
 
+fn push_component<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    components: &mut Vec<&'a str>,
+    component: &'a str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "step_zip_uri_components")?;
+    bytes.grow(u64_from_index(std::mem::size_of::<&str>()))?;
+    components.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_components", 0, 1))?;
+    components.push(component);
+    Ok(())
+}
+
 /// Resolves all root-file resource bindings and checks internal members.
 pub(crate) fn root_reference_notes(
+    ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
     exchange: &crate::parse::Exchange,
 ) -> Result<Vec<String>, CodecError> {
@@ -156,7 +197,8 @@ pub(crate) fn root_reference_notes(
     for reference in exchange.references() {
         let name = reference.name;
         let uri = forwarded_reference_uri(exchange, &reference.uri);
-        match resolve_uri(ROOT_NAME, uri)? {
+        let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;
+        match resolve_uri(ctx, &mut member_bytes, ROOT_NAME, uri)? {
             ReferenceTarget::Internal {
                 member,
                 query,
@@ -167,18 +209,81 @@ pub(crate) fn root_reference_notes(
                         "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
                     )));
                 }
-                let query = query.map_or_else(String::new, |query| format!("?{query}"));
-                let fragment = fragment.map_or_else(String::new, |fragment| format!("#{fragment}"));
-                notes.push(format!(
-                    "internal resource {name} -> {member}{query}{fragment}"
-                ));
+                push_reference_note(
+                    ctx,
+                    &mut notes,
+                    "internal resource ",
+                    name,
+                    &member,
+                    query,
+                    fragment,
+                )?;
             }
             ReferenceTarget::External => {
-                notes.push(format!("external resource {name} -> {uri}"));
+                push_reference_note(ctx, &mut notes, "external resource ", name, uri, None, None)?;
             }
         }
     }
     Ok(notes)
+}
+
+fn push_reference_note(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    prefix: &str,
+    name: crate::parse::ReferenceName,
+    target: &str,
+    query: Option<&str>,
+    fragment: Option<&str>,
+) -> Result<(), CodecError> {
+    let (marker, mut id) = match name {
+        crate::parse::ReferenceName::Entity(id) => ('#', id),
+        crate::parse::ReferenceName::Value(id) => ('@', id),
+    };
+    let mut digits = 1_usize;
+    while id >= 10 {
+        id /= 10;
+        digits += 1;
+    }
+    let query_len = query
+        .map_or(Some(0), |text| text.len().checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+    let fragment_len = fragment
+        .map_or(Some(0), |text| text.len().checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+    let len = prefix
+        .len()
+        .checked_add(1 + digits + " -> ".len())
+        .and_then(|len| len.checked_add(target.len()))
+        .and_then(|len| len.checked_add(query_len))
+        .and_then(|len| len.checked_add(fragment_len))
+        .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+    ctx.charge_collection_items(1, "step_zip_reference_notes")?;
+    ctx.charge_retained(u64_from_index(len), "step_zip_reference_note")?;
+    notes.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_notes", 0, 1))?;
+    let mut note = String::new();
+    note.try_reserve_exact(len)
+        .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+    note.push_str(prefix);
+    note.push(marker);
+    let id = match name {
+        crate::parse::ReferenceName::Entity(id) | crate::parse::ReferenceName::Value(id) => id,
+    };
+    write!(&mut note, "{id}")
+        .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
+    note.push_str(" -> ");
+    note.push_str(target);
+    if let Some(query) = query {
+        note.push('?');
+        note.push_str(query);
+    }
+    if let Some(fragment) = fragment {
+        note.push('#');
+        note.push_str(fragment);
+    }
+    notes.push(note);
+    Ok(())
 }
 
 fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
