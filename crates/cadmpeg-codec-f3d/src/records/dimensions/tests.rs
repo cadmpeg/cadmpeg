@@ -9,6 +9,77 @@ use crate::records::{
 };
 use std::num::NonZeroU32;
 
+fn locus_group(state: u32, count: usize) -> super::DesignDimensionLocusGroup {
+    super::DesignDimensionLocusGroup {
+        id: "locus-group".into(),
+        companion_record_index: 2,
+        byte_offset: 100,
+        class_tag: "256".to_owned().try_into().unwrap(),
+        record_index: 3,
+        frame_length: 200,
+        loci: (0..count)
+            .map(|index| super::DesignDimensionLocus {
+                returned: Located {
+                    value: 30 + index as u32,
+                    offset: 140 + index as u64 * 8,
+                },
+                geometry_record_index: 10 + index as u32,
+                geometry_reference_offset: 120 + index as u64 * 8,
+                role: 1,
+                role_offset: 124 + index as u64 * 8,
+            })
+            .collect(),
+        owner_reference: 4,
+        owner_reference_offset: 180,
+        owner_role: 1,
+        owner_role_offset: 184,
+        state,
+        state_offset: 188,
+        next_class_tag: "259".to_owned().try_into().unwrap(),
+        next_record_index: 5,
+        next_byte_offset: 300,
+    }
+}
+
+#[test]
+fn dimension_locus_group_borrowed_wire_matches_owned_wire_bytes() {
+    for (state, count) in [(0, 0), (0x8000_0001, 1), (0x0000_1010, 3)] {
+        let group = locus_group(state, count);
+        let owned = super::DesignDimensionLocusGroupWire::from(group.clone());
+        assert_eq!(
+            serde_json::to_vec(&group).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+        assert_eq!(
+            serde_json::from_slice::<super::DesignDimensionLocusGroup>(
+                &serde_json::to_vec(&group).unwrap()
+            )
+            .unwrap(),
+            group
+        );
+    }
+}
+
+#[test]
+fn dimension_locus_group_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignDimensionLocusGroup,
+    }
+    let group = locus_group(0x1010, 3);
+    let record = NestedRecord {
+        id: "f3d:native:locus-group#0",
+        value: &group,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 fn draft(base: u64) -> Draft {
     Draft {
         id: "annotation".into(),

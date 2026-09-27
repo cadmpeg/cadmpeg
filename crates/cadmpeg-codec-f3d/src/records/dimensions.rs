@@ -6,7 +6,8 @@ use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
 use super::serde_column::SliceColumn;
 use super::sketch_relations::{
-    constraint_kinds_from_state, SketchConstraintKind, SKETCH_CONSTRAINT_MASK,
+    constraint_kinds_from_state, constraint_kinds_iter, SketchConstraintKind,
+    SKETCH_CONSTRAINT_MASK,
 };
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -1095,11 +1096,8 @@ pub(crate) struct DesignDimensionLocus {
 }
 
 /// Counted-locus frame nested under a dimensional parameter companion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionLocusGroupWire",
-    into = "DesignDimensionLocusGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignDimensionLocusGroupWire")]
 pub(crate) struct DesignDimensionLocusGroup {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -1133,6 +1131,36 @@ pub(crate) struct DesignDimensionLocusGroup {
     pub(crate) next_record_index: u32,
     /// Byte offset of the immediately following indexed record.
     pub(crate) next_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_LOCUS_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignDimensionLocusGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            loci: self.loci.clone(),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset,
+            owner_role: self.owner_role,
+            owner_role_offset: self.owner_role_offset,
+            state: self.state,
+            state_offset: self.state_offset,
+            next_class_tag: self.next_class_tag.clone(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
 }
 
 /// One typed geometry locus and its dimension-role code.
@@ -1201,13 +1229,72 @@ impl DesignDimensionLocusGroup {
     }
 
     #[must_use]
-    fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
-        constraint_kinds_from_state(u64::from(self.state)).0
-    }
-
-    #[must_use]
     fn unknown_constraint_bits(&self) -> u32 {
         self.state & !(SKETCH_CONSTRAINT_MASK as u32)
+    }
+}
+
+struct ConstraintKinds(u32);
+
+impl Serialize for ConstraintKinds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(constraint_kinds_iter(u64::from(self.0)))
+    }
+}
+
+impl Serialize for DesignDimensionLocusGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            companion_record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            frame_length: u64,
+            loci: SliceColumn<'a, DesignDimensionLocus, DesignDimensionLocusWire>,
+            owner_reference: u32,
+            owner_reference_offset: u64,
+            owner_role: u32,
+            owner_role_offset: u64,
+            state: u32,
+            state_offset: u64,
+            constraint_kinds: ConstraintKinds,
+            unknown_constraint_bits: u32,
+            return_members: SliceColumn<'a, DesignDimensionLocus, u32>,
+            return_member_offsets: SliceColumn<'a, DesignDimensionLocus, u64>,
+            next_class_tag: &'a str,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            loci: SliceColumn::new(&self.loci, |locus| DesignDimensionLocusWire {
+                geometry_record_index: locus.geometry_record_index,
+                geometry_reference_offset: locus.geometry_reference_offset,
+                role: locus.role,
+                role_offset: locus.role_offset,
+            }),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset,
+            owner_role: self.owner_role,
+            owner_role_offset: self.owner_role_offset,
+            state: self.state,
+            state_offset: self.state_offset,
+            constraint_kinds: ConstraintKinds(self.state),
+            unknown_constraint_bits: self.unknown_constraint_bits(),
+            return_members: SliceColumn::new(&self.loci, |locus| locus.returned.value),
+            return_member_offsets: SliceColumn::new(&self.loci, |locus| locus.returned.offset),
+            next_class_tag: self.next_class_tag.as_str(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -1264,11 +1351,12 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
     fn from(value: DesignDimensionLocusGroup) -> Self {
-        let constraint_kinds = value.constraint_kinds();
+        let constraint_kinds = constraint_kinds_from_state(u64::from(value.state)).0;
         let unknown_constraint_bits = value.unknown_constraint_bits();
         let mut loci = Vec::with_capacity(value.loci.len());
         let mut return_members = Vec::with_capacity(value.loci.len());
