@@ -74,6 +74,7 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The tolerance a feature definition's `local_sys` parameter frame is written to.
 ///
@@ -166,6 +167,73 @@ pub(super) fn thicken_feature_definition(
             .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
         side: offset.map(|(_, side)| side),
     }))
+}
+
+fn hole_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    surface_id: u32,
+    result_surface_ids: &BTreeMap<u32, Vec<u32>>,
+    available_features: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+) -> Result<FaceSelection, cadmpeg_core::CodecError> {
+    let native = ctx.format_retained(
+        format_args!("creo:visibgeom:surface#{surface_id}"),
+        "creo hole native face selection",
+    )?;
+    let (candidate_id, candidate_reservation) = ctx.format_scoped(
+        format_args!("creo:visibgeom:face#{surface_id}"),
+        "creo hole candidate face ID",
+    )?;
+    let resolved = ir
+        .model
+        .faces
+        .iter()
+        .any(|candidate| candidate.id.as_str() == candidate_id);
+    if resolved {
+        let face = FaceId::mint(ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        drop(candidate_id);
+        drop(candidate_reservation);
+        let mut faces = Vec::new();
+        ctx.try_reserve_items(&mut faces, 1, "creo hole face identities")?;
+        faces.push(face);
+        return Ok(FaceSelection::Resolved { faces, native });
+    }
+    drop(candidate_id);
+    drop(candidate_reservation);
+    if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
+        .is_some_and(|row| row.feature_id == feature_id)
+    {
+        return Ok(FaceSelection::Native(native));
+    }
+    if let Some(faces) = generated_surface_face_refs(
+        ctx,
+        &[surface_id],
+        &scan.surfaces.rows,
+        result_surface_ids,
+        available_features,
+    )? {
+        return Ok(FaceSelection::generated(
+            faces,
+            ctx.copy_retained_text(&native, "creo hole generated native selection")?,
+        )
+        .unwrap_or(FaceSelection::Native(native)));
+    }
+    Ok(FaceSelection::Native(native))
+}
+
+fn admitted_hole_placements(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    candidates: impl IntoIterator<Item = HolePlacement>,
+) -> Result<Vec<HolePlacement>, cadmpeg_core::CodecError> {
+    let mut placements = Vec::new();
+    for placement in candidates {
+        ctx.try_reserve_items(&mut placements, 1, "creo hole placements")?;
+        placements.push(placement);
+    }
+    Ok(placements)
 }
 
 pub(super) fn linear_extrusion_extent_and_direction(
@@ -313,30 +381,16 @@ pub(in super::super) fn schema_feature_definition(
             &scan.surfaces.rows,
         )?;
         let available_features = model_feature_ids(ctx, scan)?;
-        let face_selection = |surface_id| -> Result<FaceSelection, cadmpeg_core::CodecError> {
-            let native = format!("creo:visibgeom:surface#{surface_id}");
-            let face = FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id);
-            Ok(if ir.model.faces.iter().any(|candidate| candidate.id == face) {
-                FaceSelection::Resolved {
-                    faces: vec![face],
-                    native,
-                }
-            } else if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
-                .is_some_and(|row| row.feature_id == feature_id)
-            {
-                FaceSelection::Native(native)
-            } else if let Some(faces) = generated_surface_face_refs(
+        let face_selection = |surface_id| {
+            hole_face_selection(
                 ctx,
-                &[surface_id],
-                &scan.surfaces.rows,
+                scan,
+                ir,
+                feature_id,
+                surface_id,
                 &result_surface_ids,
                 &available_features,
-            )? {
-                FaceSelection::generated(faces, native.clone())
-                    .unwrap_or(FaceSelection::Native(native))
-            } else {
-                FaceSelection::Native(native)
-            })
+            )
         };
         let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
@@ -417,7 +471,7 @@ pub(in super::super) fn schema_feature_definition(
                 simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
             })
             .flatten();
-        let placements = position
+        let placement_candidates = position
             .zip(direction)
             .map(|(position, direction)| HolePlacement::Directed {
                 position,
@@ -425,8 +479,8 @@ pub(in super::super) fn schema_feature_definition(
             })
             .into_iter()
             .chain(stepped_axis)
-            .chain(drilled_axis)
-            .collect::<Vec<_>>();
+            .chain(drilled_axis);
+        let placements = admitted_hole_placements(ctx, placement_candidates)?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             profile: None,
             profile_filter: None,
