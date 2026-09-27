@@ -45,7 +45,7 @@ use cadmpeg_ir::{
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
-use crate::resource::{collection_allocation_failed, collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_string};
+use crate::resource::{collection_allocation_failed, collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_format, retained_string};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -319,7 +319,7 @@ pub(crate) fn transfer(
                         .get(profile_object.id.as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
-                    sketch_frame(profile_properties).map(|frame| frame.1)
+                    sketch_frame(ctx, profile_properties).map(|frame| frame.1)
                 })
                 .transpose()?;
             extrusion_definition(
@@ -1721,7 +1721,7 @@ fn parse_sketch(
     }
     let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
     let profiles = build_profiles(ctx, &entities, &constraints)?;
-    let (origin, normal, u_axis) = sketch_frame(properties)?;
+    let (origin, normal, u_axis) = sketch_frame(ctx, properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
@@ -1896,8 +1896,8 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
-    validate_sketch_placement(properties)?;
+fn sketch_frame(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
+    validate_sketch_placement(ctx, properties)?;
     Ok(placement_frame(properties).map_or_else(
         || {
             (
@@ -1913,7 +1913,7 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vect
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
     let property =
         property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))?;
-    let matrix = crate::placement::placement_matrix(property).ok()??.rows();
+    let matrix = crate::placement::placement_matrix_unreported(property)?.rows();
     let column = |index| Vector3::new(matrix[0][index], matrix[1][index], matrix[2][index]);
     Some((
         Point3::new(matrix[0][3], matrix[1][3], matrix[2][3]),
@@ -1923,27 +1923,27 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
     ))
 }
 
-fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
+fn validate_sketch_placement(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<(), CodecError> {
     let Some(property) =
         property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
     else {
         return Ok(());
     };
     let error = if property.type_name != "App::PropertyPlacement" {
-        Some(format!(
+        Some(retained_format(ctx, format_args!(
             "sketch {} placement carrier has runtime type {}",
             property.name, property.type_name
-        ))
+        ), "FreeCAD sketch placement error")?)
     } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
-        Some(format!(
+        Some(retained_format(ctx, format_args!(
             "sketch {} placement carrier requires one PropertyPlacement value",
             property.name
-        ))
+        ), "FreeCAD sketch placement error")?)
     } else if placement_frame(properties).is_none() {
-        Some(format!(
+        Some(retained_format(ctx, format_args!(
             "sketch {} placement carrier has incomplete or invalid components",
             property.name
-        ))
+        ), "FreeCAD sketch placement error")?)
     } else {
         None
     };

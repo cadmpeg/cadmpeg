@@ -70,7 +70,7 @@ pub(crate) fn transfer(
         }
         let joint_type = joint_type_property.map(|property| enumeration_value(ctx, property)).transpose()?;
         let body = if grounded_property.is_some() {
-            let placement = placement(&owned, "Placement")?.unwrap_or_default();
+            let placement = placement(ctx, &owned, "Placement")?.unwrap_or_default();
             let reference = grounded_property
                 .into_iter()
                 .flat_map(PropertyRecord::links)
@@ -90,8 +90,8 @@ pub(crate) fn transfer(
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
                     reference: connector(ctx, owned, reference_name)?,
-                    placement: placement(owned, placement_name)?.unwrap_or_default(),
-                    offset: placement(owned, offset_name)?.unwrap_or_default(),
+                    placement: placement(ctx, owned, placement_name)?.unwrap_or_default(),
+                    offset: placement(ctx, owned, offset_name)?.unwrap_or_default(),
                 })
             };
             JointBody::Pair {
@@ -562,13 +562,14 @@ fn connector(
 }
 
 fn placement(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
     let Some(property) = sole_named_property("joint", properties, name)? else {
         return Ok(None);
     };
-    crate::placement::placement_matrix(property)
+    crate::placement::placement_matrix(ctx, property)
 }
 
 #[cfg(test)]

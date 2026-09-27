@@ -145,8 +145,8 @@ pub(crate) fn transfer(
             let support = sole_named_property("attachment", owned, "AttachmentSupport")?;
             let mode = sole_named_property("attachment", owned, "MapMode")?;
             let placement =
-                placement_matrix(sole_named_property("attachment", owned, "Placement")?)?;
-            let offset = placement_matrix(sole_named_property(
+                placement_matrix(ctx, sole_named_property("attachment", owned, "Placement")?)?;
+            let offset = placement_matrix(ctx, sole_named_property(
                 "attachment",
                 owned,
                 "AttachmentOffset",
@@ -182,12 +182,13 @@ pub(crate) fn effective_frame(
 }
 
 fn placement_matrix(
+    ctx: &DecodeContext<'_>,
     property: Option<&PropertyRecord>,
 ) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
     let Some(property) = property else {
         return Ok(None);
     };
-    crate::placement::placement_matrix(property)
+    crate::placement::placement_matrix(ctx, property)
 }
 
 fn support_links(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, CodecError> {
