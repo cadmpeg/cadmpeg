@@ -12,6 +12,81 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_native_parameter_value_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "native-property".into(),
+        owner: "feature".into(),
+        name: "ProxyState".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><String value=\"native-value\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd native parameter value",
+        |ctx| super::native_definition(ctx, "Part::FeaturePython", &[&property]),
+    );
+}
+
+#[test]
+fn design_feature_state_value_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "state-property".into(),
+        owner: "feature".into(),
+        name: "Visibility".into(),
+        type_name: "App::PropertyBool".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Bool value=\"true\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd feature state value",
+        |ctx| super::feature_state(ctx, "feature", &[&property]),
+    );
+}
+
+#[test]
+fn design_operation_scalar_expression_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Box".into(),
+        name: "Box".into(),
+        type_name: "PartDesign::AdditiveBox".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "length-property".into(),
+        owner: object.id.clone(),
+        name: "Length".into(),
+        type_name: "App::PropertyLength".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Float value=\"3.5\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd operation scalar expression",
+        |ctx| super::append_operation_parameters(ctx, &mut Vec::new(), &object, &[&property]),
+    );
+}
+
+#[test]
 fn design_body_output_prefix_refuses_at_retained_limit() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Body".into(),
