@@ -68,12 +68,13 @@ fn mesh_selection_orientation_refuses_constraint_collection_limit() {
     }]];
     let equations =
         possible_face_equations(&service_ctx, &assignments).expect("service resource budget");
+    let face_choices = possible_face_choices(&service_ctx, &assignments, &equations);
     let run = |ctx: &DecodeContext<'_>| {
         let search = MeshSelectionSearch {
             ctx,
             assignments: &assignments,
             possible_face_equations: equations.clone(),
-            possible_face_choices: possible_face_choices(ctx, &assignments, &equations),
+            possible_face_choices: face_choices.clone(),
             face_work: vec![Some(1)],
             edge_candidates: &[],
             edge_rows: &[],
