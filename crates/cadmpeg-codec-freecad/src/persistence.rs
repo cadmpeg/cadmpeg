@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    copy_xml_text, malformed, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire,
+    copy_xml_text, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire,
     ObjectRecord, PropertyFamily, PropertyRecord, ValueRecord,
 };
 use crate::resource::{decode_reserved_vec, reserve_charged_vec_items};
@@ -87,16 +87,16 @@ fn parse_document(
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
     let (declarations_tag, data_tag, record_tag) = schema.persistence_tags();
-    let objects_node = unique_section(root, declarations_tag)?;
-    let data_node = unique_section(root, data_tag)?;
+    let objects_node = unique_section(root, declarations_tag, ctx)?;
+    let data_node = unique_section(root, data_tag, ctx)?;
 
     let declared_count = objects_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::resource::malformed_optional(ctx, format_args!(
                 "{declarations_tag} Count is missing or invalid"
-            ))
+            ), "FCStd persistence diagnostic")
         })?;
     let object_limit = ctx
         .and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
@@ -163,10 +163,10 @@ fn parse_document(
                 CodecError::Malformed("ObjectDeps Count is missing or invalid".into())
             })?;
         if dependency_count != dependencies.len() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "ObjectDeps {name} Count={dependency_count} but {} dependencies were found",
                 dependencies.len()
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         let allow_partial = node
             .attribute("AllowPartial")
@@ -176,9 +176,9 @@ fn parse_document(
                 CodecError::Malformed("ObjectDeps AllowPartial must be positive".into())
             })?;
         if dependency_map.contains_key(&name) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "duplicate ObjectDeps name {name}"
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "FCStd dependency lookup")?;
@@ -198,9 +198,9 @@ fn parse_document(
         }
         let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
         if data_by_name.contains_key(&name) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "duplicate ObjectData name {name}"
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         data_by_name.insert(name, node);
     }
@@ -208,13 +208,13 @@ fn parse_document(
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!("{data_tag} Count is missing or invalid"))
+            crate::resource::malformed_optional(ctx, format_args!("{data_tag} Count is missing or invalid"), "FCStd persistence diagnostic")
         })?;
     if data_count != data_by_name.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "{data_tag} Count={data_count} but {} records were found",
             data_by_name.len()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
 
     charge_items(ctx, declared_count, "FCStd object records")?;
@@ -230,9 +230,9 @@ fn parse_document(
                 ctx.charge_work(1, "FCStd duplicate object names")?;
             }
             if prior.name == name {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "duplicate object declaration name {name}"
-            )));
+            ), "FCStd persistence diagnostic"));
             }
         }
         let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
@@ -255,9 +255,9 @@ fn parse_document(
                 .as_ref()
                 .is_none_or(|dependency| dependency.order != order)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "ObjectDeps order does not match object {name}"
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         let (dependencies, dependency_allow_partial) = match dependency {
             Some(dependency) => (dependency.dependencies, dependency.allow_partial),
@@ -287,10 +287,10 @@ fn parse_document(
     }
 
     if declared_count != objects.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "{declarations_tag} Count={declared_count} but {} declarations were found",
             objects.len()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     if !dependency_map.is_empty() {
         return Err(CodecError::Malformed(
@@ -298,17 +298,17 @@ fn parse_document(
         ));
     }
     if data_by_name.len() != objects.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "object declarations and {data_tag} identities disagree"
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     for object in &mut objects {
         for dependency in &mut object.dependencies {
             if !data_by_name.contains_key(dependency) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::resource::malformed_optional(ctx, format_args!(
                     "object {} depends on missing object {dependency}",
                     object.name
-                )));
+                ), "FCStd persistence diagnostic"));
             }
             *dependency = object_id(ctx, dependency)?;
         }
@@ -349,7 +349,7 @@ fn parse_document(
     }
     for object in &objects {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
-            CodecError::malformed(format_args!("missing ObjectData for {}", object.name))
+            crate::resource::malformed_optional(ctx, format_args!("missing ObjectData for {}", object.name), "FCStd persistence diagnostic")
         })?;
         let children_count = data.children().filter(roxmltree::Node::is_element).count();
         charge_items(ctx, children_count, "FCStd object data children")?;
@@ -364,10 +364,10 @@ fn parse_document(
             .copied();
         let extension_container = extension_containers.next();
         if extension_containers.next().is_some() {
-            return Err(malformed(format!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "object {} has multiple direct Extensions containers",
                 object.id
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         let mut property_containers = child_nodes
             .iter()
@@ -375,19 +375,19 @@ fn parse_document(
             .copied();
         let property_container = property_containers.next();
         if property_containers.next().is_some() {
-            return Err(malformed(format!(
+            return Err(crate::resource::malformed_optional(ctx, format_args!(
                 "object {} has multiple direct Properties containers",
                 object.id
-            )));
+            ), "FCStd persistence diagnostic"));
         }
         if let (Some(extensions), Some(properties)) =
             (extension_container, property_container)
         {
             if extensions.range().start > properties.range().start {
-                return Err(malformed(format!(
+                return Err(crate::resource::malformed_optional(ctx, format_args!(
                     "object {} writes Properties before Extensions",
                     object.id
-                )));
+                ), "FCStd persistence diagnostic"));
             }
         }
         let mut extension_ids_by_start = HashMap::new();
@@ -409,11 +409,11 @@ fn parse_document(
                     CodecError::Malformed("Extensions Count is missing or invalid".into())
                 })?;
             if declared != extension_nodes.len() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::resource::malformed_optional(ctx, format_args!(
                     "Extensions Count={declared} but {} records were found for {}",
                     extension_nodes.len(),
                     object.id
-                )));
+                ), "FCStd persistence diagnostic"));
             }
             let mut extension_names = HashSet::new();
             let mut extension_types = HashSet::new();
@@ -421,10 +421,10 @@ fn parse_document(
                 let name = retained_attr(ctx, node, "name", "FCStd extension name")?;
                 let type_name = retained_attr(ctx, node, "type", "FCStd extension type")?;
                 if extension_names.contains(&name) {
-                    return Err(malformed(format!(
+                    return Err(crate::resource::malformed_optional(ctx, format_args!(
                         "duplicate extension name {name} for {}",
                         object.id
-                    )));
+                    ), "FCStd persistence diagnostic"));
                 }
                 charge_items(ctx, 1, "FCStd extension name set")?;
                 if let Some(ctx) = ctx {
@@ -432,10 +432,10 @@ fn parse_document(
                 }
                 extension_names.insert(copy_xml_text(ctx, &name, "FCStd extension name copy")?);
                 if extension_types.contains(&type_name) {
-                    return Err(malformed(format!(
+                    return Err(crate::resource::malformed_optional(ctx, format_args!(
                         "duplicate extension type {type_name} for {}",
                         object.id
-                    )));
+                    ), "FCStd persistence diagnostic"));
                 }
                 charge_items(ctx, 1, "FCStd extension type set")?;
                 if let Some(ctx) = ctx {
@@ -471,10 +471,10 @@ fn parse_document(
                 let extension_id = extension_ids_by_start
                     .get(&extension.range().start)
                     .ok_or_else(|| {
-                        malformed(format!(
+                        crate::resource::malformed_optional(ctx, format_args!(
                             "extension under {} has no native identity",
                             object.id
-                        ))
+                        ), "FCStd persistence diagnostic")
                     })?;
                 for container in extension
                     .children()
@@ -542,16 +542,16 @@ fn parse_properties(
     let all_nodes = transient_property_nodes.iter().chain(property_nodes.iter());
     for (index, node) in all_nodes.clone().enumerate() {
         let name = node.attribute("name").ok_or_else(|| {
-            CodecError::malformed(format_args!("{} element has no name attribute", node.tag_name().name()))
+            crate::resource::malformed_optional(ctx, format_args!("{} element has no name attribute", node.tag_name().name()), "FCStd persistence diagnostic")
         })?;
         for prior in all_nodes.clone().take(index) {
             if let Some(ctx) = ctx {
                 ctx.charge_work(1, "FCStd duplicate property names")?;
             }
             if prior.attribute("name") == Some(name) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::resource::malformed_optional(ctx, format_args!(
                     "duplicate property name {name} for {owner}"
-                )));
+                ), "FCStd persistence diagnostic"));
             }
         }
     }
@@ -560,10 +560,10 @@ fn parse_properties(
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| CodecError::Malformed("Properties Count is missing or invalid".into()))?;
     if declared != property_nodes.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "Properties Count={declared} but {} properties were found for {owner}",
             property_nodes.len()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     let declared_transient =
         container
@@ -574,10 +574,10 @@ fn parse_properties(
                 })
             })?;
     if declared_transient != transient_property_nodes.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "Properties TransientCount={declared_transient} but {} transient properties were found for {owner}",
             transient_property_nodes.len()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     for (order, node) in transient_property_nodes.into_iter().enumerate() {
         let name = retained_attr(ctx, node, "name", "FCStd transient property name")?;
@@ -622,9 +622,9 @@ fn parse_properties(
                     .checked_add(len)
                     .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        crate::resource::malformed_optional(ctx, format_args!(
                             "property {name} retained value XML limit exceeded"
-                        ))
+                        ), "FCStd persistence diagnostic")
                     })?;
                 values.push(ValueRecord {
                     tag: copy_xml_text(ctx, value.tag_name().name(), "FCStd value tag")?,
@@ -730,7 +730,7 @@ fn parse_link_targets(
     let Some(grammar) = grammar else {
         return Ok(Vec::new());
     };
-    let root = single_value_element(property, grammar.root_tag(), type_name)?;
+    let root = single_value_element(property, grammar.root_tag(), type_name, ctx)?;
     match grammar {
         LinkGrammar::Link => {
             reject_nested_link_value(root)?;
@@ -853,15 +853,16 @@ fn single_value_element<'a, 'input>(
     property: roxmltree::Node<'a, 'input>,
     tag: &str,
     type_name: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
     let mut elements = property.children().filter(roxmltree::Node::is_element);
     let value = elements.next().ok_or_else(|| {
-        CodecError::malformed(format_args!("{type_name} requires one {tag} value"))
+        crate::resource::malformed_optional(ctx, format_args!("{type_name} requires one {tag} value"), "FCStd persistence diagnostic")
     })?;
     if !value.has_tag_name(tag) || elements.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "{type_name} requires exactly one {tag} value"
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     Ok(value)
 }
@@ -873,10 +874,10 @@ fn counted_children<'a, 'input>(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<impl ExactSizeIterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
     let count = parent.attribute("count").ok_or_else(|| {
-        CodecError::malformed(format_args!("{} element has no count attribute", parent.tag_name().name()))
+        crate::resource::malformed_optional(ctx, format_args!("{} element has no count attribute", parent.tag_name().name()), "FCStd persistence diagnostic")
     })?
         .parse::<usize>()
-        .map_err(|_| CodecError::malformed(format_args!("{type_name} count is invalid")))?;
+        .map_err(|_| crate::resource::malformed_optional(ctx, format_args!("{type_name} count is invalid"), "FCStd persistence diagnostic"))?;
     charge_items(ctx, count, "FCStd link nodes")?;
     charge_items(ctx, count, "FCStd link target or subelement records")?;
     let children = parent
@@ -885,10 +886,10 @@ fn counted_children<'a, 'input>(
     let mut child_nodes = decode_reserved_vec(ctx, count, "FCStd link nodes")?;
     child_nodes.extend(children);
     if child_nodes.len() != count || child_nodes.iter().any(|child| !child.has_tag_name(tag)) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "{type_name} count={count} but {} {tag} values were found",
             child_nodes.len()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     Ok(child_nodes.into_iter())
 }
@@ -900,9 +901,9 @@ fn local_link(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<LinkTarget>, CodecError> {
     if object_attribute == "obj" {
-        reject_link_aliases(node, &["obj", "sub"])?;
+        reject_link_aliases(node, &["obj", "sub"], ctx)?;
     } else {
-        reject_link_aliases(node, &[object_attribute])?;
+        reject_link_aliases(node, &[object_attribute], ctx)?;
     }
     LinkTarget::optional_from_wire(LinkTargetWire {
         document: None,
@@ -922,7 +923,7 @@ fn xlink(
     node: roxmltree::Node<'_, '_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<LinkTarget>, CodecError> {
-    reject_link_aliases(node, &["name", "file", "sub"])?;
+    reject_link_aliases(node, &["name", "file", "sub"], ctx)?;
     let file = node
         .attribute("file")
         .map(|value| copy_xml_text(ctx, value, "FCStd link document"))
@@ -995,10 +996,10 @@ fn restored_subelement(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<String, CodecError> {
     let primary = node.attribute(primary_attribute).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::resource::malformed_optional(ctx, format_args!(
             "{} element has no {primary_attribute} attribute",
             node.tag_name().name()
-        ))
+        ), "FCStd persistence diagnostic")
     })?;
     copy_xml_text(
         ctx,
@@ -1007,7 +1008,11 @@ fn restored_subelement(
     )
 }
 
-fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Result<(), CodecError> {
+fn reject_link_aliases(
+    node: roxmltree::Node<'_, '_>,
+    allowed: &[&str],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     const CARRIERS: &[&str] = &[
         "value", "Value", "object", "Object", "obj", "Obj", "name", "Name", "document", "Document",
         "doc", "Doc", "file", "File", "sub", "Sub",
@@ -1015,11 +1020,11 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
     if let Some(attribute) = node.attributes().find(|attribute| {
         CARRIERS.contains(&attribute.name()) && !allowed.contains(&attribute.name())
     }) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::resource::malformed_optional(ctx, format_args!(
             "{} has unsupported link carrier {}",
             node.tag_name().name(),
             attribute.name()
-        )));
+        ), "FCStd persistence diagnostic"));
     }
     Ok(())
 }
@@ -1109,17 +1114,18 @@ pub(crate) fn is_xlink_type(type_name: &str) -> bool {
 fn unique_section<'a, 'input>(
     root: roxmltree::Node<'a, 'input>,
     tag: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
     let mut sections = root
         .children()
         .filter(|node| node.has_tag_name(tag));
-    let first = sections.next().ok_or_else(|| CodecError::malformed(format_args!(
+    let first = sections.next().ok_or_else(|| crate::resource::malformed_optional(ctx, format_args!(
             "Document.xml has no {tag} section"
-        )))?;
+        ), "FCStd persistence diagnostic"))?;
     if sections.next().is_some() {
-        Err(CodecError::malformed(format_args!(
+        Err(crate::resource::malformed_optional(ctx, format_args!(
             "Document.xml has duplicate {tag} sections"
-        )))
+        ), "FCStd persistence diagnostic"))
     } else {
         Ok(first)
     }
@@ -1162,10 +1168,10 @@ fn retained_attr(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let value = node.attribute(name).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::resource::malformed_optional(ctx, format_args!(
             "{} element has no {name} attribute",
             node.tag_name().name()
-        ))
+        ), "FCStd persistence diagnostic")
     })?;
     copy_xml_text(ctx, value, operation)
 }

@@ -100,6 +100,101 @@ fn assert_retained_operation(error: &cadmpeg_core::CodecError, operation: &str) 
     ));
 }
 
+fn assert_persistence_diagnostic_refusal(document: &str, expected: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(), &arena, &service,
+    ).expect("source bytes are within policy");
+    let admitted = super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+        .err().expect("fixture must be malformed");
+    assert!(matches!(admitted, cadmpeg_core::CodecError::Malformed(_)), "{admitted:?}");
+    assert!(admitted.to_string().contains(expected), "{admitted:?}");
+
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let mut limit = 0;
+    for _ in 0..128 {
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(), &arena, &policy,
+        ).expect("source bytes are within policy");
+        let error = super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+            .err().expect("diagnostic must refuse below its retained need");
+        let cadmpeg_core::CodecError::ResourceLimit(failure) = error else {
+            panic!("diagnostic was reached without a retained refusal: {error:?}");
+        };
+        assert_eq!(failure.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+        if failure.operation == "FCStd persistence diagnostic" {
+            let exact = failure.used + failure.additional - 1;
+            policy.limits.max_retained_bytes = exact;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                document.as_bytes(), &arena, &policy,
+            ).expect("source bytes are within policy");
+            assert_retained_operation(
+                &super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+                    .err().expect("one byte below diagnostic need must refuse"),
+                "FCStd persistence diagnostic",
+            );
+            return;
+        }
+        let next = failure.used + failure.additional;
+        assert!(next > limit, "{failure:?}");
+        limit = next;
+    }
+    panic!("diagnostic admission was not reached: {expected}");
+}
+
+#[test]
+fn persistence_document_diagnostics_refuse_at_retained_limit() {
+    let cases = [
+        ("<Document SchemaVersion=\"4\"><ObjectData Count=\"0\"/></Document>",
+            "has no Objects section"),
+        ("<Document SchemaVersion=\"4\"><Objects/><ObjectData Count=\"0\"/></Document>",
+            "Objects Count is missing or invalid"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"2\"><Object name=\"A\"/><Object name=\"A\"/></ObjectData></Document>",
+            "duplicate ObjectData name A"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"2\"><Object name=\"A\" type=\"T\"/><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"/></ObjectData></Document>",
+            "duplicate object declaration name A"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"0\"/><Extensions Count=\"0\"/></Object></ObjectData></Document>",
+            "multiple direct Extensions containers"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"0\"/><Properties Count=\"0\"/></Object></ObjectData></Document>",
+            "multiple direct Properties containers"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"0\"/><Extensions Count=\"0\"/></Object></ObjectData></Document>",
+            "writes Properties before Extensions"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"2\"><Extension name=\"E\" type=\"T\"/><Extension name=\"E\" type=\"U\"/></Extensions></Object></ObjectData></Document>",
+            "duplicate extension name E"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"2\"><Extension name=\"E\" type=\"T\"/><Extension name=\"F\" type=\"T\"/></Extensions></Object></ObjectData></Document>",
+            "duplicate extension type T"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"2\"><Property name=\"P\" type=\"T\"/><Property name=\"P\" type=\"T\"/></Properties></Object></ObjectData></Document>",
+            "duplicate property name P"),
+        ("<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\"><Property name=\"L\" type=\"App::PropertyLink\"><Link value=\"A\" Object=\"A\"/></Property></Properties></Object></ObjectData></Document>",
+            "unsupported link carrier Object"),
+    ];
+    for (document, expected) in cases {
+        assert_persistence_diagnostic_refusal(document, expected);
+    }
+}
+
+#[test]
+fn persistence_link_diagnostics_refuse_at_retained_limit() {
+    let cases = [
+        ("<Property name=\"L\" type=\"App::PropertyLink\"/>",
+            "App::PropertyLink requires one Link value"),
+        ("<Property name=\"L\" type=\"App::PropertyLinkList\"><LinkList count=\"bad\"/></Property>",
+            "App::PropertyLinkList count is invalid"),
+        ("<Property name=\"L\" type=\"App::PropertyLinkSub\"><LinkSub value=\"A\" count=\"1\"><Sub/></LinkSub></Property>",
+            "Sub element has no value attribute"),
+        ("<Property name=\"L\" type=\"App::PropertyXLink\"><XLink file=\"\" name=\"A\" Object=\"A\"/></Property>",
+            "unsupported link carrier Object"),
+    ];
+    for (property, expected) in cases {
+        let document = format!(
+            "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+        );
+        assert_persistence_diagnostic_refusal(&document, expected);
+    }
+}
+
 fn parse_with_item_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
     let service_arena = cadmpeg_core::decode::DecodeArena::new();
     let service_policy = cadmpeg_core::decode::DecodePolicy::service();
