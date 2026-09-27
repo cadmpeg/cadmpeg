@@ -13,6 +13,55 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]
+fn framing_recovery_losses_refuse_slot_and_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut recoveries = super::FramingRecoveries::default();
+    recoveries.record(
+        super::Section::Parameter,
+        super::FramingDefect::ParameterOwner,
+        2,
+        160,
+        "D1",
+        "D3",
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        recoveries.notes(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "iges framing recovery loss slots"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        recoveries.notes(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges framing recovery loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let notes = recoveries.notes(&ctx).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].provenance.as_ref().unwrap().tag.as_deref(),
+        Some("parameter-data:framing")
+    );
+    assert!(notes[0]
+        .message
+        .contains("which declared D1, and the decoder used D3"));
+}
+
+#[test]
 fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

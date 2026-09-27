@@ -259,19 +259,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         losses
     }
 
-    fn record_losses(&self) -> Vec<LossNote> {
-        let mut losses = self.framing_recoveries.notes();
-        losses.extend(
-            self.quarantined_directory
-                .iter()
-                .map(directory::QuarantinedDirectoryRecord::loss_note),
-        );
-        losses.extend(
-            self.quarantined_parameters
-                .iter()
-                .map(parameter::QuarantinedParameterRecord::loss_note),
-        );
-        losses
+    fn record_losses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
+        let mut losses = self.framing_recoveries.notes(ctx)?;
+        for record in &self.quarantined_directory {
+            reserve_vec_growth(ctx, &mut losses, 1, "iges record loss slots")?;
+            losses.push(record.loss_note(ctx)?);
+        }
+        for record in &self.quarantined_parameters {
+            reserve_vec_growth(ctx, &mut losses, 1, "iges record loss slots")?;
+            losses.push(record.loss_note(ctx)?);
+        }
+        Ok(losses)
     }
 }
 
@@ -284,7 +282,9 @@ pub(crate) fn inspect(
     let parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
-    losses.extend(parse.record_losses());
+    let record_losses = parse.record_losses(ctx)?;
+    reserve_vec_growth(ctx, &mut losses, record_losses.len(), "iges combined record losses")?;
+    losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
     append_summary_notes(
@@ -465,7 +465,9 @@ fn decode_with_occurrence_limits(
         "iges combined graph losses",
     )?;
     losses.extend(graph_losses);
-    losses.extend(parse.record_losses());
+    let record_losses = parse.record_losses(ctx)?;
+    reserve_vec_growth(ctx, &mut losses, record_losses.len(), "iges combined record losses")?;
+    losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         losses.push(occurrence_loss(
             IgesLossCode::OccurrenceExpansionOutputTruncated,

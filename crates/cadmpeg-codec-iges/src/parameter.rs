@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::decode_resource::{
-    copy_optional_retained, insert_optional_btree_map, insert_optional_btree_set,
+    copy_optional_retained, format_retained, insert_optional_btree_map, insert_optional_btree_set,
     push_formatted_note, reserve_optional_vec, reserve_optional_vec_growth,
 };
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
@@ -2751,24 +2751,53 @@ impl QuarantinedParameterRecord {
         format!("iges:quarantine:parameter#{}", self.sequence)
     }
 
-    pub(crate) fn loss_note(&self) -> LossNote {
+    pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {
-                format!("P{} through P{}", range.start, range.end.saturating_sub(1))
+                let last = range.end.checked_sub(1).ok_or_else(|| {
+                    CodecError::Malformed("IGES owned Parameter Data range ends at zero".into())
+                })?;
+                format_retained(
+                    ctx,
+                    format_args!("P{} through P{last}", range.start),
+                    "iges parameter quarantine owned card range",
+                )?
             }
-            QuarantinedCards::None { .. } => "no owned Parameter Data card".to_owned(),
+            QuarantinedCards::None { .. } => format_retained(
+                ctx,
+                format_args!("no owned Parameter Data card"),
+                "iges parameter quarantine absent card range",
+            )?,
         };
-        IgesLossCode::ParameterDataQuarantined
-            .note(format!(
+        let message = format_retained(
+            ctx,
+            format_args!(
                 "IGES Parameter Data of D{} ({owned}) is quarantined because {}; its {} raw card(s) are retained and no token was interpreted",
                 self.sequence,
                 self.defect.describe(),
                 self.cards()
-            ))
-        .with_provenance(
-            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), self.failing_offset.unwrap_or_else(|| self.source_offset()))
-                .with_tag(format!("D{}:parameter", self.sequence)),
-        )
+            ),
+            "iges parameter quarantine loss message",
+        )?;
+        let tag = format_retained(
+            ctx,
+            format_args!("D{}:parameter", self.sequence),
+            "iges parameter quarantine loss tag",
+        )?;
+        let code = IgesLossCode::ParameterDataQuarantined;
+        ctx.charge_retained(
+            4 + code.code().len() as u64,
+            "iges parameter quarantine loss kind",
+        )?;
+        ctx.charge_retained(4, "iges parameter quarantine loss source format")?;
+        Ok(code.note(message).with_provenance(
+            SourceProvenance::in_stream(
+                "iges",
+                cadmpeg_ir::stream_name!("iges"),
+                self.failing_offset.unwrap_or_else(|| self.source_offset()),
+            )
+            .with_tag(tag),
+        ))
     }
 }
 

@@ -17,6 +17,40 @@ use crate::test_support::test_owned::{
 use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
+#[test]
+fn directory_quarantine_loss_refuses_message_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = super::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 160,
+        bytes: Vec::new(),
+        defect: super::DirectoryDefect::FieldNotAnInteger("level"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        record.loss_note(&ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges directory quarantine loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let loss = record.loss_note(&ctx).unwrap();
+    assert_eq!(
+        loss.provenance.unwrap().tag.as_deref(),
+        Some("directory_entry:D3")
+    );
+    assert!(loss
+        .message
+        .contains("the level field is not a decimal integer"));
+}
+
 /// Zero-based index of the level field inside the first Directory card.
 const LEVEL_FIELD: usize = 4;
 

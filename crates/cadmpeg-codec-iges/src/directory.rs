@@ -2,7 +2,9 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
-use crate::decode_resource::{push_formatted_note, reserve_optional_vec_growth, reserve_vec};
+use crate::decode_resource::{
+    format_retained, push_formatted_note, reserve_optional_vec_growth, reserve_vec,
+};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
@@ -11,6 +13,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
+use std::fmt;
 
 /// The stored directory fields shared by Binary and Compressed ASCII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,24 +259,27 @@ impl DirectoryDefect {
             Self::UnpairedCard => "unpaired-card",
         }
     }
+}
 
-    fn describe(self) -> String {
-        match self {
-            Self::FieldNotAscii(name) => format!("the {name} field is not ASCII"),
+impl fmt::Display for DirectoryDefect {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::FieldNotAscii(name) => write!(formatter, "the {name} field is not ASCII"),
             Self::FieldNotAnInteger(name) => {
-                format!("the {name} field is not a decimal integer")
+                write!(formatter, "the {name} field is not a decimal integer")
             }
-            Self::FieldBlankNotAllowed(name) => {
-                format!("the {name} field is blank and IGES 4.0 defines no default")
-            }
-            Self::StatusNumberInvalid => {
-                "the status number is neither blank nor an eight-digit decimal integer".to_owned()
-            }
-            Self::RepeatedEntityTypeMismatch { declared, repeated } => format!(
+            Self::FieldBlankNotAllowed(name) => write!(
+                formatter,
+                "the {name} field is blank and IGES 4.0 defines no default"
+            ),
+            Self::StatusNumberInvalid => formatter
+                .write_str("the status number is neither blank nor an eight-digit decimal integer"),
+            Self::RepeatedEntityTypeMismatch { declared, repeated } => write!(
+                formatter,
                 "the repeated entity type {repeated} does not equal the entity type {declared}"
             ),
             Self::UnpairedCard => {
-                "the Directory Entry section ends with an unpaired card".to_owned()
+                formatter.write_str("the Directory Entry section ends with an unpaired card")
             }
         }
     }
@@ -298,18 +304,36 @@ impl QuarantinedDirectoryRecord {
         format!("iges:quarantine:directory#{}", self.sequence)
     }
 
-    pub(crate) fn loss_note(&self) -> LossNote {
-        IgesLossCode::DirectoryRecordQuarantined
-            .note(format!(
+    pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
+        let message = format_retained(
+            ctx,
+            format_args!(
                 "IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
                 self.sequence,
-                self.defect.describe(),
+                self.defect,
                 self.cards()
-            ))
-        .with_provenance(
-            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), self.source_offset)
-                .with_tag(format!("directory_entry:D{}", self.sequence)),
-        )
+            ),
+            "iges directory quarantine loss message",
+        )?;
+        let tag = format_retained(
+            ctx,
+            format_args!("directory_entry:D{}", self.sequence),
+            "iges directory quarantine loss tag",
+        )?;
+        let code = IgesLossCode::DirectoryRecordQuarantined;
+        ctx.charge_retained(
+            4 + code.code().len() as u64,
+            "iges directory quarantine loss kind",
+        )?;
+        ctx.charge_retained(4, "iges directory quarantine loss source format")?;
+        Ok(code.note(message).with_provenance(
+            SourceProvenance::in_stream(
+                "iges",
+                cadmpeg_ir::stream_name!("iges"),
+                self.source_offset,
+            )
+            .with_tag(tag),
+        ))
     }
 }
 
