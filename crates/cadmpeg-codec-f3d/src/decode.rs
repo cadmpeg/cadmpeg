@@ -2394,7 +2394,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_points,
             &mut self.native.sketch_curve_identities,
         )?;
-        self.native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+        self.native.design_body_members = crate::design::decode::body::decode_body_members(ctx, scan)?;
         if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
