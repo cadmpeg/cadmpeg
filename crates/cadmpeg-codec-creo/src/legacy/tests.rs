@@ -9,6 +9,7 @@ use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
@@ -93,9 +94,46 @@ fn model_name_prefers_root_solid_over_null_view_placeholder() {
         .expect("model name value");
 
     assert_eq!(
-        persistence.model_name(),
+        crate::decode::with_test_decode_ctx(|ctx| persistence.model_name(ctx))
+            .expect("name resolution fits service limits"),
         Some(("ROOT".to_string(), expected_offset))
     );
+}
+
+#[test]
+fn legacy_model_name_refuses_before_retained_copy() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = persistence
+        .model_name(&ctx)
+        .expect_err("four name bytes exceed the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy model name"));
+}
+
+#[test]
+fn legacy_model_name_refuses_before_object_index_node() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = persistence
+        .model_name(&ctx)
+        .expect_err("one object requires one index node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo legacy model name object nodes"));
 }
 
 #[test]
@@ -109,7 +147,11 @@ fn model_name_withholds_conflicting_root_identities() {
     let persistence = scan(data, [0..second_scope, second_scope..data.len()])
         .expect("the fixture states every scope inside its own bytes");
 
-    assert_eq!(persistence.model_name(), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| persistence.model_name(ctx))
+            .expect("conflicting names need no allocation"),
+        None
+    );
 }
 
 #[test]
@@ -124,7 +166,8 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
-        persistence.first_source_model_name(),
+        crate::decode::with_test_decode_ctx(|ctx| persistence.first_source_model_name(ctx))
+            .expect("source name fits service limits"),
         Some((
             "ROOT".to_string(),
             data.windows(b"0 1 ROOT".len())
@@ -132,6 +175,24 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
                 .expect("root value")
         ))
     );
+}
+
+#[test]
+fn legacy_first_source_model_name_refuses_before_retained_copy() {
+    let data = b"@model_name 1 10\n0 1 ROOT\n";
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = persistence
+        .first_source_model_name(&ctx)
+        .expect_err("four source-name bytes exceed the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo legacy first source model name"));
 }
 
 #[test]

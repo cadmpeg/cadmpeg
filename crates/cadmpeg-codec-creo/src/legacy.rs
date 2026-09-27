@@ -586,14 +586,21 @@ impl Persistence {
     /// non-empty value owned by a root `Solid` object. If that role is absent,
     /// accept one distinct non-empty value across the remaining rows; distinct
     /// identities remain unresolved.
-    pub(crate) fn model_name(&self) -> Option<(String, usize)> {
-        let objects = self
-            .objects
-            .iter()
-            .map(|object| (object.offset, object))
-            .collect::<BTreeMap<_, _>>();
-        let mut all = BTreeMap::<String, usize>::new();
-        let mut preferred = BTreeMap::<String, usize>::new();
+    pub(crate) fn model_name(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<(String, usize)>, CodecError> {
+        let mut objects = BTreeMap::new();
+        for object in &self.objects {
+            if !objects.contains_key(&object.offset) {
+                ctx.charge_collection_items(1, "creo legacy model name object nodes")?;
+            }
+            objects.insert(object.offset, object);
+        }
+        let mut all = None::<(&str, usize)>;
+        let mut all_conflict = false;
+        let mut preferred = None::<(&str, usize)>;
+        let mut preferred_conflict = false;
         for record in self
             .string_values
             .iter()
@@ -609,7 +616,11 @@ impl Persistence {
             if text.is_empty() {
                 continue;
             }
-            all.entry(text.to_string()).or_insert(record.offset);
+            match all {
+                None => all = Some((text, record.offset)),
+                Some((known, _)) if known != text => all_conflict = true,
+                Some(_) => {}
+            }
             let is_root_solid = record
                 .parent
                 .as_ref()
@@ -618,13 +629,24 @@ impl Persistence {
                     object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
                 });
             if is_root_solid {
-                preferred.entry(text.to_string()).or_insert(record.offset);
+                match preferred {
+                    None => preferred = Some((text, record.offset)),
+                    Some((known, _)) if known != text => preferred_conflict = true,
+                    Some(_) => {}
+                }
             }
         }
-        let selected = if preferred.is_empty() { all } else { preferred };
-        let mut values = selected.into_iter();
-        let first = values.next()?;
-        values.next().is_none().then_some(first)
+        let selected = if preferred.is_some() {
+            (!preferred_conflict).then_some(preferred).flatten()
+        } else {
+            (!all_conflict).then_some(all).flatten()
+        };
+        selected
+            .map(|(text, offset)| {
+                ctx.copy_retained_text(text, "creo legacy model name")
+                    .map(|name| (name, offset))
+            })
+            .transpose()
     }
 
     /// Return the first non-null source-order `model_name` row.
@@ -632,8 +654,11 @@ impl Persistence {
     /// This is a source-identity fallback for legacy sections that contain
     /// several scoped model names. [`Self::model_name`] remains the resolver
     /// for relation evaluation and withholds conflicting identities.
-    pub(crate) fn first_source_model_name(&self) -> Option<(String, usize)> {
-        self.string_values
+    pub(crate) fn first_source_model_name(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<(String, usize)>, CodecError> {
+        let selected = self.string_values
             .iter()
             .filter(|record| record.name == "model_name")
             .filter_map(|record| {
@@ -645,9 +670,15 @@ impl Persistence {
                 };
                 let text = text.trim();
                 (!text.is_empty() && !text.eq_ignore_ascii_case("NULL"))
-                    .then(|| (text.to_owned(), record.offset))
+                    .then_some((text, record.offset))
             })
-            .min_by_key(|(_, offset)| *offset)
+            .min_by_key(|(_, offset)| *offset);
+        selected
+            .map(|(text, offset)| {
+                ctx.copy_retained_text(text, "creo legacy first source model name")
+                    .map(|name| (name, offset))
+            })
+            .transpose()
     }
 
     /// Number of unique local attribute declarations across all scopes.
