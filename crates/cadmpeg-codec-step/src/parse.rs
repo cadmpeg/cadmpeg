@@ -7,6 +7,7 @@
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -755,7 +756,9 @@ impl Parser<'_, '_, '_> {
         for diagnostic in schema_object_identifier_diagnostics(
             &header_admission.schema_identifiers,
             header[2].offset,
+            self.budget,
         ) {
+            let diagnostic = diagnostic?;
             push_charged(
                 self.budget,
                 &mut self.diagnostics,
@@ -1558,6 +1561,17 @@ fn invalid<T>(message: &'static str) -> Result<T, ValidationError> {
     Err(ValidationError::Invalid(message))
 }
 
+fn format_parser_text(
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    arguments: fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    match budget {
+        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        None => Ok(arguments.to_string()),
+    }
+}
+
 fn push_validated<T>(
     budget: Option<&DecodeContext<'_>>,
     values: &mut Vec<T>,
@@ -1606,14 +1620,22 @@ fn validate_header(
         return invalid("FILE_DESCRIPTION has an unsupported implementation level");
     };
     let declaration = DeclaredImplementationLevel::new(implementation_level_text);
-    let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
-        offset: description_record.offset,
-        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-        message: format!(
-            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
-            declaration.text()
-        ),
-    });
+    let implementation_diagnostic = if declaration.is_unverified() {
+        Some(ParseDiagnostic {
+            offset: description_record.offset,
+            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+            message: format_parser_text(
+                budget,
+                "step_implementation_level_diagnostic_text",
+                format_args!(
+                    "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+                    declaration.text()
+                ),
+            )?,
+        })
+    } else {
+        None
+    };
     let implementation_level = declaration.level();
     if !is_decodable_string_list(Some(description_strings), implementation_level, budget)?
         || !is_decodable_string(implementation_level_value, implementation_level, budget)?
@@ -1709,23 +1731,29 @@ fn validate_header(
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
 /// under its schema name alone.
-fn schema_object_identifier_diagnostics(
-    admitted: &[AdmittedSchemaIdentifier],
+fn schema_object_identifier_diagnostics<'a, 'arena>(
+    admitted: &'a [AdmittedSchemaIdentifier],
     offset: usize,
-) -> impl Iterator<Item = ParseDiagnostic> + '_ {
+    budget: Option<&'a DecodeContext<'arena>>,
+) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
     admitted
         .iter()
         .filter_map(move |identifier| match identifier {
             AdmittedSchemaIdentifier::Valid { .. } => None,
             AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
                 name, component, ..
-            } => Some(ParseDiagnostic {
-                offset,
-                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
-                message: format!(
+            } => Some(format_parser_text(
+                budget,
+                "step_schema_oid_diagnostic_text",
+                format_args!(
                     "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
                 ),
-            }),
+            )
+            .map(|message| ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                message,
+            })),
         })
 }
 

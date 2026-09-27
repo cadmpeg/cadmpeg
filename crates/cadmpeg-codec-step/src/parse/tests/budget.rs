@@ -182,6 +182,53 @@ section_limit_test!(section_language_name_copy_refuses_retained_limit, "step_sec
 section_limit_test!(section_context_name_copy_refuses_retained_limit, "step_section_context_name_copy", ResourceDimension::RetainedBytes);
 
 #[test]
+fn implementation_level_diagnostic_text_refuses_retained_limit() {
+    validation_refuses(
+        "step_implementation_level_diagnostic_text",
+        ResourceDimension::RetainedBytes,
+        UNVERIFIED_LEVEL_SOURCE,
+        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+    );
+}
+
+#[test]
+fn schema_oid_diagnostic_text_refuses_retained_limit() {
+    let (exchange, _) = crate::parse::parse(SCHEMA_DIAGNOSTIC_SOURCE)
+        .expect("valid out-of-range schema identifier");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(SCHEMA_DIAGNOSTIC_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_object_identifier_diagnostics(
+            &exchange.schema_identifiers,
+            exchange.header()[2].offset,
+            Some(&ctx),
+        )
+        .next(),
+        Some(Err(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_oid_diagnostic_text"
+    ));
+}
+
+#[test]
+fn schema_name_matching_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"AP242", &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_name_matching"
+    ));
+}
+
+#[test]
 fn matching_schema_names_refuse_collection_limit() {
     let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
     let arena = DecodeArena::new();
