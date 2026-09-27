@@ -27,15 +27,18 @@ pub(super) fn feature_definition_has_sketch_design(
 }
 
 pub(super) fn sketch_table_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<CreoSketchTableHeader> {
+) -> Result<Vec<CreoSketchTableHeader>, cadmpeg_core::CodecError> {
     let mut headers = Vec::new();
-    let mut push = |kind, row_count, offset| {
+    let mut push = |kind, row_count, offset| -> Result<(), cadmpeg_core::CodecError> {
+        ctx.try_reserve_items(&mut headers, 1, "creo sketch table headers")?;
         headers.push(CreoSketchTableHeader {
             kind,
             row_count,
             offset,
         });
+        Ok(())
     };
     if let Some(table) = &definition.variables {
         push(
@@ -45,7 +48,7 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) =
         crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
@@ -57,7 +60,7 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.segments {
         push(
@@ -67,49 +70,47 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.trim_entities {
+        let mut buckets = Vec::new();
+        ctx.try_reserve_items(&mut buckets, table.buckets.len(), "creo sketch trim entity headers")?;
+        buckets.extend(table.buckets.iter().map(|bucket| CreoSketchBucketHeader {
+            index: bucket.index,
+            declared_entry_count: bucket.declared_entry_count,
+            decoded_entry_count: bucket.decoded_entry_count,
+            offset: bucket.offset,
+        }));
         push(
             CreoSketchTableKind::TrimEntities {
                 declared_count: table.declared_count,
                 entity_ref: table.entity_ref,
                 entry_ref: table.entry_ref,
-                buckets: table
-                    .buckets
-                    .iter()
-                    .map(|bucket| CreoSketchBucketHeader {
-                        index: bucket.index,
-                        declared_entry_count: bucket.declared_entry_count,
-                        decoded_entry_count: bucket.decoded_entry_count,
-                        offset: bucket.offset,
-                    })
-                    .collect(),
+                buckets,
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.trim_vertices {
+        let mut buckets = Vec::new();
+        ctx.try_reserve_items(&mut buckets, table.buckets.len(), "creo sketch trim vertex headers")?;
+        buckets.extend(table.buckets.iter().map(|bucket| CreoSketchBucketHeader {
+            index: bucket.index,
+            declared_entry_count: bucket.declared_entry_count,
+            decoded_entry_count: bucket.decoded_entry_count,
+            offset: bucket.offset,
+        }));
         push(
             CreoSketchTableKind::TrimVertices {
                 declared_count: table.declared_count,
                 entity_ref: table.entity_ref,
                 entry_ref: table.entry_ref,
-                buckets: table
-                    .buckets
-                    .iter()
-                    .map(|bucket| CreoSketchBucketHeader {
-                        index: bucket.index,
-                        declared_entry_count: bucket.declared_entry_count,
-                        decoded_entry_count: bucket.decoded_entry_count,
-                        offset: bucket.offset,
-                    })
-                    .collect(),
+                buckets,
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.order_table {
         push(
@@ -119,7 +120,7 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.dimensions {
         push(
@@ -129,7 +130,7 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
     }
     if let Some(table) = &definition.relations {
         push(
@@ -139,7 +140,7 @@ pub(super) fn sketch_table_headers(
             },
             table.rows.len(),
             table.offset,
-        );
+        )?;
         if let Some(header) = table.skamps.as_ref().and_then(|table| table.header()) {
             push(
                 CreoSketchTableKind::SolverIncidences {
@@ -148,7 +149,7 @@ pub(super) fn sketch_table_headers(
                 },
                 table.skamps().len(),
                 header.offset,
-            );
+            )?;
         }
         if let Some(header) = table.triples.as_ref().and_then(|table| table.header()) {
             push(
@@ -158,7 +159,7 @@ pub(super) fn sketch_table_headers(
                 },
                 table.triples().len(),
                 header.offset,
-            );
+            )?;
         }
     }
     if let Some(table) = &definition.saved_section {
@@ -166,10 +167,10 @@ pub(super) fn sketch_table_headers(
             CreoSketchTableKind::SavedEntities,
             table.entities.len(),
             table.offset,
-        );
+        )?;
     }
     headers.sort_by_key(|header| header.offset);
-    headers
+    Ok(headers)
 }
 
 pub(super) fn binary_flag_value(flag: crate::feature::definitions::BinaryFlag) -> bool {
@@ -332,3 +333,6 @@ pub(super) fn owning_feature_definition_ref(
     };
     Some(feature_definition_record_id(scan, definition))
 }
+
+#[cfg(test)]
+mod tests;

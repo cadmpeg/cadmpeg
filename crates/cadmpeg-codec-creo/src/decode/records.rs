@@ -2336,7 +2336,7 @@ pub(super) fn sketch_records(
                         dimension_ids: section.dimension_ids.clone(),
                         offset: section.offset,
                     }),
-                table_headers: sketch_table_headers(definition),
+                table_headers: sketch_table_headers(ctx, definition)?,
                 section_points: sketch_section_point_records(definition),
                 solved_external_ids: definition
                     .trim_entities
