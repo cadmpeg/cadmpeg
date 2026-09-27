@@ -135,17 +135,24 @@ pub(super) fn decode(
             continue;
         };
         if !description.is_empty() {
+            if !definition_descriptions.contains_key(&id) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "step_product_definition_descriptions")?;
+                }
+            }
             definition_descriptions.entry(id).or_insert(description);
         }
     }
     let shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
-    let definition_counts =
-        definitions
-            .values()
-            .fold(BTreeMap::<u64, usize>::new(), |mut counts, product| {
-                *counts.entry(*product).or_default() += 1;
-                counts
-            });
+    let mut definition_counts = BTreeMap::<u64, usize>::new();
+    for product in definitions.values() {
+        if !definition_counts.contains_key(product) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "step_product_definition_counts")?;
+            }
+        }
+        *definition_counts.entry(*product).or_default() += 1;
+    }
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
     let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
