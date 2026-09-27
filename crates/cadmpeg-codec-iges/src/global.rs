@@ -1632,20 +1632,20 @@ impl ResolvedGlobal {
         self.numeric.limits()
     }
 
-    pub(crate) fn sender_product(&self) -> Option<String> {
-        self.sender_product.clone()
+    pub(crate) fn sender_product(&self) -> Option<&str> {
+        self.sender_product.as_deref()
     }
 
-    fn receiver_product(&self) -> Option<String> {
-        self.receiver_product.clone()
+    fn receiver_product(&self) -> Option<&str> {
+        self.receiver_product.as_deref()
     }
 
-    pub(crate) fn native_file_name(&self) -> Option<String> {
-        self.native_file_name.clone()
+    pub(crate) fn native_file_name(&self) -> Option<&str> {
+        self.native_file_name.as_deref()
     }
 
-    pub(crate) fn units_name(&self) -> Option<String> {
-        self.units_name.clone()
+    pub(crate) fn units_name(&self) -> Option<&str> {
+        self.units_name.as_deref()
     }
 
     /// The version flag as declared, with the specification default for an absent field.

@@ -21,6 +21,90 @@ use crate::test_support::test_drawing_and_trimming::test_surface_domains::transf
 use crate::IgesCodec;
 
 #[test]
+fn source_metadata_admits_formatted_values_before_building_attributes() {
+    use crate::{card, dialect, global, representation::Representation};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = point_file();
+    let scan = card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = global::parse(&scan, &parse_ctx).unwrap();
+    let representation = Representation::FixedAscii;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = representation.as_str().len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::source_meta(
+        &ctx,
+        &global,
+        representation,
+        dialect::classify(representation, &global),
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == representation.as_str().len() as u64
+                && limit.operation == "iges source representation"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let meta = super::source_meta(
+        &ctx,
+        &global,
+        representation,
+        dialect::classify(representation, &global),
+    )
+    .unwrap();
+    assert_eq!(meta.attributes["representation"], representation.as_str());
+}
+
+#[test]
+fn source_attribute_admits_key_and_map_node_before_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::collections::BTreeMap;
+
+    let key = "native_units";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = key.len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::insert_source_attribute(&ctx, &mut BTreeMap::new(), key, String::new());
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == 0
+                && limit.additional == key.len() as u64
+                && limit.operation == "iges source attribute key"
+    ));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::insert_source_attribute(&ctx, &mut BTreeMap::new(), key, String::new());
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges source attributes"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut attributes = BTreeMap::new();
+    super::insert_source_attribute(&ctx, &mut attributes, key, "MM".into()).unwrap();
+    assert_eq!(attributes[key], "MM");
+}
+
+#[test]
 fn decode_refuses_a_transformation_chain_over_its_projection_limit() {
     let error = IgesCodec
         .decode(
