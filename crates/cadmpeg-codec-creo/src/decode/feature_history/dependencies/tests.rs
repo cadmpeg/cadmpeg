@@ -268,14 +268,48 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
         .collect();
 
     assert_eq!(
-        reconciled_dependencies(
-            &owner,
-            &[sketch.clone(), missing],
-            [parent.clone(), sketch.clone(), owner.clone()],
-            &emitted,
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| reconciled_dependencies(
+            ctx, &owner, &[sketch.clone(), missing],
+            [parent.clone(), sketch.clone(), owner.clone()], &emitted,
+        )).expect("service profile admits reconciled dependencies"),
         vec![sketch, parent]
     );
+}
+
+#[test]
+fn established_dependency_id_refuses_retained_limit() {
+    let owner = IrFeatureId::mint("creo:model:feature#17")
+        .expect("fixture feature ID");
+    let dependency = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture dependency ID");
+    let emitted = std::collections::BTreeSet::from([dependency.clone()]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = reconciled_dependencies(&ctx, &owner, &[dependency], [], &emitted)
+        .expect_err("established dependency ID requires a retained copy");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "creo established dependency IDs"), "{error:?}");
+}
+
+#[test]
+fn reconciled_dependencies_refuse_collection_limit() {
+    let owner = IrFeatureId::mint("creo:model:feature#17")
+        .expect("fixture feature ID");
+    let dependency = IrFeatureId::mint("creo:model:feature#3")
+        .expect("fixture dependency ID");
+    let emitted = std::collections::BTreeSet::from([dependency.clone()]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = reconciled_dependencies(&ctx, &owner, &[], [dependency], &emitted)
+        .expect_err("one reconciled dependency requires a Vec row");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "creo reconciled dependencies"), "{error:?}");
 }
 
 
