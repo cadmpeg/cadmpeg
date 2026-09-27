@@ -91,6 +91,39 @@ fn curve_expression_dependency_indices_refuse_before_inner_growth() {
     ));
 }
 
+#[test]
+fn curve_expression_ordering_lookup_refuses_before_temporary_text() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x02a=1\0b=a+1\0";
+    let record = crate::curve::expression_records(payload)
+        .pop()
+        .expect("complete curve expression");
+    let indices = std::collections::BTreeMap::from([("a".to_string(), 0)]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
+        .expect("service input fits");
+    assert!(
+        super::curve_expression_parameter_order(&ctx, &record, &indices)
+            .expect("service profile admits lookup")
+            .is_some()
+    );
+
+    let mut limited = DecodePolicy::service();
+    limited.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &limited)
+        .expect("the input fits the materialized-byte limit");
+    let error = super::curve_expression_parameter_order(&ctx, &record, &indices)
+        .expect_err("the dependency key needs one temporary byte");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "creo curve-expression ordering lookup"
+    ));
+}
+
 fn with_collection_limit<T>(
     limit: u64,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
