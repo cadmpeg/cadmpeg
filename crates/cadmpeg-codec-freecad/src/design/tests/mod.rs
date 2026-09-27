@@ -356,6 +356,51 @@ fn design_body_tip_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn design_feature_identity_refuses_at_retained_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Feature".into(),
+        name: "Feature".into(),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd design feature identity",
+        |ctx| super::feature_id(ctx, &object),
+    );
+}
+
+#[test]
+fn design_parameter_object_name_index_refuses_at_collection_limit() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Feature".into(),
+        name: "Feature".into(),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::bind_parameter_dependencies(
+        &ctx, &mut Vec::new(), &[object], &Default::default(),
+    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "fcstd parameter dependency object names"));
+}
+
+#[test]
 fn design_expression_copy_refuses_at_retained_limit() {
     let property = crate::native::PropertyRecord {
         id: "expression-property".into(),
