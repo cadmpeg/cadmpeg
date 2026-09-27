@@ -30,6 +30,7 @@ use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_oriented_analytic_curve_parameter_range;
 use crate::families::standard::decode::standard_pcurve_geometry;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
+use crate::families::standard::decode::standard_native_support_edge_ids;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
 use crate::families::standard::decode::witness_arc_end;
@@ -314,13 +315,66 @@ fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position(
     let roster = [100, 300, 500];
 
     assert_eq!(
-        standard_serialized_endpoint_pairs(&supports, &native_edges, &roster),
+        crate::test_support::with_service_context(|ctx| standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &roster)).expect("service budget"),
         Some(vec![Some([2, 1]), Some([0, 2]), None])
     );
 
     assert!(
-        standard_serialized_endpoint_pairs(&supports, &native_edges, &[100, 300, 100]).is_none()
+        crate::test_support::with_service_context(|ctx| standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &[100, 300, 100])).expect("service budget").is_none()
     );
+}
+
+#[test]
+fn standard_native_binding_arrays_refuse_before_each_collection() {
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+
+    let supports = [StandardCurveSupport {
+        pos: 0, tag: 70, faces: [0, 1], geometry: StandardCurveGeometry::Line,
+    }];
+    let native_edges = BTreeMap::from([(70, [100, 300])]);
+    let native_support_ids = HashSet::from([70]);
+    let mut operations = HashSet::new();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, &[100, 300])
+        }) {
+            Err(CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected roster binding: {outcome:?}"),
+        }
+    }
+    for operation in ["catia_roster_point_identities", "catia_roster_endpoint_pairs"] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    operations.clear();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| standard_native_support_edge_ids(ctx, &supports, &native_support_ids)) {
+            Err(CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(ids) if ids == [Some(70)] => break,
+            outcome => panic!("unexpected support binding: {outcome:?}"),
+        }
+    }
+    for operation in ["catia_native_support_row_counts", "catia_native_support_edge_ids"] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    operations.clear();
+    for limit in 0..=10 {
+        match crate::test_support::with_collection_limit(limit, |ctx| standard_successor_endpoint_points(ctx, &supports, &[71, 72])) {
+            Err(CodecError::ResourceLimit(error)) => { operations.insert(error.operation); }
+            Ok(points) if points == [[Some(0), Some(1)]] => break,
+            outcome => panic!("unexpected successor binding: {outcome:?}"),
+        }
+    }
+    for operation in ["catia_successor_point_identities", "catia_successor_endpoint_points"] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+    let mut candidates = [Vec::new()];
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| include_native_endpoint_pairs(ctx, &mut candidates, &[Some([0, 1])])),
+        Err(CodecError::ResourceLimit(error)) if error.operation == "catia_native_endpoint_domain_points"
+    ));
+    assert!(candidates[0].is_empty());
 }
 
 #[test]
@@ -382,7 +436,7 @@ fn standard_edge_successor_points_are_only_domain_corroboration() {
     ];
 
     assert_eq!(
-        standard_successor_endpoint_points(&supports, &[99, 101, 102]),
+        crate::test_support::with_service_context(|ctx| standard_successor_endpoint_points(ctx, &supports, &[99, 101, 102])).expect("service budget"),
         [[Some(1), Some(2)], [None, None]]
     );
 }
@@ -568,7 +622,7 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
 #[test]
 fn native_endpoint_pairs_extend_geometric_candidate_domains() {
     let mut candidates = vec![vec![1], Vec::new()];
-    include_native_endpoint_pairs(&mut candidates, &[Some([1, 2]), Some([3, 4])]);
+    crate::test_support::with_service_context(|ctx| include_native_endpoint_pairs(ctx, &mut candidates, &[Some([1, 2]), Some([3, 4])])).expect("service budget");
     assert_eq!(candidates, [vec![1, 2], vec![3, 4]]);
 }
 

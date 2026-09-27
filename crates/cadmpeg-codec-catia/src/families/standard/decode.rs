@@ -4501,12 +4501,22 @@ fn attach_standard_topology(
     };
     let allocation_endpoint_points = vertex_roster
         .as_ref()
-        .map(|roster| standard_successor_endpoint_points(&supports, roster));
+        .map(|roster| standard_successor_endpoint_points(ctx, &supports, roster))
+        .transpose()
+        .map_err(StandardTopologyError::Resource)?;
     let roster_endpoint_pairs = vertex_roster
         .as_ref()
-        .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
-    let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
-    let native_support_edge_ids = standard_native_support_edge_ids(&supports, &native_support_ids);
+        .map(|roster| standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, roster))
+        .transpose()
+        .map_err(StandardTopologyError::Resource)?
+        .flatten();
+    let mut native_support_ids = HashSet::new();
+    for id in native_edge_supports.keys().copied() {
+        crate::resource::insert_set(ctx, &mut native_support_ids, id, "catia_native_support_ids")
+            .map_err(StandardTopologyError::Resource)?;
+    }
+    let native_support_edge_ids = standard_native_support_edge_ids(ctx, &supports, &native_support_ids)
+        .map_err(StandardTopologyError::Resource)?;
     let native_supports_by_row = native_support_edge_ids
         .iter()
         .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
@@ -4547,7 +4557,8 @@ fn attach_standard_topology(
         }
     }
     if let Some(pairs) = &native_endpoint_evidence {
-        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
+        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
+            .map_err(StandardTopologyError::Resource)?;
     }
     let mut endpoint_options = resolve_standard_endpoint_pairs(
         ir,
@@ -4639,7 +4650,8 @@ fn attach_standard_topology(
         }
     }
     if let Some(pairs) = &graph_propagated_endpoint_pairs {
-        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
+        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
+            .map_err(StandardTopologyError::Resource)?;
     }
     if let Some(options) = &mut endpoint_options {
         let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
@@ -5154,7 +5166,8 @@ fn attach_standard_topology(
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     if let Some(pairs) = &resolved_endpoint_pairs {
         let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
-        include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
+        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, &pairs)
+            .map_err(StandardTopologyError::Resource)?;
     }
     let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
         missing_edge::standard_mesh_edge_ports(ctx, spine)
@@ -6495,25 +6508,24 @@ fn standard_native_graph_endpoint_pairs(
 /// object journal: `0x60.tag` selects the `b5 03 5e` object id, whose ordered
 /// vertex identities select positions in the standard vertex roster.
 fn standard_serialized_endpoint_pairs(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     vertex_roster: &[u32],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    let mut point_by_identity = HashMap::with_capacity(vertex_roster.len());
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    let mut point_by_identity = HashMap::new();
     for (point, identity) in vertex_roster.iter().copied().enumerate() {
-        if point_by_identity.insert(identity, point).is_some() {
-            return None;
+        if crate::resource::insert_map(ctx, &mut point_by_identity, identity, point, "catia_roster_point_identities")?.is_some() {
+            return Ok(None);
         }
     }
-    Some(
-        supports
-            .iter()
-            .map(|support| {
-                let [start, end] = native_edges.get(&support.tag)?;
-                Some([*point_by_identity.get(start)?, *point_by_identity.get(end)?])
-            })
-            .collect(),
-    )
+    let mut pairs = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut pairs, supports.len(), "catia_roster_endpoint_pairs")?;
+    pairs.extend(supports.iter().map(|support| {
+        let [start, end] = native_edges.get(&support.tag)?;
+        Some([*point_by_identity.get(start)?, *point_by_identity.get(end)?])
+    }));
+    Ok(Some(pairs))
 }
 
 fn merge_standard_edge_vertex_references(
@@ -6534,24 +6546,26 @@ fn merge_standard_edge_vertex_references(
 
 /// Resolve native two-sided edge carriers by equal standard and native identities.
 pub(super) fn standard_native_support_edge_ids(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_support_ids: &HashSet<u32>,
-) -> Vec<Option<u32>> {
+) -> Result<Vec<Option<u32>>, CodecError> {
     let mut exact_row_counts = HashMap::<u32, usize>::new();
     for support in supports {
         if native_support_ids.contains(&support.tag) {
+            crate::resource::admit_map_entry(ctx, &mut exact_row_counts, &support.tag, "catia_native_support_row_counts")?;
             *exact_row_counts.entry(support.tag).or_default() += 1;
         }
     }
 
-    supports
-        .iter()
-        .map(|support| {
+    let mut ids = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut ids, supports.len(), "catia_native_support_edge_ids")?;
+    ids.extend(supports.iter().map(|support| {
             (native_support_ids.contains(&support.tag)
                 && exact_row_counts.get(&support.tag) == Some(&1))
             .then_some(support.tag)
-        })
-        .collect()
+        }));
+    Ok(ids)
 }
 
 /// Return whether a standard edge has an admitted identity binding.
@@ -6571,16 +6585,17 @@ fn standard_edge_identity_is_admitted(
         || has_limit_curve_binding
 }
 
-fn include_native_endpoint_pairs(candidates: &mut [Vec<usize>], pairs: &[Option<[usize; 2]>]) {
+fn include_native_endpoint_pairs(ctx: &DecodeContext<'_>, candidates: &mut [Vec<usize>], pairs: &[Option<[usize; 2]>]) -> Result<(), CodecError> {
     for (candidates, pair) in candidates.iter_mut().zip(pairs) {
         if let Some(pair) = pair {
             for point in pair {
                 if !candidates.contains(point) {
-                    candidates.push(*point);
+                    crate::resource::push(ctx, candidates, *point, "catia_native_endpoint_domain_points")?;
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn combine_propagated_endpoint_pairs(
@@ -6684,18 +6699,17 @@ fn merge_derived_endpoint_pair(
 /// existing geometric domain independently for either successor identity, but
 /// it never supplies native endpoint evidence by itself.
 fn standard_successor_endpoint_points(
+    ctx: &DecodeContext<'_>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
-) -> Vec<[Option<usize>; 2]> {
-    let point_by_identity = vertex_roster
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(point, identity)| (identity, point))
-        .collect::<HashMap<_, _>>();
-    supports
-        .iter()
-        .map(|support| {
+) -> Result<Vec<[Option<usize>; 2]>, CodecError> {
+    let mut point_by_identity = HashMap::new();
+    for (point, identity) in vertex_roster.iter().copied().enumerate() {
+        crate::resource::insert_map(ctx, &mut point_by_identity, identity, point, "catia_successor_point_identities")?;
+    }
+    let mut successors = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut successors, supports.len(), "catia_successor_endpoint_points")?;
+    successors.extend(supports.iter().map(|support| {
             [
                 support
                     .tag
@@ -6706,8 +6720,8 @@ fn standard_successor_endpoint_points(
                     .checked_add(2)
                     .and_then(|identity| point_by_identity.get(&identity).copied()),
             ]
-        })
-        .collect()
+        }));
+    Ok(successors)
 }
 
 fn corroborate_successor_endpoint_points(
