@@ -2626,14 +2626,6 @@ impl<'a> DecodeContext<'a> {
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
         let attributes = full_source_attributes(self.expand.ctx(), self.scan)?;
-        let (attributes, refused) =
-            cadmpeg_core::text::named_entries_reporting("the rhino document", attributes);
-        for key in refused {
-            losses.push(
-                RhinoLossCode::ObjectAttributesDegraded
-                    .note(format_args!("{key}; the attribute is not transferred")),
-            );
-        }
         self.ir.source = Some(crate::container::source_meta(
             primary,
             crate::container::SourceMetaDetail::Full {
@@ -6563,12 +6555,15 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
 
 fn insert_full_source_attribute(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    attributes: &mut BTreeMap<String, String>,
+    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: std::fmt::Arguments<'_>,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(1, "Rhino full source attributes")?;
     let key = crate::wire::admitted_format(ctx, key, "Rhino full source attribute key")?;
+    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("generated Rhino source attribute key is blank")
+    })?;
     let value = crate::wire::admitted_format(ctx, value, "Rhino full source attribute value")?;
     attributes.insert(key, value);
     Ok(())
@@ -6593,7 +6588,7 @@ impl std::fmt::Display for LayerAttributePrefix {
 fn full_source_attributes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
-) -> Result<BTreeMap<String, String>, cadmpeg_core::CodecError> {
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     macro_rules! attribute {
         ($key:literal, $value:expr) => {
