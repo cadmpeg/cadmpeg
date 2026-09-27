@@ -76,6 +76,19 @@ pub(crate) fn copy_slice<T: Clone>(
     Ok(copy)
 }
 
+pub(crate) fn copy_knot_vector(
+    ctx: &DecodeContext<'_>,
+    knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::nurbs::KnotVector, CodecError> {
+    let count = u64::try_from(knots.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    knots
+        .try_clone()
+        .map_err(|_| allocation_failed(0, 0, knots.len(), operation))
+}
+
 pub(crate) fn reserve_set<T: Eq + Hash>(
     ctx: &DecodeContext<'_>,
     values: &mut HashSet<T>,

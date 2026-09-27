@@ -803,18 +803,19 @@ pub(in crate::families) fn try_decode_zero_entity(
                     else {
                         continue;
                     };
-                    let Some(pcurve) =
-                        crate::families::zero_entity::records::zero_entity_neutral_pcurve(
-                            surface_geometry,
-                            &pcurve,
-                            &format_args!(
-                                "zero-entity support record #{} at byte {}",
-                                support.record_ordinal, support.pos
-                            ),
-                            refusal,
-                        )
-                    else {
-                        continue;
+                    let pcurve = match crate::families::zero_entity::records::zero_entity_neutral_pcurve(
+                        ctx,
+                        surface_geometry,
+                        &pcurve,
+                        &format_args!(
+                            "zero-entity support record #{} at byte {}",
+                            support.record_ordinal, support.pos
+                        ),
+                        refusal,
+                    ) {
+                        Ok(Some(pcurve)) => pcurve,
+                        Ok(None) => continue,
+                        Err(error) => return Some(Err(error)),
                     };
                     let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
                         continue;
