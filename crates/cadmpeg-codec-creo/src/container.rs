@@ -1929,6 +1929,20 @@ fn structural_feature_ids(
     Ok(ids)
 }
 
+fn topology_face_ids(
+    ctx: &DecodeContext<'_>,
+    ids: impl IntoIterator<Item = u32>,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut faces = BTreeSet::new();
+    for id in ids {
+        if !faces.contains(&id) {
+            ctx.charge_collection_items(1, "creo topology face ids")?;
+            faces.insert(id);
+        }
+    }
+    Ok(faces)
+}
+
 fn candidate_feature_ids(
     ctx: &DecodeContext<'_>,
     structural: &BTreeSet<u32>,
@@ -2770,11 +2784,13 @@ pub(crate) fn scan_bytes<'a>(
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
     )?;
-    let topology_face_ids = nonvisible_surface_rows
-        .iter()
-        .chain(surface_rows.iter())
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
+    let topology_face_ids = topology_face_ids(
+        ctx,
+        nonvisible_surface_rows
+            .iter()
+            .chain(surface_rows.iter())
+            .map(|row| row.id),
+    )?;
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
     let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;

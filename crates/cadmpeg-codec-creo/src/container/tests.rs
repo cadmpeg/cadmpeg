@@ -19,6 +19,27 @@ use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
 #[test]
+fn topology_face_ids_refuse_before_distinct_node_insertion() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let input = [7_u32, 7, 8];
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        super::topology_face_ids(&ctx, input).map(|ids| ids.into_iter().collect::<Vec<_>>())
+    };
+    assert_eq!(run(2).expect("two distinct nodes admitted"), [7, 8]);
+    let error = run(1).expect_err("second distinct node needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo topology face ids")
+    );
+}
+
+#[test]
 fn named_datum_plane_refuses_before_aggregate_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
