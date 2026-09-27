@@ -486,6 +486,25 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     Ok(transferred)
 }
 
+/// Copy section-relative surface rows under the caller's collection budget.
+fn relative_surface_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &[crate::surface::SurfaceRow],
+    section: &crate::container::Section,
+) -> Result<Vec<crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
+    let mut relative = Vec::new();
+    for candidate in rows.iter().filter(|row| section.contains(row.offset)) {
+        let Some(offset) = candidate.offset.checked_sub(section.offset()) else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut relative, 1, "creo positional replay section rows")?;
+        let mut row = candidate.clone();
+        row.offset = offset;
+        relative.push(row);
+    }
+    Ok(relative)
+}
+
 /// Transfer one exact surface carrier per positional spline replay.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal.
@@ -516,15 +535,17 @@ pub(in super::super) fn transfer_positional_spline_replays(
         if row.kind != crate::surface::SurfaceKind::Spline || row.offset != parameter.offset {
             continue;
         }
-        let sections = scan
+        let mut sections = scan
             .framing
             .sections
             .iter()
-            .filter(|section| section.contains(row.offset))
-            .collect::<Vec<_>>();
-        let [section] = sections.as_slice() else {
+            .filter(|section| section.contains(row.offset));
+        let Some(section) = sections.next() else {
             continue;
         };
+        if sections.next().is_some() {
+            continue;
+        }
         let Some(payload) = crate::container::section_region(&scan.framing.data, section) else {
             continue;
         };
@@ -536,17 +557,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row.offset = relative_row_offset;
             row
         };
-        let relative_rows = scan
-            .surfaces
-            .rows
-            .iter()
-            .filter(|candidate| section.contains(candidate.offset))
-            .filter_map(|candidate| {
-                let mut candidate = candidate.clone();
-                candidate.offset = candidate.offset.checked_sub(section.offset())?;
-                Some(candidate)
-            })
-            .collect::<Vec<_>>();
+        let relative_rows = relative_surface_rows(ctx, &scan.surfaces.rows, section)?;
         let Some(prototype) = crate::surface::positional_spline_replay_prototype(
             ctx,
             payload,
@@ -556,7 +567,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         else {
             continue;
         };
-        let cache = crate::scalar::ScalarCache::from_section(payload);
+        let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
         let Some(replay) =
             crate::surface::decode_positional_spline_replay(&parameter.body, &prototype, &cache)
         else {
