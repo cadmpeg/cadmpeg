@@ -44,7 +44,7 @@ pub(super) fn standard_face_count(
     let Some(selected) = selected_standard_run(ctx, bytes)? else {
         return Ok(None);
     };
-    let layouts = fbb_population_layouts(bytes);
+    let layouts = fbb_population_layouts(ctx, bytes)?;
     if layouts.is_empty() || layouts.iter().any(|layout| layout.face_run == selected) {
         Ok(Some(selected.face_count()))
     } else {
@@ -64,15 +64,19 @@ pub(crate) fn standard_edge_count(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len()))
+    Ok(parse_standard_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _)| rows.len()))
 }
 
 /// Number of physical edge rows in the width-selected FBB-only tables.
-#[must_use]
-pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
-    let face_run = largest_fbb_run(bytes)?;
+pub(crate) fn fbb_only_edge_count(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, _)| rows.len())
+    Ok(parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, _)| rows.len()))
 }
 
 /// RGBA display color for each positional standard face row.
@@ -91,18 +95,28 @@ pub(crate) fn standard_face_colors(
     else {
         return Ok(None);
     };
-    Ok((0..count)
-        .map(|index| {
-            let row =
-                bytes.get(start + index * fbb_row::LEN..start + (index + 1) * fbb_row::LEN)?;
-            (row[..fbb_row::ALPHA] == marker).then_some([
+    let mut colors = Vec::new();
+    for index in 0..count {
+        let Some(row) = bytes.get(start + index * fbb_row::LEN..start + (index + 1) * fbb_row::LEN)
+        else {
+            return Ok(None);
+        };
+        if row[..fbb_row::ALPHA] != marker {
+            return Ok(None);
+        }
+        crate::resource::push(
+            ctx,
+            &mut colors,
+            [
                 row[fbb_row::RED],
                 row[fbb_row::GREEN],
                 row[fbb_row::BLUE],
                 row[fbb_row::ALPHA],
-            ])
-        })
-        .collect())
+            ],
+            "catia_fbb_face_colors",
+        )?;
+    }
+    Ok(Some(colors))
 }
 
 fn trim_frame_vectors(
@@ -162,18 +176,26 @@ pub(super) fn standard_vertex_points(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_standard_edge_tables(bytes, after_faces)
-        .and_then(|(_, vertex_header)| parse_vertex_points(bytes, vertex_header)))
+    let Some((_, vertex_header)) = parse_standard_edge_tables(ctx, bytes, after_faces)? else {
+        return Ok(None);
+    };
+    parse_vertex_points(ctx, bytes, vertex_header)
 }
 
 /// Coordinates from the counted vertex table following a complete FBB-only
 /// edge-table walk.
-#[must_use]
-pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
-    let face_run = largest_fbb_run(bytes)?;
+pub(super) fn fbb_only_vertex_points(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    let Some(face_run) = largest_fbb_run(bytes) else {
+        return Ok(None);
+    };
     let after_faces = face_run.after_faces();
-    let (_, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    parse_vertex_points(bytes, vertex_header)
+    let Some((_, _, vertex_header, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)? else {
+        return Ok(None);
+    };
+    parse_vertex_points(ctx, bytes, vertex_header)
 }
 
 /// Parses the counted standard spine, positional trim packets, mesh boundary
@@ -190,11 +212,11 @@ pub(crate) fn parse_standard(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)
+        parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
@@ -220,11 +242,11 @@ pub(super) fn parse_standard_motif(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)
+        parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
@@ -286,10 +308,11 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(ctx, bytes, after_faces)?
+    else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -478,10 +501,11 @@ pub(super) fn parse_standard_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(ctx, bytes, after_faces)?
+    else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -526,10 +550,11 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(ctx, bytes, after_faces)?
+    else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -578,10 +603,11 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
+    let Some((edge_rows, _, vertex_header, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)?
+    else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -609,23 +635,29 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
 }
 
 pub(crate) fn parse_fbb_edge_tables(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
     // FBB-only tables select one width by the complete table-and-vertex walk;
     // accepting the first delimiter match would assign a wrong handle grammar.
-    let solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|handle_width| {
-            let parsed = parse_fbb_edge_tables_width(bytes, position, handle_width)?;
-            parse_vertex_table(bytes, parsed.2)
-                .is_some()
-                .then_some(parsed)
-        })
-        .collect::<Vec<_>>();
-    <[_; 1]>::try_from(solutions)
+    let mut solutions = Vec::new();
+    for handle_width in [1, 2, 3] {
+        let Some(parsed) = parse_fbb_edge_tables_width(ctx, bytes, position, handle_width)? else {
+            continue;
+        };
+        if vertex_table_end(bytes, parsed.2).is_some() {
+            crate::resource::push(
+                ctx,
+                &mut solutions,
+                parsed,
+                "catia_fbb_edge_width_solutions",
+            )?;
+        }
+    }
+    Ok(<[_; 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution)
+        .map(|[solution]| solution))
 }
 
 fn read_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
@@ -638,75 +670,95 @@ fn read_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
 }
 
 pub(super) fn parse_fbb_edge_tables_width(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
-    let mut rows = Vec::new();
-    let mut scopes = Vec::new();
-    let mut table_count = 0;
-    let mut delimiter_family = None;
-    loop {
-        if bytes.get(position) != Some(&0x01) {
-            return None;
-        }
-        let kind = *bytes.get(position + 1)?;
-        let expected_kind = u8::try_from(table_count + 1).ok()?;
-        if kind != expected_kind {
-            return None;
-        }
-        position += 2;
-        let count = parse_count(bytes, &mut position)?;
-        for _ in 0..count {
-            if bytes.get(position) != Some(&0x02) {
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+    (|| -> Option<Result<_, CodecError>> {
+        let mut rows = Vec::new();
+        let mut scopes = Vec::new();
+        let mut table_count = 0;
+        let mut delimiter_family = None;
+        loop {
+            if bytes.get(position) != Some(&0x01) {
                 return None;
             }
-            position += 1;
-            let arity = parse_count(bytes, &mut position)?;
-            if arity < 2 {
+            let kind = *bytes.get(position + 1)?;
+            let expected_kind = u8::try_from(table_count + 1).ok()?;
+            if kind != expected_kind {
                 return None;
             }
-            if arity > bytes.len().saturating_sub(position) / handle_width {
-                return None;
+            position += 2;
+            let count = parse_count(bytes, &mut position)?;
+            for _ in 0..count {
+                if bytes.get(position) != Some(&0x02) {
+                    return None;
+                }
+                position += 1;
+                let arity = parse_count(bytes, &mut position)?;
+                if arity < 2 {
+                    return None;
+                }
+                if arity > bytes.get(position..).map_or(0, |rest| rest.len()) / handle_width {
+                    return None;
+                }
+                let mut handles = Vec::new();
+                if let Err(error) =
+                    crate::resource::reserve_vec(ctx, &mut handles, arity, "catia_fbb_edge_handles")
+                {
+                    return Some(Err(error));
+                }
+                for _ in 0..arity {
+                    handles.push(read_handle(bytes, position, handle_width)?);
+                    position += handle_width;
+                }
+                if let Err(error) = crate::resource::push(
+                    ctx,
+                    &mut rows,
+                    EdgeRow {
+                        kind,
+                        handles,
+                        boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+                    },
+                    "catia_fbb_edge_rows",
+                ) {
+                    return Some(Err(error));
+                }
+                if let Err(error) =
+                    crate::resource::push(ctx, &mut scopes, table_count, "catia_fbb_edge_scopes")
+                {
+                    return Some(Err(error));
+                }
             }
-            let mut handles = Vec::with_capacity(arity);
-            for _ in 0..arity {
-                handles.push(read_handle(bytes, position, handle_width)?);
-                position += handle_width;
-            }
-            rows.push(EdgeRow {
-                kind,
-                handles,
-                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
-            });
-            scopes.push(table_count);
-        }
-        table_count += 1;
-        let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
-        let family = match handle_width {
-            2 if delimiter[0] == 0x10
-                && delimiter[1] >= 0x14
-                && delimiter[1] != 0x24
-                && delimiter[1] & 0x0f == 0x04
-                && delimiter[2..] == EDGE_DELIMITER[2..] =>
+            table_count += 1;
+            let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
+            let family = match handle_width {
+                2 if delimiter[0] == 0x10
+                    && delimiter[1] >= 0x14
+                    && delimiter[1] != 0x24
+                    && delimiter[1] & 0x0f == 0x04
+                    && delimiter[2..] == EDGE_DELIMITER[2..] =>
+                {
+                    delimiter[1] >> 4
+                }
+                1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
+                _ => return None,
+            };
+            if delimiter_family
+                .replace(family)
+                .is_some_and(|value| value != family)
             {
-                delimiter[1] >> 4
+                return None;
             }
-            1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
-            _ => return None,
-        };
-        if delimiter_family
-            .replace(family)
-            .is_some_and(|value| value != family)
-        {
-            return None;
+            position += EDGE_DELIMITER.len();
+            if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
+                break;
+            }
         }
-        position += EDGE_DELIMITER.len();
-        if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
-            break;
-        }
-    }
-    (table_count == 2).then_some((rows, scopes, position, handle_width))
+        (table_count == 2).then_some(Ok((rows, scopes, position, handle_width)))
+    })()
+    .transpose()
 }
 
 /// Recover the row layout used by an FBB-only table from its trim boundaries.
@@ -826,7 +878,7 @@ pub(super) fn standard_fbb_groups(
         if let Some(group) =
             parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
         {
-            groups.push(group);
+            crate::resource::push(ctx, &mut groups, group, "catia_standard_fbb_groups")?;
         }
     }
     Ok(groups)
@@ -857,72 +909,111 @@ fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
     let mut cursor = position + 2;
     let count = parse_count(bytes, &mut cursor)?;
     let end = cursor.checked_add(count.checked_mul(VERTEX_RECORD_BYTES)?)?;
-    (parse_vertex_table(bytes, position).is_some()).then_some(end)
+    let records = bytes.get(cursor..end)?;
+    for record in records.chunks_exact(VERTEX_RECORD_BYTES) {
+        if record.get(..3) != Some(&[0x05, 0x08, 0x01][..]) {
+            return None;
+        }
+        for offset in [3, 7, 11] {
+            let value = View::f32_le_at(record, offset)?;
+            FiniteReal::new(f64::from(value))?;
+        }
+    }
+    Some(end)
 }
 
 /// Return one source-closed FBB population as a self-contained topology
 /// spine. The slice starts at its complete trim chain and ends after its
 /// counted vertex table, so the existing single-population parsers can be
 /// reused without seeing neighboring populations.
-#[must_use]
 pub(super) fn population_spine<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     layout: &FbbPopulationLayout,
-) -> Option<&'a [u8]> {
-    let (_, vertex_header, handle_width) = match layout.edge_table_form {
+) -> Result<Option<&'a [u8]>, CodecError> {
+    let parsed = match layout.edge_table_form {
         EdgeTableForm::Standard => {
-            parse_standard_edge_tables_with_width(bytes, layout.face_run.after_faces())
+            parse_standard_edge_tables_with_width(ctx, bytes, layout.face_run.after_faces())?
         }
-        EdgeTableForm::FbbOnly => parse_fbb_edge_tables(bytes, layout.face_run.after_faces())
+        EdgeTableForm::FbbOnly => parse_fbb_edge_tables(ctx, bytes, layout.face_run.after_faces())?
             .map(|(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width)),
-    }?;
-    let trim_start = parse_trim_chain_start(
+    };
+    let Some((_, vertex_header, handle_width)) = parsed else {
+        return Ok(None);
+    };
+    let Some((trim_start, _)) = parse_trim_chain_start(
         bytes,
         layout.face_run.face_start(),
         layout.face_run.face_count(),
         handle_width,
-    )?
-    .0;
-    let end = vertex_table_end(bytes, vertex_header)?;
-    bytes.get(trim_start..end)
+    ) else {
+        return Ok(None);
+    };
+    let Some(end) = vertex_table_end(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    Ok(bytes.get(trim_start..end))
 }
 
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
 /// walk, without requiring endpoint incidence to be solved.
-#[must_use]
-pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
-    crate::container::fbb_run_ranges(bytes)
-        .into_iter()
-        .filter_map(|range| {
-            let face_run = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)?;
-            let after_faces = face_run.after_faces();
-            let (edge_rows, vertex_header, handle_width, edge_table_form) =
-                parse_standard_edge_tables_with_width(bytes, after_faces)
-                    .map(|(rows, vertex_header, handle_width)| {
-                        (rows, vertex_header, handle_width, EdgeTableForm::Standard)
-                    })
-                    .or_else(|| {
-                        parse_fbb_edge_tables(bytes, after_faces).map(
-                            |(rows, _, vertex_header, handle_width)| {
-                                (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
-                            },
-                        )
-                    })?;
-            let vertex_count = parse_vertex_table(bytes, vertex_header)?.len();
-            parse_trim_chain(
-                bytes,
-                face_run.face_start(),
-                face_run.face_count(),
-                handle_width,
-            )?;
-            Some(FbbPopulationLayout {
+pub(super) fn fbb_population_layouts(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<FbbPopulationLayout>, CodecError> {
+    let mut layouts = Vec::new();
+    for range in crate::container::fbb_run_ranges(bytes) {
+        let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
+            continue;
+        };
+        let after_faces = face_run.after_faces();
+        let parsed = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?.map(
+            |(rows, vertex_header, handle_width)| {
+                (rows, vertex_header, handle_width, EdgeTableForm::Standard)
+            },
+        );
+        let parsed = if parsed.is_some() {
+            parsed
+        } else {
+            parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(
+                |(rows, _, vertex_header, handle_width)| {
+                    (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
+                },
+            )
+        };
+        let Some((edge_rows, vertex_header, handle_width, edge_table_form)) = parsed else {
+            continue;
+        };
+        if vertex_table_end(bytes, vertex_header).is_none() {
+            continue;
+        }
+        let mut count_position = vertex_header + 2;
+        let Some(vertex_count) = parse_count(bytes, &mut count_position) else {
+            continue;
+        };
+        if parse_trim_chain(
+            bytes,
+            face_run.face_start(),
+            face_run.face_count(),
+            handle_width,
+        )
+        .is_none()
+        {
+            continue;
+        }
+        crate::resource::push(
+            ctx,
+            &mut layouts,
+            FbbPopulationLayout {
                 face_run,
                 edge_count: edge_rows.len(),
                 vertex_count,
                 edge_table_form,
-            })
-        })
-        .collect()
+            },
+            "catia_fbb_population_layouts",
+        )?;
+    }
+    Ok(layouts)
 }
 
 fn parse_standard_group(
@@ -936,11 +1027,11 @@ fn parse_standard_group(
     };
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)
+        parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
@@ -1011,6 +1102,11 @@ mod appearance_tests {
                 .expect("service resource budget"),
             Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
         );
+        assert!(matches!(
+            crate::test_support::with_collection_limit(1, |ctx| standard_face_colors(ctx, &bytes)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_fbb_face_colors"
+        ));
         let mut mixed = bytes;
         mixed[8] = 0x30;
         assert_eq!(
@@ -1023,7 +1119,10 @@ mod appearance_tests {
 
 #[cfg(test)]
 mod allocation_tests {
-    use super::{parse_standard, standard_face_count};
+    use super::{
+        fbb_population_layouts, largest_fbb_run, parse_fbb_edge_tables, parse_standard,
+        parse_standard_edge_tables_with_width, parse_vertex_table, standard_face_count,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -1048,6 +1147,107 @@ mod allocation_tests {
             }
         }
         operations
+    }
+
+    #[test]
+    fn counted_fbb_edge_rows_and_nested_handles_refuse_before_allocation() {
+        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+        let after_faces = largest_fbb_run(&bytes).expect("FBB face run").after_faces();
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            parse_fbb_edge_tables(ctx, &bytes, after_faces)
+        })
+        .expect("service resource budget")
+        .expect("complete edge tables");
+        assert_eq!(parsed.0.len(), 4);
+        let operations = collection_refusals(&bytes, |ctx| {
+            parse_fbb_edge_tables(ctx, &bytes, after_faces)?;
+            Ok(())
+        });
+        for operation in [
+            "catia_fbb_edge_handles",
+            "catia_fbb_edge_rows",
+            "catia_fbb_edge_scopes",
+            "catia_fbb_edge_width_solutions",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
+    }
+
+    #[test]
+    fn counted_standard_edge_rows_and_nested_handles_refuse_before_allocation() {
+        let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+        let after_faces = largest_fbb_run(&bytes)
+            .expect("standard face run")
+            .after_faces();
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            parse_standard_edge_tables_with_width(ctx, &bytes, after_faces)
+        })
+        .expect("service resource budget")
+        .expect("complete edge tables");
+        assert_eq!(parsed.0.len(), 4);
+        let operations = collection_refusals(&bytes, |ctx| {
+            parse_standard_edge_tables_with_width(ctx, &bytes, after_faces)?;
+            Ok(())
+        });
+        for operation in [
+            "catia_standard_edge_handles",
+            "catia_standard_edge_rows",
+            "catia_standard_edge_scopes",
+        ] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
+    }
+
+    #[test]
+    fn counted_fbb_vertex_points_and_coordinate_copy_refuse_before_allocation() {
+        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+        let after_faces = largest_fbb_run(&bytes).expect("FBB face run").after_faces();
+        let vertex_header = crate::test_support::with_service_context(|ctx| {
+            parse_fbb_edge_tables(ctx, &bytes, after_faces)
+        })
+        .expect("service resource budget")
+        .expect("complete edge tables")
+        .2;
+        let points = crate::test_support::with_service_context(|ctx| {
+            parse_vertex_table(ctx, &bytes, vertex_header)
+        })
+        .expect("service resource budget")
+        .expect("counted vertices");
+        assert_eq!(points.len(), 4);
+        let operations = collection_refusals(&bytes, |ctx| {
+            parse_vertex_table(ctx, &bytes, vertex_header)?;
+            Ok(())
+        });
+        for operation in ["catia_fbb_vertex_points", "catia_fbb_vertex_coordinates"] {
+            assert!(operations.contains(operation), "no refusal at {operation}");
+        }
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4 * std::mem::size_of::<[f64; 3]>() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("fixture fits the input limit");
+        let refusal = parse_vertex_table(&ctx, &bytes, vertex_header)
+            .expect_err("coordinate copy exceeds retained bytes");
+        assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "catia_fbb_vertex_coordinates"));
+    }
+
+    #[test]
+    fn fbb_population_layouts_charge_each_discovered_population() {
+        let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+        bytes.push(0);
+        bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
+        let layouts =
+            crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+                .expect("service resource budget");
+        assert_eq!(layouts.len(), 2);
+        let operations = collection_refusals(&bytes, |ctx| {
+            fbb_population_layouts(ctx, &bytes)?;
+            Ok(())
+        });
+        assert!(operations.contains("catia_fbb_population_layouts"));
     }
 
     #[test]
@@ -1149,37 +1349,49 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     usize::try_from(value).ok()
 }
 
-pub(crate) fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
-    if let Some(result) = parse_standard_edge_tables(bytes, position) {
-        return Some(result);
+pub(crate) fn parse_edge_tables(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    position: usize,
+) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
+    if let Some(result) = parse_standard_edge_tables(ctx, bytes, position)? {
+        return Ok(Some(result));
     }
-    parse_fbb_edge_tables(bytes, position).map(|(rows, _, vertex_header, _)| (rows, vertex_header))
+    Ok(parse_fbb_edge_tables(ctx, bytes, position)?
+        .map(|(rows, _, vertex_header, _)| (rows, vertex_header)))
 }
 
-fn parse_standard_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
-    parse_standard_edge_tables_with_width(bytes, position)
-        .map(|(rows, vertex_header, _)| (rows, vertex_header))
+fn parse_standard_edge_tables(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    position: usize,
+) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
+    Ok(parse_standard_edge_tables_with_width(ctx, bytes, position)?
+        .map(|(rows, vertex_header, _)| (rows, vertex_header)))
 }
 
 pub(crate) fn parse_standard_edge_tables_with_width(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Option<(Vec<EdgeRow>, usize, usize)> {
-    parse_standard_edge_tables_scoped(bytes, position)
-        .map(|(rows, _, vertex_header, handle_width)| (rows, vertex_header, handle_width))
+) -> Result<Option<(Vec<EdgeRow>, usize, usize)>, CodecError> {
+    Ok(parse_standard_edge_tables_scoped(ctx, bytes, position)?
+        .map(|(rows, _, vertex_header, handle_width)| (rows, vertex_header, handle_width)))
 }
 
 pub(crate) fn parse_standard_edge_tables_scoped(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
     // The full standard spine uses u16be rows and may contain one or more
     // counted tables. Keep that grammar first so a malformed standard walk
     // cannot silently enter the compact form below.
-    if let Some((rows, scopes, vertex_header)) = parse_edge_tables_scoped_width(bytes, position, 2)
+    if let Some((rows, scopes, vertex_header)) =
+        parse_edge_tables_scoped_width(ctx, bytes, position, 2)?
     {
-        if parse_vertex_table(bytes, vertex_header).is_some() {
-            return Some((rows, scopes, vertex_header, 2));
+        if vertex_table_end(bytes, vertex_header).is_some() {
+            return Ok(Some((rows, scopes, vertex_header, 2)));
         }
     }
 
@@ -1188,151 +1400,220 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     // counted vertex table. A two-table walk belongs to the separate FBB-only
     // family and must not be admitted through this fallback.
     if bytes.get(position..position + 2) != Some(&[0x01, 0x01]) {
-        return None;
+        return Ok(None);
     }
-    let (rows, scopes, vertex_header, handle_width) =
-        parse_edge_tables_scoped_at_with_width(bytes, position)?;
-    (!rows.is_empty()
+    let Some((rows, scopes, vertex_header, handle_width)) =
+        parse_edge_tables_scoped_at_with_width(ctx, bytes, position)?
+    else {
+        return Ok(None);
+    };
+    Ok((!rows.is_empty()
         && scopes.iter().all(|scope| *scope == 0)
         && rows
             .iter()
             .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun))
-    .then_some((rows, scopes, vertex_header, handle_width))
+    .then_some((rows, scopes, vertex_header, handle_width)))
 }
 
 #[cfg(test)]
-pub(super) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
-    parse_edge_tables_scoped_at(bytes, position)
-        .map(|(rows, _, vertex_header)| (rows, vertex_header))
+pub(super) fn parse_edge_tables_at(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    position: usize,
+) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
+    Ok(parse_edge_tables_scoped_at(ctx, bytes, position)?
+        .map(|(rows, _, vertex_header)| (rows, vertex_header)))
 }
 
 #[cfg(test)]
 pub(super) fn parse_edge_tables_scoped_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
-    parse_edge_tables_scoped_at_with_width(bytes, position)
-        .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header))
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError> {
+    Ok(
+        parse_edge_tables_scoped_at_with_width(ctx, bytes, position)?
+            .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header)),
+    )
 }
 
 fn parse_edge_tables_scoped_at_with_width(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     position: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
-    let solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|handle_width| {
-            let parsed = parse_edge_tables_scoped_width(bytes, position, handle_width)?;
-            parse_vertex_table(bytes, parsed.2).is_some().then_some((
-                parsed.0,
-                parsed.1,
-                parsed.2,
-                handle_width,
-            ))
-        })
-        .collect::<Vec<_>>();
-    <[_; 1]>::try_from(solutions)
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError> {
+    let mut solutions = Vec::new();
+    for handle_width in [1, 2, 3] {
+        let Some(parsed) = parse_edge_tables_scoped_width(ctx, bytes, position, handle_width)?
+        else {
+            continue;
+        };
+        if vertex_table_end(bytes, parsed.2).is_some() {
+            crate::resource::push(
+                ctx,
+                &mut solutions,
+                (parsed.0, parsed.1, parsed.2, handle_width),
+                "catia_standard_edge_width_solutions",
+            )?;
+        }
+    }
+    Ok(<[_; 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution)
+        .map(|[solution]| solution))
 }
 
 fn parse_edge_tables_scoped_width(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
-) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
-    let mut rows = Vec::new();
-    let mut scopes = Vec::new();
-    let mut scope = 0usize;
-    loop {
-        if bytes.get(position) != Some(&0x01) {
-            return None;
-        }
-        let kind = *bytes.get(position + 1)?;
-        if !matches!(kind, 0x01 | 0x02) {
-            return None;
-        }
-        position += 2;
-        let count = parse_count(bytes, &mut position)?;
-        for _ in 0..count {
-            if bytes.get(position) != Some(&0x02) {
+) -> Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError> {
+    (|| -> Option<Result<_, CodecError>> {
+        let mut rows = Vec::new();
+        let mut scopes = Vec::new();
+        let mut scope = 0usize;
+        loop {
+            if bytes.get(position) != Some(&0x01) {
                 return None;
             }
-            position += 1;
-            let arity = parse_count(bytes, &mut position)?;
-            if arity < 2 {
+            let kind = *bytes.get(position + 1)?;
+            if !matches!(kind, 0x01 | 0x02) {
                 return None;
             }
-            if arity > bytes.len().saturating_sub(position) / handle_width {
+            position += 2;
+            let count = parse_count(bytes, &mut position)?;
+            for _ in 0..count {
+                if bytes.get(position) != Some(&0x02) {
+                    return None;
+                }
+                position += 1;
+                let arity = parse_count(bytes, &mut position)?;
+                if arity < 2 {
+                    return None;
+                }
+                if arity > bytes.get(position..).map_or(0, |rest| rest.len()) / handle_width {
+                    return None;
+                }
+                let mut handles = Vec::new();
+                if let Err(error) = crate::resource::reserve_vec(
+                    ctx,
+                    &mut handles,
+                    arity,
+                    "catia_standard_edge_handles",
+                ) {
+                    return Some(Err(error));
+                }
+                for _ in 0..arity {
+                    handles.push(read_handle(bytes, position, handle_width)?);
+                    position += handle_width;
+                }
+                if let Err(error) = crate::resource::push(
+                    ctx,
+                    &mut rows,
+                    EdgeRow {
+                        kind,
+                        handles,
+                        boundary_layout: if arity == 2 {
+                            EdgeBoundaryLayout::CompleteBoundaryRun
+                        } else {
+                            EdgeBoundaryLayout::InteriorWithFlankingCorners
+                        },
+                    },
+                    "catia_standard_edge_rows",
+                ) {
+                    return Some(Err(error));
+                }
+                if let Err(error) =
+                    crate::resource::push(ctx, &mut scopes, scope, "catia_standard_edge_scopes")
+                {
+                    return Some(Err(error));
+                }
+            }
+            let mut saw_delimiter = false;
+            while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
+                saw_delimiter = true;
+                position += EDGE_DELIMITER.len();
+            }
+            if !saw_delimiter {
                 return None;
             }
-            let mut handles = Vec::with_capacity(arity);
-            for _ in 0..arity {
-                handles.push(read_handle(bytes, position, handle_width)?);
-                position += handle_width;
+            if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
+                break;
             }
-            rows.push(EdgeRow {
-                kind,
-                handles,
-                boundary_layout: if arity == 2 {
-                    EdgeBoundaryLayout::CompleteBoundaryRun
-                } else {
-                    EdgeBoundaryLayout::InteriorWithFlankingCorners
-                },
-            });
-            scopes.push(scope);
+            scope = scope.checked_add(1)?;
         }
-        let mut saw_delimiter = false;
-        while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
-            saw_delimiter = true;
-            position += EDGE_DELIMITER.len();
-        }
-        if !saw_delimiter {
-            return None;
-        }
-        if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
-            break;
-        }
-        scope = scope.checked_add(1)?;
-    }
-    Some((rows, scopes, position))
+        Some(Ok((rows, scopes, position)))
+    })()
+    .transpose()
 }
 
-pub(crate) fn parse_vertex_table(bytes: &[u8], position: usize) -> Option<Vec<[f64; 3]>> {
-    Some(
-        parse_vertex_points(bytes, position)?
-            .into_iter()
-            .map(|point| point.get().into())
-            .collect(),
-    )
+pub(crate) fn parse_vertex_table(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    position: usize,
+) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    let Some(points) = parse_vertex_points(ctx, bytes, position)? else {
+        return Ok(None);
+    };
+    let count = points.len();
+    let bytes_needed = count
+        .checked_mul(std::mem::size_of::<[f64; 3]>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_fbb_vertex_coordinates", u64::MAX, u64::MAX)
+        })?;
+    ctx.charge_retained(bytes_needed, "catia_fbb_vertex_coordinates")?;
+    let mut coordinates = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut coordinates, count, "catia_fbb_vertex_coordinates")?;
+    for point in points {
+        let coordinate: [f64; 3] = point.get().into();
+        coordinates.push(coordinate);
+    }
+    Ok(Some(coordinates))
 }
 
 /// The counted `05 08 01` vertex table at `position`, every coordinate
 /// admitted finite.
-fn parse_vertex_points(bytes: &[u8], mut position: usize) -> Option<Vec<FinitePoint3>> {
-    if !bytes.get(position..)?.starts_with(&[0x01, 0x06]) {
-        return None;
+fn parse_vertex_points(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    mut position: usize,
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    let Some(rest) = bytes.get(position..) else {
+        return Ok(None);
+    };
+    if !rest.starts_with(&[0x01, 0x06]) {
+        return Ok(None);
     }
     position += 2;
-    let count = parse_count(bytes, &mut position)?;
-    if count > bytes.len().saturating_sub(position) / VERTEX_RECORD_BYTES {
-        return None;
+    let Some(count) = parse_count(bytes, &mut position) else {
+        return Ok(None);
+    };
+    if count > bytes.get(position..).map_or(0, |rest| rest.len()) / VERTEX_RECORD_BYTES {
+        return Ok(None);
     }
-    let mut points = Vec::with_capacity(count);
+    let mut points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut points, count, "catia_fbb_vertex_points")?;
     for _ in 0..count {
-        if bytes.get(position..position + 3)? != [0x05, 0x08, 0x01] {
-            return None;
+        if bytes.get(position..position + 3) != Some(&[0x05, 0x08, 0x01][..]) {
+            return Ok(None);
         }
         position += 3;
         let mut coordinates = [FiniteReal::ZERO; 3];
         for coordinate in &mut coordinates {
-            *coordinate = FiniteReal::new(f64::from(View::f32_le_at(bytes, position)?))?;
+            let Some(value) = View::f32_le_at(bytes, position) else {
+                return Ok(None);
+            };
+            let Some(finite) = FiniteReal::new(f64::from(value)) else {
+                return Ok(None);
+            };
+            *coordinate = finite;
             position += 4;
         }
         let [x, y, z] = coordinates;
         points.push(FinitePoint3::from_coordinates(x, y, z));
     }
-    Some(points)
+    Ok(Some(points))
 }
 
 pub(crate) fn parse_trim_chain(

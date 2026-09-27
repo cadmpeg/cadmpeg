@@ -4,6 +4,7 @@
 use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
@@ -1410,23 +1411,36 @@ struct StandardPopulationSelection {
 }
 
 fn standard_population_selections(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-) -> Option<(
-    StandardPopulationSelection,
-    Vec<StandardPopulationSelection>,
-)> {
-    let brep = scan.brep.as_ref()?;
+) -> Result<
+    Option<(
+        StandardPopulationSelection,
+        Vec<StandardPopulationSelection>,
+    )>,
+    CodecError,
+> {
+    let Some(brep) = scan.brep.as_ref() else {
+        return Ok(None);
+    };
     let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
-    let layouts = fbb::fbb_population_layouts(standard_spine);
+    let layouts = fbb::fbb_population_layouts(ctx, standard_spine)?;
     let populations = crate::families::standard::records::standard_surface_populations(brep);
-    let pairs =
-        crate::families::standard::records::pair_standard_populations(&layouts, &populations)?;
+    let Some(pairs) =
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
+    else {
+        return Ok(None);
+    };
     let select = |(layout, population): (
         fbb::FbbPopulationLayout,
         crate::families::standard::records::StandardSurfacePopulation,
-    )| {
-        Some(StandardPopulationSelection {
-            spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
+    )|
+     -> Result<Option<StandardPopulationSelection>, CodecError> {
+        let Some(spine) = fbb::population_spine(ctx, standard_spine, &layout)? else {
+            return Ok(None);
+        };
+        Ok(Some(StandardPopulationSelection {
+            spine: ctx.copy_retained(spine, "catia_standard_population_spine")?,
             records: population.records,
             supports: population.supports,
             edge_table_form: layout.edge_table_form,
@@ -1435,12 +1449,24 @@ fn standard_population_selections(
                 layout.vertex_count,
             )
             .is_some(),
-        })
+        }))
     };
-    Some((
-        select(pairs.first)?,
-        pairs.rest.into_iter().map(select).collect::<Option<_>>()?,
-    ))
+    let Some(first) = select(pairs.first)? else {
+        return Ok(None);
+    };
+    let mut rest = Vec::new();
+    for pair in pairs.rest {
+        let Some(selection) = select(pair)? else {
+            return Ok(None);
+        };
+        crate::resource::push(
+            ctx,
+            &mut rest,
+            selection,
+            "catia_standard_population_selections",
+        )?;
+    }
+    Ok(Some((first, rest)))
 }
 
 pub(in crate::families) fn try_decode_standard(
@@ -1454,7 +1480,7 @@ pub(in crate::families) fn try_decode_standard(
         HashMap::new()
     };
     let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, &scan.data)?;
-    match standard_population_selections(scan) {
+    match standard_population_selections(ctx, scan)? {
         None => {
             try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)
         }
@@ -1791,7 +1817,10 @@ fn try_decode_standard_population(
         container::consolidated_record_sources(scan),
     );
     let vertex_points = match edge_table_form {
-        EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
+        EdgeTableForm::FbbOnly => match fbb::fbb_only_vertex_points(ctx, standard_spine) {
+            Ok(points) => points,
+            Err(error) => return Some(Err(error)),
+        },
         EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
             Ok(points) => points,
             Err(error) => return Some(Err(error)),
@@ -1846,7 +1875,10 @@ fn try_decode_standard_population(
         (!selection.supports.is_empty()).then_some(selection.supports.len())
     } else {
         let count = if edge_table_form == EdgeTableForm::FbbOnly {
-            fbb::fbb_only_edge_count(standard_spine)
+            match fbb::fbb_only_edge_count(ctx, standard_spine) {
+                Ok(count) => count,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             match fbb::standard_edge_count(ctx, standard_spine) {
                 Ok(count) => count,
@@ -4194,7 +4226,8 @@ fn attach_standard_topology(
 ) -> Result<(), StandardTopologyError> {
     let face_count = ir.model.faces.len();
     let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
-        crate::families::standard::fbb::fbb_only_edge_count(spine)
+        crate::families::standard::fbb::fbb_only_edge_count(ctx, spine)
+            .map_err(StandardTopologyError::Resource)?
     } else {
         crate::families::standard::fbb::standard_edge_count(ctx, spine)
             .map_err(StandardTopologyError::Resource)?

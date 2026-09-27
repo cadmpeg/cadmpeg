@@ -22,6 +22,63 @@ fn handles(values: &[u32]) -> HashSet<u32> {
 }
 
 #[test]
+fn counted_port_identity_maps_and_pairs_refuse_before_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let fixtures = [
+        (
+            crate::test_support::test_topology::standard_quad_topology_stream(),
+            false,
+        ),
+        (
+            crate::test_support::test_topology::fbb_only_quad_topology_stream(),
+            true,
+        ),
+    ];
+    for (bytes, fbb) in fixtures {
+        let run = |ctx: &DecodeContext<'_>| {
+            if fbb {
+                super::fbb_global_edge_port_identities(ctx, &bytes)
+            } else {
+                super::standard_global_edge_port_identities(ctx, &bytes)
+            }
+        };
+        let ports = crate::test_support::with_service_context(run)
+            .expect("service resource budget")
+            .expect("counted edge ports");
+        assert_eq!(ports.len(), 4);
+        let mut refused = HashSet::new();
+        for cap in 0..256 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("fixture fits the input limit");
+            match run(&ctx) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    refused.insert(limit.operation);
+                }
+                Ok(Some(_)) => break,
+                _ => panic!("unexpected port identity result"),
+            }
+        }
+        let operations = if fbb {
+            ["catia_fbb_port_handle_ids", "catia_fbb_port_pairs"]
+        } else {
+            [
+                "catia_standard_port_handle_ids",
+                "catia_standard_port_pairs",
+            ]
+        };
+        for operation in operations {
+            assert!(refused.contains(operation), "no refusal at {operation}");
+        }
+    }
+}
+
+#[test]
 fn edge_run_face_collection_refuses_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

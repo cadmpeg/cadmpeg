@@ -158,7 +158,10 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
         None
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::fbb_only_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         Some(2)
     );
     assert_eq!(
@@ -197,7 +200,10 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         None
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::fbb_only_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(

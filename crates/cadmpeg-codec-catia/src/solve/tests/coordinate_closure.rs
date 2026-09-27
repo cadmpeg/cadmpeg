@@ -909,12 +909,24 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
 
 #[test]
 fn vertex_table_rejects_unbacked_extended_count_before_allocation() {
-    assert!(parse_vertex_table(&[0x01, 0x06, 0xff, 0xff, 0xff, 0xff, 0xff], 0).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_vertex_table(
+            ctx,
+            &[0x01, 0x06, 0xff, 0xff, 0xff, 0xff, 0xff],
+            0
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
 fn vertex_table_rejects_an_overflowing_start_offset() {
-    assert!(parse_vertex_table(&[], usize::MAX).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_vertex_table(ctx, &[], usize::MAX))
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]
