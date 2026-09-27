@@ -39,8 +39,10 @@ fn pmi_limit_refusal(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("PMI test input fits the root limit");
-    let error = super::parse_payload(&ctx, &payload, &mut Vec::new())
+    let mut losses = Vec::new();
+    let error = super::parse_payload(&ctx, &payload, &mut losses)
         .expect_err("PMI parser must refuse the selected limit");
+    assert!(losses.is_empty(), "resource refusal must not become a PMI loss");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
@@ -68,10 +70,10 @@ fn pmi_payload_reports_scoped_limit() {
 #[test]
 fn pmi_payload_reports_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 35;
+    policy.limits.max_retained_bytes = ("sldprt:pmi:dimension#".len() + 35) as u64;
     let limit = pmi_limit_refusal(policy);
     assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
-    assert_eq!(limit.operation, "retain SLDPRT PMI candidate GUID");
+    assert_eq!(limit.operation, "retain SLDPRT PMI dimension ID");
 }
 
 #[test]
@@ -80,7 +82,16 @@ fn pmi_payload_reports_collection_limit() {
     policy.limits.max_collection_items = 0;
     let limit = pmi_limit_refusal(policy);
     assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "collect SLDPRT PMI dimensions");
+    assert_eq!(limit.operation, "collect SLDPRT PMI map fields");
+}
+
+#[test]
+fn pmi_payload_reports_nesting_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 2;
+    let limit = pmi_limit_refusal(policy);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+    assert_eq!(limit.operation, "parse SLDPRT PMI MessagePack");
 }
 
 #[test]
@@ -553,6 +564,24 @@ fn malformed_pmi_map_emits_attributed_loss() {
         "{}",
         losses[0].message
     );
+}
+
+#[test]
+fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
+    let payload = fixture_payload(
+        "D1@Sketch1",
+        "ABCDEF01-89AB-CDEF-0123-456789ABCDEF",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        false,
+        false,
+        true,
+    );
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(records.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
 #[test]

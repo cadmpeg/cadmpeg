@@ -1,11 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{parse_value, SpannedValue, ValueKind};
+use super::{parse_value, ValueKind};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use rmp::Marker;
 
-fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<SpannedValue, String> {
-    let invalid = || format!("DimSemData {field} has an invalid patch field");
+struct FieldSpan {
+    start: usize,
+    data_offset: usize,
+    is_bool: bool,
+}
+
+fn dimension_field(
+    payload: &[u8],
+    offset: u64,
+    field: &str,
+) -> Result<FieldSpan, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let invalid = || CodecError::malformed(format_args!("DimSemData {field} has an invalid patch field"));
     let mut cursor = usize::try_from(offset).map_err(|_| invalid())?;
-    let outer = parse_value(payload, &mut cursor, 0).ok_or_else(invalid)?;
+    let outer = parse_value(&ctx, payload, &mut cursor, 0)?.ok_or_else(invalid)?;
     let ValueKind::Map(outer) = outer.kind else {
         return Err(invalid());
     };
@@ -15,14 +33,19 @@ fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<SpannedVa
     let ValueKind::Map(item) = &items.first().ok_or_else(invalid)?.kind else {
         return Err(invalid());
     };
-    item.get(field).cloned().ok_or_else(invalid)
+    let value = item.get(field).ok_or_else(invalid)?;
+    Ok(FieldSpan {
+        start: value.start,
+        data_offset: value.data_offset,
+        is_bool: matches!(value.kind, ValueKind::Bool(_)),
+    })
 }
 
 pub(super) struct FloatPatchSlot<'a>(&'a mut [u8; 8]);
 
 impl<'a> FloatPatchSlot<'a> {
-    pub(super) fn read(payload: &'a mut [u8], offset: u64) -> Result<Self, String> {
-        let invalid = || "DimSemData value has an invalid f64 patch slot".to_string();
+    pub(super) fn read(payload: &'a mut [u8], offset: u64) -> Result<Self, CodecError> {
+        let invalid = || CodecError::malformed(format_args!("DimSemData value has an invalid f64 patch slot"));
         let value = dimension_field(payload, offset, "value")?;
         if payload.get(value.start) != Some(&Marker::F64.to_u8()) {
             return Err(invalid());
@@ -42,10 +65,10 @@ impl<'a> FloatPatchSlot<'a> {
 pub(super) struct BooleanPatchSlot<'a>(&'a mut u8);
 
 impl<'a> BooleanPatchSlot<'a> {
-    pub(super) fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, String> {
-        let invalid = || format!("DimSemData {field} has an invalid boolean patch slot");
+    pub(super) fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, CodecError> {
+        let invalid = || CodecError::malformed(format_args!("DimSemData {field} has an invalid boolean patch slot"));
         let value = dimension_field(payload, offset, field)?;
-        if !matches!(value.kind, ValueKind::Bool(_)) {
+        if !value.is_bool {
             return Err(invalid());
         }
         Ok(Self(
@@ -73,8 +96,8 @@ enum IntegerEncoding<'a> {
 pub(super) struct IntegerPatchSlot<'a>(IntegerEncoding<'a>);
 
 impl<'a> IntegerPatchSlot<'a> {
-    pub(super) fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, String> {
-        let invalid = || format!("DimSemData {field} has an invalid integer patch slot");
+    pub(super) fn read(payload: &'a mut [u8], offset: u64, field: &str) -> Result<Self, CodecError> {
+        let invalid = || CodecError::malformed(format_args!("DimSemData {field} has an invalid integer patch slot"));
         let value = dimension_field(payload, offset, field)?;
         let marker = Marker::from_u8(*payload.get(value.start).ok_or_else(invalid)?);
         let bytes = payload.get_mut(value.data_offset..).ok_or_else(invalid)?;
@@ -133,6 +156,6 @@ impl<'a> IntegerPatchSlot<'a> {
 }
 
 #[cfg(test)]
-pub(super) fn field_offset(payload: &[u8], offset: u64, field: &str) -> Result<usize, String> {
+pub(super) fn field_offset(payload: &[u8], offset: u64, field: &str) -> Result<usize, CodecError> {
     dimension_field(payload, offset, field).map(|value| value.data_offset)
 }

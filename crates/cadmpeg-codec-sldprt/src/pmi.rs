@@ -278,20 +278,16 @@ pub(crate) fn patch_payload(
                 )));
             }
         };
-        FloatPatchSlot::read(payload, record.offset)
-            .map_err(cadmpeg_core::CodecError::malformed)?
-            .write(native_value);
-        IntegerPatchSlot::read(payload, record.offset, "valPrecision")
-            .and_then(|slot| slot.write(semantic.precision))
+        FloatPatchSlot::read(payload, record.offset)?.write(native_value);
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision")?
+            .write(semantic.precision)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (field, value) in [
             ("isBasic", semantic.basic),
             ("isInspection", semantic.inspection),
             ("isReferenceOnly", semantic.reference_only),
         ] {
-            BooleanPatchSlot::read(payload, record.offset, field)
-                .map_err(cadmpeg_core::CodecError::malformed)?
-                .write(value);
+            BooleanPatchSlot::read(payload, record.offset, field)?.write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (
@@ -494,23 +490,23 @@ pub(crate) fn apply_to_parameters(
 }
 
 /// One `MessagePack` value with absolute source spans for in-place patching.
-#[derive(Debug, Clone)]
-struct SpannedValue {
-    kind: ValueKind,
+#[derive(Debug)]
+struct SpannedValue<'a> {
+    kind: ValueKind<'a>,
     /// Absolute offset of this value's marker byte.
     start: usize,
     /// Absolute offset of the writable scalar payload (kind-dependent).
     data_offset: usize,
 }
 
-#[derive(Debug, Clone)]
-enum ValueKind {
+#[derive(Debug)]
+enum ValueKind<'a> {
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(String),
-    Array(Vec<SpannedValue>),
-    Map(BTreeMap<String, SpannedValue>),
+    String(&'a str),
+    Array(Vec<SpannedValue<'a>>),
+    Map(BTreeMap<&'a str, SpannedValue<'a>>),
     Opaque,
 }
 
@@ -595,11 +591,13 @@ fn collect_dimensions(
         if seen.contains(&normalized) {
             continue;
         }
-        match extract_dimension(payload, offset, &normalized, parent) {
+        match extract_dimension(ctx, payload, offset, &normalized, parent) {
             Ok(Some(record)) => {
+                let annotation_id =
+                    copy_pmi_text(ctx, &record.id, "retain SLDPRT PMI annotation ID")?;
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    annotation_id,
                     stream,
                     offset as u64,
                     "messagepack_dim_sem_data",
@@ -609,11 +607,25 @@ fn collect_dimensions(
                 records.push(record);
             }
             Ok(None) => {}
-            Err(message) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {guid}) {message}"
-                )));
+            Err(PmiParseError::Malformed(message)) => {
+                let decimal_len = if offset == 0 { 1 } else { offset.ilog10() as usize + 1 };
+                let capacity = "PMISemanticDataDB map at offset ".len()
+                    + decimal_len
+                    + " (guid ".len()
+                    + normalized.len()
+                    + ") ".len()
+                    + message.len();
+                let mut text = String::new();
+                ctx.reserve_retained_string(&mut text, capacity, "retain SLDPRT PMI malformed note")?;
+                std::fmt::Write::write_fmt(
+                    &mut text,
+                    format_args!("PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"),
+                )
+                .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT PMI malformed note", u64::MAX - 1, u64::MAX))?;
+                ctx.reserve_collection_vec(losses, 1, "collect SLDPRT PMI malformed notes")?;
+                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(text));
             }
+            Err(PmiParseError::Resource(error)) => return Err(error),
         }
         ctx.charge_retained(normalized.len() as u64, "retain SLDPRT PMI candidate GUID")?;
         ctx.charge_collection_items(1, "index SLDPRT PMI candidate GUID")?;
@@ -624,15 +636,47 @@ fn collect_dimensions(
     Ok(())
 }
 
-/// `Ok(None)` — not a PMI dimension map. `Err` — PMI candidate that failed.
+enum PmiParseError {
+    Malformed(String),
+    Resource(CodecError),
+}
+
+impl From<&str> for PmiParseError {
+    fn from(message: &str) -> Self {
+        Self::Malformed(message.to_owned())
+    }
+}
+
+impl From<String> for PmiParseError {
+    fn from(message: String) -> Self {
+        Self::Malformed(message)
+    }
+}
+
+impl From<CodecError> for PmiParseError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+fn copy_pmi_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    copy.push_str(text);
+    Ok(copy)
+}
+
+/// `Ok(None)` means the map is not a PMI dimension.
+/// Malformed candidates carry a loss; resource refusals end the decode.
 fn extract_dimension(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     guid: &str,
     parent: &str,
-) -> Result<Option<PmiDimension>, String> {
+) -> Result<Option<PmiDimension>, PmiParseError> {
     let mut cursor = offset;
-    let Some(outer_value) = parse_value(payload, &mut cursor, 0) else {
+    let Some(outer_value) = parse_value(ctx, payload, &mut cursor, 0)? else {
         // Only attribute a loss when the window still names the PMI keys; a
         // bare GUID before an unrelated fixmap is common in UnQLite payloads.
         return if looks_like_pmi_map(payload, offset) {
@@ -692,25 +736,40 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
+    let mut id = String::new();
+    ctx.reserve_retained_string(
+        &mut id,
+        "sldprt:pmi:dimension#".len() + guid.len(),
+        "retain SLDPRT PMI dimension ID",
+    )?;
+    id.push_str("sldprt:pmi:dimension#");
+    id.push_str(guid);
+    let display_text = match outer.get("dimText") {
+        Some(SpannedValue {
+            kind: ValueKind::String(text),
+            data_offset,
+            ..
+        }) => Some((copy_pmi_text(ctx, text, "retain SLDPRT PMI display text")?, *data_offset as u64)),
+        _ => None,
+    };
     Ok(Some(PmiDimension {
-        id: format!("sldprt:pmi:dimension#{guid}"),
-        parent: parent.to_owned(),
+        id,
+        parent: copy_pmi_text(ctx, parent, "retain SLDPRT PMI parent")?,
         offset: offset as u64,
-        guid: guid.to_owned(),
-        cad_text: cad_text.to_string(),
+        guid: copy_pmi_text(ctx, guid, "retain SLDPRT PMI GUID")?,
+        cad_text: copy_pmi_text(ctx, cad_text, "retain SLDPRT PMI CAD text")?,
         item_count,
-        subtype: string_field(item, "dimSubType")
-            .unwrap_or_default()
-            .to_string(),
+        subtype: copy_pmi_text(
+            ctx,
+            string_field(item, "dimSubType").unwrap_or_default(),
+            "retain SLDPRT PMI subtype",
+        )?,
         value,
         value_offset: value_field.data_offset as u64,
         precision: int_from(precision_field)
             .ok_or_else(|| "valPrecision is not an integer".to_string())?,
         precision_offset: precision_field.data_offset as u64,
-        display_text: outer.get("dimText").and_then(|field| match &field.kind {
-            ValueKind::String(text) => Some((text.clone(), field.data_offset as u64)),
-            _ => None,
-        }),
+        display_text,
         basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
         basic_offset: basic_field.data_offset as u64,
         inspection: bool_from(inspection_field)
@@ -777,12 +836,64 @@ fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
     .then_some(guid)
 }
 
-fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<SpannedValue> {
+fn parse_value<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    cursor: &mut usize,
+    depth: usize,
+) -> Result<Option<SpannedValue<'a>>, CodecError> {
+    let _depth = ctx.enter_nested("parse SLDPRT PMI MessagePack")?;
+    ctx.charge_work(1, "parse SLDPRT PMI MessagePack")?;
     if depth > 16 {
-        return None;
+        return Ok(None);
     }
     let start = *cursor;
-    let marker = Marker::from_u8(take_u8(bytes, cursor)?);
+    let Some(marker) = take_u8(bytes, cursor).map(Marker::from_u8) else {
+        return Ok(None);
+    };
+    let value = match marker {
+        Marker::FixMap(len) => parse_map(ctx, bytes, cursor, usize::from(len), depth, start)?,
+        Marker::FixArray(len) => parse_array(ctx, bytes, cursor, usize::from(len), depth, start)?,
+        Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
+        Marker::Str8 => match take_u8(bytes, cursor) {
+            Some(len) => parse_string(bytes, cursor, usize::from(len), start),
+            None => None,
+        },
+        Marker::Str16 => match take_u16(bytes, cursor) {
+            Some(len) => parse_string(bytes, cursor, usize::from(len), start),
+            None => None,
+        },
+        Marker::Str32 => match take_u32(bytes, cursor).and_then(|len| usize::try_from(len).ok()) {
+            Some(len) => parse_string(bytes, cursor, len, start),
+            None => None,
+        },
+        Marker::Array16 => match take_u16(bytes, cursor) {
+            Some(len) => parse_array(ctx, bytes, cursor, usize::from(len), depth, start)?,
+            None => None,
+        },
+        Marker::Array32 => match take_u32(bytes, cursor).and_then(|len| usize::try_from(len).ok()) {
+            Some(len) => parse_array(ctx, bytes, cursor, len, depth, start)?,
+            None => None,
+        },
+        Marker::Map16 => match take_u16(bytes, cursor) {
+            Some(len) => parse_map(ctx, bytes, cursor, usize::from(len), depth, start)?,
+            None => None,
+        },
+        Marker::Map32 => match take_u32(bytes, cursor).and_then(|len| usize::try_from(len).ok()) {
+            Some(len) => parse_map(ctx, bytes, cursor, len, depth, start)?,
+            None => None,
+        },
+        _ => parse_scalar(bytes, cursor, marker, start),
+    };
+    Ok(value)
+}
+
+fn parse_scalar<'a>(
+    bytes: &'a [u8],
+    cursor: &mut usize,
+    marker: Marker,
+    start: usize,
+) -> Option<SpannedValue<'a>> {
     match marker {
         Marker::FixPos(value) => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(value)),
@@ -794,9 +905,7 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             start,
             data_offset: start,
         }),
-        Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
-        Marker::FixArray(len) => parse_array(bytes, cursor, usize::from(len), depth, start),
-        Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
+        Marker::FixMap(_) | Marker::FixArray(_) | Marker::FixStr(_) => None,
         Marker::Null => Some(opaque(start)),
         Marker::False => Some(SpannedValue {
             kind: ValueKind::Bool(false),
@@ -925,39 +1034,18 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             skip_bytes(bytes, cursor, 16)?;
             Some(opaque(start))
         }
-        Marker::Str8 => {
-            let len = usize::from(take_u8(bytes, cursor)?);
-            parse_string(bytes, cursor, len, start)
-        }
-        Marker::Str16 => {
-            let len = usize::from(take_u16(bytes, cursor)?);
-            parse_string(bytes, cursor, len, start)
-        }
-        Marker::Str32 => {
-            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
-            parse_string(bytes, cursor, len, start)
-        }
-        Marker::Array16 => {
-            let len = usize::from(take_u16(bytes, cursor)?);
-            parse_array(bytes, cursor, len, depth, start)
-        }
-        Marker::Array32 => {
-            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
-            parse_array(bytes, cursor, len, depth, start)
-        }
-        Marker::Map16 => {
-            let len = usize::from(take_u16(bytes, cursor)?);
-            parse_map(bytes, cursor, len, depth, start)
-        }
-        Marker::Map32 => {
-            let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
-            parse_map(bytes, cursor, len, depth, start)
-        }
+        Marker::Str8
+        | Marker::Str16
+        | Marker::Str32
+        | Marker::Array16
+        | Marker::Array32
+        | Marker::Map16
+        | Marker::Map32 => None,
         Marker::Reserved => None,
     }
 }
 
-fn opaque(start: usize) -> SpannedValue {
+fn opaque(start: usize) -> SpannedValue<'static> {
     SpannedValue {
         kind: ValueKind::Opaque,
         start,
@@ -965,65 +1053,84 @@ fn opaque(start: usize) -> SpannedValue {
     }
 }
 
-fn parse_map(
-    bytes: &[u8],
+fn parse_map<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     cursor: &mut usize,
     len: usize,
     depth: usize,
     start: usize,
-) -> Option<SpannedValue> {
+) -> Result<Option<SpannedValue<'a>>, CodecError> {
     let remaining = bytes.len().saturating_sub(*cursor);
     // Each entry is at least a one-byte key marker and a one-byte value marker.
-    let len = cadmpeg_core::decode::bounded_len(len as u64, 2, remaining)?;
+    let Some(len) = cadmpeg_core::decode::bounded_len(len as u64, 2, remaining) else {
+        return Ok(None);
+    };
     let mut values = BTreeMap::new();
     for _ in 0..len {
-        let key_value = parse_value(bytes, cursor, depth + 1)?;
-        let ValueKind::String(key) = key_value.kind else {
-            return None;
+        let Some(key_value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+            return Ok(None);
         };
-        values.insert(key, parse_value(bytes, cursor, depth + 1)?);
+        let ValueKind::String(key) = key_value.kind else {
+            return Ok(None);
+        };
+        let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+            return Ok(None);
+        };
+        if !values.contains_key(key) {
+            ctx.charge_collection_items(1, "collect SLDPRT PMI map fields")?;
+        }
+        values.insert(key, value);
     }
-    Some(SpannedValue {
+    Ok(Some(SpannedValue {
         kind: ValueKind::Map(values),
         start,
         data_offset: start,
-    })
+    }))
 }
 
-fn parse_array(
-    bytes: &[u8],
+fn parse_array<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     cursor: &mut usize,
     len: usize,
     depth: usize,
     start: usize,
-) -> Option<SpannedValue> {
+) -> Result<Option<SpannedValue<'a>>, CodecError> {
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
     let remaining = bytes.len().saturating_sub(*cursor);
-    let len = cadmpeg_core::decode::bounded_len(len as u64, 1, remaining)?;
-    let mut values = Vec::with_capacity(len);
+    let Some(len) = cadmpeg_core::decode::bounded_len(len as u64, 1, remaining) else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(len as u64, "collect SLDPRT PMI array items")?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(len).map_err(|_| {
+        ctx.refuse_codec_limit("collect SLDPRT PMI array items", u64::MAX - 1, u64::MAX)
+    })?;
     for _ in 0..len {
-        values.push(parse_value(bytes, cursor, depth + 1)?);
+        let Some(value) = parse_value(ctx, bytes, cursor, depth + 1)? else {
+            return Ok(None);
+        };
+        values.push(value);
     }
-    Some(SpannedValue {
+    Ok(Some(SpannedValue {
         kind: ValueKind::Array(values),
         start,
         data_offset: start,
-    })
+    }))
 }
 
-fn parse_string(
-    bytes: &[u8],
+fn parse_string<'a>(
+    bytes: &'a [u8],
     cursor: &mut usize,
     len: usize,
     start: usize,
-) -> Option<SpannedValue> {
+) -> Option<SpannedValue<'a>> {
     let data_offset = *cursor;
     let end = cursor.checked_add(len)?;
     let value = bytes.get(*cursor..end)?;
-    let kind = std::str::from_utf8(value).map_or(ValueKind::Opaque, |value| {
-        ValueKind::String(value.to_string())
-    });
+    let kind = std::str::from_utf8(value).map_or(ValueKind::Opaque, ValueKind::String);
     *cursor = end;
     Some(SpannedValue {
         kind,
@@ -1070,7 +1177,7 @@ fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
     Some(value)
 }
 
-fn string_field<'a>(map: &'a BTreeMap<String, SpannedValue>, key: &str) -> Option<&'a str> {
+fn string_field<'a>(map: &'a BTreeMap<&str, SpannedValue<'_>>, key: &str) -> Option<&'a str> {
     match &map.get(key)?.kind {
         ValueKind::String(value) => Some(value),
         _ => None,
