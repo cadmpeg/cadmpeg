@@ -9,6 +9,104 @@ use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm
 use crate::test_support::lp_utf16;
 
 #[test]
+fn thread_payload_refuses_each_text_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let texts = ["M30x3.5", "30.0", "ISO Metric profile"];
+    let mut bytes = Vec::new();
+    for text in texts {
+        lp_utf16(&mut bytes, text);
+    }
+    let mut charged = 0usize;
+    for text in texts {
+        charged += text.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = parse_thread_payload(&ctx, &bytes, 0, ThreadPrefix::Standard, Vec::new());
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+}
+
+#[test]
+fn thread_face_group_limit_refuses_before_payload() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#thread-limit",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Thread face groups"
+    ));
+}
+
+#[test]
+fn thread_compact_face_group_limit_refuses_second_item() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#compact-thread-limit",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Thread face groups"
+    ));
+}
+
+#[test]
 fn thread_scope_decodes_standard_size_and_face_group() {
     let mut bytes = vec![0; 148];
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -48,18 +146,18 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
     invalid_standard_pitch_marker[129] = 0;
     assert_eq!(
-        parse_thread_payload(
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(),
             &invalid_standard_pitch_marker,
             38,
             ThreadPrefix::Standard,
             vec![988],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -82,12 +180,12 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
     let shifted_expected =
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Standard, vec![988])
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &owner_marked, 42, ThreadPrefix::Standard, vec![988]).unwrap()
             .expect("owner-marked standard Thread payload");
     assert_eq!(shifted_expected.designation_offset, 42);
     scope
@@ -98,17 +196,17 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(),
         &shifted_expected,
     );
     let mut invalid_owner_marker = owner_marked.clone();
     invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        exact_thread_construction(&invalid_owner_marker, &scope),
+        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &invalid_owner_marker, &scope).unwrap(),
         None
     );
     assert_eq!(
-        parse_thread_payload(&owner_marked, 42, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &owner_marked, 42, ThreadPrefix::Compact, vec![988]).unwrap(),
         None
     );
 }
@@ -150,7 +248,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Standard, vec![988]).unwrap(),
         &expected,
     );
 
@@ -173,13 +271,13 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
 }
 
 fn assert_thread_construction(
@@ -251,7 +349,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
         &expected,
     );
     let mut referenced = bytes.clone();
@@ -264,7 +362,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         offset: (after_profile + 39) as u64,
     }));
     assert_thread_construction(
-        parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &referenced, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
         &referenced_expected,
     );
 
@@ -289,7 +387,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
+    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &plural_expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -302,13 +400,13 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         })
         .unwrap();
     assert_thread_construction(
-        exact_thread_construction(&owner_marked, &scope),
+        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(),
         &plural_expected,
     );
     let mut invalid_owner_separator = owner_marked.clone();
     invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&invalid_owner_separator, &scope),
+        exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &invalid_owner_separator, &scope).unwrap(),
         None
     );
 
@@ -325,7 +423,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
+    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &owner_marked, &scope).unwrap(), None);
 }
 
 #[test]
@@ -365,7 +463,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         .unwrap(),
     };
     assert_thread_construction(
-        parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
+        parse_thread_payload(&cadmpeg_test_support::service_decode_context(), &bytes, 38, ThreadPrefix::Compact, vec![988]).unwrap(),
         &expected,
     );
 
@@ -388,13 +486,13 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+    assert_thread_construction(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), &expected);
 
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    assert_eq!(exact_thread_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap(), None);
 }
 
 #[test]
