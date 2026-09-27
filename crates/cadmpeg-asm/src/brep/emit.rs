@@ -4689,7 +4689,9 @@ pub(super) fn emit_containers(
                         body: body_id.clone(),
                         record_index: r.index as u32,
                         body_ordinal: out.body_native_keys.len() as u32,
-                        source_brep: stream.rsplit('/').next().map(str::to_owned),
+                        source_brep: stream.rsplit('/').next().map(|name| {
+                            crate::decode_alloc::copy_string(ctx, name, "ASM body source stream")
+                        }).transpose()?,
                         asm_body_key: (*key >= 0).then_some(*key as u64),
                     });
                 }
