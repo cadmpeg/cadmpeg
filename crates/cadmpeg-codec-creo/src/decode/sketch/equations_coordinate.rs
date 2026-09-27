@@ -1183,7 +1183,8 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             }
             matrix.push(row);
         }
-        let Some(component_solution) = uniquely_solved_linear_variables(&mut matrix, columns.len())
+        let Some(component_solution) =
+            uniquely_solved_linear_variables(ctx, &mut matrix, columns.len())?
         else {
             for global in columns {
                 let variable = variables[global];
@@ -1210,9 +1211,10 @@ struct SectionLinearRow {
 }
 
 fn uniquely_solved_linear_variables(
+    ctx: &DecodeContext<'_>,
     matrix: &mut [SectionLinearRow],
     variable_count: usize,
-) -> Option<Vec<(usize, f64)>> {
+) -> Result<Option<Vec<(usize, f64)>>, CodecError> {
     let coefficient_scale = matrix
         .iter()
         .flat_map(|row| row.coefficients.values())
@@ -1255,18 +1257,24 @@ fn uniquely_solved_linear_variables(
             *value /= divisor;
         }
         matrix[pivot_row].rhs /= divisor;
-        let pivot_coefficients = matrix[pivot_row].coefficients.clone();
-        let pivot_rhs = matrix[pivot_row].rhs;
-        for (row, target) in matrix.iter_mut().enumerate() {
-            if row == pivot_row {
-                continue;
-            }
+        let (before, pivot_and_after) = matrix.split_at_mut(pivot_row);
+        let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
+            return Ok(None);
+        };
+        let pivot_rhs = pivot.rhs;
+        for target in before.iter_mut().chain(after.iter_mut()) {
             let factor = target.coefficients.get(&column).copied().unwrap_or(0.0);
             if factor.abs() <= coefficient_tolerance {
                 continue;
             }
-            for (&index, &pivot_value) in &pivot_coefficients {
-                let value = target.coefficients.entry(index).or_default();
+            for (&index, &pivot_value) in &pivot.coefficients {
+                let value = match target.coefficients.entry(index) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo section elimination coefficients")?;
+                        entry.insert(0.0)
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                };
                 *value -= factor * pivot_value;
                 if value.abs() <= coefficient_tolerance {
                     target.coefficients.remove(&index);
@@ -1274,6 +1282,7 @@ fn uniquely_solved_linear_variables(
             }
             target.rhs -= factor * pivot_rhs;
         }
+        ctx.charge_collection_items(1, "creo section pivot rows")?;
         pivot_rows.insert(column, pivot_row);
         pivot_row += 1;
     }
@@ -1281,22 +1290,26 @@ fn uniquely_solved_linear_variables(
         .iter()
         .any(|row| row.coefficients.is_empty() && row.rhs.abs() > residual_tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    let free_columns = (0..variable_count)
-        .filter(|column| !pivot_rows.contains_key(column))
-        .collect::<Vec<_>>();
-    Some(
-        pivot_rows
-            .into_iter()
-            .filter_map(|(column, row)| {
-                free_columns
-                    .iter()
-                    .all(|free| !matrix[row].coefficients.contains_key(free))
-                    .then_some((column, matrix[row].rhs))
-            })
-            .collect(),
-    )
+    let mut free_columns = Vec::new();
+    for column in 0..variable_count {
+        if !pivot_rows.contains_key(&column) {
+            ctx.try_reserve_items(&mut free_columns, 1, "creo section free columns")?;
+            free_columns.push(column);
+        }
+    }
+    let mut solution = Vec::new();
+    for (column, row) in pivot_rows {
+        if free_columns
+            .iter()
+            .all(|free| !matrix[row].coefficients.contains_key(free))
+        {
+            ctx.try_reserve_items(&mut solution, 1, "creo section solved columns")?;
+            solution.push((column, matrix[row].rhs));
+        }
+    }
+    Ok(Some(solution))
 }
 
 #[cfg(test)]
@@ -1315,6 +1328,74 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         run(&ctx)
+    }
+
+    fn solve_matrix_with_limit(
+        limit: u64,
+        coefficients: Vec<BTreeMap<usize, f64>>,
+        variable_count: usize,
+    ) -> Result<Option<Vec<(usize, f64)>>, cadmpeg_core::CodecError> {
+        let mut matrix = coefficients
+            .into_iter()
+            .map(|coefficients| super::SectionLinearRow {
+                coefficients,
+                rhs: 1.0,
+            })
+            .collect::<Vec<_>>();
+        with_collection_limit(limit, |ctx| {
+            super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
+        })
+    }
+
+    #[test]
+    fn section_elimination_coefficients_refuse_before_tree_insert() {
+        let error = solve_matrix_with_limit(
+            0,
+            vec![
+                BTreeMap::from([(0, 2.0), (1, 1.0)]),
+                BTreeMap::from([(0, 1.0)]),
+            ],
+            2,
+        )
+        .expect_err("elimination adds the missing second coefficient");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section elimination coefficients")
+        );
+    }
+
+    #[test]
+    fn section_pivot_rows_refuse_before_tree_insert() {
+        let error = solve_matrix_with_limit(0, vec![BTreeMap::from([(0, 1.0)])], 1)
+            .expect_err("the first pivot needs one tree node");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section pivot rows")
+        );
+    }
+
+    #[test]
+    fn section_free_columns_refuse_before_vector_growth() {
+        let error = solve_matrix_with_limit(1, vec![BTreeMap::from([(0, 1.0)])], 2)
+            .expect_err("the free column follows one admitted pivot");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section free columns")
+        );
+    }
+
+    #[test]
+    fn section_solved_columns_refuse_before_vector_growth() {
+        let error = solve_matrix_with_limit(1, vec![BTreeMap::from([(0, 1.0)])], 1)
+            .expect_err("the solved column follows one admitted pivot");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo section solved columns")
+        );
     }
 
     #[test]
