@@ -1490,7 +1490,7 @@ pub(in super::super) fn transfer_native_brep(
         let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
+        source_carriers.admit_point(ctx, ir, Point::new(point_id, position, Some(source_object)))?;
     }
     diagnostics.body_count_mismatch =
         !body_components.is_empty() && selected_body_count != Some(body_components.len());
@@ -1536,6 +1536,7 @@ pub(in super::super) fn transfer_native_brep(
         );
         ctx.charge_entities(1, "admit Creo model vertices")?;
         source_carriers.admit_vertex(
+            ctx,
             ir,
             Vertex {
                 id: vertex,
@@ -1905,6 +1906,7 @@ pub(in super::super) fn transfer_native_brep(
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
             source_carriers.admit_face(
+                ctx,
                 ir,
                 Face {
                     id: face.clone(),
@@ -2117,6 +2119,7 @@ pub(in super::super) fn transfer_native_brep(
                                 );
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
                                 source_carriers.admit_pcurve(
+                                    ctx,
                                     ir,
                                     Pcurve {
                                         id: pcurve.clone(),
@@ -2138,6 +2141,7 @@ pub(in super::super) fn transfer_native_brep(
                         .collect();
                     ctx.charge_entities(1, "admit Creo model coedges")?;
                     source_carriers.admit_coedge(
+                        ctx,
                         ir,
                         Coedge {
                             id,

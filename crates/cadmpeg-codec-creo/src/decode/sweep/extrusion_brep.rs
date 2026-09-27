@@ -329,9 +329,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                     ctx.charge_entities(1, "admit Creo model points")?;
                     source_carriers
-                        .admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
+                        .admit_point(ctx, ir, Point::new(point_id.clone(), finite_position, None))?;
                     ctx.charge_entities(1, "admit Creo model vertices")?;
                     source_carriers.admit_vertex(
+                        ctx,
                         ir,
                         Vertex {
                             id: vertex_id.clone(),
@@ -659,6 +660,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
                 source_carriers.admit_coedge(
+                    ctx,
                     ir,
                     Coedge {
                         id,
@@ -735,6 +737,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
                 source_carriers.admit_coedge(
+                    ctx,
                     ir,
                     Coedge {
                         id,
@@ -919,6 +922,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     )?;
                     ctx.charge_entities(1, "admit Creo model coedges")?;
                     source_carriers.admit_coedge(
+                        ctx,
                         ir,
                         Coedge {
                             id: coedges[use_index].clone(),
@@ -937,6 +941,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 }
                 ctx.charge_entities(1, "admit Creo model faces")?;
                 source_carriers.admit_face(
+                    ctx,
                     ir,
                     Face {
                         id: face_id.clone(),
@@ -957,6 +962,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
+            ctx,
             ir,
             Face {
                 id: bottom_face,
@@ -975,6 +981,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         )?;
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
+            ctx,
             ir,
             Face {
                 id: top_face,

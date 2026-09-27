@@ -287,6 +287,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_point(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut point: Point,
     ) -> Result<(), CodecError> {
@@ -296,6 +297,7 @@ impl SourceUnitCarriers {
             })?;
             point.set_position(position);
         }
+        ctx.try_reserve_items(&mut ir.model.points, 1, "creo model points")?;
         ir.model.points.push(point);
         Ok(())
     }
@@ -313,16 +315,19 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_vertex(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut vertex: Vertex,
     ) -> Result<(), CodecError> {
         self.scale_tolerance(&mut vertex.tolerance)?;
+        ctx.try_reserve_items(&mut ir.model.vertices, 1, "creo model vertices")?;
         ir.model.vertices.push(vertex);
         Ok(())
     }
 
-    pub(super) fn admit_face(&self, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
+    pub(super) fn admit_face(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
         self.scale_tolerance(&mut face.tolerance)?;
+        ctx.try_reserve_items(&mut ir.model.faces, 1, "creo model faces")?;
         ir.model.faces.push(face);
         Ok(())
     }
@@ -362,6 +367,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_coedge(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut coedge: Coedge,
     ) -> Result<(), CodecError> {
@@ -387,12 +393,14 @@ impl SourceUnitCarriers {
                     })?;
             }
         }
+        ctx.try_reserve_items(&mut ir.model.coedges, 1, "creo model coedges")?;
         ir.model.coedges.push(coedge);
         Ok(())
     }
 
     pub(super) fn admit_pcurve(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         pcurve: Pcurve,
         surface_id: &SurfaceId,
@@ -408,11 +416,12 @@ impl SourceUnitCarriers {
                 crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
             })
         });
-        Self::push_pcurve(ir, pcurve, scales)
+        Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
     pub(super) fn admit_pcurve_with_source_surface(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         pcurve: Pcurve,
         source_surface: &SurfaceGeometry,
@@ -422,10 +431,11 @@ impl SourceUnitCarriers {
                 crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
             })
         });
-        Self::push_pcurve(ir, pcurve, scales)
+        Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
     fn push_pcurve(
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut pcurve: Pcurve,
         scales: Option<[f64; 2]>,
@@ -437,6 +447,7 @@ impl SourceUnitCarriers {
                 ))
             })?;
         }
+        ctx.try_reserve_items(&mut ir.model.pcurves, 1, "creo model pcurves")?;
         ir.model.pcurves.push(pcurve);
         Ok(())
     }
@@ -560,6 +571,160 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         run(&ctx)
+    }
+
+    #[test]
+    fn point_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let point = Point::new(
+            cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        );
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_point(ctx, &mut ir, point)
+        })
+        .expect_err("one point needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model points"));
+        assert!(ir.model.points.is_empty());
+    }
+
+    #[test]
+    fn vertex_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let vertex = Vertex {
+            id: cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0").expect("identity grammar"),
+            point: cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
+            tolerance: None,
+        };
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_vertex(ctx, &mut ir, vertex)
+        })
+        .expect_err("one vertex needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model vertices"));
+        assert!(ir.model.vertices.is_empty());
+    }
+
+    #[test]
+    fn face_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let face = Face {
+            id: cadmpeg_ir::ids::FaceId::mint("creo:test:face#0").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("creo:test:shell#0").expect("identity grammar"),
+            surface: SurfaceId::mint("creo:test:surface#0").expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_face(ctx, &mut ir, face)
+        })
+        .expect_err("one face needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model faces"));
+        assert!(ir.model.faces.is_empty());
+    }
+
+    #[test]
+    fn coedge_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let id = cadmpeg_ir::ids::CoedgeId::mint("creo:test:coedge#0")
+            .expect("identity grammar");
+        let coedge = Coedge {
+            id: id.clone(),
+            owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:test:loop#0")
+                .expect("identity grammar"),
+            edge: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0")
+                .expect("identity grammar"),
+            radial_next: id,
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+        };
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_coedge(ctx, &mut ir, coedge)
+        })
+        .expect_err("one coedge needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model coedges"));
+        assert!(ir.model.coedges.is_empty());
+    }
+
+    fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
+        cadmpeg_ir::geometry::pcurve::Pcurve {
+            id: cadmpeg_ir::ids::PcurveId::mint("creo:test:pcurve#0")
+                .expect("identity grammar"),
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .expect("source pcurve"),
+            ),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(None, None, None),
+        }
+    }
+
+    fn admission_plane() -> SurfaceGeometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("source plane"),
+        ))
+    }
+
+    #[test]
+    fn pcurve_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let surface_id = SurfaceId::mint("creo:test:surface#0").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: admission_plane(),
+            source_object: None,
+        });
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_pcurve(
+                ctx,
+                &mut ir,
+                admission_pcurve(),
+                &surface_id,
+            )
+        })
+        .expect_err("one pcurve needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model pcurves"));
+        assert!(ir.model.pcurves.is_empty());
+    }
+
+    #[test]
+    fn source_surface_pcurve_admission_refuses_before_model_vector_growth() {
+        let mut ir = CadIr::empty();
+        let error = zero_collection_ctx(|ctx| {
+            SourceUnitCarriers::default().admit_pcurve_with_source_surface(
+                ctx,
+                &mut ir,
+                admission_pcurve(),
+                &admission_plane(),
+            )
+        })
+        .expect_err("one source-surface pcurve needs one model vector row");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo model pcurves"));
+        assert!(ir.model.pcurves.is_empty());
     }
 
     #[test]
@@ -1162,8 +1327,8 @@ mod tests {
                 .expect("finite source point"),
             None,
         );
-        source_carriers
-            .admit_point(&mut ir, point)
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_point(ctx, &mut ir, point))
             .expect("point admission");
         assert_eq!(
             ir.model.points[0].position().get(),
@@ -1268,11 +1433,13 @@ mod tests {
 
     #[test]
     fn coedge_line_use_range_overflow_refuses_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let (mut ir, source_carriers, curve_id) = source_line_for_range_tests();
         let coedge_id =
             cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
         let error = source_carriers
             .admit_coedge(
+                ctx,
                 &mut ir,
                 Coedge {
                     id: coedge_id.clone(),
@@ -1293,10 +1460,12 @@ mod tests {
             .expect_err("millimeter use range overflows");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.coedges.is_empty());
+            });
     }
 
     #[test]
     fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
@@ -1318,6 +1487,7 @@ mod tests {
             .expect("curve admission");
         source_carriers
             .admit_vertex(
+                ctx,
                 &mut ir,
                 Vertex {
                     id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
@@ -1330,6 +1500,7 @@ mod tests {
             .expect("vertex admission");
         source_carriers
             .admit_face(
+                ctx,
                 &mut ir,
                 Face {
                     id: cadmpeg_ir::ids::FaceId::mint("creo:visibgeom:face#1")
@@ -1349,6 +1520,7 @@ mod tests {
             cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
         source_carriers
             .admit_coedge(
+                ctx,
                 &mut ir,
                 Coedge {
                     id: coedge_id.clone(),
@@ -1382,14 +1554,17 @@ mod tests {
                 .map(|use_curve| use_curve.parameter_range.endpoints()),
             Some([25.4, 50.8])
         );
+            });
     }
 
     #[test]
     fn topology_tolerance_overflow_refuses_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut ir = CadIr::empty();
         let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let error = source_carriers
             .admit_vertex(
+                ctx,
                 &mut ir,
                 Vertex {
                     id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
@@ -1402,10 +1577,12 @@ mod tests {
             .expect_err("millimeter tolerance cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.vertices.is_empty());
+            });
     }
 
     #[test]
     fn plane_pcurve_coordinates_are_in_millimeters_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
@@ -1428,6 +1605,7 @@ mod tests {
             .expect("surface admission");
         source_carriers
             .admit_pcurve(
+                ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::pcurve::Pcurve {
                     id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
@@ -1455,14 +1633,17 @@ mod tests {
             line.origin().get(),
             cadmpeg_ir::math::Point2::new(25.4, 50.8)
         );
+            });
     }
 
     #[test]
     fn pcurve_without_owning_surface_is_malformed_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut ir = CadIr::empty();
         let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let error = source_carriers
             .admit_pcurve(
+                ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::pcurve::Pcurve {
                     id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
@@ -1483,10 +1664,12 @@ mod tests {
             .expect_err("pcurve has no owning surface");
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(ir.model.pcurves.is_empty());
+            });
     }
 
     #[test]
     fn plane_pcurve_coordinate_overflow_refuses_at_admission() {
+        crate::decode::with_test_decode_ctx(|ctx| {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
@@ -1509,6 +1692,7 @@ mod tests {
             .expect("surface admission");
         let error = source_carriers
             .admit_pcurve(
+                ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::pcurve::Pcurve {
                     id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
@@ -1529,5 +1713,6 @@ mod tests {
             .expect_err("scaled pcurve coordinate overflows");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.pcurves.is_empty());
+            });
     }
 }

@@ -315,9 +315,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.charge_entities(1, "admit Creo model points")?;
-            source_carriers.admit_point(ir, Point::new(point_id.clone(), finite_position, None))?;
+            source_carriers.admit_point(ctx, ir, Point::new(point_id.clone(), finite_position, None))?;
             ctx.charge_entities(1, "admit Creo model vertices")?;
             source_carriers.admit_vertex(
+                ctx,
                 ir,
                 Vertex {
                     id: vertex_id.clone(),
@@ -350,6 +351,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
             source_carriers.admit_coedge(
+                ctx,
                 ir,
                 Coedge {
                     id: cap_coedge.clone(),
@@ -371,6 +373,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.charge_entities(1, "admit Creo model faces")?;
             source_carriers.admit_face(
+                ctx,
                 ir,
                 Face {
                     id: cap_face.clone(),
@@ -434,6 +437,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
             source_carriers.admit_coedge(
+                ctx,
                 ir,
                 Coedge {
                     id: coedge.clone(),
@@ -457,6 +461,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
         source_carriers.admit_face(
+            ctx,
             ir,
             Face {
                 id: side_face.clone(),
