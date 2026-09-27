@@ -9,17 +9,18 @@ use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::test_support::test_owned::{owned_test_file, owned_test_file_with_structures, OwnedTestEntity};
 use crate::test_support::test_drawing_and_trimming::{
-    associativity_definition_file, bounded_associativity_forms_file,
+    associativity_definition_file, bounded_associativity_forms_file, dimension_forms_file,
     flow_associativity_forms_file, legacy_associativity_forms_file,
-    recalculable_dimension_associativity_file,
-    malformed_occurrence_definition_file, malformed_occurrence_placement_file,
-    nested_subfigure_file,
+    legacy_dimension_and_label_forms_file, malformed_occurrence_definition_file,
+    malformed_occurrence_placement_file, nested_subfigure_file,
+    recalculable_dimension_associativity_file, symbol_and_sectioned_area_file,
+};
+use crate::test_support::test_solids_and_structure::{
+    defaulted_text_and_view_fields_file, drawing_with_conflicting_size_properties_file,
+    drawing_with_properties_file, segmented_view_visibility_file, view_forms_file,
+    view_visibility_forms_file,
 };
 use crate::test_support::test_surface_fixtures::bounded_plane_with_significance_gap_file;
-use crate::test_support::test_solids_and_structure::{
-    drawing_with_conflicting_size_properties_file, drawing_with_properties_file,
-    segmented_view_visibility_file, view_forms_file, view_visibility_forms_file,
-};
 use crate::IgesCodec;
 
 fn native_entity(entity_type: i64, form: i64, parameters: &str) -> OwnedTestEntity {
@@ -982,5 +983,58 @@ fn native_boundary_vertex_sewing_nested_endpoints_refuse_limits() {
         "iges boundary vertex endpoint edge",
     ] {
         assert_retained_refusal_at(&bytes, operation);
+    }
+}
+
+#[test]
+fn native_annotation_text_runs_and_copied_bytes_refuse_limits() {
+    let note = owned_test_file(&[native_entity(212, 0, "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;")]);
+    assert_native_arena(&note, "annotations");
+    for operation in [
+        "iges native annotation slots",
+        "iges native general note text run slots",
+    ] {
+        assert_collection_refusal_at(&note, operation);
+    }
+    for operation in [
+        "iges native annotation id",
+        "iges native annotation source",
+        "iges native text run bytes",
+    ] {
+        assert_retained_refusal_at(&note, operation);
+    }
+    let new_note = defaulted_text_and_view_fields_file();
+    assert_collection_refusal_at(&new_note, "iges native new note text run slots");
+    assert_retained_refusal_at(&new_note, "iges native new note control codes");
+    let font_note = owned_test_file(&[
+        native_entity(310, 0, "310,101,4HBASE,,10,1,65,8,0,0;"),
+        native_entity(212, 0, "212,1,1,1,1,-1,1.5707963267948966,0,0,0,0,0,0,1HA;"),
+    ]);
+    assert_retained_refusal_at(&font_note, "iges native text run font");
+}
+
+#[test]
+fn native_annotation_leaders_and_typed_links_refuse_limits() {
+    let dimension = dimension_forms_file();
+    assert_collection_refusal_at(&dimension, "iges native leader segment tail slots");
+    for operation in [
+        "iges native annotation link",
+        "iges native annotation entity link",
+    ] {
+        assert_retained_refusal_at(&dimension, operation);
+    }
+    let legacy = legacy_dimension_and_label_forms_file();
+    assert_collection_refusal_at(&legacy, "iges native annotation leader slots");
+}
+
+#[test]
+fn native_annotation_symbol_and_section_lists_refuse_limits() {
+    let bytes = symbol_and_sectioned_area_file();
+    for operation in [
+        "iges native symbol geometry slots",
+        "iges native symbol leader slots",
+        "iges native section island slots",
+    ] {
+        assert_collection_refusal_at(&bytes, operation);
     }
 }

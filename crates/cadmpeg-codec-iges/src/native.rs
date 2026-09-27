@@ -6274,6 +6274,7 @@ pub(crate) fn store(
         &clamped_primary_end,
         &mut overdeclared_counts,
         global.global_table(),
+        ctx,
     )?;
     let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the
