@@ -2756,7 +2756,10 @@ fn parse_linetype(
     })
 }
 
-fn hatch_line_v5(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
+fn hatch_line_v5(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<SourceHatchLine, FramingError> {
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
         return Err(FramingError::structural(
@@ -2764,10 +2767,13 @@ fn hatch_line_v5(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, Fram
             "hatch-line version is unsupported",
         ));
     }
-    hatch_line_fields(reader)
+    hatch_line_fields(ctx, reader)
 }
 
-fn hatch_line_fields(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
+fn hatch_line_fields(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+) -> Result<SourceHatchLine, FramingError> {
     let angle_radians = read_finite(reader, "hatch-line angle")?;
     let base = [
         read_finite(reader, "hatch-line base")?,
@@ -2785,7 +2791,8 @@ fn hatch_line_fields(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, 
         1 << 16,
         reader.position(),
     )?;
-    let mut dashes = Vec::with_capacity(bytes / 8);
+    let mut dashes = Vec::new();
+    crate::chunks::reserve_admitted_vec(ctx, &mut dashes, bytes / 8, "Rhino hatch line dashes")?;
     for _ in 0..bytes / 8 {
         dashes.push(read_finite(reader, "hatch dash")?);
     }
@@ -2836,6 +2843,7 @@ impl SourceHatchLine {
 }
 
 fn parse_hatch_pattern(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -2869,7 +2877,8 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = Vec::with_capacity(count);
+        let mut lines = Vec::new();
+        crate::chunks::reserve_admitted_vec(ctx, &mut lines, count, "Rhino modern hatch lines")?;
         for _ in 0..count {
             let line = chunk_at(
                 data,
@@ -2887,7 +2896,7 @@ fn parse_hatch_pattern(
                 )
                 .into());
             }
-            lines.push(hatch_line_fields(&mut payload)?);
+            lines.push(hatch_line_fields(ctx, &mut payload)?);
             payload.skip_remaining()?;
             line_reader.skip(line.next_offset() - line_reader.position())?;
         }
@@ -2926,9 +2935,10 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = Vec::with_capacity(count);
+        let mut lines = Vec::new();
+        crate::chunks::reserve_admitted_vec(ctx, &mut lines, count, "Rhino legacy hatch lines")?;
         for _ in 0..count {
-            lines.push(hatch_line_v5(&mut reader)?);
+            lines.push(hatch_line_v5(ctx, &mut reader)?);
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -2951,10 +2961,17 @@ fn parse_hatch_pattern(
         Vec::new()
     } else {
         let scale = hatch_pattern_scale(distance_settings, binding)?;
-        lines
-            .into_iter()
-            .map(|line| line.into_millimeters(scale, source_offset))
-            .collect::<Result<Vec<_>, _>>()?
+        let mut projected = Vec::new();
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut projected,
+            lines.len(),
+            "Rhino projected hatch lines",
+        )?;
+        for line in lines {
+            projected.push(line.into_millimeters(scale, source_offset)?);
+        }
+        projected
     };
     let key = if component.id.is_nil() {
         format!("record-{source_offset}")
@@ -4492,6 +4509,7 @@ pub(crate) fn install(
             } else if table_type == HATCH_PATTERN_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, HATCH_PATTERN) {
                     match parse_hatch_pattern(
+                        ctx,
                         scan.data,
                         range,
                         scan.archive,
@@ -4499,6 +4517,9 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => hatch_patterns.push(value),
+                        Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
+                            return Err(CodecError::ResourceLimit(limit));
+                        }
                         Err(error) => {
                             losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
                                 "hatch pattern record at offset {} was retained as complete source: {error}",

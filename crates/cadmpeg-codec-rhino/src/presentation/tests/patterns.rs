@@ -167,6 +167,70 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
     }
 }
 
+fn hatch_pattern_collection_refusal(
+    archive: ArchiveVersion,
+    modern: bool,
+    limit: u64,
+) -> PatternTransferError {
+    let bytes = if modern {
+        modern_hatch_pattern_record(archive, 0, false)
+    } else {
+        legacy_hatch_pattern_record(archive)
+    };
+    let outer = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
+        .expect("hatch record chunk");
+    let record = crate::container::Record::long(outer.typecode, outer.range(), outer.body());
+    let range = crate::presentation::class_data(&bytes, &record, archive, HATCH_PATTERN)
+        .expect("hatch class data");
+    with_collection_limit(&bytes, limit, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &bytes,
+            range,
+            archive,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+        .expect_err("hatch pattern exceeds collection limit")
+    })
+}
+
+#[test]
+fn modern_hatch_lines_refuse_collection_limit() {
+    assert!(matches!(
+        hatch_pattern_collection_refusal(ArchiveVersion::V8, true, 0),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino modern hatch lines"
+    ));
+}
+
+#[test]
+fn legacy_hatch_lines_refuse_collection_limit() {
+    assert!(matches!(
+        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 0),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino legacy hatch lines"
+    ));
+}
+
+#[test]
+fn hatch_line_dashes_refuse_collection_limit() {
+    assert!(matches!(
+        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 1),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino hatch line dashes"
+    ));
+}
+
+#[test]
+fn projected_hatch_lines_refuse_collection_limit() {
+    assert!(matches!(
+        hatch_pattern_collection_refusal(ArchiveVersion::V5, false, 3),
+        PatternTransferError::Framing(crate::chunks::FramingError::Resource(refusal))
+            if refusal.operation == "Rhino projected hatch lines"
+    ));
+}
+
 #[test]
 fn absent_component_index_does_not_alias_system_index_minus_one() {
     let record = LinetypeRecord {
@@ -621,8 +685,10 @@ fn solid_hatch_pattern_needs_no_length_binding() {
     bytes.extend(utf16_bytes("solid fill"));
     bytes.extend([0x77; 16]);
     for binding in [UnitBinding::Native, UnitBinding::Unavailable] {
-        let pattern = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, binding, 23)
-            .expect("solid hatch has no dimensional payload");
+        let pattern = with_collection_limit(&bytes, u64::MAX, |ctx| {
+            parse_hatch_pattern(ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5, binding, 23)
+        })
+        .expect("solid hatch has no dimensional payload");
         assert!(pattern.lines.is_empty());
         assert_eq!(pattern.fill_type, 0);
         let mut ir = CadIr::empty();
@@ -659,13 +725,16 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
     bytes.extend(5.0_f64.to_le_bytes());
     bytes.extend((-2.0_f64).to_le_bytes());
     bytes.extend([0x77; 16]);
-    let value = parse_hatch_pattern(
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-        0,
-    )
+    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+    })
     .expect("required invariant");
     assert_eq!(
         value.lines[0].base_millimeters,
@@ -684,13 +753,16 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
         crate::test_support::finite(0.5)
     );
 
-    let unbound = parse_hatch_pattern(
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        UnitBinding::Unavailable,
-        0,
-    );
+    let unbound = with_collection_limit(&bytes, u64::MAX, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Unavailable,
+            0,
+        )
+    });
     assert!(matches!(
         unbound,
         Err(PatternTransferError::UnavailableDocumentUnits)
@@ -735,13 +807,16 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     let mut v8_body = body.clone();
     v8_body.extend([0xc7; 4]);
     let bytes = anonymous(0, &v8_body);
-    let value = parse_hatch_pattern(
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V8,
-        UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-        321,
-    )
+    let value = with_collection_limit(&bytes, u64::MAX, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            321,
+        )
+    })
     .expect("modern hatch pattern");
 
     assert_eq!(value.archive_index, Some(5));
@@ -784,13 +859,16 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     v9_body.extend([2, 1]);
     v9_body.extend([0xd8; 4]);
     let v9_bytes = anonymous(0, &v9_body);
-    let v9 = parse_hatch_pattern(
-        &v9_bytes,
-        0..v9_bytes.len(),
-        ArchiveVersion::V9,
-        UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
-        321,
-    )
+    let v9 = with_collection_limit(&v9_bytes, u64::MAX, |ctx| {
+        parse_hatch_pattern(
+            ctx,
+            &v9_bytes,
+            0..v9_bytes.len(),
+            ArchiveVersion::V9,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            321,
+        )
+    })
     .expect("archive-90 hatch pattern");
     assert_eq!(
         v9.distance_settings
