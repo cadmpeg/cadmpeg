@@ -244,9 +244,21 @@ fn build_metadata_ir(
     ),
     CodecError,
 > {
+    let unknown_count = scan
+        .streams
+        .iter()
+        .filter(|stream| stream.kind().is_parasolid())
+        .count();
+    ctx.charge_collection_items(
+        u64::try_from(unknown_count).unwrap_or(u64::MAX),
+        "nx metadata unknown streams",
+    )?;
+    let mut unknowns = Vec::new();
+    unknowns
+        .try_reserve_exact(unknown_count)
+        .map_err(|_| ctx.refuse_codec_limit("nx metadata unknown streams", 0, 1))?;
     let mut ir = CadIr::decoded(source_meta(scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
     let mut losses = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
