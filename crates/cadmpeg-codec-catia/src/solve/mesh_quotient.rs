@@ -4945,19 +4945,56 @@ fn edge_class_search_constraint(
     Ok(Some(EdgeClassSearchConstraint { active, ordered }))
 }
 
-fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<usize> {
-    let mut left = left.clone();
-    let mut right = right.clone();
-    (0..left.union.len())
-        .filter_map(|node| {
-            let left_root = left.union.find(node);
-            let right_root = right.union.find(node);
-            (left_root != right_root
-                || left.members(left_root) != right.members(right_root)
-                || left.domains[left_root] != right.domains[right_root])
-                .then_some(node / 2)
-        })
-        .collect()
+fn changed_quotient_edges(
+    ctx: &DecodeContext<'_>,
+    left: &MeshQuotient,
+    right: &MeshQuotient,
+) -> Result<HashSet<usize>, CodecError> {
+    let mut left = left.clone_charged(ctx)?;
+    let mut right = right.clone_charged(ctx)?;
+    let mut changed = HashSet::new();
+    for node in 0..left.union.len() {
+        let left_root = left.union.find(node);
+        let right_root = right.union.find(node);
+        if left_root != right_root
+            || left.members(left_root) != right.members(right_root)
+            || left.domains[left_root] != right.domains[right_root]
+        {
+            crate::resource::insert_set(
+                ctx,
+                &mut changed,
+                node / 2,
+                "catia_changed_quotient_edges",
+            )?;
+        }
+    }
+    Ok(changed)
+}
+
+#[test]
+fn changed_quotient_edges_refuse_before_result_set_growth() {
+    let points = Arc::new(HashSet::from([0]));
+    let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
+    let mut right = left.clone();
+    assert!(right.merge(0, 1).is_some());
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| changed_quotient_edges(ctx, &left, &right))
+            .expect("service resource budget"),
+        HashSet::from([0])
+    );
+    let mut refused = HashSet::new();
+    for cap in 0..64 {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            changed_quotient_edges(ctx, &left, &right)
+        }) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            _ => panic!("unexpected changed quotient result"),
+        }
+    }
+    assert!(refused.contains("catia_changed_quotient_edges"));
 }
 
 struct MeshSelectionSearch<'a, 'ctx> {
@@ -8601,7 +8638,7 @@ impl MeshSelectionSearch<'_, '_> {
             if !changed {
                 continue;
             }
-            let changed_edges = changed_quotient_edges(&before, quotient);
+            let changed_edges = changed_quotient_edges(self.ctx, &before, quotient)?;
             for (dependent, assignments) in self.assignments.iter().enumerate() {
                 if self.selected[dependent].is_none()
                     && dependent != face
@@ -9550,7 +9587,7 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         }
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
-            let changed_edges = changed_quotient_edges(&measured, next_quotient);
+            let changed_edges = changed_quotient_edges(self.ctx, &measured, next_quotient)?;
             self.selected[face] = Some((*assignment_index, directions.clone()));
             if self.selected_orientable()? {
                 if let Some(next_quotient) =
@@ -9576,7 +9613,7 @@ impl MeshSelectionSearch<'_, '_> {
             (root_count, domain_freedom, *assignment, directions.clone())
         });
         for (assignment_index, directions, next_quotient) in options {
-            let changed_edges = changed_quotient_edges(&measured, &next_quotient);
+            let changed_edges = changed_quotient_edges(self.ctx, &measured, &next_quotient)?;
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable()? {
                 if let Some(next_quotient) = self.prepare_selected_branch(
