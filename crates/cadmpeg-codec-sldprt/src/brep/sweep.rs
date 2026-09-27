@@ -142,12 +142,13 @@ pub(super) fn scan_sweep_carriers(
 /// intersections of adjacent endpoint tangents and therefore carry weight
 /// `sqrt(2) / 2`.
 pub(super) fn profile_nurbs<'a>(
+    ctx: &DecodeContext<'_>,
     geometry: &'a CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<Cow<'a, NurbsCurve>> {
+) -> Result<Option<Cow<'a, NurbsCurve>>, CodecError> {
     let (center, frame, major_radius, minor_radius) = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(Cow::Borrowed(curve)),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Ok(Some(Cow::Borrowed(curve))),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let radius = circle_curve.radius().get();
             (
@@ -163,7 +164,7 @@ pub(super) fn profile_nurbs<'a>(
             ellipse_curve.major_radius().get(),
             ellipse_curve.minor_radius().get(),
         ),
-        _ => return None,
+        _ => return Ok(None),
     };
     let major = *frame.reference().as_raw();
     let minor = *frame.binormal().as_raw();
@@ -205,10 +206,10 @@ pub(super) fn profile_nurbs<'a>(
         Some(weights),
         false,
     ) {
-        Ok(curve) => Some(Cow::Owned(curve)),
+        Ok(curve) => Ok(Some(Cow::Owned(curve))),
         Err(error) => {
-            refusal.note(format_args!("sldprt sweep profile arc: {record}"), &error);
-            None
+            refusal.note(ctx, format_args!("sldprt sweep profile arc: {record}"), &error)?;
+            Ok(None)
         }
     }
 }
@@ -344,9 +345,10 @@ pub(super) fn swept_nurbs(
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(
+                ctx,
                 format_args!("sldprt swept ruled surface patch: {record}"),
                 &error,
-            );
+            )?;
             Ok(None)
         }
     }
@@ -471,7 +473,7 @@ pub(super) fn spun_nurbs(
     ) {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note(format_args!("sldprt spun surface patch: {record}"), &error);
+            refusal.note(ctx, format_args!("sldprt spun surface patch: {record}"), &error)?;
             Ok(None)
         }
     }
@@ -625,11 +627,13 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(
+        let curve = with_service_context(|ctx| profile_nurbs(
+            ctx,
             &geometry,
             &"test profile",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("profile fits service policy")
         .expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
@@ -660,11 +664,13 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(
+        let curve = with_service_context(|ctx| profile_nurbs(
+            ctx,
             &geometry,
             &"test profile",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("profile fits service policy")
         .expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {

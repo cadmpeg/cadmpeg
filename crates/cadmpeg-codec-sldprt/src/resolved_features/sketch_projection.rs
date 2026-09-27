@@ -49,6 +49,7 @@ pub(crate) fn sketches(
                 source_stream,
             )?;
             project_brep(
+                ctx,
                 &brep,
                 source.ordinal(),
                 stream_ordinal,
@@ -73,6 +74,7 @@ pub(crate) fn sketches(
 
 #[allow(clippy::too_many_arguments)]
 fn project_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     brep: &crate::brep::graph::Brep,
     block_offset: usize,
     stream_ordinal: usize,
@@ -169,6 +171,7 @@ fn project_brep(
                     )) else { continue };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let projected = project_edge(
+                        ctx,
                         edge,
                         &vertices,
                         &points,
@@ -179,7 +182,7 @@ fn project_brep(
                             v_axis,
                         },
                         &mut edge_refusal,
-                    );
+                    )?;
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         return Err(cadmpeg_core::CodecError::malformed(
