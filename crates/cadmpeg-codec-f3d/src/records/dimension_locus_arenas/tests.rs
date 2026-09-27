@@ -20,6 +20,23 @@ fn pair(null_first: bool) -> DesignDimensionLocusPair {
 }
 
 #[test]
+fn null_locus_entry_conversion_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let entry = crate::records::dimension_null_locus_wire::Entry(pair(true));
+    let error = DesignDimensionNullLocusPairs::from_entries_charged(&ctx, vec![entry]).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load F3D null locus pairs"
+    ));
+}
+
+#[test]
 fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
     let null_pair = pair(true);
     assert!(DesignDimensionLocusPairs::try_from(vec![null_pair.clone()]).is_err());

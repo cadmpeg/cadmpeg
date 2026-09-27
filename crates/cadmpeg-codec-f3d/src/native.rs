@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_core::decode::DecodeContext;
+
 #[cfg(test)]
 thread_local! {
     static LOAD_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -70,23 +72,63 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
-fn owner_indices<'a>(ids: impl IntoIterator<Item = &'a str>) -> HashMap<String, usize> {
-    ids.into_iter()
-        .enumerate()
-        .map(|(ordinal, id)| (id.to_owned(), ordinal))
-        .collect()
+fn owner_indices<'a>(
+    ctx: Option<&DecodeContext<'_>>,
+    ids: impl ExactSizeIterator<Item = &'a str>,
+) -> Result<HashMap<String, usize>, cadmpeg_ir::NativeConvertError> {
+    let Some(ctx) = ctx else {
+        return Ok(ids
+            .enumerate()
+            .map(|(ordinal, id)| (id.to_owned(), ordinal))
+            .collect());
+    };
+    ctx.charge_collection_items(ids.len() as u64, "index F3D native owners")?;
+    let mut indexed = HashMap::new();
+    indexed.try_reserve(ids.len()).map_err(|_| {
+        cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "index F3D native owners",
+            0,
+            ids.len() as u64,
+        ))
+    })?;
+    for (ordinal, id) in ids.enumerate() {
+        ctx.charge_retained(id.len() as u64, "retain F3D native owner id")?;
+        let mut key = String::new();
+        key.try_reserve(id.len()).map_err(|_| {
+            cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                "retain F3D native owner id",
+                0,
+                id.len() as u64,
+            ))
+        })?;
+        key.push_str(id);
+        indexed.insert(key, ordinal);
+    }
+    Ok(indexed)
 }
 
 fn group_by_owner<T>(
+    ctx: Option<&DecodeContext<'_>>,
     records: Vec<T>,
     owners: &HashMap<String, usize>,
     owner_count: usize,
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
 ) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
-    let mut grouped = std::iter::repeat_with(Vec::new)
-        .take(owner_count)
-        .collect::<Vec<_>>();
+    let mut grouped = Vec::new();
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(owner_count as u64, "group F3D native owners")?;
+        grouped.try_reserve(owner_count).map_err(|_| {
+            cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                "group F3D native owners",
+                0,
+                owner_count as u64,
+            ))
+        })?;
+    }
+    for _ in 0..owner_count {
+        grouped.push(Vec::new());
+    }
     for record in records {
         let parent = owner(&record);
         let ordinal = owners.get(parent).ok_or_else(|| {
@@ -95,6 +137,16 @@ fn group_by_owner<T>(
                 id(&record)
             ))
         })?;
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "attach F3D native owner child")?;
+            grouped[*ordinal].try_reserve(1).map_err(|_| {
+                cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                    "attach F3D native owner child",
+                    0,
+                    1,
+                ))
+            })?;
+        }
         grouped[*ordinal].push(record);
     }
     Ok(grouped)
@@ -1402,153 +1454,185 @@ impl F3dNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let sketch_relations = namespace.arena_as("sketch_relations")?;
-        Self::load_with_relations(namespace, sketch_relations)
+        Self::load_inner(None, namespace)
     }
 
     pub(crate) fn load_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let wires: Vec<SketchRelationSerde> =
-            namespace.arena_as_charged(ctx, "sketch_relations")?;
-        ctx.charge_collection_items(wires.len() as u64, "load sketch relations")?;
-        let mut sketch_relations = Vec::new();
-        sketch_relations.try_reserve(wires.len()).map_err(|_| {
-            ctx.refuse_codec_limit("load sketch relations", 0, wires.len() as u64)
-        })?;
-        for wire in wires {
-            sketch_relations.push(SketchRelation::from_wire_charged(ctx, wire)?);
-        }
-        Ok(Self::load_with_relations(namespace, sketch_relations)?)
+        Self::load_inner(Some(ctx), namespace).map_err(Into::into)
     }
 
-    fn load_with_relations(
+    fn load_inner(
+        ctx: Option<&DecodeContext<'_>>,
         namespace: &cadmpeg_ir::NativeNamespace,
-        sketch_relations: Vec<SketchRelation>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        macro_rules! read_arena {
+            ($name:literal) => {
+                match ctx {
+                    Some(ctx) => namespace.arena_as_charged(ctx, $name)?,
+                    None => namespace.arena_as($name)?,
+                }
+            };
+        }
+        macro_rules! admit_index {
+            ($count:expr, $operation:literal) => {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items($count as u64, $operation)?;
+                }
+            };
+        }
+        let sketch_relations = match ctx {
+            Some(ctx) => {
+                let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
+                admit_index!(wires.len(), "load sketch relations");
+                let mut relations = Vec::new();
+                relations.try_reserve(wires.len()).map_err(|_| {
+                    cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                        "load sketch relations",
+                        0,
+                        wires.len() as u64,
+                    ))
+                })?;
+                for wire in wires {
+                    relations.push(SketchRelation::from_wire_charged(ctx, wire).map_err(
+                        |error| match error {
+                            cadmpeg_core::CodecError::ResourceLimit(_) => {
+                                cadmpeg_ir::NativeConvertError::Resource(error)
+                            }
+                            _ => cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string()),
+                        },
+                    )?);
+                }
+                relations
+            }
+            None => namespace.arena_as("sketch_relations")?,
+        };
+        let null_locus_entries: Vec<crate::records::dimension_null_locus_wire::Entry> =
+            read_arena!("design_dimension_null_locus_pairs");
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
-            act_entities: namespace.arena_as("act_entities")?,
-            act_guids: namespace.arena_as("act_guids")?,
-            act_registry_channels: namespace.arena_as("act_registry_channels")?,
-            act_root_components: namespace.arena_as("act_root_components")?,
-            act_table_references: namespace.arena_as("act_table_references")?,
-            body_native_keys: namespace.arena_as("body_native_keys")?,
-            body_visibilities: namespace.arena_as("body_visibilities")?,
-            design_types: namespace.arena_as("design_types")?,
-            design_canvas_images: namespace.arena_as("design_canvas_images")?,
-            design_decal_images: namespace.arena_as("design_decal_images")?,
-            design_mesh_features: namespace.arena_as("design_mesh_features")?,
-            design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
-            design_component_naming_spaces: namespace.arena_as("design_component_naming_spaces")?,
-            design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
-            design_loft_legacy_body_carriers: namespace
-                .arena_as("design_loft_legacy_body_carriers")?,
-            design_dimension_annotation_frames: namespace
-                .arena_as("design_dimension_annotation_frames")?,
-            design_dimension_presentation_frames: namespace
-                .arena_as("design_dimension_presentation_frames")?,
-            design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
+            act_entities: read_arena!("act_entities"),
+            act_guids: read_arena!("act_guids"),
+            act_registry_channels: read_arena!("act_registry_channels"),
+            act_root_components: read_arena!("act_root_components"),
+            act_table_references: read_arena!("act_table_references"),
+            body_native_keys: read_arena!("body_native_keys"),
+            body_visibilities: read_arena!("body_visibilities"),
+            design_types: read_arena!("design_types"),
+            design_canvas_images: read_arena!("design_canvas_images"),
+            design_decal_images: read_arena!("design_decal_images"),
+            design_mesh_features: read_arena!("design_mesh_features"),
+            design_component_occurrences: read_arena!("design_component_occurrences"),
+            design_component_naming_spaces: read_arena!("design_component_naming_spaces"),
+            design_body_recipe_operands: read_arena!("design_body_recipe_operands"),
+            design_loft_legacy_body_carriers: read_arena!("design_loft_legacy_body_carriers"),
+            design_dimension_annotation_frames: read_arena!("design_dimension_annotation_frames"),
+            design_dimension_presentation_frames: read_arena!("design_dimension_presentation_frames"),
+            design_dimension_locus_groups: read_arena!("design_dimension_locus_groups"),
             design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(
-                namespace.arena_as::<crate::records::dimensions::DesignDimensionLocusPair>(
-                    "design_dimension_locus_pairs",
-                )?,
+                read_arena!("design_dimension_locus_pairs"),
             )
             .map_err(<serde_json::Error as serde::de::Error>::custom)?,
-            design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs::try_from(
-                namespace.arena_as::<crate::records::dimension_null_locus_wire::Entry>(
-                    "design_dimension_null_locus_pairs",
+            design_dimension_null_locus_pairs: match ctx {
+                Some(ctx) => DesignDimensionNullLocusPairs::from_entries_charged(
+                    ctx,
+                    null_locus_entries,
                 )?,
-            )
-            .map_err(<serde_json::Error as serde::de::Error>::custom)?,
-            design_dimension_recipe_records: namespace
-                .arena_as("design_dimension_recipe_records")?,
-            design_edge_operands: namespace.arena_as("design_edge_operands")?,
-            design_edge_treatment_vertex_operands: namespace
-                .arena_as("design_edge_treatment_vertex_operands")?,
-            design_edge_identity_operands: namespace.arena_as("design_edge_identity_operands")?,
-            design_entity_selection_operands: namespace
-                .arena_as("design_entity_selection_operands")?,
-            design_face_operands: namespace.arena_as("design_face_operands")?,
-            design_face_source_groups: namespace.arena_as("design_face_source_groups")?,
-            design_feature_timelines: namespace.arena_as("design_feature_timelines")?,
-            design_construction_operand_groups: namespace
-                .arena_as("design_construction_operand_groups")?,
-            design_construction_operand_identities: namespace
-                .arena_as("design_construction_operand_identities")?,
-            design_extrude_selection_groups: namespace
-                .arena_as("design_extrude_selection_groups")?,
-            design_extrude_selection_members: namespace
-                .arena_as("design_extrude_selection_members")?,
-            design_fillet_radius_groups: namespace.arena_as("design_fillet_radius_groups")?,
-            design_parameter_companions: namespace.arena_as("design_parameter_companions")?,
-            design_parameter_owners: namespace.arena_as("design_parameter_owners")?,
-            design_parameter_scopes: namespace.arena_as("design_parameter_scopes")?,
-            design_surface_trim_operations: namespace.arena_as("design_surface_trim_operations")?,
-            design_parameters: namespace.arena_as("design_parameters")?,
-            design_entity_headers: namespace.arena_as("design_entity_headers")?,
-            design_record_headers: namespace.arena_as("design_record_headers")?,
-            design_sketch_placements: namespace.arena_as("design_sketch_placements")?,
-            design_body_bindings: namespace.arena_as("design_body_bindings")?,
-            design_body_bounds: namespace.arena_as("design_body_bounds")?,
-            design_body_members: namespace.arena_as("design_body_members")?,
-            design_configurations: namespace.arena_as("design_configurations")?,
-            design_material_assignments: namespace.arena_as("design_material_assignments")?,
-            edge_continuities: namespace.arena_as("edge_continuities")?,
-            edge_ownerships: namespace.arena_as("edge_ownerships")?,
-            face_sidedness: namespace.arena_as("face_sidedness")?,
-            face_native_keys: namespace.arena_as("face_native_keys")?,
-            construction_recipes: namespace.arena_as("construction_recipes")?,
-            creation_timestamps: namespace.arena_as("creation_timestamps")?,
-            persistent_design_links: namespace.arena_as("persistent_design_links")?,
-            persistent_references: namespace.arena_as("persistent_references")?,
-            persistent_subentity_tags: namespace.arena_as("persistent_subentity_tags")?,
-            sketch_curve_links: namespace.arena_as("sketch_curve_links")?,
+                None => DesignDimensionNullLocusPairs::try_from(null_locus_entries)
+                    .map_err(<serde_json::Error as serde::de::Error>::custom)?,
+            },
+            design_dimension_recipe_records: read_arena!("design_dimension_recipe_records"),
+            design_edge_operands: read_arena!("design_edge_operands"),
+            design_edge_treatment_vertex_operands: read_arena!("design_edge_treatment_vertex_operands"),
+            design_edge_identity_operands: read_arena!("design_edge_identity_operands"),
+            design_entity_selection_operands: read_arena!("design_entity_selection_operands"),
+            design_face_operands: read_arena!("design_face_operands"),
+            design_face_source_groups: read_arena!("design_face_source_groups"),
+            design_feature_timelines: read_arena!("design_feature_timelines"),
+            design_construction_operand_groups: read_arena!("design_construction_operand_groups"),
+            design_construction_operand_identities: read_arena!("design_construction_operand_identities"),
+            design_extrude_selection_groups: read_arena!("design_extrude_selection_groups"),
+            design_extrude_selection_members: read_arena!("design_extrude_selection_members"),
+            design_fillet_radius_groups: read_arena!("design_fillet_radius_groups"),
+            design_parameter_companions: read_arena!("design_parameter_companions"),
+            design_parameter_owners: read_arena!("design_parameter_owners"),
+            design_parameter_scopes: read_arena!("design_parameter_scopes"),
+            design_surface_trim_operations: read_arena!("design_surface_trim_operations"),
+            design_parameters: read_arena!("design_parameters"),
+            design_entity_headers: read_arena!("design_entity_headers"),
+            design_record_headers: read_arena!("design_record_headers"),
+            design_sketch_placements: read_arena!("design_sketch_placements"),
+            design_body_bindings: read_arena!("design_body_bindings"),
+            design_body_bounds: read_arena!("design_body_bounds"),
+            design_body_members: read_arena!("design_body_members"),
+            design_configurations: read_arena!("design_configurations"),
+            design_material_assignments: read_arena!("design_material_assignments"),
+            edge_continuities: read_arena!("edge_continuities"),
+            edge_ownerships: read_arena!("edge_ownerships"),
+            face_sidedness: read_arena!("face_sidedness"),
+            face_native_keys: read_arena!("face_native_keys"),
+            construction_recipes: read_arena!("construction_recipes"),
+            creation_timestamps: read_arena!("creation_timestamps"),
+            persistent_design_links: read_arena!("persistent_design_links"),
+            persistent_references: read_arena!("persistent_references"),
+            persistent_subentity_tags: read_arena!("persistent_subentity_tags"),
+            sketch_curve_links: read_arena!("sketch_curve_links"),
             sketch_relations,
-            sketch_points: namespace.arena_as("sketch_points")?,
-            sketch_curve_identities: namespace.arena_as("sketch_curve_identities")?,
-            sketch_surfaces: namespace.arena_as("sketch_surfaces")?,
-            sketch_texts: namespace.arena_as("sketch_texts")?,
-            lost_edge_references: namespace.arena_as("lost_edge_references")?,
-            mesh_surface_sentinels: namespace.arena_as("mesh_surface_sentinels")?,
-            vertex_ownerships: namespace.arena_as("vertex_ownerships")?,
-            tolerant_coedge_parameters: namespace.arena_as("tolerant_coedge_parameters")?,
-            tolerant_edge_tails: namespace.arena_as("tolerant_edge_tails")?,
-            tolerant_vertex_tails: namespace.arena_as("tolerant_vertex_tails")?,
-            transform_hints: namespace.arena_as("transform_hints")?,
-            wire_topologies: namespace.arena_as("wire_topologies")?,
-            xref_designs: namespace.arena_as("xref_designs")?,
-            xref_references: namespace.arena_as("xref_references")?,
-            asm_histories: namespace.arena_as("asm_histories")?,
+            sketch_points: read_arena!("sketch_points"),
+            sketch_curve_identities: read_arena!("sketch_curve_identities"),
+            sketch_surfaces: read_arena!("sketch_surfaces"),
+            sketch_texts: read_arena!("sketch_texts"),
+            lost_edge_references: read_arena!("lost_edge_references"),
+            mesh_surface_sentinels: read_arena!("mesh_surface_sentinels"),
+            vertex_ownerships: read_arena!("vertex_ownerships"),
+            tolerant_coedge_parameters: read_arena!("tolerant_coedge_parameters"),
+            tolerant_edge_tails: read_arena!("tolerant_edge_tails"),
+            tolerant_vertex_tails: read_arena!("tolerant_vertex_tails"),
+            transform_hints: read_arena!("transform_hints"),
+            wire_topologies: read_arena!("wire_topologies"),
+            xref_designs: read_arena!("xref_designs"),
+            xref_references: read_arena!("xref_references"),
+            asm_histories: read_arena!("asm_histories"),
         };
         let states: Vec<crate::history_records::AsmDeltaState> =
-            namespace.arena_as("asm_delta_states")?;
+            read_arena!("asm_delta_states");
         let boards: Vec<crate::history_records::AsmBulletinBoard> =
-            namespace.arena_as("asm_bulletin_boards")?;
+            read_arena!("asm_bulletin_boards");
         let changes: Vec<crate::history_records::AsmEntityChange> =
-            namespace.arena_as("asm_entity_changes")?;
+            read_arena!("asm_entity_changes");
         let records: Vec<crate::history_records::AsmHistoryRecord> =
-            namespace.arena_as("asm_history_records")?;
-        let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
+            read_arena!("asm_history_records");
+        let board_indices = owner_indices(ctx, boards.iter().map(|board| board.id.as_str()))?;
         let changes_by_board = group_by_owner(
+            ctx,
             changes,
             &board_indices,
             boards.len(),
             |change| &change.id,
             |change| &change.parent,
         )?;
-        let boards = boards
-            .into_iter()
-            .zip(changes_by_board)
-            .map(|(mut board, changes)| {
-                board.changes = changes;
-                board
-            })
-            .collect::<Vec<_>>();
-        let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
+        admit_index!(boards.len(), "attach F3D history boards");
+        let mut attached_boards = Vec::new();
+        if let Some(ctx) = ctx {
+            attached_boards.try_reserve(boards.len()).map_err(|_| {
+                cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                    "attach F3D history boards",
+                    0,
+                    boards.len() as u64,
+                ))
+            })?;
+        }
+        for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
+            board.changes = changes;
+            attached_boards.push(board);
+        }
+        let boards = attached_boards;
+        let state_indices = owner_indices(ctx, states.iter().map(|state| state.id.as_str()))?;
         let boards_by_state = group_by_owner(
+            ctx,
             boards,
             &state_indices,
             states.len(),
@@ -1556,29 +1640,43 @@ impl F3dNative {
             |board| &board.parent,
         )?;
         let records_by_state = group_by_owner(
+            ctx,
             records,
             &state_indices,
             states.len(),
             |record| &record.id,
             |record| &record.parent,
         )?;
-        let states = states
+        admit_index!(states.len(), "attach F3D history states");
+        let mut attached_states = Vec::new();
+        if let Some(ctx) = ctx {
+            attached_states.try_reserve(states.len()).map_err(|_| {
+                cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
+                    "attach F3D history states",
+                    0,
+                    states.len() as u64,
+                ))
+            })?;
+        }
+        for ((mut state, bulletin_boards), records) in states
             .into_iter()
             .zip(boards_by_state)
             .zip(records_by_state)
-            .map(|((mut state, bulletin_boards), records)| {
-                state.bulletin_boards = bulletin_boards;
-                state.records = records;
-                state
-            })
-            .collect::<Vec<_>>();
+        {
+            state.bulletin_boards = bulletin_boards;
+            state.records = records;
+            attached_states.push(state);
+        }
+        let states = attached_states;
         let history_indices = owner_indices(
+            ctx,
             native
                 .asm_histories
                 .iter()
                 .map(|history| history.id.as_str()),
-        );
+        )?;
         let states_by_history = group_by_owner(
+            ctx,
             states,
             &history_indices,
             native.asm_histories.len(),
