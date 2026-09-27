@@ -622,7 +622,7 @@ pub fn decode_with_header(
         format,
     )?;
 
-    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
+    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(ctx, records, &reach)?;
 
     emit_carrier_records(
         ctx,

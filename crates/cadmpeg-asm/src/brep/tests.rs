@@ -11,7 +11,7 @@ use super::geometry::{
     pcurve_ranges_on_domain, point_vector, rational_four_arc_circle as decode_rational_four_arc_circle,
 };
 use super::records::{self, BodyNativeKey};
-use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
+use super::topology::{classify_edge_curve_senses, shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::{
     decode_with_purpose, id, inherited_attribute_target, AsmBrep, DecodePurpose, Reachable,
 };
@@ -1108,9 +1108,62 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
         ]
     );
     assert_eq!(
-        subshell_ancestor_shells(&records, &by_index).get(&3),
+        subshell_ancestor_shells(&ctx, &records, &by_index).unwrap().get(&3),
         Some(&1)
     );
+}
+
+#[test]
+fn subshell_ancestor_shells_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = Vec::new();
+    record(&mut bytes, "asmheader", &[]);
+    record(&mut bytes, "shell", &[-1, -1, -1, -1, -1, -1, -1, -1]);
+    record(&mut bytes, "subshell", &[-1, -1, -1, 1]);
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+        .expect("generated subshell bytes must frame");
+    let by_index = records.iter().map(|record| (record.index as i64, record)).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = subshell_ancestor_shells(&ctx, &records, &by_index)
+        .expect_err("one ancestor exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn classify_edge_curve_senses_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let records = [Record {
+        index: 1,
+        name: "edge".into(),
+        tokens: vec![Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
+            Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1),
+            Token::Ref(2), Token::Enum(0)].into(),
+        offset: 0,
+        len: 0,
+    }];
+    let mut reach = Reachable::default();
+    reach.edges.insert(1);
+    reach.curves.insert(2);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_edge_curve_senses(&ctx, &records, &reach)
+        .expect_err("one curve sense exceeds zero items");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
 #[test]

@@ -4532,7 +4532,7 @@ pub(super) fn emit_faces(
         loops: kept_loops,
         ..
     } = reach;
-    let subshell_shells = subshell_ancestor_shells(records, by_index);
+    let subshell_shells = subshell_ancestor_shells(ctx, records, by_index)?;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(entity, by_index);
     for r in records {

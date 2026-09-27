@@ -106,6 +106,32 @@ pub(crate) fn collect_hash_map<K: Eq + Hash, V>(
     Ok(out)
 }
 
+pub(crate) fn insert_hash_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    reserve_hash_map_entry(ctx, values, &key, operation)?;
+    Ok(values.insert(key, value))
+}
+
+pub(crate) fn reserve_hash_map_entry<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(())
+}
+
 pub(crate) trait CountedIteratorExt: Iterator + Sized {
     fn collect_counted_vec(
         self,
