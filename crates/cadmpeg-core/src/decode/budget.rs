@@ -191,6 +191,22 @@ impl DecodeBudget {
         )
     }
 
+    /// Report allocator refusal after a scoped-byte charge was recorded.
+    pub(super) fn materialized_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse(
+            ResourceDimension::MaterializedBytes,
+            ResourceFailure::AllocationFailed,
+            self.materialized_allowance(),
+            self.materialized.get() - charged,
+            charged,
+            operation,
+        )
+    }
+
     pub(super) fn charge_entities(
         &self,
         count: u64,

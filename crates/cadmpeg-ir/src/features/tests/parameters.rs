@@ -49,3 +49,13 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
     assert!(parameter.dependencies.is_empty());
     assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
 }
+
+#[test]
+fn reserved_parameter_dependencies_preserve_order_and_reject_repeats() {
+    let first = ParameterId::mint("test:test:parameter#first").unwrap();
+    let second = ParameterId::mint("test:test:parameter#second").unwrap();
+    let ordered = DistinctMembers::try_from_reserved_vec(vec![second.clone(), first.clone()])
+        .expect("source-ordered members are distinct");
+    assert_eq!(ordered.as_slice(), &[second.clone(), first.clone()]);
+    assert!(DistinctMembers::try_from_reserved_vec(vec![first.clone(), second, first]).is_err());
+}
