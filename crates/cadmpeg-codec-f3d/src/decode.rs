@@ -4321,9 +4321,9 @@ fn extend_related_design_records(
     native.design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     native.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
+        crate::design::decode::canvas::decode_canvas_images(ctx, scan, &native.design_parameter_scopes)?;
     native.design_decal_images =
-        crate::design::decode::decal::decode_decal_images(scan, &native.design_parameter_scopes)?;
+        crate::design::decode::decal::decode_decal_images(ctx, scan, &native.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,

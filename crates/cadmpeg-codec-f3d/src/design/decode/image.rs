@@ -63,6 +63,7 @@ pub(super) fn embedded_image_asset(
 
 /// Decode image scopes in their owning streams, ordered by native identity.
 pub(super) fn decode_scoped_images<T>(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
@@ -80,16 +81,19 @@ pub(super) fn decode_scoped_images<T>(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = crate::ids::native_scope(&entry.name);
-        images.extend(
-            scopes
-                .iter()
-                .filter(|scope| {
-                    scope.kind().as_str() == kind.as_str()
-                        && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-                })
-                .filter_map(|scope| parse(bytes, &entry.name, scope)),
-        );
+        let stream = native_scope_charged(ctx, &entry.name)?;
+        for scope in scopes.iter().filter(|scope| {
+            scope.kind().as_str() == kind.as_str()
+                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
+        }) {
+            if let Some(image) = parse(bytes, &entry.name, scope) {
+                ctx.charge_collection_items(1, "f3d scoped image records")?;
+                images.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d scoped image records allocation", 0, 1)
+                })?;
+                images.push(image);
+            }
+        }
     }
     images.sort_by(|a, b| id(a).cmp(id(b)));
     images.dedup_by(|a, b| id(a) == id(b));
@@ -139,6 +143,83 @@ mod tests {
             }
             crate::design::test_support::with_test_decode_context(|ctx| {
                 assert!(super::embedded_image_asset(ctx, scan, NAME).unwrap().is_some());
+            });
+        });
+    }
+
+    #[test]
+    fn scoped_image_collection_refuses_before_growth() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(b"scope").unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let stream = crate::ids::native_scope(ENTRY);
+        let scope: crate::records::feature::scope::DesignParameterScope =
+            serde_json::from_value(serde_json::json!({
+                "id": format!("{stream}:scope#1"),
+                "byte_offset": 0,
+                "class_tag": "300",
+                "record_index": 1,
+                "frame_length": 200,
+                "kind": "Fillet",
+                "kind_offset": 32,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 128,
+                "history_state_id": 8,
+                "history_state_id_offset": 24,
+                "previous_history_state_id": 7,
+                "previous_history_state_id_offset": 158,
+                "reference_count_offset": 9,
+                "reference_members": [2],
+                "reference_member_offsets": [14],
+                "fixed_fillet_parameters": {
+                    "groups": [{
+                        "tangency_weight": {"value": 1.0, "record_index": 4, "value_offset": 0},
+                        "radii": [0.3],
+                        "radius_record_indexes": [5],
+                        "radius_offsets": [0],
+                        "intermediate_parameters": [],
+                        "intermediate_parameter_record_indexes": [],
+                        "intermediate_parameter_offsets": []
+                    }]
+                },
+                "paired_class_tag": "261",
+                "paired_byte_offset": 200
+            }))
+            .unwrap();
+        let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
+        with_scan(&archive, |scan| {
+            for (dimension, operation) in [
+                (ResourceDimension::RetainedBytes, "f3d native stream key"),
+                (ResourceDimension::CollectionItems, "f3d scoped image records"),
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                if dimension == ResourceDimension::RetainedBytes {
+                    policy.limits.max_retained_bytes = 0;
+                } else {
+                    policy.limits.max_collection_items = 0;
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                assert!(matches!(
+                    super::decode_scoped_images(
+                        &ctx, scan, std::slice::from_ref(&scope), &kind,
+                        |_, _, _| Some(17_u32), |_| "image",
+                    ),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                ));
+            }
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                let images = super::decode_scoped_images(
+                    ctx, scan, std::slice::from_ref(&scope), &kind,
+                    |_, _, _| Some(17_u32), |_| "image",
+                )
+                .unwrap();
+                assert_eq!(images, [17]);
             });
         });
     }

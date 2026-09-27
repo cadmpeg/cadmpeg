@@ -24,10 +24,12 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
 pub(crate) fn decode_canvas_images(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
     super::image::decode_scoped_images(
+        ctx,
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
