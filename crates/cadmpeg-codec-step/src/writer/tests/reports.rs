@@ -1910,7 +1910,7 @@ fn source_native_record_reduction_is_reported() {
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
         vec![
-            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", Default::default())
+            cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"), Default::default())
                 .expect("valid native identity"),
         ],
     );

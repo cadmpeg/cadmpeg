@@ -595,7 +595,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
-    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
+    *orphan = cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"), orphan_fields)
         .expect("valid native identity");
     let error = F3dCodec
         .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)

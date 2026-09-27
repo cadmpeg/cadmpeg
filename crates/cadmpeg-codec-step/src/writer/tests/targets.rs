@@ -75,7 +75,7 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
         vec![
-            cadmpeg_ir::NativeRecord::new("f3d:test:asm-history#0", serde_json::Map::default())
+            cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"), serde_json::Map::default())
                 .expect("valid native identity"),
         ],
     );

@@ -315,15 +315,14 @@ impl NativeRecord {
     /// Build a record from a stable identity and an arbitrary field map.
     ///
     /// Any `id` member of `fields` is dropped in favour of `id`.
-    /// Identity syntax is checked here; document validation checks uniqueness.
+    /// The identity is checked before this call; document validation checks uniqueness.
     /// A field nested past [`MAX_NATIVE_NESTING_DEPTH`] is refused by name:
     /// the map is the caller's own, so nothing about it is bounded until it
     /// is measured here.
     pub fn new(
-        id: impl Into<String>,
+        id: crate::ids::Identity,
         mut fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
-        let id = crate::ids::Identity::new(id)?;
         fields.remove("id");
         for (field, value) in &fields {
             if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
@@ -546,7 +545,11 @@ impl<'de> Deserialize<'de> for NativeRecord {
                 NativeConvertError::MissingId,
             ));
         };
-        Self::new(id, fields).map_err(serde::de::Error::custom)
+        Self::new(
+            crate::ids::Identity::new(id).map_err(serde::de::Error::custom)?,
+            fields,
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 

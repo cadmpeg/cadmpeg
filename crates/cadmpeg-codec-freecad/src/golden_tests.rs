@@ -468,7 +468,7 @@ mod native_elision {
     fn named_record(id: &str, name: &str) -> cadmpeg_ir::NativeRecord {
         let mut fields = serde_json::Map::new();
         fields.insert("name".to_owned(), serde_json::json!(name));
-        cadmpeg_ir::NativeRecord::new(id, fields).expect("a well-formed native record")
+        cadmpeg_ir::NativeRecord::new(cadmpeg_ir::ids::Identity::new(id).expect("valid identity"), fields).expect("a well-formed native record")
     }
 
     /// One namespace holding one record whose only codec-owned member is `name`.
