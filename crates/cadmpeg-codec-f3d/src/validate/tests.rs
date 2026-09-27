@@ -24,6 +24,35 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+#[test]
+fn native_validation_refuses_decode_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = F3dCodec.validate_native(&ctx, &ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {
         selector: 1,

@@ -33,8 +33,10 @@ use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::{design, history, ids, native, records};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{
     check::{Check, Finding},
@@ -737,7 +739,33 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             entity: None,
         }];
     };
-    let native = &native;
+    validate_loaded(ir, &native)
+}
+
+/// Validate native records using the source decode budget.
+pub(crate) fn validate_native_charged(
+    decode: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Finding>, CodecError> {
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(Vec::new());
+    };
+    let native = match native::F3dNative::load_charged(decode, namespace) {
+        Ok(native) => native,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => {
+            return Ok(vec![Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion native namespace does not match the expected arena shape".into(),
+                entity: None,
+            }]);
+        }
+    };
+    Ok(validate_loaded(ir, &native))
+}
+
+fn validate_loaded(ir: &CadIr, native: &native::F3dNative) -> Vec<Finding> {
     let ctx = Ctx::new(ir, native);
     let mut findings = Vec::new();
     let mut expected_face_operands = native.design_face_operands.clone();
