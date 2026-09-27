@@ -17,6 +17,90 @@ fn one_delta_state() -> Vec<u8> {
     bytes
 }
 
+fn one_board_state() -> Vec<u8> {
+    let mut bytes = one_delta_state();
+    bytes.pop();
+    for (tag, value) in [(0x04, 1_i32), (0x0c, 0), (0x04, 1),
+        (0x04, 1), (0x0c, -1), (0x0c, 2), (0x04, 0), (0x04, 0)] {
+        bytes.push(tag);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x11);
+    bytes
+}
+
+fn history_id_lengths() -> (u64, u64, u64, u64) {
+    let history = crate::ids::native_scoped_id("history", "asm-history", format_args!("{:010}", 0));
+    let state = crate::ids::native_scoped_id("history", "asm-delta-state", format_args!("{:010}", 0));
+    let board = crate::ids::native_scoped_id("history", "asm-bulletin-board", "0000000000:000000");
+    let change = crate::ids::native_scoped_id("history", "asm-entity-change", "0000000000:000000:000000");
+    (history.len() as u64, state.len() as u64, board.len() as u64, change.len() as u64)
+}
+
+#[test]
+fn history_board_id_refuses_retained_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (history, state, _, _) = history_id_lengths();
+    policy.limits.max_retained_bytes = history + state;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}
+
+#[test]
+fn history_change_vector_refuses_collection_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D ASM entity change"));
+}
+
+#[test]
+fn history_change_id_refuses_retained_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (history, state, board, _) = history_id_lengths();
+    policy.limits.max_retained_bytes = history + state + board;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}
+
+#[test]
+fn history_change_parent_refuses_retained_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (history, state, board, change) = history_id_lengths();
+    policy.limits.max_retained_bytes = history + state + board + change;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ASM change parent"));
+}
+
+#[test]
+fn history_board_vector_refuses_collection_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "admit F3D ASM bulletin board"));
+}
+
+#[test]
+fn history_board_parent_refuses_retained_limit() {
+    let bytes = one_board_state();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (history, state, board, change) = history_id_lengths();
+    policy.limits.max_retained_bytes = history + state + board + change + board;
+    let error = decode_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ASM board parent"));
+}
+
 fn decode_with_limits(bytes: &[u8], policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 
