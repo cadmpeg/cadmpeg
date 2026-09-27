@@ -16,6 +16,7 @@
 //! requests the metadata-only path.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::collections::btree_map::Entry;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -1944,6 +1945,17 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
+fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 fn active_body_streams<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
@@ -1990,16 +2002,31 @@ fn try_decode_brep(
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
-        sites.entry(stream.site_key()).or_default().push(index);
+        match sites.entry(stream.site_key()) {
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "collect SLDPRT B-rep sites")?;
+                let mut indices = Vec::new();
+                ctx.reserve_collection_vec(&mut indices, 1, "collect SLDPRT site streams")?;
+                indices.push(index);
+                entry.insert(indices);
+            }
+            Entry::Occupied(mut entry) => {
+                let indices = entry.get_mut();
+                ctx.reserve_collection_vec(indices, 1, "collect SLDPRT site streams")?;
+                indices.push(index);
+            }
+        }
     }
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let bodies: Vec<_> = indices
-            .iter()
-            .map(|index| (streams[*index].payload, streams[*index].header))
-            .collect();
+        let mut bodies = Vec::new();
+        ctx.reserve_collection_vec(&mut bodies, indices.len(), "collect SLDPRT site bodies")?;
+        for index in indices {
+            bodies.push((streams[*index].payload, streams[*index].header));
+        }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
+        ctx.reserve_collection_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
@@ -2014,18 +2041,10 @@ fn try_decode_brep(
     let selected_site = resolved_active_site.unwrap_or(0);
     let selected_is_empty_model = decoded_sites[selected_site].2.stats.source_entity_records == 0
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
-            streams[*index]
-                .header
-                .description
-                .to_ascii_lowercase()
-                .contains("partition")
+            contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
         })
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
-            streams[*index]
-                .header
-                .description
-                .to_ascii_lowercase()
-                .contains("deltas")
+            contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
         });
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
@@ -2041,18 +2060,10 @@ fn try_decode_brep(
         let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
             decoded.stats.source_entity_records == 0
                 && sites[site].iter().any(|index| {
-                    streams[*index]
-                        .header
-                        .description
-                        .to_ascii_lowercase()
-                        .contains("partition")
+                    contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
                 })
                 && sites[site].iter().any(|index| {
-                    streams[*index]
-                        .header
-                        .description
-                        .to_ascii_lowercase()
-                        .contains("deltas")
+                    contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
@@ -2074,30 +2085,55 @@ fn try_decode_brep(
                 })
                 .then_some(first_header)
         })
-        .cloned();
+        .map(|header| {
+            let description = copy_retained_string(
+                ctx,
+                &header.description,
+                "retain SLDPRT B-rep header description",
+            )?;
+            let schema = copy_retained_string(
+                ctx,
+                header.schema.value(),
+                "retain SLDPRT B-rep header schema",
+            )?;
+            let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+                .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
+            Ok::<_, CodecError>(StreamHeader {
+                description,
+                schema,
+                body_offset: header.body_offset,
+            })
+        })
+        .transpose()?;
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key)?;
     }
-    bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
+    bind_opaque_geometry(ctx, &mut decoded, &streams[selected].section.native_id())?;
     let mut configuration_bodies = Vec::new();
-    if let Some(index) = configuration_index(&streams[selected].name()) {
+    if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
+        ctx.reserve_collection_vec(
+            &mut configuration_bodies,
+            1,
+            "collect SLDPRT configuration bodies",
+        )?;
         configuration_bodies.push((
             index,
-            decoded.bodies.iter().map(|body| body.id.clone()).collect(),
+            copy_body_ids(ctx, &decoded.bodies)?,
         ));
     }
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site)?;
-        bind_opaque_geometry(&mut alternate, &streams[first].section.native_id());
-        if let Some(index) = configuration_index(&streams[first].name()) {
+        bind_opaque_geometry(ctx, &mut alternate, &streams[first].section.native_id())?;
+        if let Some(index) = configuration_index(streams[first].source_stream().as_str()) {
+            ctx.reserve_collection_vec(
+                &mut configuration_bodies,
+                1,
+                "collect SLDPRT configuration bodies",
+            )?;
             configuration_bodies.push((
                 index,
-                alternate
-                    .bodies
-                    .iter()
-                    .map(|body| body.id.clone())
-                    .collect(),
+                copy_body_ids(ctx, &alternate.bodies)?,
             ));
         }
         // Keep only the selected source's bridge sequence namespace. Alternate
@@ -2116,13 +2152,39 @@ fn try_decode_brep(
     )))
 }
 
-fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
+fn copy_body_ids(
+    ctx: &DecodeContext<'_>,
+    bodies: &[cadmpeg_ir::topology::Body],
+) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+    let mut ids = Vec::new();
+    ctx.reserve_collection_vec(&mut ids, bodies.len(), "collect SLDPRT body IDs")?;
+    for body in bodies {
+        let value = copy_retained_string(ctx, body.id.as_str(), "retain SLDPRT body ID")?;
+        let id = cadmpeg_ir::ids::BodyId::mint(value)
+            .map_err(|_| CodecError::Malformed("invalid admitted SLDPRT body ID".into()))?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
+fn bind_opaque_geometry(
+    ctx: &DecodeContext<'_>,
+    brep: &mut Brep,
+    source: &UnknownId,
+) -> Result<(), CodecError> {
     for surface in &mut brep.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) =
             &mut surface.geometry
         {
             if record.is_none() {
-                *record = Some(source.clone());
+                let value = copy_retained_string(
+                    ctx,
+                    source.as_str(),
+                    "retain SLDPRT opaque surface source",
+                )?;
+                *record = Some(UnknownId::mint(value).map_err(|_| {
+                    CodecError::Malformed("invalid admitted SLDPRT source ID".into())
+                })?);
             }
         }
     }
@@ -2132,10 +2194,18 @@ fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
         }) = &mut curve.geometry
         {
             if record.is_none() {
-                *record = Some(source.clone());
+                let value = copy_retained_string(
+                    ctx,
+                    source.as_str(),
+                    "retain SLDPRT opaque curve source",
+                )?;
+                *record = Some(UnknownId::mint(value).map_err(|_| {
+                    CodecError::Malformed("invalid admitted SLDPRT source ID".into())
+                })?);
             }
         }
     }
+    Ok(())
 }
 
 fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {

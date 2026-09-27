@@ -51,40 +51,75 @@ fn retained_refusal_at(
     panic!("target charge was not reached within fixture admissions");
 }
 
-#[test]
-fn decode_body_stream_selection_refuses_collection_limit() {
+fn collection_refusal_at(
+    source: &[u8],
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let source = sldprt_with_body(&triangle_body());
     let mut options = DecodeOptions::default();
     options.policy.limits.max_collection_items = 0;
     for _ in 0..256 {
         let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
+            .decode(&mut Cursor::new(source), &options)
             .expect_err("collection limit must refuse the decode");
         let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
         else {
             panic!("expected a collection-item refusal");
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == "collect SLDPRT body streams" {
+        if limit.operation == operation {
             options.policy.limits.max_collection_items = limit.used + limit.additional - 1;
             let repeated = SldprtCodec
-                .decode(&mut Cursor::new(&source), &options)
-                .expect_err("one item below body stream selection must refuse");
+                .decode(&mut Cursor::new(source), &options)
+                .expect_err("one item below the target must refuse");
             assert!(matches!(
                 repeated,
                 cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == "collect SLDPRT body streams"
+                        && refusal.operation == operation
             ));
-            return;
+            return limit;
         }
         let next = limit.used + limit.additional;
         assert!(next > options.policy.limits.max_collection_items);
         options.policy.limits.max_collection_items = next;
     }
-    panic!("body stream selection charge was not reached");
+    panic!("target collection charge was not reached");
+}
+
+#[test]
+fn decode_body_stream_selection_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect SLDPRT body streams");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_site_collection_refuses_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect SLDPRT B-rep sites");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_header_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &source,
+        &mut options,
+        "retain SLDPRT B-rep header description",
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT B-rep header description"
+    ));
 }
 
 #[test]
