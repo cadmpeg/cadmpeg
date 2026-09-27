@@ -194,6 +194,7 @@ pub(crate) fn transfer(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
     let schema_declaration = crate::container::canonical_attribute(
+        ctx,
         xml.root_element(),
         "SchemaVersion",
         "schemaVersion",

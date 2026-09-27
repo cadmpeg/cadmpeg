@@ -12,6 +12,108 @@ use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
+fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    f(&ctx)
+}
+
+#[test]
+fn document_domain_set_refuses_on_collection_limit() {
+    let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
+    let result = collection_context(0, |ctx| super::parse_document(ctx, document));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd document domains"));
+}
+
+#[test]
+fn logical_span_vector_refuses_on_collection_limit() {
+    let entry = crate::native::EntryRecord {
+        id: "fcstd:native:entry#extra".to_owned(),
+        name: "extra".to_owned(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data: vec![0],
+    };
+    let result = collection_context(0, |ctx| super::logical_ledger(
+        ctx,
+        &[entry],
+        &[],
+        &crate::gui::Graph::default(),
+        &[],
+        &[],
+        &[],
+    ));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd logical ledger spans"));
+}
+
+#[test]
+fn typed_entry_set_refuses_on_collection_limit() {
+    let payload = crate::brep::ShapePayloadRecord {
+        id: "payload".to_owned(),
+        property: "property".to_owned(),
+        entry: "entry".to_owned(),
+        payload: crate::brep::ShapePayload::Empty,
+    };
+    let result = collection_context(0, |ctx| super::logical_ledger(
+        ctx,
+        &[],
+        &[],
+        &crate::gui::Graph::default(),
+        &[payload],
+        &[],
+        &[],
+    ));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd typed entry identities"));
+}
+
+#[test]
+fn ordered_physical_span_vector_refuses_on_collection_limit() {
+    let physical = [crate::native::ArchiveSpan {
+        id: "span".to_owned(),
+        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
+        role: crate::native::ArchiveSpanRole::Zip64EndRecord,
+    }];
+    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &physical, &[], &[], 1));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd ordered physical spans"));
+}
+
+#[test]
+fn coverage_classification_map_refuses_on_collection_limit() {
+    let logical = [crate::native::LogicalSpan {
+        id: "logical".to_owned(),
+        entry: "extra".to_owned(),
+        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
+        classification: crate::native::LogicalClassification::Structural,
+    }];
+    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &[], &[], &logical, 0));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd coverage classifications"));
+}
+
+#[test]
+fn summary_schema_note_refuses_on_retained_limit() {
+    let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::default();
+    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
+        .expect("archive fits input policy");
+    let scan = super::scan(&scan_ctx, root).expect("valid archive scan");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    assert!(matches!(super::summary_notes(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd schema note"));
+}
+
 #[test]
 fn x62_object_envelope_is_admitted_before_the_xml_tree() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;

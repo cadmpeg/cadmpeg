@@ -237,8 +237,11 @@ fn x63_link_target_attribute_copy_is_charged() {
 }
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
     let (_facts, schema_version) =
-        crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
+        crate::container::parse_document(&ctx, document.as_bytes()).map_err(|error| match error {
             cadmpeg_core::CodecError::WrongFormat(message) => {
                 cadmpeg_core::CodecError::Malformed(message)
             }
