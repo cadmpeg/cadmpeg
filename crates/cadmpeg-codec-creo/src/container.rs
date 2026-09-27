@@ -2767,7 +2767,8 @@ pub(crate) fn scan_bytes<'a>(
     }
     let legacy_ascii = layout.legacy_ascii();
     let legacy_geometry = legacy_ascii
-        .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
+        .map(|framing| crate::legacy_geometry::scan(ctx, &framing.persistence))
+        .transpose()?
         .unwrap_or_default();
     let legacy_rounds = legacy_ascii
         .map(|framing| {
