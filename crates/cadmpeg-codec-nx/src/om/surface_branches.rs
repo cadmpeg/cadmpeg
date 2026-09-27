@@ -45,6 +45,7 @@ impl SurfaceSuffix {
         Ok(Self(bytes))
     }
 
+    #[cfg(test)]
     pub(crate) fn into_vec(self) -> Vec<u8> {
         self.0
     }
