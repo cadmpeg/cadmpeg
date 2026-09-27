@@ -830,7 +830,7 @@ impl NativeModel {
         let display_jt_indices = display_jt_indices(container);
         let display_jt_documents = display_jt_documents(container, &display_jt_indices);
         let budget = Some((ctx, root));
-        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents);
+        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
         let display_jt_shape_lod_elements =
             display_jt_shape_lod_elements(container, &display_jt_segments);
         let display_jt_tri_strip_lod_headers =
@@ -881,57 +881,57 @@ impl NativeModel {
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
             display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
-            display_jt_string_property_atoms(budget, container, &display_jt_segments);
+            display_jt_string_property_atoms(budget, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
-            display_jt_shape_lod_bindings(budget, container, &display_jt_segments);
+            display_jt_shape_lod_bindings(budget, container, &display_jt_segments)?;
         let display_jt_base_node_data = display_jt_base_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_group_node_data = display_jt_group_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_instance_nodes = display_jt_instance_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_material_attributes = display_jt_material_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_partition_nodes = display_jt_partition_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let feature_datum_csys_constructions = feature_datum_csys_constructions(container);
         let feature_datum_csys_payloads =
             feature_datum_csys_payloads(container, &feature_datum_csys_constructions);
@@ -1256,7 +1256,7 @@ impl NativeModel {
             fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
         );
-        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
+        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
                 graph: DisplayJtGraphWire {

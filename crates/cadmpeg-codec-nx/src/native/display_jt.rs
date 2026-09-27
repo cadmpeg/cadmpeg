@@ -63,14 +63,23 @@ fn child_for_subslice<'a>(source: View<'a>, slice: &[u8]) -> Option<View<'a>> {
 fn inflate_display_jt(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     compressed: &[u8],
-) -> Option<Vec<u8>> {
+) -> Result<Option<Vec<u8>>, CodecError> {
     let Some((ctx, source)) = budget else {
-        return inflate_zlib_probe(compressed, display_jt_probe_cap(compressed.len()));
+        return Ok(inflate_zlib_probe(
+            compressed,
+            display_jt_probe_cap(compressed.len()),
+        ));
     };
-    let member = child_for_subslice(source, compressed)?;
-    let view = inflate_zlib_exact(ctx, member).ok()?;
+    let Some(member) = child_for_subslice(source, compressed) else {
+        return Ok(None);
+    };
+    let view = match inflate_zlib_exact(ctx, member) {
+        Ok(view) => view,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
     ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
-        .ok()
+        .map(Some)
 }
 
 /// Outer index of the embedded JT display-model stream.
@@ -2577,7 +2586,7 @@ pub(super) fn display_jt_segments(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtSegment> {
+) -> Result<Vec<DisplayJtSegment>, CodecError> {
     let mut segments = Vec::new();
     for document in documents {
         let document_key = document
@@ -2587,51 +2596,51 @@ pub(super) fn display_jt_segments(
         let Some(bytes) =
             container.bounded_entry_bytes(document.source_offset, document.physical_byte_len)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for entry in &document.toc_entries {
             let (Ok(segment_start), Ok(segment_len)) = (
                 usize::try_from(entry.segment_offset),
                 usize::try_from(entry.segment_byte_len),
             ) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment) = bytes.get(segment_start..segment_start.saturating_add(segment_len))
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment_id) = segment
                 .get(..16)
                 .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment_type) = View::u32_le_at(segment, 16) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(header_byte_len) = View::u32_le_at(segment, 20) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(attribute_type) = View::u32_be_at(&entry.attributes, 0) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if segment_id != entry.segment_id
                 || segment_type != attribute_type
                 || header_byte_len != entry.segment_byte_len
             {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let payload = &segment[24..];
             let compression = if payload.get(..4) == Some(2_u32.to_le_bytes().as_slice()) {
                 let Some(compressed_data_byte_len) = View::u32_le_at(payload, 4) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(&algorithm) = payload.get(8) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let compressed = &payload[9..];
                 let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Ok(envelope) = JtCompressionEnvelope::try_new(
                     2,
@@ -2639,10 +2648,10 @@ pub(super) fn display_jt_segments(
                     algorithm,
                     compressed_byte_len,
                 ) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
-                let Some(inflated) = inflate_display_jt(budget, compressed) else {
-                    return Vec::new();
+                let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+                    return Ok(Vec::new());
                 };
                 Some(DisplayJtCompression {
                     envelope,
@@ -2664,9 +2673,8 @@ pub(super) fn display_jt_segments(
             });
         }
     }
-    segments
+    Ok(segments)
 }
-
 /// Decode complete object-element sequences from type-7 shape-LOD segments.
 pub(super) fn display_jt_shape_lod_elements(
     container: &Container,
@@ -3520,7 +3528,7 @@ pub(super) fn display_jt_compressed_element_sequences(
         let Some(compressed) = bytes.get(33..) else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
             return Ok((Vec::new(), Vec::new()));
         };
         let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
@@ -3584,7 +3592,7 @@ pub(super) fn display_jt_string_property_atoms(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> Vec<DisplayJtStringPropertyAtom> {
+) -> Result<Vec<DisplayJtStringPropertyAtom>, CodecError> {
     const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3592,29 +3600,29 @@ pub(super) fn display_jt_string_property_atoms(
     let mut atoms = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 31) {
         if segment.compression.is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 5
             {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some(value) = parse_jt_string_property_atom_body(element.body) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             atoms.push(DisplayJtStringPropertyAtom {
                 id: format!("{}-string-property-atom-{ordinal}", segment.id),
@@ -3625,15 +3633,14 @@ pub(super) fn display_jt_string_property_atoms(
             });
         }
     }
-    atoms
+    Ok(atoms)
 }
-
 /// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
 pub(super) fn display_jt_shape_lod_bindings(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> Vec<DisplayJtShapeLodBinding> {
+) -> Result<Vec<DisplayJtShapeLodBinding>, CodecError> {
     const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3649,54 +3656,54 @@ pub(super) fn display_jt_shape_lod_bindings(
             scene_segment.source_offset,
             u64::from(scene_segment.segment_byte_len),
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((_, scene_end)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let tail = &inflated[scene_end..];
         let Some((property_atoms, property_table_offset)) = parse_jt_element_sequence(tail) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let mut strings = BTreeMap::new();
         let mut late_loaded = BTreeMap::new();
         for atom in property_atoms {
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
                 let Some(value) = parse_jt_string_property_atom_body(atom.body) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 strings.insert(atom.object_id, value);
             } else if atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
                 && atom.object_base_type == 8
             {
                 if atom.body.len() != 36 || View::u16_le_at(atom.body, 0) != Some(1) {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 }
                 let Some(state_flags) = View::u32_le_at(atom.body, 2) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(property_version) = View::u16_le_at(atom.body, 6) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Ok(segment_id) = <[u8; 16]>::try_from(&atom.body[8..24]) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(segment_type) = View::u32_le_at(atom.body, 24) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(payload_object_id) = View::u32_le_at(atom.body, 28) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(reserved_value) =
                     View::u32_le_at(atom.body, 32).filter(|value| *value != 0)
                 else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 late_loaded.insert(
                     atom.object_id,
@@ -3714,25 +3721,25 @@ pub(super) fn display_jt_shape_lod_bindings(
         let table = &tail[property_table_offset..];
         let mut table_view = View::over_retained(table);
         let Some(table_version) = table_view.u16_le() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(table_count) = table_view.u32_le() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for table_ordinal in 0..table_count {
             let Some(shape_node_object_id) = table_view.u32_le() else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let mut pair_ordinal = 0u32;
             loop {
                 let Some(key_object_id) = table_view.u32_le() else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 if key_object_id == 0 {
                     break;
                 }
                 let Some(value_object_id) = table_view.u32_le() else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 if strings.get(&key_object_id).map(String::as_str) == Some(SHAPE_IMPLEMENTATION_KEY)
                 {
@@ -3745,7 +3752,7 @@ pub(super) fn display_jt_shape_lod_bindings(
                         reserved_value,
                     )) = late_loaded.get(&value_object_id)
                     else {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     };
                     let mut targets = segments.iter().filter(|segment| {
                         segment.document == scene_segment.document
@@ -3753,10 +3760,10 @@ pub(super) fn display_jt_shape_lod_bindings(
                             && segment.segment_type == *segment_type
                     });
                     let Some(target) = targets.next() else {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     };
                     if targets.next().is_some() || target.segment_type != 7 {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     }
                     bindings.push(DisplayJtShapeLodBinding {
                         id: format!(
@@ -3781,43 +3788,42 @@ pub(super) fn display_jt_shape_lod_bindings(
             }
         }
         if !table_view.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
     }
-    bindings
+    Ok(bindings)
 }
-
 /// Decode the common node-data header from every type-1 segment element.
 pub(super) fn display_jt_base_node_data(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtBaseNodeData> {
+) -> Result<Vec<DisplayJtBaseNodeData>, CodecError> {
     let mut nodes = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Some(document) = documents
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if segment.compression.is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type > 2 {
@@ -3826,7 +3832,7 @@ pub(super) fn display_jt_base_node_data(
             let Some((version, flags, attribute_object_ids, family_data)) =
                 parse_jt_base_node_body(element.body, document.version.major())
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
@@ -3842,23 +3848,22 @@ pub(super) fn display_jt_base_node_data(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode common group-node data from every JT 9 group-derived scene node.
 pub(super) fn display_jt_group_node_data(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtGroupNodeData> {
+) -> Result<Vec<DisplayJtGroupNodeData>, CodecError> {
     let mut nodes = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Some(document) = documents
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3866,16 +3871,16 @@ pub(super) fn display_jt_group_node_data(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type != 1 {
@@ -3884,10 +3889,10 @@ pub(super) fn display_jt_group_node_data(
             let Some((version, child_object_ids, family_data)) =
                 parse_jt9_group_node_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if version != 1 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             nodes.push(DisplayJtGroupNodeData {
                 id: format!("{}-group-node-data-{ordinal}", segment.id),
@@ -3901,16 +3906,15 @@ pub(super) fn display_jt_group_node_data(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 instance nodes from logical scene-graph segments.
 pub(super) fn display_jt_instance_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtInstanceNode> {
+) -> Result<Vec<DisplayJtInstanceNode>, CodecError> {
     const INSTANCE_NODE_TYPE: [u8; 16] = [
         0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3921,7 +3925,7 @@ pub(super) fn display_jt_instance_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3929,27 +3933,27 @@ pub(super) fn display_jt_instance_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != INSTANCE_NODE_TYPE {
                 continue;
             }
             if element.object_base_type != 0 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             nodes.push(DisplayJtInstanceNode {
                 id: format!("{}-instance-node-{ordinal}", segment.id),
@@ -3961,16 +3965,15 @@ pub(super) fn display_jt_instance_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
 pub(super) fn display_jt_geometric_transform_attributes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtGeometricTransformAttribute> {
+) -> Result<Vec<DisplayJtGeometricTransformAttribute>, CodecError> {
     const GEOMETRIC_TRANSFORM_TYPE: [u8; 16] = [
         0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3981,7 +3984,7 @@ pub(super) fn display_jt_geometric_transform_attributes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3989,28 +3992,28 @@ pub(super) fn display_jt_geometric_transform_attributes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
                 continue;
             }
             if element.object_base_type != 3 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
                 parse_jt9_geometric_transform_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             attributes.push(DisplayJtGeometricTransformAttribute {
                 id: format!("{}-geometric-transform-{ordinal}", segment.id),
@@ -4024,16 +4027,15 @@ pub(super) fn display_jt_geometric_transform_attributes(
             });
         }
     }
-    attributes
+    Ok(attributes)
 }
-
 /// Decode JT 9 material attributes from logical scene-graph segments.
 pub(super) fn display_jt_material_attributes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtMaterialAttribute> {
+) -> Result<Vec<DisplayJtMaterialAttribute>, CodecError> {
     const MATERIAL_ATTRIBUTE_TYPE: [u8; 16] = [
         0x30, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4044,7 +4046,7 @@ pub(super) fn display_jt_material_attributes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -4052,28 +4054,28 @@ pub(super) fn display_jt_material_attributes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = bytes
-            .get(33..)
-            .and_then(|compressed| inflate_display_jt(budget, compressed))
-        else {
-            return Vec::new();
+        let Some(compressed) = bytes.get(33..) else {
+            return Ok(Vec::new());
+        };
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != MATERIAL_ATTRIBUTE_TYPE {
                 continue;
             }
             if element.object_base_type != 3 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
                 parse_jt9_material_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             attributes.push(DisplayJtMaterialAttribute {
                 id: format!("{}-material-attribute-{ordinal}", segment.id),
@@ -4093,16 +4095,15 @@ pub(super) fn display_jt_material_attributes(
             });
         }
     }
-    attributes
+    Ok(attributes)
 }
-
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
 pub(super) fn display_jt_partition_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtPartitionNode> {
+) -> Result<Vec<DisplayJtPartitionNode>, CodecError> {
     const PARTITION_NODE_TYPE: [u8; 16] = [
         0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4113,7 +4114,7 @@ pub(super) fn display_jt_partition_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() >= 10 {
             continue;
@@ -4121,23 +4122,23 @@ pub(super) fn display_jt_partition_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != PARTITION_NODE_TYPE {
                 continue;
             }
             let Some(node) = parse_jt9_partition_node_body(element.body) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             nodes.push(DisplayJtPartitionNode {
                 id: format!("{}-partition-node-{ordinal}", segment.id),
@@ -4156,16 +4157,15 @@ pub(super) fn display_jt_partition_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
 pub(super) fn display_jt_range_lod_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtRangeLodNode> {
+) -> Result<Vec<DisplayJtRangeLodNode>, CodecError> {
     const RANGE_LOD_NODE_TYPE: [u8; 16] = [
         0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4176,7 +4176,7 @@ pub(super) fn display_jt_range_lod_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() >= 10 {
             continue;
@@ -4184,23 +4184,23 @@ pub(super) fn display_jt_range_lod_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != RANGE_LOD_NODE_TYPE {
                 continue;
             }
             let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             nodes.push(DisplayJtRangeLodNode {
                 id: format!("{}-range-lod-node-{ordinal}", segment.id),
@@ -4218,16 +4218,15 @@ pub(super) fn display_jt_range_lod_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
 pub(super) fn display_jt_tri_strip_shape_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtTriStripShapeNode> {
+) -> Result<Vec<DisplayJtTriStripShapeNode>, CodecError> {
     const TRI_STRIP_SHAPE_NODE_TYPE: [u8; 16] = [
         0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4238,7 +4237,7 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -4246,26 +4245,26 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget, compressed)? else {
+            return Ok(Vec::new());
         };
         let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
                 continue;
             }
             if element.object_base_type != 2 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             nodes.push(DisplayJtTriStripShapeNode {
                 id: format!("{}-tri-strip-shape-node-{ordinal}", segment.id),
@@ -4290,9 +4289,8 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
 const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
 const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
@@ -5152,6 +5150,49 @@ mod tests {
 
     const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
+    #[test]
+    fn display_jt_inflate_propagates_expansion_and_retained_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let expanded = [7_u8; 64];
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&expanded).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &service).unwrap();
+        assert_eq!(
+            super::inflate_display_jt(Some((&ctx, root)), &compressed)
+                .unwrap()
+                .unwrap(),
+            expanded
+        );
+
+        let arena = DecodeArena::new();
+        let mut expansion_policy = DecodePolicy::service();
+        expansion_policy.limits.max_decompressed_bytes_per_expand = expanded.len() as u64 - 1;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &expansion_policy).unwrap();
+        let error = super::inflate_display_jt(Some((&ctx, root)), &compressed).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::DecompressedBytes)
+        );
+
+        let arena = DecodeArena::new();
+        let mut retained_policy = DecodePolicy::service();
+        retained_policy.limits.max_retained_bytes = expanded.len() as u64 - 1;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &retained_policy).unwrap();
+        let error = super::inflate_display_jt(Some((&ctx, root)), &compressed).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain inflated DisplayJT payload")
+        );
+    }
+
     fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
         values.map(|value| FiniteBinary32::new(value).expect("fixture values are finite"))
     }
@@ -5240,7 +5281,7 @@ mod tests {
             segment_byte_len
         );
         assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
-        let segments = super::display_jt_segments(None, &container, &documents);
+        let segments = super::display_jt_segments(None, &container, &documents).unwrap();
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].id.matches('#').count(), 1);
         assert!(!segments[0].id.contains(&documents[0].id));
@@ -5276,7 +5317,9 @@ mod tests {
                 len: 1,
             },
         });
-        assert!(super::display_jt_segments(None, &cross_entry, &documents).is_empty());
+        assert!(super::display_jt_segments(None, &cross_entry, &documents)
+            .unwrap()
+            .is_empty());
 
         let (compressed_elements, sequences) =
             super::display_jt_compressed_element_sequences(None, &container, &segments).unwrap();
@@ -5293,7 +5336,11 @@ mod tests {
         let mut malformed_compression = container.clone();
         malformed_compression.data.to_mut()[193..197]
             .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
-        assert!(super::display_jt_segments(None, &malformed_compression, &documents).is_empty());
+        assert!(
+            super::display_jt_segments(None, &malformed_compression, &documents)
+                .unwrap()
+                .is_empty()
+        );
 
         let mut malformed = container;
         malformed.data.to_mut()[28] = b'X';
@@ -5467,7 +5514,8 @@ mod tests {
             compression: None,
             source_offset: 0,
         };
-        let bindings = super::display_jt_shape_lod_bindings(None, &container, &[scene, shape]);
+        let bindings =
+            super::display_jt_shape_lod_bindings(None, &container, &[scene, shape]).unwrap();
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].shape_node_object_id, 2);
         assert_eq!(bindings[0].shape_segment, "shape");
