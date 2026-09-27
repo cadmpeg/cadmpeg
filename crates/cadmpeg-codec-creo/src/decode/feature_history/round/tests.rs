@@ -4,6 +4,174 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::PositiveLength;
 // SPDX-License-Identifier: Apache-2.0
 
+fn round_sample_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 5,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 7,
+    });
+    let token = crate::surface::SurfaceParameterScalar {
+        value: Some(0.5),
+        raw: vec![0x53, 0, 0, 0, 0, 0, 0],
+        offset: 0,
+    };
+    scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
+        surface_id: 7,
+        body: token.raw.clone(),
+        scalar_tokens: vec![token],
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cylinder,
+        ),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 7,
+        body_offset: 7,
+    });
+    scan
+}
+
+fn round_sample_ir() -> cadmpeg_ir::document::CadIr {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7")
+            .expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    0.5,
+                )
+                .expect("cylinder fixture"),
+            ),
+        ),
+        source_object: None,
+    });
+    ir
+}
+
+fn round_sample_limit_error(
+    limit: u64,
+    operation: &'static str,
+    run: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &crate::container::ContainerScan<'_>,
+        &cadmpeg_ir::document::CadIr,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = round_sample_scan();
+    let ir = round_sample_ir();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = run(&ctx, &scan, &ir).expect_err("round samples exceed the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn observed_round_radii_refuse_collection_limit() {
+    round_sample_limit_error(0, "creo observed round radii", |ctx, scan, _| {
+        super::round_observed_radii(ctx, scan, 5).map(|_| ())
+    });
+}
+
+#[test]
+fn placed_round_radii_refuse_collection_limit() {
+    round_sample_limit_error(0, "creo placed round radii", |ctx, scan, ir| {
+        super::round_placed_cylinder_radii(
+            ctx,
+            scan,
+            ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn replay_round_combined_samples_refuse_collection_limit() {
+    round_sample_limit_error(2, "creo round replay samples", |ctx, scan, ir| {
+        super::round_replay_radius(
+            ctx,
+            scan,
+            ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn legacy_round_combined_samples_refuse_collection_limit() {
+    round_sample_limit_error(2, "creo legacy round samples", |ctx, scan, ir| {
+        super::legacy_round_radius_agrees(
+            ctx,
+            scan,
+            ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            cadmpeg_ir::scalar::PositiveReal::new(0.5).expect("positive radius"),
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn feature_round_combined_samples_refuse_collection_limit() {
+    round_sample_limit_error(2, "creo feature round samples", |ctx, scan, ir| {
+        crate::decode::feature_history::draft::schema_feature_definition(
+            ctx,
+            scan,
+            ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            5,
+            Some(crate::feature::schema::SchemaClass::Round),
+            "Round",
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn round_sample_fixture_keeps_constant_radius_under_service_policy() {
+    let scan = round_sample_scan();
+    let ir = round_sample_ir();
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let (observed, placed, agrees, radius) = crate::decode::with_test_decode_ctx(|ctx| {
+        Ok::<_, cadmpeg_core::CodecError>((
+            super::round_observed_radii(ctx, &scan, 5)?,
+            super::round_placed_cylinder_radii(ctx, &scan, &ir, &carriers, 5)?,
+            super::legacy_round_radius_agrees(
+                ctx,
+                &scan,
+                &ir,
+                &carriers,
+                5,
+                cadmpeg_ir::scalar::PositiveReal::new(0.5).expect("positive radius"),
+            )?,
+            super::round_constant_radius(ctx, &scan, &ir, &carriers, 5)?,
+        ))
+    })
+    .expect("service profile admits round samples");
+    assert_eq!(observed, [0.5]);
+    assert_eq!(placed, [0.5]);
+    assert!(agrees);
+    assert_eq!(radius, Some(0.5));
+}
+
 #[test]
 fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
     let body = [
