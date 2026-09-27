@@ -104,6 +104,17 @@ impl Diagnostics {
         self.0.append(&mut other.0);
     }
 
+    /// Moves admitted diagnostics into a second report collection.
+    pub(crate) fn append_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &mut Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(ctx, &mut self.0, other.0.len(), "Rhino diagnostic copies")?;
+        self.0.append(&mut other.0);
+        Ok(())
+    }
+
     /// Rewrites every message through `map`, keeping each code.
     pub(crate) fn map_messages(self, map: impl Fn(String) -> String) -> Self {
         Self(

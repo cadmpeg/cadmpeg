@@ -321,11 +321,6 @@ pub(crate) struct LayerRef {
     pub(crate) name: String,
 }
 
-/// Builds a stable source ID without minting a `CadIr` entity ID.
-fn stable_source_id(scope: &str, kind: &str, key: &str) -> String {
-    format!("rhino:{scope}:{kind}#{key}")
-}
-
 /// A bounded object-history descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HistoryDescriptor {
@@ -1584,12 +1579,13 @@ fn parse_per_object_mesh_userdata(
 }
 
 fn resolve_identity(
+    ctx: &DecodeContext<'_>,
     descriptor: &ObjectDescriptor<()>,
     layers: &LayerLookup<'_>,
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
-) -> SourceIdentity {
+) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
@@ -1597,20 +1593,20 @@ fn resolve_identity(
         LayerMatch::Unique(layer) => Some(layer),
         LayerMatch::Ambiguous => {
             if attributes.is_some() {
-                warnings.push_coded(
+                warnings.push_coded_admitted(ctx,
                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                    format!(
+                    format_args!(
                         "object {object_id} references ambiguous layer index {layer_index}; layer binding withheld"
                     ),
-                );
+                )?;
             }
             None
         }
         LayerMatch::Missing => {
             if attributes.is_some() {
-                warnings.push(format!(
+                warnings.push_admitted(ctx, format_args!(
                     "object {object_id} references missing layer index {layer_index}"
-                ));
+                ))?;
             }
             None
         }
@@ -1618,7 +1614,9 @@ fn resolve_identity(
     let object_color = attributes.map(|value| value.color);
     let object_visible = attributes.is_none_or(|value| value.visible);
     let visible = object_visible && layer.is_none_or(|value| value.visible);
-    let name = attributes.map_or_else(String::new, |value| value.name.clone());
+    let name = attributes.map_or(Ok(String::new()), |value| {
+        crate::wire::copy_retained_string(ctx, &value.name, "Rhino identity object name")
+    })?;
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
     let color_selector = attributes.map_or(ColorSource::Layer, |value| value.color_source);
@@ -1626,49 +1624,59 @@ fn resolve_identity(
         ColorSource::Layer => layer.map(|value| value.color),
         ColorSource::Object => object_color,
         ColorSource::Material => {
-            warnings.push(format!(
+            warnings.push_admitted(ctx, format_args!(
                 "object {object_id} material color remains unresolved"
-            ));
+            ))?;
             None
         }
         ColorSource::Parent if definition_member => {
-            warnings.push(format!(
+            warnings.push_admitted(ctx, format_args!(
                 "object {object_id} parent color remains unresolved"
-            ));
+            ))?;
             None
         }
         ColorSource::Parent => layer.map(|value| value.color),
         ColorSource::Invalid(raw) => {
-            warnings.push_coded(
+            warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::EnumerationValueDegraded,
-                format!("object {object_id} has invalid color source {raw}"),
-            );
+                format_args!("object {object_id} has invalid color source {raw}"),
+            )?;
             None
         }
     };
-    let source_key = if object_id.is_nil() {
-        warnings.push(format!(
+    let source_id = if object_id.is_nil() {
+        warnings.push_admitted(ctx, format_args!(
             "object at {} has nil object UUID",
             descriptor.range.start
-        ));
-        format!("record-{index:06}-offset-{}", descriptor.range.start)
-    } else if !seen_ids.insert(object_id) {
-        warnings.push(format!("duplicate object UUID {object_id}"));
-        format!("record-{index:06}-offset-{}", descriptor.range.start)
+        ))?;
+        crate::wire::admitted_format(ctx, format_args!("rhino:object:record#record-{index:06}-offset-{}", descriptor.range.start), "Rhino identity source ID")?
+    } else if seen_ids.contains(&object_id) {
+        warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
+        crate::wire::admitted_format(ctx, format_args!("rhino:object:record#record-{index:06}-offset-{}", descriptor.range.start), "Rhino identity source ID")?
     } else {
-        object_id.to_string()
+        crate::wire::reserve_hash_set(ctx, seen_ids, 1, "Rhino identity seen UUIDs")?;
+        seen_ids.insert(object_id);
+        crate::wire::admitted_format(ctx, format_args!("rhino:object:record#{object_id}"), "Rhino identity source ID")?
     };
-    let source_id = stable_source_id("object", "record", &source_key);
-    SourceIdentity {
+    let layer = layer
+        .map(|value| {
+            Ok::<LayerRef, cadmpeg_core::CodecError>(LayerRef {
+                id: value.id,
+                name: crate::wire::copy_retained_string(
+                    ctx,
+                    &value.name,
+                    "Rhino identity layer name",
+                )?,
+            })
+        })
+        .transpose()?;
+    Ok(SourceIdentity {
         source_id,
         object_id,
         class_uuid: descriptor.class_uuid,
         name,
         layer_index,
-        layer: layer.map(|value| LayerRef {
-            id: value.id,
-            name: value.name.clone(),
-        }),
+        layer,
         effective_color: color,
         effective_visible: visible,
         object_mode,
@@ -1676,7 +1684,7 @@ fn resolve_identity(
         source: SourceRange {
             range: descriptor.range.clone(),
         },
-    }
+    })
 }
 
 /// Parses one bounded object record and returns identity plus child ranges.
@@ -1900,26 +1908,28 @@ pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> O
 
 /// Resolves per-object source identity after document layer metadata is known.
 pub(crate) fn resolve_identities(
+    ctx: &DecodeContext<'_>,
     objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
     warnings: &mut Diagnostics,
-) -> Vec<ObjectRecord> {
+) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
-    let mut layers = LayerLookup::with_capacity(metadata.layers.len());
+    let mut layers = LayerLookup::new();
     for layer in &metadata.layers {
-        layers.insert(layer);
+        layers.insert(ctx, layer)?;
     }
-    objects
-        .into_iter()
-        .enumerate()
-        .map(|(index, object)| match object {
+    let mut resolved = Vec::new();
+    for (index, object) in objects.into_iter().enumerate() {
+        crate::wire::reserve_collection(ctx, &mut resolved, 1, "Rhino resolved object identities")?;
+        resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
             ObjectRecord::Framed(mut object) => {
                 let mut local_warnings = Diagnostics::new();
-                let identity =
-                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
-                warnings.extend(local_warnings.iter().cloned());
-                object.warnings.extend(local_warnings);
+                let identity = resolve_identity(ctx, &object, &layers, &mut local_warnings, index, &mut seen_ids)?;
+                for warning in local_warnings.iter() {
+                    warnings.push_coded_admitted(ctx, warning.code, format_args!("{}", warning.message))?;
+                }
+                object.warnings.append_admitted(ctx, &mut local_warnings)?;
                 ObjectRecord::Framed(ObjectDescriptor {
                     identity,
                     range: object.range,
@@ -1935,8 +1945,9 @@ pub(crate) fn resolve_identities(
                     warnings: object.warnings,
                 })
             }
-        })
-        .collect()
+        });
+    }
+    Ok(resolved)
 }
 
 struct LayerLookup<'a> {
@@ -1955,13 +1966,20 @@ enum LayerMatch<'a> {
 }
 
 impl<'a> LayerLookup<'a> {
-    fn with_capacity(capacity: usize) -> Self {
+    fn new() -> Self {
         Self {
-            entries: HashMap::with_capacity(capacity),
+            entries: HashMap::new(),
         }
     }
 
-    fn insert(&mut self, layer: &'a crate::settings::LayerRecord) {
+    fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        layer: &'a crate::settings::LayerRecord,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !self.entries.contains_key(&layer.index) {
+            crate::wire::reserve_hash_map(ctx, &mut self.entries, 1, "Rhino identity layer lookup")?;
+        }
         match self.entries.entry(layer.index) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(LayerEntry::Unique(layer));
@@ -1970,6 +1988,7 @@ impl<'a> LayerLookup<'a> {
                 entry.insert(LayerEntry::Ambiguous);
             }
         }
+        Ok(())
     }
 
     fn resolve(&self, index: i32) -> LayerMatch<'a> {

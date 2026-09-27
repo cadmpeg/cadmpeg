@@ -768,7 +768,9 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.color_source = crate::objects::ColorSource::Material;
     let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
     let mut warnings = Diagnostics::new();
-    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings);
+    let material = crate::objects::resolve_identities(
+        &cadmpeg_test_support::service_decode_context(), material, &metadata, &mut warnings,
+    ).expect("service profile admits material identity");
     assert_eq!(
         material[0]
             .identity()
@@ -793,7 +795,9 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
-    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings);
+    let parent = crate::objects::resolve_identities(
+        &cadmpeg_test_support::service_decode_context(), parent, &metadata, &mut warnings,
+    ).expect("service profile admits parent identity");
     assert_eq!(
         parent[0]
             .identity()
@@ -838,10 +842,11 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     object.class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Diagnostics::new();
     let objects = crate::objects::resolve_identities(
+        &cadmpeg_test_support::service_decode_context(),
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
-    );
+    ).expect("service profile admits object identities");
     assert_ne!(
         objects[0].identity().expect("required invariant").source_id,
         objects[2].identity().expect("required invariant").source_id
@@ -859,6 +864,39 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
             .class_uuid,
         Uuid::from_wire([9; 16])
     );
+}
+
+#[test]
+fn resolved_object_identities_refuse_collection_limit() {
+    let objects = vec![ObjectRecord::Degraded {
+        range: 0..1,
+        warning: "fixture".to_owned(),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal = crate::objects::resolve_identities(
+        &ctx,
+        objects.clone(),
+        &settings::DocumentMetadata::default(),
+        &mut Diagnostics::new(),
+    )
+    .expect_err("one resolved record exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino resolved object identities"
+    ));
+    let resolved = crate::objects::resolve_identities(
+        &cadmpeg_test_support::service_decode_context(),
+        objects,
+        &settings::DocumentMetadata::default(),
+        &mut Diagnostics::new(),
+    )
+    .expect("service profile admits resolved records");
+    assert_eq!(resolved.len(), 1);
 }
 
 #[test]
