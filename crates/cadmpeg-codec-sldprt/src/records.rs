@@ -162,13 +162,22 @@ fn default_feature_xml_tag() -> String {
 
 /// A native feature-object identifier, or the reserved marker the source writes on records
 /// that carry no object identity of their own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) enum FeatureSource {
     /// The reserved `-1` marker.
     Reserved,
     /// A native feature-object identifier.
     Id(FeatureSourceId),
+}
+
+impl Serialize for FeatureSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Reserved => serializer.serialize_str(RESERVED_FEATURE_SOURCE),
+            Self::Id(id) => serializer.collect_str(&id.value()),
+        }
+    }
 }
 
 impl FeatureSource {
@@ -213,11 +222,18 @@ impl TryFrom<String> for FeatureSource {
 
 impl From<FeatureSource> for String {
     fn from(value: FeatureSource) -> Self {
+        #[cfg(test)]
+        FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(calls.get() + 1));
         match value {
             FeatureSource::Reserved => RESERVED_FEATURE_SOURCE.to_string(),
             FeatureSource::Id(id) => id.value().to_string(),
         }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FEATURE_SOURCE_OWNED_WIRE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// The wire spelling of the reserved feature-source marker.
@@ -1999,6 +2015,64 @@ impl SketchRelationKind {
 #[cfg(test)]
 mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn feature_source_borrowed_json_matches_owned_string_bytes() {
+        for source in [
+            super::FeatureSource::Reserved,
+            super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
+        ] {
+            let owned = String::from(source);
+            assert_eq!(
+                serde_json::to_vec(&source).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn feature_source_native_retained_limit_refuses_before_owned_wire_conversion() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        #[derive(serde::Serialize)]
+        struct SourceRecord {
+            id: &'static str,
+            source_id: super::FeatureSource,
+        }
+
+        let record = SourceRecord {
+            id: "sldprt:history:feature#41",
+            source_id: super::FeatureSource::Id(super::FeatureSourceId::try_from(41).unwrap()),
+        };
+        let arena_name = "features";
+        let needed = serde_json::to_vec(&record).unwrap().len() + arena_name.len();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| calls.set(0));
+        let error = namespace
+            .set_arena(&limited, arena_name, std::slice::from_ref(&record))
+            .unwrap_err();
+        super::FEATURE_SOURCE_OWNED_WIRE_CALLS.with(|calls| assert_eq!(calls.get(), 0));
+        assert!(matches!(
+            cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"
+        ));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        namespace
+            .set_arena(&service, arena_name, std::slice::from_ref(&record))
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
+    }
 
     #[test]
     fn native_operand_wire_rejects_reserved_tags() {
