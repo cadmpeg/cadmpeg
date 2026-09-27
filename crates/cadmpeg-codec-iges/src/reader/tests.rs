@@ -232,7 +232,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
     assert_refusal(
         |limits| limits.max_retained_bytes = 1,
         ResourceDimension::RetainedBytes,
-        "iges_global_stream",
+        "iges physical card payload",
     );
     assert_refusal(
         |limits| limits.max_entities = 0,

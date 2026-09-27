@@ -283,7 +283,8 @@ fn decode_matrix(
             let scan = crate::card::scan(&bytes).expect("integration fixture cards");
             let (global, _global_losses) =
                 crate::test_support::parse_global(&scan).expect("integration global");
-            let (directory, _quarantined) = crate::directory::parse(&scan, global.global_table());
+            let (directory, _quarantined) =
+                crate::directory::parse(&scan, global.global_table(), None).expect("integration directory");
             let subject_count = directory
                 .iter()
                 .filter(|entry| entry.entity_type == subject_type)

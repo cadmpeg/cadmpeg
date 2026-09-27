@@ -16,6 +16,30 @@ use crate::IgesCodec;
 use super::{status, SourceStatus};
 
 #[test]
+fn directory_entity_refuses_entity_limit_before_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = super::parse(&scan, GlobalTable::V5Later, Some(&ctx));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.used == 0
+                && limit.additional == 1
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::parse(&scan, GlobalTable::V5Later, Some(&ctx)).is_ok());
+}
+
+#[test]
 fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
     for (subordinate, physical, logical) in [
         (0, false, false),

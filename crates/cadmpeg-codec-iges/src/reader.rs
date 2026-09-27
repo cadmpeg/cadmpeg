@@ -122,17 +122,15 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         mode: ParseMode,
     ) -> Result<Self, CodecError> {
-        let (card_scan, card_storage, directory_entries, parameter_parse) = match mode {
+        let (card_scan, card_storage, parameter_parse) = match mode {
             ParseMode::Decode => (
                 "iges_card_scan",
                 "iges_card_storage",
-                "iges_directory_entries",
                 "iges_parameter_parse",
             ),
             ParseMode::Inspect => (
                 "iges_inspect_card_scan",
                 "iges_inspect_card_storage",
-                "iges_inspect_directory_entries",
                 "iges_inspect_parameter_parse",
             ),
         };
@@ -140,12 +138,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage)?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
-        let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
-        charge_entities(
-            ctx,
-            (directory.len() + quarantined_directory.len()) as u64,
-            directory_entries,
-        )?;
+        let (directory, quarantined_directory) =
+            directory::parse(&scan, global.global_table(), Some(ctx))?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, Some(ctx))?;
         }
@@ -680,14 +674,6 @@ pub(crate) fn decode_with_test_occurrence_limits(
         &mut std::io::Cursor::new(bytes),
         &options,
     )
-}
-
-fn charge_entities(
-    ctx: &DecodeContext<'_>,
-    count: u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_entities(count, operation)
 }
 
 fn charge_work(

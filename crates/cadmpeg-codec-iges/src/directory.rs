@@ -2,8 +2,11 @@
 //! Directory Entry pairs and fixed status fields.
 
 use crate::card::{CardScan, PhysicalLine, Section};
+use crate::decode_resource::{reserve_optional_vec_growth, reserve_vec};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
@@ -439,37 +442,77 @@ fn quarantine(
     first: (u32, &PhysicalLine),
     rest: &[(u32, &PhysicalLine)],
     defect: DirectoryDefect,
-) -> QuarantinedDirectoryRecord {
-    QuarantinedDirectoryRecord {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<QuarantinedDirectoryRecord, CodecError> {
+    let bytes_len = std::iter::once(first.1)
+        .chain(rest.iter().map(|(_, line)| *line))
+        .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
+        .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(u64_from_index(bytes_len), "iges quarantined directory bytes")?;
+    }
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(bytes_len).map_err(|_| {
+        refuse_local_limit(
+            "iges quarantined directory bytes",
+            u64_from_index(bytes_len),
+            u64_from_index(bytes_len),
+        )
+    })?;
+    for line in std::iter::once(first.1).chain(rest.iter().map(|(_, line)| *line)) {
+        bytes.extend_from_slice(&line.payload);
+    }
+    Ok(QuarantinedDirectoryRecord {
         sequence: first.0,
         source_offset: first.1.offset,
-        bytes: std::iter::once(first.1)
-            .chain(rest.iter().map(|(_, line)| *line))
-            .flat_map(|line| line.payload.iter().copied())
-            .collect(),
+        bytes,
         defect,
-    }
+    })
 }
 
 /// Split the Directory Entry section into typed records and quarantined ones.
 pub(crate) fn parse(
     scan: &CardScan,
     global_table: GlobalTable,
-) -> (Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>) {
-    let lines = scan.section(Section::Directory).collect::<Vec<_>>();
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+    let line_count = scan.section(Section::Directory).count();
+    let mut lines = match ctx {
+        Some(ctx) => reserve_vec(ctx, line_count, "iges directory lines")?,
+        None => Vec::new(),
+    };
+    if ctx.is_none() {
+        lines.try_reserve_exact(line_count).map_err(|_| {
+            refuse_local_limit("iges directory lines", u64_from_index(line_count), u64_from_index(line_count))
+        })?;
+    }
+    lines.extend(scan.section(Section::Directory));
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
+        if let Some(ctx) = ctx {
+            ctx.charge_entities(1, "iges_directory_entries")?;
+        }
         match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
-            Ok(entry) => entries.push(entry),
-            Err(defect) => quarantined.push(quarantine(pair[0], &pair[1..], defect)),
+            Ok(entry) => {
+                reserve_optional_vec_growth(ctx, &mut entries, 1, "iges directory entries")?;
+                entries.push(entry);
+            }
+            Err(defect) => {
+                reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined directory entries")?;
+                quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
+            }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
+        if let Some(ctx) = ctx {
+            ctx.charge_entities(1, "iges_directory_entries")?;
+        }
+        reserve_optional_vec_growth(ctx, &mut quarantined, 1, "iges quarantined directory entries")?;
+        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard, ctx)?);
     }
-    (entries, quarantined)
+    Ok((entries, quarantined))
 }
 
 pub(crate) fn summary_notes(entries: &[DirectoryEntry]) -> Vec<String> {
