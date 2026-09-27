@@ -541,6 +541,21 @@ fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
         .find_map(reference_values)
 }
 
+fn named_reference_values<'a>(
+    record: &'a RawRecord,
+    name: &str,
+    simple_index: usize,
+) -> Option<&'a [Value]> {
+    if record.partials.len() == 1 {
+        return entity_parameter(record, name, simple_index).and_then(reference_values);
+    }
+    record
+        .partial(name)?
+        .parameters
+        .iter()
+        .find_map(reference_values)
+}
+
 fn reference_values(value: &Value) -> Option<&[Value]> {
     value
         .list()
@@ -876,16 +891,12 @@ pub(super) fn decode(
         push_topology_vec(&mut result.losses, note, ctx, "step_topology_losses")?;
     }
     for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
-        let omitted = geometric_set_omissions(record, exchange, carrier_index);
+        let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
         if !omitted.is_empty() {
-            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
-                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} omitted unsupported or unresolved member(s): {}",
-                omitted
-                    .iter()
-                    .map(|member| format!("#{member}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )), ctx, "step_topology_losses")?;
+            let note = geometric_set_omission_message(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION", id, &omitted, ctx,
+            )?;
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(note), ctx, "step_topology_losses")?;
         }
         let Some(mut built) = build_geometric_set(id, record, exchange, carrier_index, &mut losses)
         else {
@@ -935,17 +946,10 @@ pub(super) fn decode(
         ) else {
             continue;
         };
-        let omitted = geometric_set_omissions(record, exchange, carrier_index);
+        let omitted = geometric_set_omissions(record, exchange, carrier_index, ctx)?;
         if !omitted.is_empty() {
-            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
-                "{} #{id} omitted unsupported or unresolved member(s): {}",
-                representation_type,
-                omitted
-                    .iter()
-                    .map(|member| format!("#{member}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )), ctx, "step_topology_losses")?;
+            let note = geometric_set_omission_message(representation_type, id, &omitted, ctx)?;
+            push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(note), ctx, "step_topology_losses")?;
         }
         mark_standalone_geometric_set(id, record, exchange, carrier_index, &mut result.claims, ctx)?;
     }
@@ -1014,24 +1018,62 @@ fn geometric_set_omissions(
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-) -> Vec<u64> {
-    let Some(set_ids) = representation_items(representation) else {
-        return Vec::new();
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<u64>, CodecError> {
+    let Some(set_ids) = representation_item_values(representation) else {
+        return Ok(Vec::new());
     };
-    set_ids
-        .into_iter()
-        .filter_map(|set_id| exchange.records().get(&set_id))
-        .filter_map(|set| {
-            let set_type = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?;
-            Some(named_refs(set, set_type, 1).unwrap_or_default())
-        })
-        .flatten()
-        .filter(|member| {
-            !carrier_index.points.contains_key(member)
-                && !carrier_index.curves.contains_key(member)
-                && !carrier_index.surfaces.contains_key(member)
-        })
-        .collect()
+    let mut omitted = Vec::new();
+    for set_id in set_ids.iter().filter_map(Value::reference) {
+        let Some(set) = exchange.records().get(&set_id) else {
+            continue;
+        };
+        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+            continue;
+        };
+        let Some(members) = named_reference_values(set, set_type, 1) else {
+            continue;
+        };
+        for member in members.iter().filter_map(Value::reference) {
+            if !carrier_index.points.contains_key(&member)
+                && !carrier_index.curves.contains_key(&member)
+                && !carrier_index.surfaces.contains_key(&member)
+            {
+                push_topology_vec(&mut omitted, member, ctx, "step_geometric_set_omissions")?;
+            }
+        }
+    }
+    Ok(omitted)
+}
+
+struct OmittedMembers<'a>(&'a [u64]);
+
+impl std::fmt::Display for OmittedMembers<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, member) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "#{member}")?;
+        }
+        Ok(())
+    }
+}
+
+fn geometric_set_omission_message(
+    representation_type: &str,
+    id: u64,
+    omitted: &[u64],
+    ctx: &DecodeContext<'_>,
+) -> Result<String, CodecError> {
+    crate::decode_alloc::charged_format(
+        ctx,
+        "step_geometric_set_omission_text",
+        format_args!(
+            "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
+            OmittedMembers(omitted)
+        ),
+    )
 }
 
 enum BuildOutcome {
