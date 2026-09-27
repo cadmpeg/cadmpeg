@@ -657,9 +657,67 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
     pub(crate) owner_reference_offset: u64,
 }
 
+enum AnnotationFrameBuildError {
+    Invalid(String),
+    Resource(cadmpeg_core::CodecError),
+}
+
+impl From<&'static str> for AnnotationFrameBuildError {
+    fn from(message: &'static str) -> Self {
+        Self::Invalid(message.into())
+    }
+}
+
+impl From<String> for AnnotationFrameBuildError {
+    fn from(message: String) -> Self {
+        Self::Invalid(message)
+    }
+}
+
+fn collect_annotation_run<T>(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, AnnotationFrameBuildError> {
+    let mut collected = Vec::new();
+    for value in values {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)
+                .map_err(AnnotationFrameBuildError::Resource)?;
+        }
+        collected.try_reserve(1).map_err(|_| match ctx {
+            Some(ctx) => AnnotationFrameBuildError::Resource(ctx.refuse_codec_limit(operation, 0, 1)),
+            None => AnnotationFrameBuildError::Invalid("annotation run allocation failed".into()),
+        })?;
+        collected.push(value);
+    }
+    Ok(collected)
+}
+
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame with representable offsets and matching operand runs.
     pub(crate) fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+        Self::try_new_inner(None, draft).map_err(|error| match error {
+            AnnotationFrameBuildError::Invalid(message) => message,
+            AnnotationFrameBuildError::Resource(error) => error.to_string(),
+        })
+    }
+
+    /// Admit an annotation frame using the source decode budget.
+    pub(crate) fn try_new_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        draft: DesignDimensionAnnotationFrameDraft,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Self::try_new_inner(Some(ctx), draft).map_err(|error| match error {
+            AnnotationFrameBuildError::Invalid(message) => cadmpeg_core::CodecError::malformed(message),
+            AnnotationFrameBuildError::Resource(error) => error,
+        })
+    }
+
+    fn try_new_inner(
+        ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+        draft: DesignDimensionAnnotationFrameDraft,
+    ) -> Result<Self, AnnotationFrameBuildError> {
         if draft.operands.is_empty() {
             return Err("operands must not be empty".into());
         }
@@ -717,16 +775,16 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = draft
-            .operands
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index)
-            .collect::<Vec<_>>();
-        let mut return_members = draft
-            .return_members
-            .iter()
-            .map(|member| member.value)
-            .collect::<Vec<_>>();
+        let mut operand_members = collect_annotation_run(
+            ctx,
+            draft.operands.iter().filter_map(|operand| operand.geometry_record_index),
+            "index F3D annotation operands",
+        )?;
+        let mut return_members = collect_annotation_run(
+            ctx,
+            draft.return_members.iter().map(|member| member.value),
+            "index F3D annotation return members",
+        )?;
         operand_members.sort_unstable();
         return_members.sort_unstable();
         if operand_members != return_members {
@@ -740,22 +798,20 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: draft
+            operands: collect_annotation_run(ctx, draft
                 .operands
                 .into_iter()
                 .map(|operand| DesignDimensionAnnotationLocus {
                     geometry_record_index: operand.geometry_record_index,
                     role: operand.role,
-                })
-                .collect(),
+                }), "retain F3D annotation operands")?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: draft
+            return_members: collect_annotation_run(ctx, draft
                 .return_members
                 .into_iter()
-                .map(|member| member.value)
-                .collect(),
+                .map(|member| member.value), "retain F3D annotation return members")?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })

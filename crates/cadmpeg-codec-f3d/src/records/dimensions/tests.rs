@@ -119,6 +119,38 @@ fn draft(base: u64) -> Draft {
     }
 }
 
+fn assert_annotation_collection_limit(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = Frame::try_new_charged(&ctx, draft(100)).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation));
+}
+
+#[test]
+fn annotation_operand_index_refuses_collection_limit() {
+    assert_annotation_collection_limit(2, "index F3D annotation operands");
+}
+
+#[test]
+fn annotation_return_index_refuses_collection_limit() {
+    assert_annotation_collection_limit(5, "index F3D annotation return members");
+}
+
+#[test]
+fn annotation_operand_run_refuses_collection_limit() {
+    assert_annotation_collection_limit(9, "retain F3D annotation operands");
+}
+
+#[test]
+fn annotation_return_run_refuses_collection_limit() {
+    assert_annotation_collection_limit(12, "retain F3D annotation return members");
+}
+
 #[test]
 fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
     let original = draft(100);
