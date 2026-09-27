@@ -154,3 +154,97 @@ fn built_wire_model_set_refuses_collection_limit() {
                 && refusal.operation == "step_built_wire_models"
     ));
 }
+
+fn body_id() -> cadmpeg_ir::ids::BodyId {
+    cadmpeg_ir::ids::BodyId::mint("step:data:body#1").expect("valid body identity")
+}
+
+#[test]
+fn topology_body_id_copy_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::copy_topology_body_id(&body_id(), &ctx, "step_topology_root_bodies"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_topology_root_bodies"
+    ));
+}
+
+#[test]
+fn topology_root_group_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::push_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_root_groups", "step_topology_root_bodies"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_root_groups"
+    ));
+}
+
+#[test]
+fn topology_root_bodies_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::push_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_root_groups", "step_topology_root_bodies"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_root_bodies"
+    ));
+}
+
+#[test]
+fn topology_shell_group_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_shell_groups", "step_topology_shell_bodies"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_shell_groups"
+    ));
+}
+
+#[test]
+fn topology_shell_bodies_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_shell_groups", "step_topology_shell_bodies"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_shell_bodies"
+    ));
+}
+
+#[test]
+fn topology_built_roots_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_map(&mut BTreeMap::new(), 1u64, 2u64, &ctx, "step_topology_built_roots"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_topology_built_roots"
+    ));
+}
