@@ -990,6 +990,90 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 }
 
 #[test]
+fn parameter_owner_maps_and_output_refuse_collection_limit() {
+    fn paired_header() -> [u8; 11] {
+        let mut header = [0; 11];
+        header[0..4].copy_from_slice(&3u32.to_le_bytes());
+        header[4..7].copy_from_slice(b"293");
+        header[7..11].copy_from_slice(&44u32.to_le_bytes());
+        header
+    }
+    fn archive(stream: &str, bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(stream, stored).unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
+            id: crate::ids::native_design_parameter_id(stream, 200),
+            byte_offset: 200,
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
+            record_index: 45,
+            source_ordinal: 0,
+            source: crate::records::parameters::DesignParameterSource::new(
+                "Distance".into(),
+                Some(44),
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                    offset: 222,
+                }),
+            )
+            .unwrap(),
+            expression: "6 cm".into(),
+            expression_offset: 240,
+            source_kind_offset: 260,
+
+            unit: Some(crate::records::identity::RecordedValue {
+                value: "cm".into(),
+                offset: 280,
+            }),
+            name: "distance".into(),
+            name_offset: 300,
+            evaluated_value: 6.0,
+            evaluated_value_offset: 320,
+        },
+    )
+    .unwrap();
+    let header = crate::records::decal::DesignRecordHeader {
+        id: crate::ids::native_design_record_header_id(stream, 0),
+        record_index: 44,
+        class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+
+    let mut exact = parameter_owner_frame();
+    exact.extend_from_slice(&paired_header());
+    let bytes = archive(stream, &exact);
+    for limit in [0, 1, 2, 6] {
+        let result = with_scan(&bytes, |scan| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            ).unwrap();
+            crate::design::decode::parameters::decode_parameter_owners(
+                &ctx,
+                scan,
+                std::slice::from_ref(&parameter),
+                std::slice::from_ref(&header),
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ), "collection limit {limit}");
+    }
+}
+
+#[test]
 fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let stream = "f3d:Design/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(

@@ -7,7 +7,7 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
+use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
@@ -491,12 +491,20 @@ pub(crate) fn decode_parameter_owners(
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
-        if headers_by_stream
-            .entry(stream)
-            .or_default()
-            .insert(header.record_index, header)
-            .is_some()
-        {
+        if !headers_by_stream.contains_key(stream) {
+            ctx.charge_collection_items(1, "f3d owner header stream")?;
+            headers_by_stream.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d owner header stream allocation", 0, 1)
+            })?;
+        }
+        let stream_headers = headers_by_stream.entry(stream).or_default();
+        if !stream_headers.contains_key(&header.record_index) {
+            ctx.charge_collection_items(1, "f3d owner header index")?;
+            stream_headers.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d owner header index allocation", 0, 1)
+            })?;
+        }
+        if stream_headers.insert(header.record_index, header).is_some() {
             return Err(CodecError::malformed(format_args!(
                 "Fusion Design stream has duplicate primary headers for record {}",
                 header.record_index
@@ -510,15 +518,17 @@ pub(crate) fn decode_parameter_owners(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = ids::native_scope(&entry.name);
-        if streams
-            .insert(stream, (entry, IndexedRecordOffsets::build(ctx, bytes)?))
-            .is_some()
-        {
+        let stream = native_scope_charged(ctx, &entry.name)?;
+        if streams.contains_key(&stream) {
             return Err(CodecError::Malformed(
                 "F3D contains duplicate Design BulkStream identities".into(),
             ));
         }
+        ctx.charge_collection_items(1, "f3d owner stream index")?;
+        streams.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d owner stream index allocation", 0, 1)
+        })?;
+        streams.entry(stream).or_insert((entry, IndexedRecordOffsets::build(ctx, bytes)?));
     }
     let mut out = Vec::new();
     for parameter in parameters {
@@ -571,6 +581,10 @@ pub(crate) fn decode_parameter_owners(
         {
             return Err(malformed("does not link back to its referencing parameter"));
         }
+        ctx.charge_collection_items(1, "f3d parameter owner")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d parameter owner allocation", 0, 1)
+        })?;
         out.push(owner);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
