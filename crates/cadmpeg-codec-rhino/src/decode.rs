@@ -877,6 +877,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             match crate::dimensions::decode(
+                self.expand.ctx(),
                 self.scan.data,
                 object.class_uuid,
                 object.class_data_range.clone(),
@@ -972,6 +973,9 @@ impl<'a> DecodeContext<'a> {
                             &format!("dimension candidate rejected: {error}"),
                         ),
                     }
+                }
+                Err(crate::chunks::FramingError::Resource(limit)) => {
+                    return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
                 }
                 Err(error) => {
                     self.scan_warning(source_order, &format!("dimension retained: {error}"));

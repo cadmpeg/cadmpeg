@@ -380,6 +380,7 @@ fn decode_annotation(
 }
 
 fn decode_legacy_annotation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -390,7 +391,7 @@ fn decode_legacy_annotation(
         ArchiveVersion::V2 | ArchiveVersion::V3 | ArchiveVersion::V4
     ) {
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
-        let value = crate::dimensions::legacy_annotation_direct(&mut reader, scale)?;
+        let value = crate::dimensions::legacy_annotation_direct(ctx, &mut reader, scale)?;
         reader.skip_remaining()?;
         return Ok(value);
     }
@@ -408,7 +409,7 @@ fn decode_legacy_annotation(
             "legacy annotation wrapper version is unsupported",
         ));
     }
-    let value = crate::dimensions::legacy_annotation(data, &mut outer, scale, archive)?;
+    let value = crate::dimensions::legacy_annotation(ctx, data, &mut outer, scale, archive)?;
     outer.skip_remaining()?;
     Ok(value)
 }
@@ -429,13 +430,14 @@ struct V2Text {
 }
 
 fn decode_v2_annotation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
     class: Uuid,
 ) -> Result<V2AnnotationPayload, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let base = crate::dimensions::v2_annotation_direct(&mut reader, scale)?;
+    let base = crate::dimensions::v2_annotation_direct(ctx, &mut reader, scale)?;
     let text = if class == crate::dimensions::V2_TEXT_OBJECT {
         if base.kind != 7 {
             return Err(FramingError::structural(
@@ -727,12 +729,16 @@ pub(crate) fn install(
             }
             AnnotationClass::Legacy { leader } => {
                 let value = match decode_legacy_annotation(
+                    ctx,
                     scan.data,
                     object.class_data_range.clone(),
                     scan.archive,
                     scale,
                 ) {
                     Ok(value) => value,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                     Err(error) => {
                         annotation_record_dropped(
                             &mut losses,
@@ -787,12 +793,16 @@ pub(crate) fn install(
             }
             AnnotationClass::V2 => {
                 let value = match decode_v2_annotation(
+                    ctx,
                     scan.data,
                     object.class_data_range.clone(),
                     scale,
                     object.class_uuid,
                 ) {
                     Ok(value) => value,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                     Err(error) => {
                         annotation_record_dropped(
                             &mut losses,
@@ -944,6 +954,17 @@ mod tests {
     use cadmpeg_ir::scalar::FiniteReal;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
 
+    fn with_decode_context<R>(
+        data: &[u8],
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("annotation fixture fits the root limit");
+        apply(&ctx)
+    }
+
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(minor.to_le_bytes());
@@ -1019,6 +1040,32 @@ mod tests {
         bytes.extend(utf16_bytes(default_text));
         bytes.extend(i32::from(user_positioned).to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn annotation_install_propagates_v2_point_limit() {
+        let payload =
+            v2_annotation_payload(6, &[[1.0, 2.0], [3.0, 4.0]], "leader", "default", false);
+        let object = object_record_with_payload(
+            ArchiveVersion::V5,
+            1,
+            crate::dimensions::V2_LEADER.to_wire(),
+            &payload,
+        );
+        let scan = scan_with_objects(&[object]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("fixture fits root limit");
+        let refusal = install(&ctx, &scan, &mut CadIr::empty())
+            .expect_err("two leader points exceed one collection item");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino V2 annotation points"
+        ));
     }
 
     fn legacy_text_payload() -> Vec<u8> {
@@ -1227,12 +1274,15 @@ mod tests {
         text.extend(700_i32.to_le_bytes());
         text.extend(12.5_f64.to_le_bytes());
         text.extend([0xd1, 0xce]);
-        let value = decode_v2_annotation(
-            &text,
-            0..text.len(),
-            crate::test_support::millimeter_scale(10.0),
-            crate::dimensions::V2_TEXT_OBJECT,
-        )
+        let value = with_decode_context(&text, |ctx| {
+            decode_v2_annotation(
+                ctx,
+                &text,
+                0..text.len(),
+                crate::test_support::millimeter_scale(10.0),
+                crate::dimensions::V2_TEXT_OBJECT,
+            )
+        })
         .expect("V2 text object");
         assert_eq!(value.base.user_text, "  text  ");
         assert_eq!(value.base.default_text, "default");
@@ -1253,12 +1303,15 @@ mod tests {
             true,
         );
         leader.extend([0xa5, 0x5a]);
-        let value = decode_v2_annotation(
-            &leader,
-            0..leader.len(),
-            crate::test_support::millimeter_scale(2.0),
-            crate::dimensions::V2_LEADER,
-        )
+        let value = with_decode_context(&leader, |ctx| {
+            decode_v2_annotation(
+                ctx,
+                &leader,
+                0..leader.len(),
+                crate::test_support::millimeter_scale(2.0),
+                crate::dimensions::V2_LEADER,
+            )
+        })
         .expect("V2 leader");
         assert_eq!(value.base.points, [[2.0, 4.0], [6.0, 8.0], [10.0, 12.0]]);
         assert!(value.base.user_positioned_text);
@@ -1695,12 +1748,15 @@ mod tests {
         common.extend(12_i32.to_le_bytes());
         let inner = anonymous(3, &common);
         let bytes = anonymous(0, &inner);
-        let value = decode_legacy_annotation(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V8,
-            crate::test_support::millimeter_scale(10.0),
-        )
+        let value = with_decode_context(&bytes, |ctx| {
+            decode_legacy_annotation(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V8,
+                crate::test_support::millimeter_scale(10.0),
+            )
+        })
         .expect("valid legacy leader");
         assert_eq!(value.rich_text, "leader");
         assert_eq!(value.user_text, "formula");
@@ -1725,12 +1781,15 @@ mod tests {
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend((-1_i32).to_le_bytes());
         bytes.extend(1.5_f64.to_le_bytes());
-        let value = decode_legacy_annotation(
-            &bytes,
-            0..bytes.len(),
-            ArchiveVersion::V4,
-            crate::test_support::millimeter_scale(10.0),
-        )
+        let value = with_decode_context(&bytes, |ctx| {
+            decode_legacy_annotation(
+                ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V4,
+                crate::test_support::millimeter_scale(10.0),
+            )
+        })
         .expect("valid direct legacy text");
         assert_eq!(value.rich_text, "legacy");
         assert_eq!(value.user_text, "legacy");
