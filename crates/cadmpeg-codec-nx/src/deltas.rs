@@ -983,35 +983,34 @@ fn inline_schema_declarations(
     census: &Census,
 ) -> Result<Vec<InlineSchemaDeclaration>, CodecError> {
     let covered = merged_event_spans(ctx, census, true)?;
-    Ok(uncovered_spans(ctx, stream.len(), census, true)?
-        .flat_map(|(offset, gap_end)| {
-            let parse_end = covered
-                .iter()
-                .position(|(start, end)| *start <= gap_end && gap_end < *end)
-                .map_or(gap_end, |index| {
-                    covered
-                        .get(index + 1)
-                        .map_or(stream.len(), |(start, _)| *start)
-                });
-            let mut declarations = Vec::new();
-            let mut at = offset;
-            while at < gap_end {
-                let declaration = inline_schema_declaration(stream, at, gap_end).or_else(|| {
-                    (parse_end > gap_end
-                        && stream.get(at..at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
-                            == Some(ATTDEF_LIST_SCHEMA_HEADER))
-                    .then(|| inline_schema_declaration(stream, at, parse_end))
-                    .flatten()
-                });
-                let Some(declaration) = declaration else {
-                    break;
-                };
-                at = declaration.end;
-                declarations.push(declaration);
-            }
-            declarations
-        })
-        .collect())
+    let mut declarations = Vec::new();
+    for (offset, gap_end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        let parse_end = covered
+            .iter()
+            .position(|(start, end)| *start <= gap_end && gap_end < *end)
+            .map_or(gap_end, |index| {
+                covered
+                    .get(index + 1)
+                    .map_or(stream.len(), |(start, _)| *start)
+            });
+        let mut at = offset;
+        while at < gap_end {
+            ctx.charge_work(1, "scan NX inline schema declarations")?;
+            let declaration = inline_schema_declaration(stream, at, gap_end).or_else(|| {
+                (parse_end > gap_end
+                    && stream.get(at..at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
+                        == Some(ATTDEF_LIST_SCHEMA_HEADER))
+                .then(|| inline_schema_declaration(stream, at, parse_end))
+                .flatten()
+            });
+            let Some(declaration) = declaration else {
+                break;
+            };
+            at = declaration.end;
+            census::push_event(ctx, &mut declarations, declaration, "NX inline schema declarations")?;
+        }
+    }
+    Ok(declarations)
 }
 
 const ATTDEF_LIST_SCHEMA_HEADER: &[u8] = &[
