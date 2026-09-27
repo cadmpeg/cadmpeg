@@ -28,6 +28,7 @@ use reference::ConstructionReference;
 
 pub(super) mod block_reference;
 pub(super) mod body_scalar_triple;
+mod borrowed_wires;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;
 mod body_write_wire;
 mod common_frame_wire;
@@ -236,11 +237,8 @@ pub(super) struct FeatureBodyWriteGroupPartitionUse {
 ///
 /// The optional tag and object identity are native evidence. They do not assign a
 /// body, operand, input, or output role.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationObjectReferenceWire",
-    into = "FeatureOperationObjectReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationObjectReferenceWire")]
 pub(super) struct FeatureOperationObjectReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -291,6 +289,7 @@ struct FeatureOperationObjectReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWire {
     fn from(value: FeatureOperationObjectReference) -> Self {
         Self {
@@ -408,11 +407,8 @@ pub(super) struct FeaturePayloadString {
 }
 
 /// Primary selection or ordered body-reference field in one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBodyReferenceWire",
-    into = "FeatureBodyReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBodyReferenceWire")]
 pub(super) struct FeatureBodyReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -447,6 +443,7 @@ struct FeatureBodyReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
     fn from(value: FeatureBodyReference) -> Self {
         Self {
@@ -518,11 +515,8 @@ pub(super) struct FeatureInputBlock {
 }
 
 /// Input-block bindings from distinct operations that resolve to one data block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureInputBlockIdentityGroupWire",
-    into = "FeatureInputBlockIdentityGroupWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureInputBlockIdentityGroupWire")]
 pub(super) struct FeatureInputBlockIdentityGroup {
     /// Globally unique group identity.
     pub(super) id: String,
@@ -550,6 +544,7 @@ struct FeatureInputBlockIdentityGroupWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureInputBlockIdentityGroup> for FeatureInputBlockIdentityGroupWire {
     fn from(group: FeatureInputBlockIdentityGroup) -> Self {
         Self {
@@ -680,11 +675,8 @@ enum FeatureInputColumnTargetRow {
 }
 
 /// Unique composite-table target row for one feature input block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureInputColumnTargetWire",
-    into = "FeatureInputColumnTargetWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureInputColumnTargetWire")]
 pub(super) struct FeatureInputColumnTarget {
     /// Globally unique target identity.
     pub(super) id: String,
@@ -755,6 +747,7 @@ struct FeatureInputColumnTargetWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureInputColumnTarget> for FeatureInputColumnTargetWire {
     fn from(value: FeatureInputColumnTarget) -> Self {
         let (row_kind, leading_index, leading_index_source_offset, discriminator, flag) =
@@ -876,8 +869,8 @@ pub(super) struct FeatureParameterBinding {
 }
 
 /// All binding occurrences by which one operation consumes one expression.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FeatureParameterUseWire", into = "FeatureParameterUseWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureParameterUseWire")]
 pub(super) struct FeatureParameterUse {
     /// Globally unique use identity.
     pub(super) id: String,
@@ -904,6 +897,7 @@ struct FeatureParameterUseWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureParameterUse> for FeatureParameterUseWire {
     fn from(value: FeatureParameterUse) -> Self {
         let (bindings, source_offsets) = value
