@@ -75,7 +75,6 @@ fn inflate_display_jt(
 
 /// Outer index of the embedded JT display-model stream.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
-#[cfg_attr(not(test), derive(Clone))]
 #[serde(try_from = "DisplayJtIndexWire")]
 pub(super) struct DisplayJtIndex {
     /// Globally unique index identity.
