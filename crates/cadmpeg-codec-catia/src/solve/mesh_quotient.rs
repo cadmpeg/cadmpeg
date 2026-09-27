@@ -7,6 +7,8 @@ use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// Words in a zeroed bitset over `bits` positions.
 ///
@@ -2564,35 +2566,6 @@ impl MeshQuotient {
             Ok(copy)
         }
 
-        fn canonical_directions(
-            ctx: &DecodeContext<'_>,
-            directions: &[Vec<bool>],
-        ) -> Result<Vec<Vec<bool>>, CodecError> {
-            let mut canonical = Vec::new();
-            crate::resource::reserve_vec(
-                ctx,
-                &mut canonical,
-                directions.len(),
-                "catia_canonical_direction_rows",
-            )?;
-            for row in directions {
-                let mut complement =
-                    crate::resource::copy_slice(ctx, row, "catia_canonical_direction_values")?;
-                for value in &mut complement {
-                    *value = !*value;
-                }
-                if complement < *row {
-                    canonical.push(complement);
-                } else {
-                    canonical.push(crate::resource::copy_slice(
-                        ctx,
-                        row,
-                        "catia_canonical_direction_values",
-                    )?);
-                }
-            }
-            Ok(canonical)
-        }
         #[allow(clippy::too_many_arguments)]
         fn walk(
             ctx: &DecodeContext<'_>,
@@ -2604,7 +2577,7 @@ impl MeshQuotient {
             mut quotient: MeshQuotient,
             edge_candidates: &[Vec<[usize; 2]>],
             output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
-            seen: &mut HashSet<MeshOrientationSignature>,
+            seen: &mut HashMap<u64, Vec<usize>>,
             oriented: &mut HashSet<usize>,
             gaugeable_edges: &HashSet<usize>,
             limit: usize,
@@ -2619,16 +2592,7 @@ impl MeshQuotient {
                 return Ok(());
             }
             if boundary_index == boundaries.len() {
-                let signature = (
-                    quotient.signature_charged(ctx)?,
-                    canonical_directions(ctx, directions)?,
-                );
-                if crate::resource::insert_set(
-                    ctx,
-                    seen,
-                    signature,
-                    "catia_orientation_signatures",
-                )? {
+                if admit_orientation_option(ctx, seen, output, directions, &quotient)? {
                     crate::resource::push(
                         ctx,
                         output,
@@ -2830,7 +2794,7 @@ impl MeshQuotient {
         }
         if variable_count <= 8 {
             let mut output = Vec::new();
-            let mut seen = HashSet::new();
+            let mut seen = HashMap::new();
             let combinations = 1usize << variable_count;
             let orientation_work =
                 work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
@@ -2927,15 +2891,7 @@ impl MeshQuotient {
                 if !quotient.propagate_edge_domains(ctx, affected_edges, edge_candidates, budget)? {
                     continue;
                 }
-                if crate::resource::insert_set(
-                    ctx,
-                    &mut seen,
-                    (
-                        quotient.signature_charged(ctx)?,
-                        canonical_directions(ctx, &directions)?,
-                    ),
-                    "catia_orientation_signatures",
-                )? {
+                if admit_orientation_option(ctx, &mut seen, &output, &directions, &quotient)? {
                     crate::resource::push(
                         ctx,
                         &mut output,
@@ -2947,7 +2903,7 @@ impl MeshQuotient {
             return Ok(output);
         }
         let mut output = Vec::new();
-        let mut seen = HashSet::<MeshOrientationSignature>::new();
+        let mut seen = HashMap::<u64, Vec<usize>>::new();
         let mut oriented = HashSet::new();
         crate::resource::reserve_set(
             ctx,
@@ -2990,7 +2946,7 @@ impl MeshQuotient {
         }
         let work = work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
         let mut output = Vec::new();
-        let mut seen = HashSet::<MeshOrientationSignature>::new();
+        let mut seen = HashMap::<u64, Vec<usize>>::new();
         for directions in direction_options.iter().take(limit) {
             if directions.len() != assignment.boundaries.len()
                 || directions
@@ -3043,17 +2999,7 @@ impl MeshQuotient {
             if !merged {
                 continue;
             }
-            let mut signature_quotient = quotient.clone_charged(ctx)?;
-            let signature = (
-                signature_quotient.signature_charged(ctx)?,
-                copy_mesh_boundary_directions(ctx, directions)?,
-            );
-            if crate::resource::insert_set(
-                ctx,
-                &mut seen,
-                signature,
-                "catia_fixed_direction_signatures",
-            )? {
+            if admit_orientation_option(ctx, &mut seen, &output, directions, &quotient)? {
                 crate::resource::push(
                     ctx,
                     &mut output,
@@ -5172,9 +5118,114 @@ type MeshSelectionStateSignature = (
     MeshQuotientSignature,
     Vec<Option<bool>>,
 );
-type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 type MeshOrientationOption = (Vec<Vec<bool>>, MeshQuotient);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
+
+fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
+    row[index] ^ row.first().copied().unwrap_or(false)
+}
+
+fn orientation_fingerprint(quotient: &MeshQuotient, directions: &[Vec<bool>]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    quotient.union.len().hash(&mut hasher);
+    for node in 0..quotient.union.len() {
+        let root = quotient.union.root(node);
+        quotient.members(root).iter().min().hash(&mut hasher);
+        let domain = &quotient.domains[root];
+        domain.len().hash(&mut hasher);
+        let mut xor = 0u64;
+        let mut sum = 0u64;
+        for point in domain.iter() {
+            let mut point_hasher = DefaultHasher::new();
+            point.hash(&mut point_hasher);
+            let value = point_hasher.finish();
+            xor ^= value;
+            sum = sum.wrapping_add(value);
+        }
+        xor.hash(&mut hasher);
+        sum.hash(&mut hasher);
+    }
+    directions.len().hash(&mut hasher);
+    for row in directions {
+        row.len().hash(&mut hasher);
+        for index in 0..row.len() {
+            canonical_direction_bit(row, index).hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+fn orientation_options_equivalent(
+    left_quotient: &MeshQuotient,
+    left_directions: &[Vec<bool>],
+    right_quotient: &MeshQuotient,
+    right_directions: &[Vec<bool>],
+) -> bool {
+    if left_quotient.union.len() != right_quotient.union.len()
+        || left_directions.len() != right_directions.len()
+    {
+        return false;
+    }
+    for node in 0..left_quotient.union.len() {
+        let left_root = left_quotient.union.root(node);
+        let right_root = right_quotient.union.root(node);
+        if left_quotient.members(left_root).iter().min()
+            != right_quotient.members(right_root).iter().min()
+            || left_quotient.domains[left_root] != right_quotient.domains[right_root]
+        {
+            return false;
+        }
+    }
+    left_directions
+        .iter()
+        .zip(right_directions)
+        .all(|(left, right)| {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| {
+                    canonical_direction_bit(left, index) == canonical_direction_bit(right, index)
+                })
+        })
+}
+
+fn admit_orientation_option(
+    ctx: &DecodeContext<'_>,
+    seen: &mut HashMap<u64, Vec<usize>>,
+    output: &[MeshOrientationOption],
+    directions: &[Vec<bool>],
+    quotient: &MeshQuotient,
+) -> Result<bool, CodecError> {
+    let work = u64::try_from(quotient.union.len())
+        .map_err(|_| ctx.refuse_codec_limit("catia_orientation_dedup_work", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "catia_orientation_dedup_work")?;
+    let fingerprint = orientation_fingerprint(quotient, directions);
+    if let Some(indices) = seen.get(&fingerprint) {
+        for &index in indices {
+            ctx.charge_work(1, "catia_orientation_dedup_compare")?;
+            let (prior_directions, prior_quotient) = &output[index];
+            if orientation_options_equivalent(
+                quotient,
+                directions,
+                prior_quotient,
+                prior_directions,
+            ) {
+                return Ok(false);
+            }
+        }
+    }
+    crate::resource::admit_map_entry(
+        ctx,
+        seen,
+        &fingerprint,
+        "catia_orientation_fingerprint_keys",
+    )?;
+    crate::resource::push(
+        ctx,
+        seen.entry(fingerprint).or_default(),
+        output.len(),
+        "catia_orientation_fingerprint_indices",
+    )?;
+    Ok(true)
+}
 
 /// Search-order information for same-class rows with identical endpoint
 /// domains. The dependency order reduces branching overhead without assigning
@@ -6439,26 +6490,34 @@ impl MeshEndpointRelationSelection {
     }
 
     /// Selection with canonical assignment and endpoint ordering.
-    pub(super) fn normalized(&self) -> Self {
+    pub(super) fn normalized(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         match self {
             Self::Enumerated {
                 assignments,
                 edge_pairs,
             } => {
-                let mut assignments = assignments.clone();
+                let mut assignments = crate::resource::copy_retained_slice(
+                    ctx,
+                    assignments,
+                    "catia_relation_normalized_assignments",
+                )?;
                 assignments.sort_unstable();
                 assignments.dedup();
-                let mut edge_pairs = edge_pairs.clone();
+                let mut edge_pairs = crate::resource::copy_retained_slice(
+                    ctx,
+                    edge_pairs,
+                    "catia_relation_normalized_pairs",
+                )?;
                 for (_, pair) in &mut edge_pairs {
                     pair.sort_unstable();
                 }
                 edge_pairs.sort_unstable();
-                Self::Enumerated {
+                Ok(Self::Enumerated {
                     assignments,
                     edge_pairs,
-                }
+                })
             }
-            Self::Deferred => Self::Deferred,
+            Self::Deferred => Ok(Self::Deferred),
         }
     }
 }
@@ -6471,43 +6530,60 @@ pub(super) type MeshEndpointRelationStateSignature = (
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
 type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
 
-fn raw_endpoint_relation_state_signature(
+pub(super) fn raw_endpoint_relation_state_signature(
+    ctx: &DecodeContext<'_>,
     domains: &[Vec<MeshEndpointRelationChoice>],
     assigned: &[Option<[usize; 2]>],
-) -> MeshEndpointRelationStateSignature {
-    let assigned = assigned
-        .iter()
-        .copied()
-        .map(|pair| {
-            pair.map(|mut pair| {
-                pair.sort_unstable();
-                pair
-            })
-        })
-        .collect();
-    let domains = domains
-        .iter()
-        .map(|choices| {
-            let mut choices = choices
-                .iter()
-                .map(|choice| choice.selection.normalized())
-                .collect::<Vec<_>>();
-            choices.sort_unstable();
-            choices
-        })
-        .collect();
-    (assigned, domains)
+) -> Result<MeshEndpointRelationStateSignature, CodecError> {
+    let mut normalized_assigned = Vec::new();
+    for pair in assigned {
+        let pair = pair.map(|mut pair| {
+            pair.sort_unstable();
+            pair
+        });
+        crate::resource::push(
+            ctx,
+            &mut normalized_assigned,
+            pair,
+            "catia_relation_signature_assigned",
+        )?;
+    }
+    let mut normalized_domains = Vec::new();
+    for choices in domains {
+        let mut row = Vec::new();
+        for choice in choices {
+            let normalized = choice.selection.normalized(ctx)?;
+            crate::resource::push(
+                ctx,
+                &mut row,
+                normalized,
+                "catia_relation_signature_choices",
+            )?;
+        }
+        row.sort_unstable();
+        crate::resource::push(
+            ctx,
+            &mut normalized_domains,
+            row,
+            "catia_relation_signature_domains",
+        )?;
+    }
+    Ok((normalized_assigned, normalized_domains))
 }
 
 fn endpoint_relation_state_signature(
+    ctx: &DecodeContext<'_>,
     domains: &[Vec<MeshEndpointRelationChoice>],
     assigned: &[Option<[usize; 2]>],
     candidate_gauge: Option<MeshCandidateGauge<'_>>,
-) -> Option<MeshEndpointRelationStateSignature> {
-    candidate_gauge.map_or_else(
-        || Some(raw_endpoint_relation_state_signature(domains, assigned)),
-        |gauge| canonicalize_endpoint_relation_state(domains, assigned, gauge),
-    )
+) -> Result<Option<MeshEndpointRelationStateSignature>, CodecError> {
+    if let Some(gauge) = candidate_gauge {
+        canonicalize_endpoint_relation_state(ctx, domains, assigned, gauge)
+    } else {
+        Ok(Some(raw_endpoint_relation_state_signature(
+            ctx, domains, assigned,
+        )?))
+    }
 }
 
 /// Return the edge-pair superset admitted by the surviving relation domains.
@@ -7223,9 +7299,11 @@ where
         let alternative_count = domains.iter().map(Vec::len).sum::<usize>();
         let signature =
             if candidate_gauge.is_some() && alternative_count <= MAX_GAUGE_STATE_ALTERNATIVES {
-                endpoint_relation_state_signature(&domains, &assigned, candidate_gauge)
+                endpoint_relation_state_signature(ctx, &domains, &assigned, candidate_gauge)?
             } else {
-                Some(raw_endpoint_relation_state_signature(&domains, &assigned))
+                Some(raw_endpoint_relation_state_signature(
+                    ctx, &domains, &assigned,
+                )?)
             };
         if let Some(signature) = signature {
             if !crate::resource::insert_set(
@@ -7641,53 +7719,117 @@ fn resolve_endpoint_configuration_relation_streaming(
     let mut evaluate = |selections: MeshEndpointRelationSelections,
                         edge_pairs: Vec<[usize; 2]>|
      -> Result<bool, CodecError> {
-        let point_set = edge_pairs.iter().flatten().copied().collect::<HashSet<_>>();
+        let mut point_set = HashSet::new();
+        for &point in edge_pairs.iter().flatten() {
+            crate::resource::insert_set(ctx, &mut point_set, point, "catia_relation_point_set")?;
+        }
         if point_set.len() != vertex_points.len() {
             return Ok(false);
         }
         if let Some(valid) = partial_solution_valid {
-            let candidate_pairs = edge_pairs.iter().copied().map(Some).collect::<Vec<_>>();
+            let mut candidate_pairs = Vec::new();
+            for &pair in &edge_pairs {
+                crate::resource::push(
+                    ctx,
+                    &mut candidate_pairs,
+                    Some(pair),
+                    "catia_relation_partial_pairs",
+                )?;
+            }
             if !valid(&candidate_pairs) {
                 return Ok(false);
             }
         }
         if relation_state_memo.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            let canonical_pairs = candidate_gauge.map_or_else(
-                || Some(edge_pairs.clone()),
-                |gauge| canonicalize_complete_endpoint_pairs(&edge_pairs, gauge),
-            );
+            let canonical_pairs = if let Some(gauge) = candidate_gauge {
+                canonicalize_complete_endpoint_pairs(ctx, &edge_pairs, gauge)?
+            } else {
+                Some(crate::resource::copy_retained_slice(
+                    ctx,
+                    &edge_pairs,
+                    "catia_relation_canonical_pairs",
+                )?)
+            };
             let Some(canonical_pairs) = canonical_pairs else {
                 return Ok(false);
             };
-            if !relation_state_memo.insert((selections.clone(), canonical_pairs)) {
+            let selection_copy = crate::resource::copy_retained_rows(
+                ctx,
+                &selections,
+                "catia_relation_memo_selection_rows",
+                "catia_relation_memo_selection_values",
+            )?;
+            if !crate::resource::insert_set(
+                ctx,
+                &mut relation_state_memo,
+                (selection_copy, canonical_pairs),
+                "catia_relation_state_memo",
+            )? {
                 return Ok(false);
             }
         }
-        let assignment_domains = selections
-            .iter()
-            .enumerate()
-            .map(|(face, options)| {
-                options
-                    .iter()
-                    .filter_map(|assignment| assignments[face].get(*assignment).cloned())
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let mut assignment_domains = Vec::new();
+        for (face, options) in selections.iter().enumerate() {
+            let mut row = Vec::new();
+            for &assignment in options {
+                let Some(source) = assignments[face].get(assignment) else {
+                    continue;
+                };
+                let mut boundaries = Vec::new();
+                for boundary in &source.boundaries {
+                    let copy = crate::resource::copy_retained_slice(
+                        ctx,
+                        boundary,
+                        "catia_relation_assignment_boundary_values",
+                    )?;
+                    crate::resource::push(
+                        ctx,
+                        &mut boundaries,
+                        copy,
+                        "catia_relation_assignment_boundaries",
+                    )?;
+                }
+                crate::resource::push(
+                    ctx,
+                    &mut row,
+                    MeshFaceBoundaryAssignment { boundaries },
+                    "catia_relation_assignment_choices",
+                )?;
+            }
+            crate::resource::push(
+                ctx,
+                &mut assignment_domains,
+                row,
+                "catia_relation_assignment_domains",
+            )?;
+        }
         if assignment_domains.iter().any(Vec::is_empty) {
             return Ok(false);
         }
-        let candidates = edge_pairs
-            .iter()
-            .copied()
-            .map(|pair| vec![pair])
-            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+        for &pair in &edge_pairs {
+            let mut row = Vec::new();
+            crate::resource::push(ctx, &mut row, pair, "catia_relation_candidate_pair")?;
+            crate::resource::push(ctx, &mut candidates, row, "catia_relation_candidate_rows")?;
+        }
         let endpoint_resolution_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let outcome = if assignment_domains.iter().all(|domain| domain.len() == 1) {
-            let selected = assignment_domains
-                .into_iter()
-                .map(|mut domain| domain.pop())
-                .collect::<Option<Vec<_>>>();
-            if let Some(selected) = selected {
+            let mut selected = Vec::new();
+            let mut complete = true;
+            for mut domain in assignment_domains {
+                if let Some(choice) = domain.pop() {
+                    crate::resource::push(
+                        ctx,
+                        &mut selected,
+                        choice,
+                        "catia_relation_selected_assignments",
+                    )?;
+                } else {
+                    complete = false;
+                    break;
+                }
+            }
+            if complete {
                 resolve_fixed_mesh_endpoint_pairs(
                     ctx,
                     MeshEndpointGeometry {
@@ -12023,6 +12165,22 @@ fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
     assert!(completed, "adaptive caps must admit the cycle relation");
     assert!(refused.contains("catia_endpoint_relation_covered"));
     assert!(refused.contains("catia_endpoint_relation_assigned"));
+    for operation in [
+        "catia_relation_point_set",
+        "catia_relation_memo_selection_rows",
+        "catia_relation_memo_selection_values",
+        "catia_relation_canonical_pairs",
+        "catia_relation_state_memo",
+        "catia_relation_assignment_boundary_values",
+        "catia_relation_assignment_boundaries",
+        "catia_relation_assignment_choices",
+        "catia_relation_assignment_domains",
+        "catia_relation_candidate_pair",
+        "catia_relation_candidate_rows",
+        "catia_relation_selected_assignments",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]
@@ -12498,6 +12656,7 @@ fn endpoint_relation_face_choices_refuse_before_invalid_edge_result() {
 
 #[test]
 fn raw_endpoint_relation_state_signature_ignores_local_order() {
+    catia_test_context!(ctx);
     let left = vec![
         vec![
             MeshEndpointRelationChoice {
@@ -12552,8 +12711,10 @@ fn raw_endpoint_relation_state_signature_ignores_local_order() {
     let right_assigned = vec![Some([2, 3]), None, Some([4, 5])];
 
     assert_eq!(
-        raw_endpoint_relation_state_signature(&left, &left_assigned),
-        raw_endpoint_relation_state_signature(&right, &right_assigned),
+        raw_endpoint_relation_state_signature(&ctx, &left, &left_assigned)
+            .expect("service resource budget"),
+        raw_endpoint_relation_state_signature(&ctx, &right, &right_assigned)
+            .expect("service resource budget"),
     );
 }
 

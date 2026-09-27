@@ -2,7 +2,8 @@ use crate::families::standard::topology::{
     solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopology,
 };
 use crate::solve::mesh_quotient::{
-    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, mesh_assignment_can_merge,
+    admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
+    mesh_assignment_can_merge, orientation_fingerprint, orientation_options_equivalent,
     possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient,
     MeshSelectionSearch, SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
@@ -14,6 +15,64 @@ use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+#[test]
+fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
+    let domains = vec![
+        Arc::new(HashSet::from([0, 1])),
+        Arc::new(HashSet::from([1, 2])),
+    ];
+    let mut left = MeshQuotient::new(domains.clone());
+    let mut right = MeshQuotient::new(domains);
+    assert!(left.merge(0, 1).is_some());
+    assert!(right.merge(1, 0).is_some());
+    let first = vec![vec![false, true]];
+    let complement = vec![vec![true, false]];
+    assert_eq!(
+        orientation_fingerprint(&left, &first),
+        orientation_fingerprint(&right, &complement)
+    );
+    assert!(orientation_options_equivalent(
+        &left,
+        &first,
+        &right,
+        &complement
+    ));
+    assert!(!orientation_options_equivalent(
+        &left,
+        &first,
+        &right,
+        &[vec![false, false]]
+    ));
+
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut seen = HashMap::new();
+        let mut output = Vec::new();
+        assert!(admit_orientation_option(
+            ctx, &mut seen, &output, &first, &left
+        )?);
+        output.push((first.clone(), left.clone()));
+        assert!(!admit_orientation_option(
+            ctx,
+            &mut seen,
+            &output,
+            &complement,
+            &right
+        )?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    };
+    crate::test_support::with_service_context(run).expect("service resource budget");
+    for (cap, operation) in [
+        (0, "catia_orientation_fingerprint_keys"),
+        (1, "catia_orientation_fingerprint_indices"),
+    ] {
+        let refusal = crate::test_support::with_collection_limit(cap, run)
+            .expect_err("fingerprint admission exceeds the collection limit");
+        assert!(
+            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
+}
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
