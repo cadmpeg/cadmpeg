@@ -319,104 +319,145 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
 /// Collapse equal endpoint identities and propagate correlated edge-pair
 /// support to a fixpoint. Only serialized pairs supported by both resulting
 /// port domains are retained.
-#[must_use]
 pub(super) fn prune_edge_candidates_by_port_domains(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
-    prune_edge_candidates_by_port_domains_with_deferred(edge_ports, edge_candidates, &[])
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, cadmpeg_core::CodecError> {
+    prune_edge_candidates_by_port_domains_with_deferred(ctx, edge_ports, edge_candidates, &[])
 }
 
 /// Apply trim-port equality to endpoint candidates whose duplicate face slot
 /// is settled. Rows with an open duplicate-face domain do not contribute their
 /// candidate set to port-domain propagation; their candidates are filtered by
 /// the settled neighbouring ports after that propagation completes.
-#[must_use]
 pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     deferred_edges: &[bool],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, cadmpeg_core::CodecError> {
     if edge_ports.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
-        return None;
+        return Ok(None);
     }
     if !deferred_edges.is_empty() && deferred_edges.len() != edge_candidates.len() {
-        return None;
+        return Ok(None);
     }
     let mut effective_deferred = if deferred_edges.is_empty() {
-        edge_candidates.iter().map(|_| false).collect()
+        ctx.alloc_filled(
+            edge_candidates.len(),
+            false,
+            "catia_port_effective_deferred",
+        )?
     } else {
-        deferred_edges.to_vec()
+        crate::resource::copy_slice(ctx, deferred_edges, "catia_port_effective_deferred")?
     };
-    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
-        return None;
+    if !expand_deferred_edge_port_components(ctx, edge_ports, &mut effective_deferred)? {
+        return Ok(None);
     }
     let is_deferred = |edge: usize| effective_deferred[edge];
-    let all_points = edge_candidates
-        .iter()
-        .flatten()
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>();
-    let mut domains = Vec::with_capacity(edge_candidates.len() * 2);
+    let mut all_points = HashSet::new();
+    for &point in edge_candidates.iter().flatten().flatten() {
+        crate::resource::insert_set(ctx, &mut all_points, point, "catia_port_all_points")?;
+    }
+    let mut domains = Vec::new();
     for (edge, candidates) in edge_candidates.iter().enumerate() {
         let domain = Arc::new(if is_deferred(edge) {
-            all_points.clone()
+            let mut copy = HashSet::new();
+            crate::resource::reserve_set(
+                ctx,
+                &mut copy,
+                all_points.len(),
+                "catia_port_deferred_domain",
+            )?;
+            copy.extend(all_points.iter().copied());
+            copy
         } else {
-            candidates.iter().flatten().copied().collect::<HashSet<_>>()
+            let mut points = HashSet::new();
+            for &point in candidates.iter().flatten() {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut points,
+                    point,
+                    "catia_port_candidate_domain",
+                )?;
+            }
+            points
         });
-        domains.push(domain.clone());
-        domains.push(domain);
+        crate::resource::push(ctx, &mut domains, domain.clone(), "catia_port_domains")?;
+        crate::resource::push(ctx, &mut domains, domain, "catia_port_domains")?;
     }
-    let mut quotient = MeshQuotient::new(domains);
+    let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
     let mut node_by_port = HashMap::new();
     for (edge, ports) in edge_ports.iter().enumerate() {
         for (endpoint, port) in ports.iter().copied().enumerate() {
             let node = edge * 2 + endpoint;
             if let Some(&previous) = node_by_port.get(&port) {
-                quotient.merge(previous, node)?;
+                if quotient.merge_charged(ctx, previous, node)?.is_none() {
+                    return Ok(None);
+                }
             } else {
-                node_by_port.insert(port, node);
+                crate::resource::insert_map(
+                    ctx,
+                    &mut node_by_port,
+                    port,
+                    node,
+                    "catia_port_nodes",
+                )?;
             }
         }
     }
-    let mut constrained_candidates = edge_candidates.to_vec();
+    let mut constrained_candidates = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut constrained_candidates,
+        edge_candidates.len(),
+        "catia_port_constrained_edges",
+    )?;
+    for candidates in edge_candidates {
+        constrained_candidates.push(crate::resource::copy_slice(
+            ctx,
+            candidates,
+            "catia_port_constrained_pairs",
+        )?);
+    }
     for (edge, candidates) in constrained_candidates.iter_mut().enumerate() {
         if is_deferred(edge) {
             candidates.clear();
         }
     }
     if !quotient.edge_domains_viable(&constrained_candidates) {
-        return None;
+        return Ok(None);
     }
-    edge_candidates
-        .iter()
-        .enumerate()
-        .map(|(edge, candidates)| {
-            let left = quotient.find(edge * 2);
-            let right = quotient.find(edge * 2 + 1);
-            let mut filtered = candidates
-                .iter()
-                .copied()
-                .filter(|pair| {
-                    if left == right {
-                        pair[0] == pair[1] && quotient.domains()[left].contains(&pair[0])
-                    } else {
-                        (quotient.domains()[left].contains(&pair[0])
-                            && quotient.domains()[right].contains(&pair[1]))
-                            || (quotient.domains()[left].contains(&pair[1])
-                                && quotient.domains()[right].contains(&pair[0]))
-                    }
-                })
-                .collect::<Vec<_>>();
-            for pair in &mut filtered {
-                pair.sort_unstable();
+    let mut result = Vec::new();
+    for (edge, candidates) in edge_candidates.iter().enumerate() {
+        let left = quotient.find(edge * 2);
+        let right = quotient.find(edge * 2 + 1);
+        let mut filtered = Vec::new();
+        for &pair in candidates {
+            let supported = if left == right {
+                pair[0] == pair[1] && quotient.domains()[left].contains(&pair[0])
+            } else {
+                (quotient.domains()[left].contains(&pair[0])
+                    && quotient.domains()[right].contains(&pair[1]))
+                    || (quotient.domains()[left].contains(&pair[1])
+                        && quotient.domains()[right].contains(&pair[0]))
+            };
+            if supported {
+                crate::resource::push(ctx, &mut filtered, pair, "catia_port_filtered_pairs")?;
             }
-            filtered.sort_unstable();
-            filtered.dedup();
-            (!filtered.is_empty()).then_some(filtered)
-        })
-        .collect()
+        }
+        for pair in &mut filtered {
+            pair.sort_unstable();
+        }
+        filtered.sort_unstable();
+        filtered.dedup();
+        if filtered.is_empty() {
+            return Ok(None);
+        }
+        crate::resource::push(ctx, &mut result, filtered, "catia_port_filtered_edges")?;
+    }
+    Ok(Some(result))
 }
 
 /// Reconstruct standard topology while resolving edges that have multiple

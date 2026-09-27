@@ -335,18 +335,26 @@ pub(super) fn solver_ports(
 /// endpoint-port graph. A port-domain inference is valid only when every row
 /// in the component contributes a settled endpoint relation.
 pub(crate) fn expand_deferred_edge_port_components(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     deferred_edges: &mut [bool],
-) -> bool {
+) -> Result<bool, CodecError> {
     if edge_ports.len() != deferred_edges.len() {
-        return false;
+        return Ok(false);
     }
-    let mut deferred_ports = deferred_edges
-        .iter()
-        .enumerate()
-        .filter(|(_, deferred)| **deferred)
-        .flat_map(|(edge, _)| edge_ports[edge])
-        .collect::<HashSet<_>>();
+    let mut deferred_ports = HashSet::new();
+    for (edge, &deferred) in deferred_edges.iter().enumerate() {
+        if deferred {
+            for port in edge_ports[edge] {
+                crate::resource::insert_set(
+                    ctx,
+                    &mut deferred_ports,
+                    port,
+                    "catia_deferred_ports",
+                )?;
+            }
+        }
+    }
     let mut changed = true;
     while changed {
         changed = false;
@@ -359,11 +367,16 @@ pub(crate) fn expand_deferred_edge_port_components(
                 changed = true;
             }
             for port in ports {
-                changed |= deferred_ports.insert(*port);
+                changed |= crate::resource::insert_set(
+                    ctx,
+                    &mut deferred_ports,
+                    *port,
+                    "catia_deferred_ports",
+                )?;
             }
         }
     }
-    true
+    Ok(true)
 }
 
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
@@ -379,26 +392,39 @@ pub(crate) fn standard_mesh_edge_ports(
     let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
         return Ok(None);
     };
-    Ok(mesh_edge_ports(&analysis, &local_ports))
+    mesh_edge_ports(ctx, &analysis, &local_ports)
 }
 
 fn mesh_edge_ports(
+    ctx: &DecodeContext<'_>,
     analysis: &StandardMeshAnalysis,
     local_ports: &[[u32; 2]],
-) -> Option<Vec<[u32; 2]>> {
+) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
     let edge_rows = &analysis.edge_rows;
     let cycles = &analysis.cycles;
     let occurrences = &analysis.occurrences;
     if local_ports.len() != edge_rows.len() {
-        return None;
+        return Ok(None);
     }
-    let mut union = UnionFind::new(edge_rows.len() * 2);
+    let node_count = edge_rows
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_edge_port_union", u64::MAX, u64::MAX))?;
+    let mut union = UnionFind::charged(ctx, node_count, "catia_mesh_edge_port_union")?;
     let mut node_by_identity = HashMap::new();
     for (edge, ports) in local_ports.iter().enumerate() {
         for (side, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + side;
-            if let Some(previous) = node_by_identity.insert(identity, node) {
+            if let Some(&previous) = node_by_identity.get(&identity) {
                 union.union(previous, node);
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut node_by_identity,
+                    identity,
+                    node,
+                    "catia_mesh_edge_port_identities",
+                )?;
             }
         }
     }
@@ -411,12 +437,34 @@ fn mesh_edge_ports(
             let cycle = &cycles[run.face][run.cycle];
             let before = run.start;
             let after = run.end(cycle.len());
-            let before_node = *corners
-                .entry((run.face, run.cycle, before))
-                .or_insert_with(|| union.push());
-            let after_node = *corners
-                .entry((run.face, run.cycle, after))
-                .or_insert_with(|| union.push());
+            let before_key = (run.face, run.cycle, before);
+            let before_node = if let Some(&node) = corners.get(&before_key) {
+                node
+            } else {
+                let node = union.push_charged(ctx, "catia_mesh_edge_port_corner_nodes")?;
+                crate::resource::insert_map(
+                    ctx,
+                    &mut corners,
+                    before_key,
+                    node,
+                    "catia_mesh_edge_port_corners",
+                )?;
+                node
+            };
+            let after_key = (run.face, run.cycle, after);
+            let after_node = if let Some(&node) = corners.get(&after_key) {
+                node
+            } else {
+                let node = union.push_charged(ctx, "catia_mesh_edge_port_corner_nodes")?;
+                crate::resource::insert_map(
+                    ctx,
+                    &mut corners,
+                    after_key,
+                    node,
+                    "catia_mesh_edge_port_corners",
+                )?;
+                node
+            };
             if run.reversed {
                 union.union(edge * 2 + 1, before_node);
                 union.union(edge * 2, after_node);
@@ -427,16 +475,93 @@ fn mesh_edge_ports(
         }
     }
     let mut roots = HashMap::new();
-    let mut ports = Vec::with_capacity(edge_rows.len());
+    let mut ports = Vec::new();
     for edge in 0..edge_rows.len() {
-        let pair = [edge * 2, edge * 2 + 1].map(|node| {
+        let mut pair = [0u32; 2];
+        for (side, node) in [edge * 2, edge * 2 + 1].into_iter().enumerate() {
             let root = union.find(node);
             let next = roots.len();
-            u32::try_from(*roots.entry(root).or_insert(next)).ok()
-        });
-        ports.push([pair[0]?, pair[1]?]);
+            let ordinal = if let Some(&existing) = roots.get(&root) {
+                existing
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut roots,
+                    root,
+                    next,
+                    "catia_mesh_edge_port_roots",
+                )?;
+                next
+            };
+            let Ok(value) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
+            pair[side] = value;
+        }
+        crate::resource::push(ctx, &mut ports, pair, "catia_mesh_edge_ports")?;
     }
-    Some(ports)
+    Ok(Some(ports))
+}
+
+#[cfg(test)]
+#[test]
+fn mesh_edge_ports_refuse_each_graph_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let analysis = StandardMeshAnalysis {
+        edge_rows: vec![EdgeRow {
+            kind: 0,
+            handles: vec![0],
+            boundary_layout:
+                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+        }],
+        cycles: vec![vec![vec![0, 1]]],
+        occurrences: vec![vec![MeshEdgeRun {
+            edge: 0,
+            face: 0,
+            cycle: 0,
+            start: 0,
+            segment_count: 1,
+            reversed: false,
+        }]],
+        fixed_complete_row_spans: false,
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    assert_eq!(
+        mesh_edge_ports(&ctx, &analysis, &[[10, 11]]).expect("service resource budget"),
+        Some(vec![[0, 1]])
+    );
+
+    let mut operations = HashSet::new();
+    for cap in 0..=32 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match mesh_edge_ports(&ctx, &analysis, &[[10, 11]]) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                operations.insert(limit.operation);
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("valid edge port graph must reconstruct"),
+            Err(error) => panic!("unexpected edge port refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_mesh_edge_port_union",
+        "catia_mesh_edge_port_identities",
+        "catia_mesh_edge_port_corner_nodes",
+        "catia_mesh_edge_port_corners",
+        "catia_mesh_edge_port_roots",
+        "catia_mesh_edge_ports",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 /// One exact occurrence of a physical edge row on a trim-mesh boundary.
@@ -1478,7 +1603,7 @@ impl StandardMeshBoundaryContext {
         let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
             return Ok(None);
         };
-        let Some(edge_ports) = mesh_edge_ports(&analysis, &local_ports) else {
+        let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
             return Ok(None);
         };
         let edge_runs = mesh_edge_runs(&analysis);
@@ -3740,11 +3865,13 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
     {
         return Ok(None);
     }
-    let mut effective_deferred = deferred_edges.to_vec();
-    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
+    let mut effective_deferred =
+        crate::resource::copy_slice(ctx, deferred_edges, "catia_ordered_seed_deferred_copy")?;
+    if !expand_deferred_edge_port_components(ctx, edge_ports, &mut effective_deferred)? {
         return Ok(None);
     }
-    let mut masked_pairs = endpoint_pairs.to_vec();
+    let mut masked_pairs =
+        crate::resource::copy_slice(ctx, endpoint_pairs, "catia_ordered_seed_pair_copy")?;
     for (edge, deferred) in effective_deferred.into_iter().enumerate() {
         if deferred
             && ordered_endpoint_pairs
@@ -4030,24 +4157,41 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
     if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
         return Ok(None);
     }
-    let mut effective_deferred = deferred_edges.to_vec();
-    if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
+    let mut effective_deferred =
+        crate::resource::copy_slice(ctx, deferred_edges, "catia_candidate_deferred_copy")?;
+    if !expand_deferred_edge_port_components(ctx, ports, &mut effective_deferred)? {
         return Ok(None);
     }
-    let settled = (0..ports.len())
-        .filter(|edge| !effective_deferred[*edge])
-        .collect::<Vec<_>>();
-    let settled_ports = settled.iter().map(|edge| ports[*edge]).collect::<Vec<_>>();
-    let settled_candidates = settled
-        .iter()
-        .map(|edge| candidates[*edge].clone())
-        .collect::<Vec<_>>();
+    let mut settled = Vec::new();
+    let mut settled_ports = Vec::new();
+    let mut settled_candidates = Vec::new();
+    for edge in 0..ports.len() {
+        if !effective_deferred[edge] {
+            crate::resource::push(ctx, &mut settled, edge, "catia_candidate_settled_edges")?;
+            crate::resource::push(
+                ctx,
+                &mut settled_ports,
+                ports[edge],
+                "catia_candidate_settled_ports",
+            )?;
+            crate::resource::push(
+                ctx,
+                &mut settled_candidates,
+                crate::resource::copy_slice(
+                    ctx,
+                    &candidates[edge],
+                    "catia_candidate_settled_pairs",
+                )?,
+                "catia_candidate_settled_rows",
+            )?;
+        }
+    }
     let Some(settled_pairs) =
         unique_mesh_edge_port_candidate_pairs(ctx, &settled_ports, &settled_candidates)?
     else {
         return Ok(None);
     };
-    let mut resolved = candidates.iter().map(|_| None).collect::<Vec<_>>();
+    let mut resolved = ctx.alloc_filled(candidates.len(), None, "catia_candidate_resolved")?;
     for (edge, pair) in settled.into_iter().zip(settled_pairs) {
         resolved[edge] = Some(pair);
     }

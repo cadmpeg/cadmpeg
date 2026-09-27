@@ -83,7 +83,11 @@ fn deferred_port_component_closure_reaches_transitive_neighbors() {
     let ports = [[10, 11], [11, 12], [12, 13], [20, 21]];
     let mut deferred = [true, false, false, false];
 
-    assert!(expand_deferred_edge_port_components(&ports, &mut deferred));
+    catia_test_context!(ctx);
+    assert!(
+        expand_deferred_edge_port_components(&ctx, &ports, &mut deferred)
+            .expect("service resource budget")
+    );
     assert_eq!(deferred, [true, true, true, false]);
 }
 

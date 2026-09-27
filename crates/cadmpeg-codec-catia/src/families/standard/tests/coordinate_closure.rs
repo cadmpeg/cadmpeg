@@ -12,46 +12,128 @@ use std::collections::HashSet;
 
 #[test]
 fn equal_endpoint_ports_produce_closed_edge_candidates() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let ports = [[10, 10], [10, 11]];
     let candidates = [vec![[0, 0], [1, 1], [2, 2]], vec![[1, 3], [2, 4]]];
     assert_eq!(
-        prune_edge_candidates_by_port_domains(&ports, &candidates),
+        prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
+            .expect("service resource budget"),
         Some(vec![vec![[1, 1], [2, 2]], vec![[1, 3], [2, 4]]])
     );
     assert_eq!(
-        prune_edge_candidates_by_port_domains(&[[10, 10]], &[vec![[0, 1], [0, 2]]]),
+        prune_edge_candidates_by_port_domains(&ctx, &[[10, 10]], &[vec![[0, 1], [0, 2]]])
+            .expect("service resource budget"),
         None
     );
 }
 
 #[test]
 fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let ports = [[10, 11], [11, 12], [12, 13]];
     let candidates = [vec![[0, 1], [2, 3]], vec![[1, 4], [3, 5]], vec![[4, 6]]];
 
     assert_eq!(
-        prune_edge_candidates_by_port_domains(&ports, &candidates),
+        prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
+            .expect("service resource budget"),
         Some(vec![vec![[0, 1]], vec![[1, 4]], vec![[4, 6]]])
     );
 }
 
 #[test]
 fn deferred_port_rows_do_not_constrain_open_face_components() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let ports = [[10, 11], [11, 12], [12, 13]];
     let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]];
 
     assert_eq!(
-        prune_edge_candidates_by_port_domains(&ports, &candidates),
+        prune_edge_candidates_by_port_domains(&ctx, &ports, &candidates)
+            .expect("service resource budget"),
         None
     );
     assert_eq!(
         prune_edge_candidates_by_port_domains_with_deferred(
+            &ctx,
             &ports,
             &candidates,
             &[false, true, true],
-        ),
+        )
+        .expect("service resource budget"),
         Some(candidates.to_vec())
     );
+}
+
+#[test]
+fn port_domain_pruning_refuses_input_sized_collections() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let ports = [[10, 11], [11, 12]];
+    let candidates = [vec![[0, 1]], vec![[1, 2]]];
+    let mut operations = HashSet::new();
+    for deferred in [&[][..], &[false, true][..]] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("service decode context");
+        assert_eq!(
+            prune_edge_candidates_by_port_domains_with_deferred(
+                &ctx,
+                &ports,
+                &candidates,
+                deferred,
+            )
+            .expect("service resource budget"),
+            Some(candidates.to_vec())
+        );
+
+        for cap in 0..=100 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                    .expect("fixture fits input limit");
+            match prune_edge_candidates_by_port_domains_with_deferred(
+                &ctx,
+                &ports,
+                &candidates,
+                deferred,
+            ) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    operations.insert(limit.operation);
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => panic!("consistent endpoint ports must admit a candidate"),
+                Err(error) => panic!("unexpected port pruning refusal: {error}"),
+            }
+        }
+    }
+    for operation in [
+        "catia_port_effective_deferred",
+        "catia_deferred_ports",
+        "catia_port_all_points",
+        "catia_port_deferred_domain",
+        "catia_port_candidate_domain",
+        "catia_port_domains",
+        "catia_port_nodes",
+        "catia_port_constrained_edges",
+        "catia_port_constrained_pairs",
+        "catia_port_filtered_pairs",
+        "catia_port_filtered_edges",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]

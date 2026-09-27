@@ -993,13 +993,13 @@ pub(super) fn initial_mesh_quotient(
         )?;
         crate::resource::push(ctx, &mut domains, domain, "catia_initial_quotient_domains")?;
     }
-    let mut quotient = MeshQuotient::new(domains);
+    let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
     let mut node_by_identity = HashMap::new();
     for (edge, ports) in port_identities.iter().enumerate() {
         for (port, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + port;
             if let Some(&previous) = node_by_identity.get(&identity) {
-                if quotient.merge(previous, node).is_none() {
+                if quotient.merge_charged(ctx, previous, node)?.is_none() {
                     return Ok(None);
                 }
             } else {
@@ -1048,6 +1048,48 @@ fn initial_quotient_points_refuse_before_invalid_candidate_result() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "catia_initial_quotient_points")
     );
+}
+
+#[cfg(test)]
+#[test]
+fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let candidates = [vec![[0, 1]], vec![[0, 1]]];
+    let identities = [[10, 11], [10, 12]];
+    catia_test_context!(service_ctx);
+    assert!(
+        initial_mesh_quotient(&service_ctx, &candidates, 2, &identities)
+            .expect("service resource budget")
+            .is_some()
+    );
+
+    let mut refused = HashSet::new();
+    for cap in 0..=48 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match initial_mesh_quotient(&ctx, &candidates, 2, &identities) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                refused.insert(limit.operation);
+            }
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("consistent identities must admit a quotient"),
+            Err(error) => panic!("unexpected quotient refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_quotient_union",
+        "catia_quotient_members",
+        "catia_quotient_member_nodes",
+        "catia_quotient_intersection",
+        "catia_quotient_merged_members",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[cfg(test)]
@@ -1117,6 +1159,22 @@ fn complete_mesh_endpoint_candidates_from_quotient(
 }
 
 impl MeshQuotient {
+    pub(crate) fn new_charged(
+        ctx: &DecodeContext<'_>,
+        domains: Vec<Arc<HashSet<usize>>>,
+    ) -> Result<Self, CodecError> {
+        let union = UnionFind::charged(ctx, domains.len(), "catia_quotient_union")?;
+        let mut members = ctx.alloc_filled(domains.len(), Vec::new(), "catia_quotient_members")?;
+        for (node, group) in members.iter_mut().enumerate() {
+            crate::resource::push(ctx, group, node, "catia_quotient_member_nodes")?;
+        }
+        Ok(Self {
+            union,
+            domains,
+            members,
+        })
+    }
+
     pub(crate) fn new(domains: Vec<Arc<HashSet<usize>>>) -> Self {
         Self {
             union: UnionFind::new(domains.len()),
@@ -1243,6 +1301,44 @@ impl MeshQuotient {
         let child_members = std::mem::take(&mut self.members[child]);
         self.members[root].extend(child_members);
         Some(root)
+    }
+
+    pub(crate) fn merge_charged(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        left: usize,
+        right: usize,
+    ) -> Result<Option<usize>, CodecError> {
+        let left = self.union.find(left);
+        let right = self.union.find(right);
+        if left == right {
+            return Ok(Some(left));
+        }
+        let mut intersection = HashSet::new();
+        for &point in self.domains[left].intersection(&self.domains[right]) {
+            crate::resource::insert_set(
+                ctx,
+                &mut intersection,
+                point,
+                "catia_quotient_intersection",
+            )?;
+        }
+        if intersection.is_empty() {
+            return Ok(None);
+        }
+        let child_members = self.members[right].len();
+        crate::resource::reserve_vec(
+            ctx,
+            &mut self.members[left],
+            child_members,
+            "catia_quotient_merged_members",
+        )?;
+        self.union.union(left, right);
+        let root = self.union.find(left);
+        self.domains[root] = Arc::new(intersection);
+        let child_members = std::mem::take(&mut self.members[right]);
+        self.members[root].extend(child_members);
+        Ok(Some(root))
     }
 
     pub(crate) fn edge_domains_viable(&mut self, edge_candidates: &[Vec<[usize; 2]>]) -> bool {
@@ -10244,7 +10340,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
     let mut refused = HashSet::new();
     let mut limit = 0;
     let mut completed = false;
-    for _ in 0..256 {
+    for _ in 0..4_096 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
