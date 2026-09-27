@@ -14,6 +14,26 @@ const REFERENCE_NOTE_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTIO
 const DIAGNOSTIC_LOSS_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 
 #[test]
+fn inspect_opaque_offsets_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE)
+        .expect("valid exchange with one record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(DIAGNOSTIC_LOSS_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::inspect_opaque_offsets(&exchange, &HashSet::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_inspect_opaque_offsets"
+    ));
+}
+
+#[test]
 fn decode_loss_notes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
