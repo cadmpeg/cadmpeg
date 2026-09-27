@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
     AssemblyJoint, ExternalDocument, JointConnector, JointLimits, JointOperand, PairedJointKind,
 };
@@ -501,7 +502,8 @@ fn project_qualified_operands(
                     return Ok(None);
                 };
                 Ok(Some(JointOperand::occurrence(
-                    occurrence.clone(),
+                    OccurrenceId::mint(copy_assembly_text(ctx, occurrence.as_str(), false)?)
+                        .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
                     crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
                     Vec::new(),
                 )))
@@ -1552,5 +1554,58 @@ mod tests {
             crate::ids::neutral_assembly_axial_object_id(&first),
             crate::ids::neutral_assembly_axial_object_id(&second)
         );
+    }
+
+    #[test]
+    fn axial_occurrence_identifier_copy_refuses_retained_limit() {
+        let scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:component-insert#200",
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
+            200,
+        );
+        let occurrence = OccurrenceId::mint("test:model:occurrence#component").unwrap();
+        let feature = feature(
+            &scope.id,
+            FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                occurrence: occurrence.clone(),
+            }),
+        );
+        let qualifier = DesignAssemblyOperandQualifier::AxialTarget {
+            target: DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index: 200,
+                construction_record_index: 70,
+                construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "305".to_owned(),
+                )
+                .unwrap(),
+                construction_byte_offset: 1_300,
+                construction_transform_offset: 1_348,
+                axis_record_index_offsets: [1_493, 1_509],
+                construction_paired_class_tag:
+                    crate::records::references::DesignClassTag::try_from("261".to_owned())
+                        .unwrap(),
+                construction_paired_byte_offset: 1_680,
+                selectors: Box::new([selector(), second_selector()]),
+            },
+        };
+        let qualifiers = [qualifier.clone(), qualifier];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::try_from(occurrence.as_str().len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::project_qualified_operands(
+            Some(&ctx),
+            qualifiers.each_ref(),
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &[scope],
+            &[feature],
+        );
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d assembly operand text"
+        ));
     }
 }
