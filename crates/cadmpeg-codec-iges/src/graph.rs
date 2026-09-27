@@ -196,14 +196,24 @@ pub(crate) struct ParameterResolver<'a> {
 }
 
 impl<'a> ParameterResolver<'a> {
-    pub(crate) fn new(directory: &'a [DirectoryEntry]) -> Self {
-        Self {
-            directory: directory
-                .iter()
-                .map(|entry| (entry.sequence, entry))
-                .collect(),
-            edges: RefCell::new(BTreeMap::new()),
+    pub(crate) fn new(
+        directory: &'a [DirectoryEntry],
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
+        let mut index = BTreeMap::new();
+        for entry in directory {
+            insert_optional_btree_map(
+                Some(ctx),
+                &mut index,
+                entry.sequence,
+                entry,
+                "iges parameter resolver directory index",
+            )?;
         }
+        Ok(Self {
+            directory: index,
+            edges: RefCell::new(BTreeMap::new()),
+        })
     }
 
     /// Resolves a raw pointer to its target sequence, recording the
@@ -360,8 +370,7 @@ fn candidates(entry: &DirectoryEntry) -> impl Iterator<Item = Candidate> {
     [
         (entry.structure < 0)
             .then(|| negative_candidate(ReferenceKind::Structure, entry.structure)),
-        (entry.line_font < 0)
-            .then(|| negative_candidate(ReferenceKind::LineFont, entry.line_font)),
+        (entry.line_font < 0).then(|| negative_candidate(ReferenceKind::LineFont, entry.line_font)),
         (entry.level < 0).then(|| negative_candidate(ReferenceKind::Level, entry.level)),
         (entry.view != 0).then(|| positive_candidate(ReferenceKind::View, entry.view)),
         (entry.transform != 0)

@@ -2303,7 +2303,7 @@ pub(crate) fn store(
                 .unwrap_or(record.parameter_end()),
             )
     };
-    let parameter_resolver = ParameterResolver::new(directory);
+    let parameter_resolver = ParameterResolver::new(directory, ctx)?;
     let mut overdeclared_counts = OverdeclaredCounts::default();
     let mut unstatable_attribute_tables = BTreeMap::new();
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
