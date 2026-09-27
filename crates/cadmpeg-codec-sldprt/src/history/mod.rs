@@ -17,6 +17,8 @@ use self::classify::classless_builtin_node;
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
@@ -53,18 +55,27 @@ fn history_record_key(source: usize, ordinal: usize) -> cadmpeg_ir::ids::Identit
 }
 
 pub(crate) fn histories(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Vec<FeatureHistory> {
+) -> Result<Vec<FeatureHistory>, CodecError> {
     scan.sections()
-        .filter_map(|section| {
+        .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
-            let text = crate::container::xml_text(section.payload())?;
-            let doc = roxmltree::Document::parse(&text).ok()?;
+            let Some(text) = crate::container::xml_text_charged(
+                ctx,
+                section.payload(),
+                "materialize SLDPRT history XML",
+            )? else {
+                return Ok(histories);
+            };
+            let Ok(doc) = roxmltree::Document::parse(text.as_str()) else {
+                return Ok(histories);
+            };
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
-                return None;
+                return Ok(histories);
             }
             let stream = section.source_stream();
             let parent = format!("sldprt:history:feature-history#{source}");
@@ -301,7 +312,8 @@ pub(crate) fn histories(
                     .filter(|attribute| attribute.name() != "Name")
                     .map(|attribute| (attribute.name().to_string(), attribute.value().to_string())),
             );
-            Some(FeatureHistory {
+            ctx.reserve_collection_vec(&mut histories, 1, "collect SLDPRT feature histories")?;
+            histories.push(FeatureHistory {
                 id,
                 part_name: root
                     .attribute("Name")
@@ -311,9 +323,9 @@ pub(crate) fn histories(
                 content,
                 configurations,
                 features,
-            })
+            });
+            Ok(histories)
         })
-        .collect()
 }
 
 pub(crate) fn enrich_scene_classes(

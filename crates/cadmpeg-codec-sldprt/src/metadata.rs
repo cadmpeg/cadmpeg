@@ -174,10 +174,14 @@ fn scan_units_xml(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
-    let Some(text) = crate::container::xml_text(section.payload()) else {
+    let Some(text) = crate::container::xml_text_charged(
+        ctx,
+        section.payload(),
+        "materialize SLDPRT document metadata XML",
+    )? else {
         return Ok(());
     };
-    let Ok(document) = roxmltree::Document::parse(&text) else {
+    let Ok(document) = roxmltree::Document::parse(text.as_str()) else {
         return Ok(());
     };
     for node in document.descendants().filter(roxmltree::Node::is_element) {

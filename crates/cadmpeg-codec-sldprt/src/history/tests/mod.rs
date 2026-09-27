@@ -18,9 +18,16 @@ fn history_from_nameless_block_keeps_annotation_owner() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "", payload));
     let scan = crate::container::scan_bytes(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = super::histories(&scan, &mut annotations, &mut losses);
+    let histories = super::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
 
     assert_eq!(histories.len(), 1);
     assert!(!histories[0].features.is_empty());

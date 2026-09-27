@@ -1282,16 +1282,24 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
-struct EnvelopeText<'a> {
+pub(crate) struct EnvelopeText<'a> {
     text: String,
     _scope: Option<ScopedReservation<'a>>,
+}
+
+impl EnvelopeText<'_> {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.text
+    }
 }
 
 impl ScanAdmission<'_, '_> {
     fn text<'scope>(&'scope self, bytes: &[u8]) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
         match self {
             Self::Probe => Ok(xml_text(bytes).map(|text| EnvelopeText { text, _scope: None })),
-            Self::Decode(ctx) => xml_text_charged(ctx, bytes),
+            Self::Decode(ctx) => {
+                xml_text_charged(ctx, bytes, "materialize SLDPRT XML text")
+            }
         }
     }
 
@@ -1337,9 +1345,10 @@ impl ScanAdmission<'_, '_> {
     }
 }
 
-fn xml_text_charged<'ctx>(
+pub(crate) fn xml_text_charged<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
+    operation: &'static str,
 ) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
     if bytes.starts_with(&[0xff, 0xfe]) {
@@ -1355,10 +1364,10 @@ fn xml_text_charged<'ctx>(
         };
         let length = chars().try_fold(0usize, |length, value| {
             length.checked_add(value.len_utf8()).ok_or_else(|| {
-                ctx.refuse_codec_limit("materialize SLDPRT XML text", u64::MAX, u64::MAX)
+                ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
             })
         })?;
-        let (mut text, scope) = ctx.reserve_scoped_string(length, "materialize SLDPRT XML text")?;
+        let (mut text, scope) = ctx.reserve_scoped_string(length, operation)?;
         for value in chars() {
             text.push(value);
         }
@@ -1367,7 +1376,7 @@ fn xml_text_charged<'ctx>(
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Ok(None);
         };
-        let (mut text, scope) = ctx.reserve_scoped_string(source.len(), "materialize SLDPRT XML text")?;
+        let (mut text, scope) = ctx.reserve_scoped_string(source.len(), operation)?;
         text.push_str(source);
         Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
     }

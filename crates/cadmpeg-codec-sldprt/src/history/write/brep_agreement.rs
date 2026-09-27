@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, FeatureOperation};
@@ -135,9 +136,15 @@ pub(crate) fn validate(
         None => false,
     };
     if let Some(scan) = source_scan.filter(|_| native_history_changed) {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            scan.source_image,
+            &arena,
+            &DecodePolicy::service(),
+        )?;
         let mut annotations = cadmpeg_ir::Annotations::default();
         let mut losses = Vec::new();
-        let baseline = crate::history::histories(scan, &mut annotations, &mut losses);
+        let baseline = crate::history::histories(&ctx, scan, &mut annotations, &mut losses)?;
         for feature in native
             .feature_histories
             .iter()

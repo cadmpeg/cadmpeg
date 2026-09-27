@@ -209,6 +209,70 @@ fn metadata_linear_unit_name_refuses_retained_limit() {
 }
 
 #[test]
+fn metadata_history_xml_refuses_scoped_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/Keywords", payload));
+    let scan = container::scan_bytes(&source);
+    let classification = crate::dialect::classify_layers(&scan);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let mut admitted_entities = 0;
+    let error = super::super::build_metadata_ir(
+        &ctx,
+        &scan,
+        &classification,
+        None,
+        &mut admitted_entities,
+    )
+    .expect_err("history XML text exceeds the scoped materialization limit");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+}
+
+#[test]
+fn geometry_history_xml_refuses_scoped_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "Contents/Keywords", payload));
+    let mut scan = container::scan_bytes(&source);
+    let classification = crate::dialect::classify_layers(&scan);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let decoded = super::super::DecodedBrep {
+        metadata_header: None,
+        brep: crate::brep::graph::Brep::default(),
+        configuration_bodies: Vec::new(),
+    };
+    let mut admitted_entities = 0;
+    let error = super::super::build_geometry_ir(
+        &ctx,
+        &mut scan,
+        &classification,
+        decoded,
+        None,
+        &mut admitted_entities,
+    )
+    .expect_err("history XML text exceeds the scoped materialization limit");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+}
+
+#[test]
 fn native_loss_validation_propagates_typed_load_retained_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
 
