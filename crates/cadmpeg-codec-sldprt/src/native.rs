@@ -1452,20 +1452,13 @@ fn relation_instance_shape_valid(
     ) {
         return false;
     }
-    let mut positions = Vec::new();
     for scalar_ref in record.scalar_refs() {
-        let Some((position, scalar)) = lane
-            .scalars
-            .iter()
-            .enumerate()
-            .find(|(_, scalar)| scalar.id == *scalar_ref)
-        else {
+        let Some(scalar) = lane.scalars.iter().find(|scalar| scalar.id == *scalar_ref) else {
             return false;
         };
         if scalar.feature_ref.as_deref() != Some(record.feature_ref.as_str()) {
             return false;
         }
-        positions.push((position, scalar));
     }
     let repeated_circle_display =
         repeated_circle_display_shape_valid(record, &lane.scalars, &lane.names);
@@ -1491,37 +1484,47 @@ fn relation_instance_shape_valid(
                     if matches!(scalar.operands.as_slice(), [candidate]
                         if candidate.kind == first.kind)))
     };
-    if positions[0].1.offset != record.offset || !scalar_operands_match(positions[0].1) {
+    let Some(first) = lane
+        .scalars
+        .iter()
+        .find(|scalar| scalar.id == record.scalar_refs()[0])
+    else {
+        return false;
+    };
+    if first.offset != record.offset || !scalar_operands_match(first) {
         return false;
     }
-    let operand_scalars = positions
-        .iter()
-        .filter(|(_, scalar)| !scalar.operands.is_empty())
-        .collect::<Vec<_>>();
-    if operand_scalars.is_empty()
-        || operand_scalars
-            .windows(2)
-            .any(|pair| pair[1].0 != pair[0].0 + 1)
-        || operand_scalars
+    let mut last_operand_position = None;
+    let mut detached = None;
+    for scalar_ref in record.scalar_refs() {
+        let Some((position, scalar)) = lane
+            .scalars
             .iter()
-            .any(|(_, scalar)| !scalar_operands_match(scalar))
-    {
-        return false;
-    }
-    let detached = positions
-        .iter()
-        .filter(|(_, scalar)| scalar.operands.is_empty())
-        .collect::<Vec<_>>();
-    match detached.as_slice() {
-        [] => true,
-        [(position, scalar)] => {
-            let Some((last_position, _)) = operand_scalars.last() else {
+            .enumerate()
+            .find(|(_, scalar)| scalar.id == *scalar_ref)
+        else {
+            return false;
+        };
+        if scalar.operands.is_empty() {
+            if detached.replace((position, scalar)).is_some() {
                 return false;
-            };
-            record.parameter_scalar_ref() == Some(scalar.id.as_str()) && *position > *last_position
+            }
+        } else {
+            if last_operand_position.is_some_and(|previous| position != previous + 1)
+                || !scalar_operands_match(scalar)
+            {
+                return false;
+            }
+            last_operand_position = Some(position);
         }
-        _ => false,
     }
+    let Some(last_operand_position) = last_operand_position else {
+        return false;
+    };
+    detached.is_none_or(|(position, scalar)| {
+        record.parameter_scalar_ref() == Some(scalar.id.as_str())
+            && position > last_operand_position
+    })
 }
 
 fn repeated_circle_display_shape_valid(
@@ -1537,44 +1540,51 @@ fn repeated_circle_display_shape_valid(
     {
         return false;
     }
-    let records = record
-        .scalar_refs()
-        .iter()
-        .filter_map(|scalar_id| scalars.iter().find(|scalar| scalar.id == *scalar_id))
-        .collect::<Vec<_>>();
-    if records.len() != record.scalar_refs().len() {
-        return false;
-    }
-    if records
-        .windows(2)
-        .any(|pair| pair[1].ordinal != pair[0].ordinal.saturating_add(1))
-    {
-        return false;
-    }
     let scalar_name_value = |scalar: &FeatureInputScalar| {
         names
             .iter()
             .find(|name| name.id == scalar.name)
             .map(|name| name.value.as_str())
     };
-    let first = records[0];
+    let Some(first) = scalars
+        .iter()
+        .find(|scalar| scalar.id == record.scalar_refs()[0])
+    else {
+        return false;
+    };
     let Some(first_name) = scalar_name_value(first) else {
         return false;
     };
-    records.iter().enumerate().all(|(index, scalar)| {
-        let [operand] = scalar.operands.as_slice() else {
-            return false;
-        };
-        scalar.role == crate::records::FeatureInputScalarRole::Display
-            && operand.kind == record.operands[0].kind
-            && scalar_name_value(scalar) == Some(first_name)
-            && records[..index].iter().all(|previous| {
-                previous
-                    .operands
-                    .first()
-                    .is_some_and(|previous| previous.entity_index != operand.entity_index)
-            })
-    })
+    let mut previous_ordinal = None;
+    record
+        .scalar_refs()
+        .iter()
+        .enumerate()
+        .all(|(index, scalar_id)| {
+            let Some(scalar) = scalars.iter().find(|scalar| scalar.id == *scalar_id) else {
+                return false;
+            };
+            if previous_ordinal.is_some_and(|ordinal: u32| {
+                scalar.ordinal.checked_sub(ordinal) != Some(1)
+                    && !(ordinal == u32::MAX && scalar.ordinal == ordinal)
+            }) {
+                return false;
+            }
+            previous_ordinal = Some(scalar.ordinal);
+            let [operand] = scalar.operands.as_slice() else {
+                return false;
+            };
+            scalar.role == crate::records::FeatureInputScalarRole::Display
+                && operand.kind == record.operands[0].kind
+                && scalar_name_value(scalar) == Some(first_name)
+                && record.scalar_refs()[..index].iter().all(|previous_id| {
+                    scalars
+                        .iter()
+                        .find(|candidate| candidate.id == *previous_id)
+                        .and_then(|previous| previous.operands.first())
+                        .is_some_and(|previous| previous.entity_index != operand.entity_index)
+                })
+        })
 }
 
 #[cfg(test)]

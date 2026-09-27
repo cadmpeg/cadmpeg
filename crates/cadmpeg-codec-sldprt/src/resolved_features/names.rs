@@ -22,7 +22,8 @@ pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString
 
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let mut name_marker = NAME_MARKER.to_vec();
+    let mut name_marker = [0; 5];
+    name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
         name_marker[..2].copy_from_slice(&token.to_le_bytes());
     }
