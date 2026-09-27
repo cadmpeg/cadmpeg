@@ -399,8 +399,13 @@ pub(super) fn walk_reachable_topology(
                                     crate::decode_alloc::insert_hash_map(ctx, pcurve_geo,
                                         super::PcurveRecordIndex(pc),
                                         PcurveGeometry::Nurbs { nurbs: decoded }, "ASM topology pcurve_geo")?;
-                                    pcurve_parameter_ranges
-                                        .insert(super::CoedgeRecordIndex(ci), parameter_range);
+                                    crate::decode_alloc::insert_hash_map(
+                                        ctx,
+                                        pcurve_parameter_ranges,
+                                        super::CoedgeRecordIndex(ci),
+                                        parameter_range,
+                                        "ASM topology pcurve_parameter_ranges",
+                                    )?;
                                     crate::decode_alloc::insert_hash_set(ctx, kept_pcurves, pc, "ASM topology kept_pcurves")?;
                                 } else {
                                     count_kind(ctx, &mut out.stats.undecoded_pcurve_kinds, prec.head())?;
