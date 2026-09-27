@@ -11,6 +11,38 @@ use super::{
 };
 
 #[test]
+fn plane_pcurve_lookup_set_refuses_collection_limit() {
+    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("valid plane");
+    let surface_id: cadmpeg_ir::ids::SurfaceId = "rhino:object:surface#plane"
+        .try_into()
+        .expect("valid identity");
+    let mut staged = BrepDraft::default();
+    staged.draft.model_mut().surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)),
+        source_object: None,
+    });
+    let scale = crate::test_support::millimeter_scale(25.4);
+    let refusal = with_collection_limit(0, |ctx| {
+        super::super::scale_plane_pcurves(ctx, &mut staged, scale)
+            .expect_err("plane ID requires a lookup set node")
+    });
+    assert!(matches!(
+        refusal,
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "Rhino plane pcurve lookup IDs"
+    ));
+    super::super::scale_plane_pcurves(&cadmpeg_test_support::service_decode_context(), &mut staged, scale)
+        .expect("service profile admits plane lookup");
+    assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
+}
+
+#[test]
 fn fallback_discards_topology_and_unknown_record_self_link() {
     let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#x.c3-0"
         .try_into()

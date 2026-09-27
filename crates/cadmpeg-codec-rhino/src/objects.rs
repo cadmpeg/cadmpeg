@@ -1988,14 +1988,19 @@ pub(crate) fn parse_object_record(
 }
 
 /// Builds a range-preserving descriptor for a malformed bounded object record.
-pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectRecord<()> {
-    ObjectRecord::Degraded {
+pub(crate) fn degraded_object_record(
+    ctx: &DecodeContext<'_>,
+    record: &Record,
+    error: &FramingError,
+) -> Result<ObjectRecord<()>, cadmpeg_core::CodecError> {
+    Ok(ObjectRecord::Degraded {
         range: record.range.clone(),
-        warning: format!(
-            "bounded object record at {} degraded: {error}",
-            record.range.start
-        ),
-    }
+        warning: crate::wire::admitted_format(
+            ctx,
+            format_args!("bounded object record at {} degraded: {error}", record.range.start),
+            "Rhino degraded object warning",
+        )?,
+    })
 }
 
 /// Resolves per-object source identity after document layer metadata is known.

@@ -1717,3 +1717,28 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .filter(|loss| loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind())
         .any(|loss| { loss.message.contains("OBJECT_RECORD") || loss.message.contains("offset") }));
 }
+
+#[test]
+fn degraded_object_warning_refuses_retained_limit() {
+    let record = crate::container::Record::short(0x2000_8070, 0..1, 0);
+    let error = crate::chunks::FramingError::InvalidHeader;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let refusal = crate::objects::degraded_object_record(&ctx, &record, &error)
+        .expect_err("degraded warning text exceeds zero retained bytes");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino degraded object warning"
+    ));
+    let result = crate::objects::degraded_object_record(
+        &cadmpeg_test_support::service_decode_context(),
+        &record,
+        &error,
+    )
+    .expect("service profile admits degraded warning");
+    assert!(matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded")));
+}
