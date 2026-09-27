@@ -27,7 +27,10 @@ use crate::CatiaCodec;
 #[test]
 fn decode_zero_entity_falls_back_to_metadata() {
     let f = zero_entity_catpart();
-    let scan = crate::container::scan_bytes(f.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, f.clone())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.variant, Variant::ZeroEntity);
     assert!(scan.inner.is_none());
 
@@ -69,7 +72,9 @@ fn zero_entity_directory_markers_stay_outside_the_record_stream() {
     file.extend_from_slice(&body);
     file.extend_from_slice(&directory);
 
-    let scan = crate::container::scan_bytes(file);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 0);
     assert_eq!(scan.variant, Variant::Unknown);
     let ranges = crate::container::consolidated_record_ranges(&scan);
@@ -97,7 +102,9 @@ fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
     file.extend_from_slice(&body);
     file.extend_from_slice(&directory);
 
-    let scan = crate::container::scan_bytes(file);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::ZeroEntity);
     let ranges = crate::container::consolidated_record_ranges(&scan);
@@ -133,7 +140,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -214,7 +222,8 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides()[1].surface, None);
     assert_eq!(context.sides()[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -250,7 +259,8 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     ));
     assert!(result.ir().model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

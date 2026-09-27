@@ -12,12 +12,25 @@ pub fn container_directory(data: &[u8]) {
 
 /// Exercise `b5 03` object-stream graph parsing.
 pub fn b5_parse(data: &[u8]) {
-    let _probe = crate::families::b5::graph::parse(data, &mut crate::nurbs::LaneRefusals::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe =
+        crate::families::b5::graph::parse(&ctx, data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise `e5 0d 03` topology parsing and orientation solving.
 pub fn e5_topology(data: &[u8]) {
-    let _probe = crate::families::e5::graph::parse_topology(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::families::e5::graph::parse_topology(&ctx, data);
 }
 
 /// Exercise standard-family vertex-record scanning.
@@ -44,10 +57,16 @@ pub fn geometry_a8_surfaces(data: &[u8]) {
 
 /// Exercise standard-nested and FBB topology parsing.
 pub fn standard_topology(data: &[u8]) {
-    if let Some(topology) = crate::families::standard::fbb::parse_standard(data) {
-        let _probe = topology.edge_vertices();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    if let Ok(Some(topology)) = crate::families::standard::fbb::parse_standard(&ctx, data) {
+        let _probe = topology.edge_vertices(&ctx);
     }
-    let _probe = crate::families::standard::topology::parse_fbb(data);
+    let _probe = crate::families::standard::topology::parse_fbb(&ctx, data);
 }
 
 /// Exercise `7C0B` value-block parsing.

@@ -1465,7 +1465,11 @@ fn bounded_line_payload(
 ) -> Result<Vec<u8>, CodecError> {
     let mut payload = vec![0x10];
     for value in from.into_iter().chain(to) {
-        payload.extend(computed(value, "line endpoint coordinate")?.to_le_bytes());
+        payload.extend(
+            computed(value, "line endpoint coordinate")?
+                .get()
+                .to_le_bytes(),
+        );
     }
     for value in domain {
         payload.extend(value.to_le_bytes());
@@ -1476,14 +1480,12 @@ fn bounded_line_payload(
 
 /// Admit a number the writer computed for `field`. A 3DM archive states no
 /// non-finite number.
-fn computed(value: f64, field: &str) -> Result<f64, CodecError> {
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(CodecError::NotImplemented(format!(
+fn computed(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
+    FiniteReal::new(value).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
             "Rhino writer computed the non-finite {field} {value}, which 3DM cannot state"
-        )))
-    }
+        ))
+    })
 }
 
 fn polymorphic_array<'a>(
@@ -1974,17 +1976,17 @@ fn circle_payload(
         axis.x,
         axis.y,
         axis.z,
-        equation_d,
+        equation_d.get(),
         radius,
-        arc_point(center.x + radius * x.x)?,
-        arc_point(center.y + radius * x.y)?,
-        arc_point(center.z + radius * x.z)?,
-        arc_point(center.x + radius * y.x)?,
-        arc_point(center.y + radius * y.y)?,
-        arc_point(center.z + radius * y.z)?,
-        arc_point(center.x - radius * x.x)?,
-        arc_point(center.y - radius * x.y)?,
-        arc_point(center.z - radius * x.z)?,
+        arc_point(center.x + radius * x.x)?.get(),
+        arc_point(center.y + radius * x.y)?.get(),
+        arc_point(center.z + radius * x.z)?.get(),
+        arc_point(center.x + radius * y.x)?.get(),
+        arc_point(center.y + radius * y.y)?.get(),
+        arc_point(center.z + radius * y.z)?.get(),
+        arc_point(center.x - radius * x.x)?.get(),
+        arc_point(center.y - radius * x.y)?.get(),
+        arc_point(center.z - radius * x.z)?.get(),
         0.0,
         std::f64::consts::TAU,
         0.0,
@@ -2036,10 +2038,10 @@ fn nurbs_curve_payload_dimension(
     let homogeneous = |value: f64| computed(value, "NURBS curve homogeneous pole coordinate");
     for (index, point) in curve.control_points().iter().enumerate() {
         let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
-        payload.extend(homogeneous(point.x * weight)?.to_le_bytes());
-        payload.extend(homogeneous(point.y * weight)?.to_le_bytes());
+        payload.extend(homogeneous(point.x * weight)?.get().to_le_bytes());
+        payload.extend(homogeneous(point.y * weight)?.get().to_le_bytes());
         if dimension == 3 {
-            payload.extend(homogeneous(point.z * weight)?.to_le_bytes());
+            payload.extend(homogeneous(point.z * weight)?.get().to_le_bytes());
         }
         if rational != 0 {
             payload.extend(weight.to_le_bytes());
@@ -2060,8 +2062,26 @@ fn plane_surface_payload(
     )?;
     let mut payload = vec![0x10];
     for value in [
-        origin.x, origin.y, origin.z, x.x, x.y, x.z, y.x, y.y, y.z, normal.x, normal.y, normal.z,
-        normal.x, normal.y, normal.z, d, -1.0, 1.0, -1.0, 1.0,
+        origin.x,
+        origin.y,
+        origin.z,
+        x.x,
+        x.y,
+        x.z,
+        y.x,
+        y.y,
+        y.z,
+        normal.x,
+        normal.y,
+        normal.z,
+        normal.x,
+        normal.y,
+        normal.z,
+        d.get(),
+        -1.0,
+        1.0,
+        -1.0,
+        1.0,
     ] {
         payload.extend(value.to_le_bytes());
     }
@@ -2113,9 +2133,9 @@ fn nurbs_surface_payload(
         let weight = pole_weights
             .as_ref()
             .map_or(1.0, |weights| weights[index].get());
-        payload.extend(homogeneous(point.x * weight)?.to_le_bytes());
-        payload.extend(homogeneous(point.y * weight)?.to_le_bytes());
-        payload.extend(homogeneous(point.z * weight)?.to_le_bytes());
+        payload.extend(homogeneous(point.x * weight)?.get().to_le_bytes());
+        payload.extend(homogeneous(point.y * weight)?.get().to_le_bytes());
+        payload.extend(homogeneous(point.z * weight)?.get().to_le_bytes());
         if rational != 0 {
             payload.extend(weight.to_le_bytes());
         }

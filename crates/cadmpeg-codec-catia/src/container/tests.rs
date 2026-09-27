@@ -72,15 +72,18 @@ fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
 
 #[test]
 fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
-    let scan = scan_bytes(standard_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
     assert_eq!(
-        identify_variant(
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
             scan.inner.as_ref(),
             scan.brep.as_deref(),
             scan.main_data_stream.as_deref(),
             &scan.census,
             true,
-        ),
+        ))
+        .expect("service resource budget"),
         Variant::StandardNested
     );
 }
@@ -92,7 +95,10 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(None, None, None, &census, true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx, None, None, None, &census, true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -103,7 +109,10 @@ fn scan_selects_a_coherent_e5_walk_over_a_zero_entity_record() {
     for id in 0..10 {
         append_e5_test_record(&mut body, id);
     }
-    let scan = scan_bytes(outer_with_preamble(&body));
+    let scan = crate::test_support::with_service_context(|ctx| {
+        scan_bytes(ctx, outer_with_preamble(&body))
+    })
+    .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::E5Stream);
 }
@@ -115,7 +124,15 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
         descriptors: Vec::new(),
     };
     assert_eq!(
-        identify_variant(Some(&inner), None, None, &Census::default(), true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            None,
+            None,
+            &Census::default(),
+            true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -134,7 +151,10 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
     };
 
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
@@ -142,7 +162,15 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
         Some(2)
     );
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            false
+        ))
+        .expect("service resource budget"),
         Variant::FbbOnly
     );
 }
@@ -162,7 +190,10 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
     };
 
     assert_eq!(
-        crate::families::standard::fbb::standard_edge_count(&brep),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::fbb::standard_edge_count(ctx, &brep)
+        })
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
@@ -170,7 +201,15 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         None
     );
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            false
+        ))
+        .expect("service resource budget"),
         Variant::Unknown
     );
 
@@ -180,13 +219,15 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
             Some(&inner),
             Some(&no_vertex_brep),
             Some(&no_vertex_brep),
             &no_vertex_census,
             false,
-        ),
+        ))
+        .expect("service resource budget"),
         Variant::Unknown
     );
 }
@@ -205,7 +246,15 @@ fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
     };
 
     assert_eq!(
-        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, true),
+        crate::test_support::with_service_context(|ctx| identify_variant(
+            ctx,
+            Some(&inner),
+            Some(&brep),
+            Some(&brep),
+            &census,
+            true
+        ))
+        .expect("service resource budget"),
         Variant::E5Stream
     );
 }
@@ -263,7 +312,8 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
     bytes.extend_from_slice(&directory);
 
     assert!(super::e5_record_stream(&bytes).is_none());
-    let scan = super::scan_bytes(bytes);
+    let scan = crate::test_support::with_service_context(|ctx| super::scan_bytes(ctx, bytes))
+        .expect("service resource budget");
     assert!(scan.finjpl_segments.is_empty());
     assert_eq!(scan.census.e5_markers, 0);
 }
@@ -690,8 +740,12 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
         [0xff, 0xd9]
     );
-    let summary =
-        crate::container::summarize(&crate::container::scan_bytes(outer_body_catpart(&bytes)));
+    let summary = crate::container::summarize(
+        &crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
+        })
+        .expect("service resource budget"),
+    );
     assert!(summary.entries.iter().any(|entry| {
         entry.role == ContainerRole::FinjplSegment && entry.name == "CATSummaryInformation"
     }));
@@ -744,7 +798,10 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
 
-    let scan = crate::container::scan_bytes(outer_body_catpart(&bytes));
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
+    })
+    .expect("service resource budget");
     let summary = crate::container::summarize(&scan);
     assert_eq!(
         summary
@@ -829,7 +886,9 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
 #[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
-    let scan = crate::container::scan_bytes(f);
+    let scan =
+        crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, f))
+            .expect("service resource budget");
     assert_eq!(scan.variant, Variant::StandardNested);
     let dir = scan.inner.expect("inner directory");
     assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
@@ -853,7 +912,10 @@ fn scan_parses_outer_directory_with_absolute_extents() {
         crate::container::outer_stream_directory_range(&bytes),
         Some(directory_offset..bytes.len())
     );
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let outer = scan.outer.as_ref().expect("outer directory");
     assert_eq!(outer.inner, 0);
     assert_eq!(outer.descriptors.len(), 1);
@@ -927,7 +989,10 @@ fn e5_stream_selection_prefers_coherent_storage_segment_over_stray_preamble_mark
 
 #[test]
 fn consolidated_record_sources_follow_physical_stream_extents() {
-    let scan = crate::container::scan_bytes(standard_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, standard_catpart())
+    })
+    .expect("service resource budget");
     let inner = scan.inner.as_ref().expect("inner stream directory");
     let expected = inner
         .descriptors
@@ -991,7 +1056,10 @@ fn fbb_census_separates_groups_from_face_rows() {
     body.extend_from_slice(&row);
 
     assert_eq!(crate::container::fbb_run_ranges(&body), vec![0..16, 24..32]);
-    let scan = crate::container::scan_bytes(standard_catpart());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, standard_catpart())
+    })
+    .expect("service resource budget");
     assert_eq!(scan.census.fbb_runs, 1);
     assert_eq!(scan.census.fbb_face_rows, 2);
 }

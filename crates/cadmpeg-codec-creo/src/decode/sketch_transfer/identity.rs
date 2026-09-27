@@ -267,33 +267,41 @@ pub(in super::super) fn semantic_saved_section_entities(
 }
 
 pub(in super::super) fn materialized_saved_section_external_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> BTreeSet<u32> {
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
-    semantic_saved_section_entities(definition)
-        .filter_map(|entity| {
-            match entity {
-                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                    saved_spline_sketch_geometry(spline, refusal)?;
-                }
-                _ => {
-                    saved_section_entity_geometry(entity)?;
-                }
+    let mut external_ids = BTreeSet::new();
+    for entity in semantic_saved_section_entities(definition) {
+        let materializes = match entity {
+            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                saved_spline_sketch_geometry(ctx, spline, refusal)?.is_some()
             }
-            let internal_id = saved_section_entity_identity(entity).0?;
-            unique_saved_ids.contains(&internal_id).then_some(())?;
-            definition.order_table.as_ref().and_then(|order| {
-                saved_section_external_id(
-                    order,
-                    &unique_saved_ids,
-                    &ambiguous_segment_ids,
-                    internal_id,
-                )
-            })
-        })
-        .collect()
+            _ => saved_section_entity_geometry(entity).is_some(),
+        };
+        if !materializes {
+            continue;
+        }
+        let Some(internal_id) = saved_section_entity_identity(entity).0 else {
+            continue;
+        };
+        if !unique_saved_ids.contains(&internal_id) {
+            continue;
+        }
+        if let Some(external_id) = definition.order_table.as_ref().and_then(|order| {
+            saved_section_external_id(
+                order,
+                &unique_saved_ids,
+                &ambiguous_segment_ids,
+                internal_id,
+            )
+        }) {
+            external_ids.insert(external_id);
+        }
+    }
+    Ok(external_ids)
 }
 
 pub(in super::super) fn saved_section_external_id(

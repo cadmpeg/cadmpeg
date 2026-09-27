@@ -643,7 +643,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
     assert_eq!(parsed.members, vec![Uuid::from_wire(member_id)]);
     assert_eq!(parsed.units.unit, 2);
-    assert_eq!(f64::from_bits(parsed.units.meters_per_unit_bits), 0.001);
+    assert_eq!(f64::from_bits(parsed.units.meters_per_unit_bits()), 0.001);
     assert_eq!(parsed.linked_appearance, 2);
     assert!(parsed.file_reference().is_none());
 
@@ -705,7 +705,7 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert_eq!(static_definition.members, vec![Uuid::from_wire(member_id)]);
         assert_eq!(static_definition.units.unit, 8);
         assert_eq!(
-            f64::from_bits(static_definition.units.meters_per_unit_bits),
+            f64::from_bits(static_definition.units.meters_per_unit_bits()),
             0.0254
         );
         let linked = &scan.definitions.definitions[1];
@@ -934,7 +934,11 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 3/3 Rhino object records")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -977,7 +981,11 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
     };
     assert_eq!(curve.control_points()[0].x, 11.0);
     assert_eq!(curve.control_points()[1].x, 12.0);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1072,7 +1080,11 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
         Uuid::from_wire(world_reference_id),
         Uuid::from_wire(nested_reference_id)
     )));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1158,7 +1170,11 @@ pub(crate) fn nil_and_duplicate_reference_ids_use_distinct_record_path_segments(
             .len(),
         4
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1225,7 +1241,11 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         ),
         [0.125, 0.875]
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1299,7 +1319,11 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
         nurbs.weights().expect("required invariant")[1].get(),
         std::f64::consts::FRAC_1_SQRT_2
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1336,7 +1360,11 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
         .losses
         .iter()
         .any(|loss| loss.message.contains("exact solved carrier retained")));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1560,7 +1588,11 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
                 .contains("f9cfb638-b9d4-4340-87e3-c56e7865d96a:")
             && loss.message.contains("decode warnings")
     }));
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1575,7 +1607,7 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let units =
         super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
     assert_eq!(units.unit, 2);
-    assert_eq!(f64::from_bits(units.meters_per_unit_bits), 0.5);
+    assert_eq!(f64::from_bits(units.meters_per_unit_bits()), 0.5);
     assert_eq!(units.custom_name, "retained name");
     assert_eq!(warnings.len(), 1);
     assert_eq!(

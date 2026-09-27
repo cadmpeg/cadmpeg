@@ -692,10 +692,10 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     );
 
     let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None)
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
     let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None)
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
@@ -708,7 +708,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         Some(vec![1.0, 2.0]),
     );
     let rational_parameter = closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None)
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
@@ -723,7 +723,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     let quadratic_parameter = closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None)
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
@@ -738,22 +738,22 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     let first_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
     let second_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
-        .expect("evaluator allocation succeeds")
+        .unwrap()
         .unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(
         closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
         closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [2.0, 0.0]
     );
@@ -772,13 +772,13 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     .unwrap();
     assert_eq!(
         closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),)
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
         closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),)
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [2.0, 0.0]
     );
@@ -795,13 +795,13 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     );
     assert_eq!(
         closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),)
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [0.0, 1.0]
     );
     assert_eq!(
         closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),)
-            .expect("evaluator allocation succeeds")
+            .unwrap()
             .unwrap(),
         [1.0, 0.0]
     );

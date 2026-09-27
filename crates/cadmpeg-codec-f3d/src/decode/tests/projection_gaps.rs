@@ -699,6 +699,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     .unwrap();
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
+            None,
             &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],

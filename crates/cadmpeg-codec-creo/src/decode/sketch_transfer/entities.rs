@@ -694,7 +694,7 @@ pub(super) fn transfer_section_entities(
         _ => None,
     }) {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let geometry = saved_spline_sketch_geometry(spline, &mut refusal);
+        let geometry = saved_spline_sketch_geometry(ctx, spline, &mut refusal)?;
         let refused = refusal.take_records();
         let Some(geometry) = geometry.filter(|_| refused.is_empty()) else {
             for record in &refused {
@@ -807,7 +807,11 @@ pub(super) fn transfer_section_entities(
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(entity);
     }
-    profiles.extend(saved_profile_chains(sketch_id, &generated_saved_geometries));
+    profiles.extend(saved_profile_chains(
+        ctx,
+        sketch_id,
+        &generated_saved_geometries,
+    )?);
     if let Some(transform) = transform {
         for segment in segments {
             let Some(section_geometry) = resolved_segment_geometries

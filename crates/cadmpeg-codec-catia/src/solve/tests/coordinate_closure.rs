@@ -9,6 +9,7 @@ use crate::solve::mesh_quotient::mesh_edge_points_compatible;
 use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
 use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
+use crate::solve::mesh_quotient::MeshIncidenceBoundary;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::bind_edge_port_candidates;
 use crate::solve::missing_edge::expand_deferred_edge_port_components;
@@ -38,7 +39,10 @@ fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {
     let ports = [[10, 11], [11, 12], [12, 13], [13, 10]];
     let pairs = [Some([0, 1]), Some([1, 2]), None, Some([3, 0])];
     assert_eq!(
-        propagate_edge_port_points(&ports, &pairs),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
     );
 }
@@ -50,7 +54,10 @@ fn ordered_endpoint_seed_orients_a_seedless_port_component() {
     let ordered = [Some([1, 0])];
 
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })
+        .expect("service resource budget"),
         Some(vec![Some([1, 0])])
     );
 }
@@ -58,11 +65,15 @@ fn ordered_endpoint_seed_orients_a_seedless_port_component() {
 #[test]
 fn ordered_endpoint_seed_must_agree_with_the_unordered_candidate() {
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds(
-            &[[10, 11]],
-            &[Some([0, 1])],
-            &[Some([0, 2])],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds(
+                ctx,
+                &[[10, 11]],
+                &[Some([0, 1])],
+                &[Some([0, 2])],
+            )
+        })
+        .expect("service resource budget"),
         None
     );
 }
@@ -89,12 +100,16 @@ fn deferred_mesh_port_component_does_not_orient_unordered_neighbors() {
     ];
 
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            &ports,
-            &pairs,
-            &[],
-            &[true, false, false, false, false, false],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                ctx,
+                &ports,
+                &pairs,
+                &[],
+                &[true, false, false, false, false, false],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![None, None, None, None, None, None]),
     );
 }
@@ -106,7 +121,10 @@ fn partial_ordered_endpoint_seed_resolves_a_row_without_native_ports() {
     let ordered = [Some([1, 0]), Some([2, 3])];
 
     assert_eq!(
-        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })
+        .expect("service resource budget"),
         Some(vec![Some([1, 0]), Some([2, 3])])
     );
 }
@@ -123,7 +141,10 @@ fn partial_endpoint_ports_propagate_known_components_only() {
     let pairs = [Some([0, 1]), Some([1, 2]), Some([8, 9]), None, Some([3, 0])];
 
     assert_eq!(
-        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &[]),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
+        })
+        .expect("service resource budget"),
         Some(vec![
             Some([0, 1]),
             Some([1, 2]),
@@ -137,15 +158,30 @@ fn partial_endpoint_ports_propagate_known_components_only() {
 #[test]
 fn endpoint_port_propagation_requires_a_point_bijection() {
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11]], &[Some([0, 1])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11]],
+            &[Some([0, 1])]
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1])])
     );
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11], [10, 12]], &[Some([0, 1]), Some([0, 1])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11], [10, 12]],
+            &[Some([0, 1]), Some([0, 1])]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11]], &[Some([0, 0])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11]],
+            &[Some([0, 0])]
+        ))
+        .expect("service resource budget"),
         None
     );
 }
@@ -156,7 +192,10 @@ fn endpoint_port_propagation_closes_equal_port_edges() {
     let pairs = [Some([0, 1]), Some([1, 2]), None];
 
     assert_eq!(
-        propagate_edge_port_points(&ports, &pairs),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), Some([1, 2]), Some([0, 0])])
     );
 }
@@ -194,6 +233,7 @@ fn singleton_coordinate_root_merges_are_batched() {
 
 #[test]
 fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
+    catia_test_context!(ctx);
     let all = Arc::new(HashSet::from([0, 1, 2]));
     let mut quotient = MeshQuotient::new(vec![all.clone(); 6]);
     quotient.merge(1, 2).expect("shared first corner");
@@ -201,7 +241,8 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
 
     let assignment = quotient
-        .close_coordinate_roots(3, &candidates, None)
+        .close_coordinate_roots(&ctx, 3, &candidates, None)
+        .expect("service resource budget")
         .expect("unique joint coordinate closure");
 
     assert_eq!(quotient.root_count(), 3);
@@ -221,11 +262,13 @@ fn quotient_closes_coordinate_roots_forced_by_joint_edge_pairs() {
 
 #[test]
 fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let budget = WorkBudget::new(0);
 
     assert!(quotient
-        .close_coordinate_roots(1, &[vec![]], Some(&budget))
+        .close_coordinate_roots(&ctx, 1, &[vec![]], Some(&budget))
+        .expect("service resource budget")
         .is_none());
     assert!(budget.exhausted());
 }
@@ -233,11 +276,13 @@ fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
 #[test]
 fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
     const ROOT_COUNT: usize = 100;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let budget = WorkBudget::new(2 * ROOT_COUNT + 1);
 
     let assignment = quotient
-        .close_coordinate_roots(1, &[], Some(&budget))
+        .close_coordinate_roots(&ctx, 1, &[], Some(&budget))
+        .expect("service resource budget")
         .expect("forced coordinate closure");
 
     assert_eq!(quotient.root_count(), 1);
@@ -248,6 +293,7 @@ fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
 #[test]
 fn quotient_incidence_closure_updates_face_degrees_incrementally() {
     const EDGE_COUNT: usize = 64;
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let mut quotient = MeshQuotient::new(
         (0..EDGE_COUNT)
@@ -268,13 +314,17 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             EDGE_COUNT,
             &edge_candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
+        .expect("service resource budget")
         .is_some());
     assert!(!budget.exhausted());
 }
@@ -282,6 +332,7 @@ fn quotient_incidence_closure_updates_face_degrees_incrementally() {
 #[test]
 fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search() {
     const EDGE_COUNT: usize = 50;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), EDGE_COUNT * 2));
     let candidates = (0..EDGE_COUNT)
         .map(|edge| vec![[edge % 2, edge % 2]])
@@ -289,7 +340,8 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
     let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
-        .close_coordinate_roots(2, &candidates, Some(&budget))
+        .close_coordinate_roots(&ctx, 2, &candidates, Some(&budget))
+        .expect("service resource budget")
         .expect("arc-consistent coordinate closure");
 
     assert_eq!(quotient.root_count(), 2);
@@ -302,13 +354,15 @@ fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search
 
 #[test]
 fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 6));
     quotient.merge(1, 2).expect("shared relation root");
     let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
     let budget = WorkBudget::new(1_000);
 
     let assignment = quotient
-        .close_coordinate_roots(2, &candidates, Some(&budget))
+        .close_coordinate_roots(&ctx, 2, &candidates, Some(&budget))
+        .expect("service resource budget")
         .expect("arc-consistent coordinate closure");
 
     assert_eq!(quotient.root_count(), 2);
@@ -319,6 +373,7 @@ fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
 
 #[test]
 fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [vec![0, 1], vec![0], vec![0, 1, 2], vec![0]]
             .into_iter()
@@ -328,7 +383,8 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
     let budget = WorkBudget::new(100);
 
     let assignment = quotient
-        .close_coordinate_roots(3, &[Vec::new(), Vec::new()], Some(&budget))
+        .close_coordinate_roots(&ctx, 3, &[Vec::new(), Vec::new()], Some(&budget))
+        .expect("service resource budget")
         .expect("point-support-forced coordinate closure");
 
     assert_eq!(quotient.root_count(), 3);
@@ -340,6 +396,7 @@ fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
 
 #[test]
 fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(
         [vec![0, 1, 2, 3], vec![0, 1, 2, 3], vec![3], vec![3]]
             .into_iter()
@@ -349,25 +406,36 @@ fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
     let budget = WorkBudget::new(1_000);
 
     assert!(quotient
-        .close_coordinate_roots(4, &[Vec::new(), Vec::new()], Some(&budget))
+        .close_coordinate_roots(&ctx, 4, &[Vec::new(), Vec::new()], Some(&budget))
+        .expect("service resource budget")
         .is_none());
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("matching fixture fits the service profile");
     let supports = [vec![0, 1], vec![0, 1], vec![0, 1, 2], vec![2, 3]];
     let matching = crate::solve::matching::distinct_domain_matching_with_budget(
+        &ctx,
         supports.iter().map(Vec::as_slice),
         4,
         None,
         None,
     )
+    .expect("matching fits the service profile")
     .expect("coordinate support matching");
 
     assert_eq!(matching[2], 2);
     assert!(
         crate::solve::matching::distinct_domain_matching_with_budget(
+            &ctx,
             supports.iter().map(Vec::as_slice),
             4,
             None,
@@ -376,12 +444,14 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 matching[2]
             )),
         )
+        .expect("matching fits the service profile")
         .is_none()
     );
 
     let partitioned = [vec![0, 1, 2], vec![0, 1], vec![2, 3], vec![2, 3]];
     assert!(
         crate::solve::matching::distinct_domain_matching_with_budget(
+            &ctx,
             partitioned.iter().map(Vec::as_slice),
             4,
             None,
@@ -389,10 +459,12 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 0, 2
             )),
         )
+        .expect("matching fits the service profile")
         .is_none()
     );
     assert!(
         crate::solve::matching::distinct_domain_matching_with_budget(
+            &ctx,
             partitioned.iter().map(Vec::as_slice),
             4,
             None,
@@ -400,12 +472,14 @@ fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
                 0, 0
             )),
         )
+        .expect("matching fits the service profile")
         .is_some()
     );
 }
 
 #[test]
 fn quotient_coordinate_closure_enforces_complete_face_degrees() {
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let mut open =
         MeshQuotient::new([singleton(0), singleton(1), singleton(0), singleton(2)].into());
@@ -417,13 +491,17 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
 
     assert!(open
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             3,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
+        .expect("service resource budget")
         .is_none());
 
     let mut closed = MeshQuotient::new(
@@ -443,18 +521,23 @@ fn quotient_coordinate_closure_enforces_complete_face_degrees() {
 
     assert!(closed
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             3,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&WorkBudget::new(1_000)),
         )
+        .expect("service resource budget")
         .is_some());
 }
 
 #[test]
 fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let mut quotient = MeshQuotient::new(
         [
@@ -476,19 +559,24 @@ fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domains,
+            },
             Some(&budget),
         )
+        .expect("service resource budget")
         .is_none());
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let quotient = || {
         MeshQuotient::new(
@@ -525,23 +613,31 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
 
     assert!(quotient()
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domain([0, 1, 2, 3]),
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domain([0, 1, 2, 3]),
+            },
             Some(&WorkBudget::new(10_000)),
         )
+        .expect("service resource budget")
         .is_none());
     assert!(quotient()
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &domain([0, 2, 1, 3]),
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &domain([0, 2, 1, 3]),
+            },
             Some(&WorkBudget::new(10_000)),
         )
+        .expect("service resource budget")
         .is_some());
 
     let fixed = [MeshFaceBoundaryDomain::Ordered(vec![
@@ -559,19 +655,24 @@ fn quotient_coordinate_closure_enforces_ordered_face_cycles() {
     ])];
     assert!(quotient()
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             4,
             &candidates,
-            &edge_faces,
-            1,
-            &fixed,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: 1,
+                domains: &fixed,
+            },
             Some(&WorkBudget::new(10_000)),
         )
+        .expect("service resource budget")
         .is_none());
 }
 
 #[test]
 fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     const COMPONENT_COUNT: usize = 100;
+    catia_test_context!(ctx);
     let point_count = COMPONENT_COUNT * 3;
     let mut quotient = MeshQuotient::new(
         (0..COMPONENT_COUNT)
@@ -599,7 +700,8 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
     }
 
     let assignment = quotient
-        .close_coordinate_roots(point_count, &candidates, None)
+        .close_coordinate_roots(&ctx, point_count, &candidates, None)
+        .expect("service resource budget")
         .expect("independent coordinate closures");
 
     assert_eq!(quotient.root_count(), point_count);
@@ -613,6 +715,7 @@ fn quotient_closes_independent_coordinate_components_with_local_budgets() {
 #[test]
 fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
     const COMPONENT_COUNT: usize = 40;
+    catia_test_context!(ctx);
     let point_count = COMPONENT_COUNT * 3;
     let mut quotient = MeshQuotient::new(
         (0..COMPONENT_COUNT)
@@ -658,13 +761,17 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             point_count,
             &candidates,
-            &edge_faces,
-            COMPONENT_COUNT,
-            &domains,
+            MeshIncidenceBoundary {
+                edge_faces: &edge_faces,
+                face_count: COMPONENT_COUNT,
+                domains: &domains,
+            },
             Some(&budget),
         )
+        .expect("service resource budget")
         .is_some());
     assert!(!budget.exhausted());
 }
@@ -672,11 +779,13 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
 #[test]
 fn quotient_closure_does_not_budget_forced_component_depth() {
     const ROOT_COUNT: usize = 10_000;
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];
 
     let assignment = quotient
-        .close_coordinate_roots(1, &candidates, None)
+        .close_coordinate_roots(&ctx, 1, &candidates, None)
+        .expect("service resource budget")
         .expect("forced coordinate component");
 
     assert_eq!(quotient.root_count(), 1);
@@ -685,23 +794,27 @@ fn quotient_closure_does_not_budget_forced_component_depth() {
 
 #[test]
 fn quotient_does_not_guess_an_ambiguous_coordinate_closure() {
+    catia_test_context!(ctx);
     let all = Arc::new(HashSet::from([0, 1]));
     let mut quotient = MeshQuotient::new(vec![all.clone(); 4]);
     quotient.merge(1, 2).expect("shared middle corner");
 
     assert!(quotient
-        .close_coordinate_roots(2, &[vec![[0, 1]], vec![[0, 1]]], None)
+        .close_coordinate_roots(&ctx, 2, &[vec![[0, 1]], vec![[0, 1]]], None)
+        .expect("service resource budget")
         .is_none());
     assert_eq!(quotient.root_count(), 3);
 }
 
 #[test]
 fn quotient_closure_requires_every_coordinate_row_in_a_domain() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
     quotient.merge(1, 2).expect("shared endpoint");
 
     assert!(quotient
-        .close_coordinate_roots(2, &[vec![[0, 0]], vec![[0, 0]]], None)
+        .close_coordinate_roots(&ctx, 2, &[vec![[0, 0]], vec![[0, 0]]], None)
+        .expect("service resource budget")
         .is_none());
     assert_eq!(quotient.root_count(), 3);
 }
@@ -719,11 +832,14 @@ fn quotient_accepts_diagonal_domain_for_closed_edge() {
 
 #[test]
 fn quotient_point_assignment_accepts_a_closed_diagonal_edge() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
     let root = quotient.merge(0, 1).expect("closed endpoint merge");
 
     assert_eq!(
-        quotient.point_assignment(1, &[vec![[0, 0]]], None),
+        quotient
+            .point_assignment(&ctx, 1, &[vec![[0, 0]]], None)
+            .expect("service resource budget"),
         Some(HashMap::from([(root, 0)]))
     );
 }
@@ -746,7 +862,9 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
 
 #[test]
 fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
+    catia_test_context!(ctx);
     let topology = reconstruct_incidence(
+        &ctx,
         vec![EdgeRow {
             kind: 0,
             handles: vec![7, 7],
@@ -757,6 +875,7 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
         &[[0, 0]],
         2,
     )
+    .expect("service resource budget")
     .expect("closed radial edge");
     assert!(topology
         .faces()
@@ -803,6 +922,7 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 
 #[test]
 fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
+    catia_test_context!(ctx);
     let singleton = |point| Arc::new(HashSet::from([point]));
     let mut quotient = MeshQuotient::new(
         [
@@ -846,13 +966,17 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
 
     assert!(quotient
         .close_coordinate_roots_for_incidence_with_budget(
+            &ctx,
             3,
             &candidates,
-            &[[0, 0]; 3],
-            1,
-            &domain,
+            MeshIncidenceBoundary {
+                edge_faces: &[[0, 0]; 3],
+                face_count: 1,
+                domains: &domain,
+            },
             Some(&WorkBudget::new(10_000)),
         )
+        .expect("service resource budget")
         .is_some());
 }
 
@@ -891,6 +1015,7 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
 
 #[test]
 fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]], vec![[0, 3]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -904,6 +1029,7 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
     };
     let budget = WorkBudget::new(1_000);
     let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &ctx,
         &assignment,
         Some(&budget),
         |edge| {
@@ -913,16 +1039,18 @@ fn mesh_assignment_endpoint_cycle_support_removes_open_layered_paths() {
         },
         |_, _| true,
     )
+    .expect("service resource budget")
     .expect("bounded layered-cycle support");
 
-    assert_eq!(support[&0], HashSet::from([[0, 1]]));
-    assert_eq!(support[&1], HashSet::from([[1, 3]]));
-    assert_eq!(support[&2], HashSet::from([[0, 3]]));
+    assert_eq!(support.by_edge[&0], HashSet::from([[0, 1]]));
+    assert_eq!(support.by_edge[&1], HashSet::from([[1, 3]]));
+    assert_eq!(support.by_edge[&2], HashSet::from([[0, 3]]));
     assert!(!budget.exhausted());
 }
 
 #[test]
 fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1]]];
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
@@ -933,6 +1061,7 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         }]],
     };
     let support = crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+        &ctx,
         &assignment,
         None,
         |edge| {
@@ -942,13 +1071,60 @@ fn mesh_assignment_endpoint_cycle_support_requires_one_complete_traversal() {
         },
         |_, _| true,
     )
+    .expect("service resource budget")
     .expect("one-layer support");
 
-    assert!(support.is_empty());
+    assert!(support.by_edge.is_empty());
+}
+
+#[test]
+fn mesh_assignment_endpoint_cycle_support_refuses_suffix_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let candidates = [vec![[0, 1]]];
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 0,
+            reversed: None,
+        }]],
+    };
+    let run = |ctx: &DecodeContext<'_>| {
+        crate::solve::mesh_quotient::mesh_assignment_endpoint_cycle_support_by(
+            ctx,
+            &assignment,
+            None,
+            |edge| {
+                candidates.get(edge).map(|values| {
+                    crate::solve::mesh_quotient::MeshEndpointCandidates::Explicit(values)
+                })
+            },
+            |_, _| true,
+        )
+    };
+    catia_test_context!(service_ctx);
+    assert!(run(&service_ctx)
+        .expect("service resource budget")
+        .expect("one-layer support")
+        .by_edge
+        .is_empty());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = run(&ctx).expect_err("suffix array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_endpoint_suffixes"));
 }
 
 #[test]
 fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
+    catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
         &choices,
@@ -957,7 +1133,8 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
     )
     .expect("initial quotient");
     let coordinate_domains = quotient
-        .prepare_coordinate_root_domains(4, &choices, None)
+        .prepare_coordinate_root_domains(&ctx, 4, &choices, None)
+        .expect("service resource budget")
         .expect("implicit coordinate domains");
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![(0..3)
@@ -974,14 +1151,77 @@ fn ordered_face_cycle_support_materializes_only_supported_implicit_pairs() {
 
     assert!(
         crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &ctx,
             &domains,
             &mut choices,
             &coordinate_domains,
             &budget,
         )
+        .expect("service resource budget")
     );
     assert_eq!(choices[1], vec![[1, 3], [2, 3]]);
     assert!(!budget.exhausted());
+}
+
+#[test]
+fn implicit_ordered_face_pruning_propagates_suffix_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1], [0, 2]], Vec::new(), vec![[0, 3]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &choices,
+        4,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&service_ctx, 4, &choices, None)
+        .expect("service resource budget")
+        .expect("implicit coordinate domains");
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![(0..3)
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
+    };
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![assignment])];
+    let mut service_choices = choices.clone();
+    let budget = WorkBudget::new(10_000);
+    assert!(
+        crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+            &service_ctx,
+            &domains,
+            &mut service_choices,
+            &coordinate_domains,
+            &budget,
+        )
+        .expect("service resource budget")
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let budget = WorkBudget::new(10_000);
+    let mut limited_choices = choices;
+    let error = crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+        &ctx,
+        &domains,
+        &mut limited_choices,
+        &coordinate_domains,
+        &budget,
+    )
+    .expect_err("suffix array exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_endpoint_suffixes"));
 }
 
 #[test]
@@ -1108,18 +1348,24 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
     let serialized = [[0, 0], [0, 1], [1, 1]];
     let allowed = [vec![1, 2], Vec::new(), vec![0, 2]];
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 3, |faces| {
-        faces == [[0, 2], [0, 1], [1, 0]]
+        Ok(faces == [[0, 2], [0, 1], [1, 0]])
     })
+    .expect("service resource budget")
     .expect("one complete assignment");
     assert_eq!(resolved, [[0, 2], [0, 1], [1, 0]]);
 
-    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| true).is_none());
+    assert!(
+        unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| Ok(true))
+            .expect("service resource budget")
+            .is_none()
+    );
     assert!(unique_duplicate_face_assignment(
         &serialized,
         &[vec![3], Vec::new(), vec![0]],
         3,
-        |_| true,
+        |_| Ok(true),
     )
+    .expect("service resource budget")
     .is_none());
 }
 
@@ -1129,8 +1375,9 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
     let allowed = [Vec::new(), vec![1]];
 
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
-        faces == [[0, 0], [0, 1]]
+        Ok(faces == [[0, 0], [0, 1]])
     })
+    .expect("service resource budget")
     .expect("the unresolved same-face slot remains in the joint assignment");
 
     assert_eq!(resolved, [[0, 0], [0, 1]]);
@@ -1144,8 +1391,9 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 
     let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 4, |assignment| {
         assignments.push(assignment.to_vec());
-        true
-    });
+        Ok(true)
+    })
+    .expect("service resource budget");
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
     assert_eq!(
@@ -1166,8 +1414,9 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 
     let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 3, |_| {
         visits += 1;
-        true
-    });
+        Ok(true)
+    })
+    .expect("service resource budget");
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
     assert_eq!(visits, 3);
@@ -1179,11 +1428,16 @@ fn one_admitted_alternate_does_not_force_a_second_face() {
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
-    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true).is_none());
+    assert!(
+        unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]
 fn exact_mesh_occurrences_complete_duplicate_face_slot() {
+    catia_test_context!(ctx);
     let run = |edge, face| MeshEdgeRun {
         edge,
         face,
@@ -1193,9 +1447,11 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
         reversed: false,
     };
     let faces = resolve_edge_faces_from_runs(
+        &ctx,
         &[[1, 1], [2, 2], [3, 4]],
         &[run(0, 1), run(0, 5), run(1, 2), run(2, 3), run(2, 4)],
     )
+    .expect("service resource budget")
     .expect("consistent exact face occurrences");
 
     assert_eq!(faces, vec![[1, 5], [2, 2], [3, 4]]);
@@ -1203,6 +1459,7 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 
 #[test]
 fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
+    catia_test_context!(ctx);
     let run = MeshEdgeRun {
         edge: 0,
         face: 1,
@@ -1212,7 +1469,8 @@ fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
         reversed: false,
     };
 
-    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run])
+    let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run])
+        .expect("service resource budget")
         .expect("a single occurrence does not conflict with the serialized wildcard");
 
     assert_eq!(faces, vec![[1, 1]]);
@@ -1220,6 +1478,7 @@ fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
 
 #[test]
 fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
+    catia_test_context!(ctx);
     let run = |face| MeshEdgeRun {
         edge: 0,
         face,
@@ -1229,7 +1488,8 @@ fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
         reversed: false,
     };
 
-    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run(1), run(5), run(6)])
+    let faces = resolve_edge_faces_from_runs(&ctx, &[[1, 1]], &[run(1), run(5), run(6)])
+        .expect("service resource budget")
         .expect("ambiguous occurrences remain a deferred face domain");
 
     assert_eq!(faces, vec![[1, 1]]);
@@ -1239,7 +1499,13 @@ fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
 fn endpoint_ports_reject_contradictory_pair_constraints() {
     let ports = [[10, 11], [11, 12], [12, 10]];
     let pairs = [Some([0, 1]), Some([1, 2]), Some([0, 3])];
-    assert_eq!(propagate_edge_port_points(&ports, &pairs), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
@@ -1247,7 +1513,12 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
     let ports = [[10, 11], [12, 13], [10, 12], [11, 13]];
     let candidates = [vec![[0, 1]], vec![[2, 3]], vec![[0, 2]], vec![[1, 3]]];
     assert_eq!(
-        bind_edge_port_candidates(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
     );
 }
@@ -1258,7 +1529,12 @@ fn mesh_edge_ports_allow_one_coordinate_row_at_multiple_ports() {
     let candidates = [vec![[0, 1]], vec![[0, 2]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [0, 2]])
     );
 }
@@ -1269,7 +1545,12 @@ fn mesh_edge_ports_reject_multiple_unordered_assignments() {
     let candidates = [vec![[0, 1], [0, 2]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         None
     );
 }
@@ -1280,7 +1561,12 @@ fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
     let candidates = [vec![[0, 1]], vec![[0, 2]], vec![[1, 3]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [0, 2], [1, 3]])
     );
 }
@@ -1291,7 +1577,15 @@ fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
     let candidates = [vec![[0, 1]], vec![[2, 3]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs_with_deferred(&ports, &candidates, &[false, true],),
+        crate::test_support::with_service_context(|ctx| {
+            unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
+                &ports,
+                &candidates,
+                &[false, true],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), None])
     );
 }
@@ -1309,11 +1603,15 @@ fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
     ];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs_with_deferred(
-            &ports,
-            &candidates,
-            &[true, false, false, false, false, false],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
+                &ports,
+                &candidates,
+                &[true, false, false, false, false, false],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![None, None, None, None, None, None]),
     );
 }
@@ -1322,21 +1620,44 @@ fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
 fn native_edge_identities_reject_multiple_coordinate_bijections() {
     let ports = [[10, 11]];
     let candidates = [vec![[0, 1], [2, 3]]];
-    assert_eq!(bind_edge_port_candidates(&ports, &candidates), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
 fn native_edge_identities_preserve_endpoint_equality() {
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 11]], &[vec![[0, 0]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 11]],
+            &[vec![[0, 0]]]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 1]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 10]],
+            &[vec![[0, 1]]]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 0]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 10]],
+            &[vec![[0, 0]]]
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 0]])
     );
 }
@@ -1354,8 +1675,11 @@ fn native_edge_identities_bind_independent_components_with_local_budgets() {
         .map(|component| vec![[component * 2, component * 2 + 1]])
         .collect::<Vec<_>>();
 
-    let solution =
-        bind_edge_port_candidates(&ports, &candidates).expect("independent port components");
+    let solution = crate::test_support::with_service_context(|ctx| {
+        bind_edge_port_candidates(ctx, &ports, &candidates)
+    })
+    .expect("service resource budget")
+    .expect("independent port components");
 
     assert_eq!(solution.len(), COMPONENT_COUNT);
     assert!(solution
@@ -1377,8 +1701,11 @@ fn native_edge_identities_do_not_charge_forced_chain_depth() {
         .map(|edge| vec![[edge, edge + 1]])
         .collect::<Vec<_>>();
 
-    let solution =
-        bind_edge_port_candidates(&ports, &candidates).expect("forced connected port chain");
+    let solution = crate::test_support::with_service_context(|ctx| {
+        bind_edge_port_candidates(ctx, &ports, &candidates)
+    })
+    .expect("service resource budget")
+    .expect("forced connected port chain");
 
     assert_eq!(
         solution,
@@ -1388,9 +1715,17 @@ fn native_edge_identities_do_not_charge_forced_chain_depth() {
 
 #[test]
 fn duplicate_coordinate_rows_have_one_geometric_bijection() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("matching fixture fits the service profile");
     let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
     assert_eq!(
-        unique_coordinate_bijection(&domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]),
+        unique_coordinate_bijection(&ctx, &domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+            .expect("bijection fits the service profile"),
         Some(vec![0, 1])
     );
 }
@@ -1398,6 +1733,13 @@ fn duplicate_coordinate_rows_have_one_geometric_bijection() {
 #[test]
 fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
     const POINT_COUNT: usize = 10_000;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("matching fixture fits the service profile");
     let domains = (0..POINT_COUNT)
         .map(|point| HashSet::from([point]))
         .collect::<Vec<_>>();
@@ -1412,13 +1754,21 @@ fn forced_coordinate_bijection_has_no_recursive_depth_limit() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        unique_coordinate_bijection(&domains, &points),
+        unique_coordinate_bijection(&ctx, &domains, &points)
+            .expect("bijection fits the service profile"),
         Some((0..POINT_COUNT).collect())
     );
 }
 
 #[test]
 fn coordinate_bijection_respects_duplicate_class_capacity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("matching fixture fits the service profile");
     let domains = [
         HashSet::from([0, 2]),
         HashSet::from([0, 1]),
@@ -1427,16 +1777,25 @@ fn coordinate_bijection_respects_duplicate_class_capacity() {
     let points = [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
 
     assert_eq!(
-        unique_coordinate_bijection(&domains, &points),
+        unique_coordinate_bijection(&ctx, &domains, &points)
+            .expect("bijection fits the service profile"),
         Some(vec![2, 0, 1])
     );
 }
 
 #[test]
 fn distinct_coordinate_bijections_remain_ambiguous() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[0],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("matching fixture fits the service profile");
     let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
     assert_eq!(
-        unique_coordinate_bijection(&domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        unique_coordinate_bijection(&ctx, &domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+            .expect("bijection fits the service profile"),
         None
     );
 }

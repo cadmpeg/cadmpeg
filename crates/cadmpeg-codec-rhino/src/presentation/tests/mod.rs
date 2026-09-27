@@ -51,6 +51,7 @@ use crate::presentation::WINDOWS_BITMAP_EX;
 use crate::settings;
 use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
+use cadmpeg_ir::scalar::FiniteBinary32;
 use std::ops::Range;
 
 use crate::chunks::ArchiveVersion;
@@ -1580,10 +1581,18 @@ fn physically_based_material_reads_versioned_prefix_and_suffix() {
     let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
         .expect("physically based material");
     assert_eq!(material.revision.version(), 2);
-    assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
+    assert_eq!(
+        material.base_color.map(FiniteBinary32::get),
+        [0.1, 0.2, 0.3, 0.4]
+    );
     assert_eq!(material.brdf, 1);
     assert_eq!(material.subsurface, crate::test_support::finite(0.5));
-    assert_eq!(material.subsurface_scattering_color, [0.6, 0.7, 0.8, 0.9]);
+    assert_eq!(
+        material
+            .subsurface_scattering_color
+            .map(FiniteBinary32::get),
+        [0.6, 0.7, 0.8, 0.9]
+    );
     assert_eq!(
         material.subsurface_scattering_radius,
         crate::test_support::finite(1.0)
@@ -1610,7 +1619,10 @@ fn physically_based_material_reads_versioned_prefix_and_suffix() {
         material.opacity_roughness,
         crate::test_support::finite(14.0)
     );
-    assert_eq!(material.emission, [0.11, 0.22, 0.33, 0.44]);
+    assert_eq!(
+        material.emission.map(FiniteBinary32::get),
+        [0.11, 0.22, 0.33, 0.44]
+    );
     assert_eq!(material.revision.alpha(), crate::test_support::finite(0.77));
 }
 

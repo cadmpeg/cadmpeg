@@ -13,9 +13,10 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
-use crate::settings::{MillimeterScale, Plane};
+use crate::settings::{CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::units::FiniteVector;
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -116,17 +117,12 @@ fn refused(offset: usize, error: &CodecError) -> GeometryError {
     GeometryError::malformed(offset, format!("hatch allocation refused: {error}"))
 }
 
-fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryError> {
+fn coordinate3(view: &mut View<'_>, label: &str) -> Result<FiniteVector<3>, GeometryError> {
     let offset = view.position();
     let values = [view.req_f64_le()?, view.req_f64_le()?, view.req_f64_le()?];
-    if values.iter().all(|value| value.is_finite()) {
-        Ok(values)
-    } else {
-        Err(GeometryError::malformed(
-            offset,
-            format!("{label} contains a nonfinite value"),
-        ))
-    }
+    FiniteVector::new(values).ok_or_else(|| {
+        GeometryError::malformed(offset, format!("{label} contains a nonfinite value"))
+    })
 }
 
 fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
@@ -141,18 +137,15 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
         view.req_f64_le()?,
         view.req_f64_le()?,
     ];
-    if !equation.iter().all(|value| value.is_finite()) {
-        return Err(GeometryError::malformed(
-            equation_offset,
-            "plane equation contains a nonfinite value",
-        ));
-    }
+    let equation = FiniteVector::new(equation).ok_or_else(|| {
+        GeometryError::malformed(equation_offset, "plane equation contains a nonfinite value")
+    })?;
     Ok(Plane {
-        origin,
+        origin: CoordinateLane::Admitted(origin),
         xaxis,
         yaxis,
         zaxis,
-        equation,
+        equation: CoordinateLane::Admitted(equation),
     })
 }
 
@@ -528,6 +521,28 @@ pub(crate) mod tests {
     use crate::wire::Uuid;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::scalar::FiniteReal;
+
+    #[test]
+    fn hatch_plane_source_lanes_remain_admitted() {
+        let payload = version_two_hatch_payload();
+        crate::decode::with_expand_bytes(&payload, |expand| {
+            let hatch = decode(
+                expand,
+                0..payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("hatch");
+            assert!(matches!(
+                hatch.plane.origin,
+                crate::settings::CoordinateLane::Admitted(_)
+            ));
+            assert!(matches!(
+                hatch.plane.equation,
+                crate::settings::CoordinateLane::Admitted(_)
+            ));
+        });
+    }
 
     fn plane_bytes() -> Vec<u8> {
         [

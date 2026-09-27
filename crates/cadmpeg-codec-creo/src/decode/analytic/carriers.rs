@@ -70,6 +70,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir, source_carriers);
     let solved_vertices = solved_topological_vertices(
+        ctx,
         scan,
         ir,
         &carriers,

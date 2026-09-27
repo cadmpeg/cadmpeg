@@ -740,12 +740,13 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     }
 
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(0.5)
     );
@@ -807,12 +808,13 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     }
 
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(0.5)
     );
@@ -834,23 +836,25 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         None
     );
     ir.model.surfaces.pop();
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(0.5)
     );
@@ -943,6 +947,96 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
 }
 
 #[test]
+fn torus_radius_samples_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.framing.layout = crate::container::Layout::Nd;
+    scan.framing.sections.push(
+        crate::container::Section::scan("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
+            .expect("section extent")
+            .section,
+    );
+    scan.surfaces
+        .prototype_records
+        .push(crate::surface::SurfacePrototypeRecord {
+            family: crate::surface::SurfacePrototypeFamily::Torus(
+                crate::surface::TorusLabel::Torus,
+            ),
+            parameters: vec![
+                crate::surface::SurfaceNamedParameter {
+                    name: "radius1".to_string(),
+                    value: crate::surface::SurfaceNamedValue::ScalarSequence(vec![10.0]),
+                    body: Vec::new(),
+                    offset: 0,
+                    value_offset: 0,
+                },
+                crate::surface::SurfaceNamedParameter {
+                    name: "radius2".to_string(),
+                    value: crate::surface::SurfaceNamedValue::ScalarSequence(vec![0.5]),
+                    body: Vec::new(),
+                    offset: 0,
+                    value_offset: 0,
+                },
+            ],
+            offset: 5,
+        });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 1,
+        kind: crate::surface::SurfaceKind::TorusOrSphere,
+        feature_id: 913,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 6,
+    });
+    let token = crate::surface::SurfaceParameterScalar {
+        value: Some(0.5),
+        raw: vec![0],
+        offset: 0,
+    };
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 1,
+            body: vec![0],
+            scalar_tokens: vec![token.clone()],
+            opaque_spans: Vec::new(),
+            scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: vec![token],
+            }],
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 6,
+            body_offset: 7,
+        });
+    let rows = [&scan.surfaces.rows[0]];
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::mixed_torus_radius_samples(ctx, &scan, &rows)
+        })
+        .expect("torus radius samples"),
+        Some(vec![0.5])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+    let error = super::mixed_torus_radius_samples(&ctx, &scan, &rows)
+        .expect_err("one torus sample exceeds the collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo_torus_radius_samples"
+    ));
+}
+
+#[test]
 fn legacy_round_dimension_supplies_constant_radius() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
@@ -957,12 +1051,13 @@ fn legacy_round_dimension_supplies_constant_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         Some(2.0)
     );
@@ -981,12 +1076,13 @@ fn legacy_variable_round_dimension_withholds_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        super::round_constant_radius(
+        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             913
-        )
+        ))
         .expect("round constant radius"),
         None
     );

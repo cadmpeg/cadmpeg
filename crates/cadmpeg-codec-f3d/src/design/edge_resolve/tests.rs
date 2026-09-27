@@ -24,6 +24,7 @@ use crate::records::{
         edge_identity::DesignEdgeOperand,
     },
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -156,7 +157,8 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
-    let definition = project_fixed_fillet(&scope, &[group], &[], &[identity])
+    let definition = project_fixed_fillet(&scope, &[group], &[], &[identity], None)
+        .unwrap()
         .expect("fixed Fillet from sole compact identity group");
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Fillet { groups },
@@ -188,7 +190,11 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     identity =
         crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
 
-    assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
+    assert!(
+        project_fixed_fillet(&scope, &[group], &[], &[identity], None)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -214,7 +220,9 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             &[generic_identity],
             Some(7),
             &generic_feature_id,
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
@@ -236,7 +244,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
             Some(7),
             &treatment_feature_id,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
@@ -287,7 +295,8 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -355,7 +364,8 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 
@@ -370,7 +380,8 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -395,7 +406,8 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -521,7 +533,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             Some(7),
             &feature_id,
             None,
-        ),
+         None).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
@@ -538,7 +550,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             Some(7),
             &feature_id,
             None,
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -658,7 +672,9 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
         &[],
         Some(7),
         &feature_id,
-    );
+        None,
+    )
+    .unwrap();
     let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("surface-patch"), 7);
     assert!(matches!(
         selection,
@@ -693,7 +709,9 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
             &[],
             Some(7),
             &feature_id,
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -799,7 +817,9 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
         &[],
         Some(7),
         &feature_id,
-    );
+        None,
+    )
+    .unwrap();
     assert!(matches!(
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
@@ -826,7 +846,9 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
             &[],
             Some(7),
             &feature_id,
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -928,7 +950,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         Some(7),
         &feature_id,
         None,
-    );
+    )
+    .unwrap();
     assert!(matches!(
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
@@ -973,7 +996,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 
@@ -987,7 +1011,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Unresolved
     ));
 
@@ -1003,7 +1028,7 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             Some(7),
             &feature_id,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
@@ -1025,7 +1050,9 @@ fn compact_identity_group_does_not_displace_a_possible_support_group() {
         &[first, second],
         &[],
         &[first_identity, second_identity],
+        None
     )
+    .unwrap()
     .is_none());
 }
 
@@ -1058,7 +1085,9 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             &[first.clone(), second.clone()],
             Some(7),
             &feature_id,
-        ),
+            None
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
     assert!(matches!(
@@ -1070,7 +1099,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             Some(3.0),
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 2
     ));
@@ -1087,7 +1116,8 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             Some(3.0),
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 
@@ -1110,7 +1140,7 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             None,
-        ),
+        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 3
     ));
@@ -1128,7 +1158,8 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
             Some(7),
             &feature_id,
             None,
-        ),
+        )
+        .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
 }
@@ -1379,7 +1410,8 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         .unwrap(),
     ];
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&assignment_candidates),
+        crate::design::edge_resolve::unique_bipartite_assignment(&assignment_candidates, None)
+            .unwrap(),
         Some(vec![17, 18])
     );
     let triplet = DesignTopologyRecipeTriplet {
@@ -1668,13 +1700,13 @@ fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
     deleted.recipe_reference_contexts = vec![context(&[5630]), context(&[5675])];
 
     assert_eq!(
-        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted]),
+        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted], None).unwrap(),
         Some(vec![5630, 5675])
     );
 
     deleted.recipe_reference_contexts[1] = context(&[5630]);
     assert_eq!(
-        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted]),
+        contextual_deleted_edge_group_candidates(&[&consolidated, &deleted], None).unwrap(),
         None
     );
 }
@@ -1783,62 +1815,108 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         Some(crate::design::edge_resolve::EdgeAssignmentCandidates::Context)
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&[
-            vec![17, 18],
-            vec![18, 19],
-            vec![19],
-        ]),
+        crate::design::edge_resolve::unique_bipartite_assignment(
+            &[vec![17, 18], vec![18, 19], vec![19],],
+            None
+        )
+        .unwrap(),
         Some(vec![17, 18, 19])
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&[vec![17, 18], vec![17, 18]]),
+        crate::design::edge_resolve::unique_bipartite_assignment(
+            &[vec![17, 18], vec![17, 18]],
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&[vec![17], vec![17]]),
+        crate::design::edge_resolve::unique_bipartite_assignment(&[vec![17], vec![17]], None)
+            .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&[vec![17], Vec::new()]),
+        crate::design::edge_resolve::unique_bipartite_assignment(&[vec![17], Vec::new()], None)
+            .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_bipartite_assignment(&[]),
+        crate::design::edge_resolve::unique_bipartite_assignment(&[], None).unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_edge_assignment_with_context(&[
-            crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![17, 18]),
-            crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
-            crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![18]),
-        ]),
+        crate::design::edge_resolve::unique_edge_assignment_with_context(
+            &[
+                crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![17, 18]),
+                crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
+                crate::design::edge_resolve::EdgeAssignmentCandidates::Edges(vec![18]),
+            ],
+            None
+        )
+        .unwrap(),
         Some(vec![17, 18])
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_edge_assignment_with_context(&[
-            crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
-            crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
-        ]),
+        crate::design::edge_resolve::unique_edge_assignment_with_context(
+            &[
+                crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
+                crate::design::edge_resolve::EdgeAssignmentCandidates::Context,
+            ],
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
         crate::design::edge_resolve::unique_deleted_reference_assignment(
             &[vec![16, 17, 18], vec![19, 20, 21]],
             &[vec![17, 20, 22], vec![17, 20, 22]],
-        ),
+            None
+        )
+        .unwrap(),
         Some(vec![17, 20])
     );
     assert_eq!(
         crate::design::edge_resolve::unique_deleted_reference_assignment(
             &[vec![16, 17, 18], vec![16, 17, 18]],
             &[vec![17, 18], vec![17, 18]],
-        ),
+            None
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::unique_deleted_reference_assignment(&[vec![17]], &[vec![]],),
+        crate::design::edge_resolve::unique_deleted_reference_assignment(
+            &[vec![17]],
+            &[vec![]],
+            None
+        )
+        .unwrap(),
         None
     );
+}
+
+#[test]
+fn edge_assignment_refuses_collection_limit() {
+    let candidates = [vec![17], vec![18]];
+    assert_eq!(
+        crate::design::edge_resolve::unique_bipartite_assignment(&candidates, None).unwrap(),
+        Some(vec![17, 18])
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::edge_resolve::unique_bipartite_assignment(&candidates, Some(&ctx))
+        .expect_err("two assignment slots exceed five admitted collection items");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d edge assignment"
+                && limit.used == 4
+                && limit.additional == 2
+    ));
 }
 
 #[test]

@@ -1096,6 +1096,7 @@ pub(in super::super) fn transfer_native_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertex_result = solve_topological_vertices(
+        ctx,
         scan,
         ir,
         &carriers,

@@ -434,6 +434,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     .unwrap();
     let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],

@@ -166,6 +166,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let authored = timeline(vec![100, 150, 200]);
     let project = |timeline: &DesignFeatureTimeline| {
         project_parameter_design_with_edge_identities(
+            None,
             &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
@@ -249,6 +250,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     )
     .unwrap();
     let error = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
@@ -376,6 +378,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     )
     .unwrap();
     let (features, parameters) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: std::slice::from_ref(&parameter),
             owners: std::slice::from_ref(&owner),
@@ -482,6 +485,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     )
     .unwrap();
     let (features, _) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
@@ -538,6 +542,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     )
     .unwrap();
     let (features, _) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
@@ -691,6 +696,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
     )
     .unwrap();
     let result = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
@@ -781,6 +787,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     )
     .unwrap();
     let (features, _) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
@@ -1005,6 +1012,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     )
     .unwrap();
     let (features, parameters) = project_parameter_design_with_edge_identities(
+        None,
         &crate::design::feature_project::ProjectInputs {
             native: &parameters,
             owners: &owners,

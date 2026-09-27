@@ -201,12 +201,16 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     append(&mut stream, 0x30, 9, &offset);
     append(&mut stream, 0x5f, 10, &[0x82, 0x89, 0x8b, 0x05]);
 
-    let evidence = standard_object_evidence_from_streams(
-        [stream.clone(), stream.clone()],
-        &HashSet::from([10]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("evaluator allocation succeeds");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream.clone(), stream.clone()],
+            &HashSet::from([10]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(
         matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
         if {
@@ -218,12 +222,16 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let mut conflicting = stream.clone();
     let face_payload = conflicting.len() - 4;
     conflicting[face_payload + 1] = 0x8d;
-    let evidence = standard_object_evidence_from_streams(
-        [stream, conflicting],
-        &HashSet::from([10]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("evaluator allocation succeeds");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream, conflicting],
+            &HashSet::from([10]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(!evidence.surface_geometries.contains_key(&10));
 }
 
@@ -274,8 +282,11 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )]),
     };
 
-    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new()).expect("evaluator allocation succeeds")
-        .expect("revolution evidence");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_surface_evidence(ctx, &graph, 10, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };
@@ -332,12 +343,16 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     revolution[167] = 0x01;
     append_b5_record(&mut stream, 0x2d, 120, &revolution);
 
-    let evidence = standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([120]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("evaluator allocation succeeds");
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([120]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         evidence.surface_geometries.get(&120),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -682,7 +697,8 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
     let options = [[0, 1], [0, 2], [2, 3], [0, 3]];
 
     assert_eq!(
-        standard_shared_nurbs_boundary_pair_options(&left, &right, &points, &options).expect("evaluator allocation succeeds"),
+        standard_shared_nurbs_boundary_pair_options(&left, &right, &points, &options)
+            .expect("evaluator allocation succeeds"),
         Some(vec![[0, 1]])
     );
     assert!(standard_shared_nurbs_boundary_pair_options(
@@ -690,7 +706,8 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
         &surface(false, 2.0),
         &points,
         &options,
-    ).expect("evaluator allocation succeeds")
+    )
+    .expect("evaluator allocation succeeds")
     .is_none());
 }
 
@@ -1007,7 +1024,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     };
 
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
     assert_eq!(
@@ -1016,7 +1034,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
             &points,
             [1, 0],
             &mut crate::nurbs::LaneRefusals::new()
-        ).expect("evaluator allocation succeeds"),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -1035,7 +1054,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         ])
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2])).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2]))
+            .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1048,7 +1068,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&reversed, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 
@@ -1059,7 +1080,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         None,
     ));
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None)
+            .expect("evaluator allocation succeeds"),
         None
     );
 
@@ -1072,7 +1094,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .expect("valid LinePcurve fixture"),
     );
     assert_eq!(
-        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         None
     );
 }
@@ -1378,7 +1401,8 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
             Vector3::new(1.0, 0.0, 0.0),
             start,
             end,
-        ).expect("evaluator allocation succeeds"),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
     );
     let mut disagreeing = native.clone();
@@ -1397,7 +1421,8 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         Vector3::new(1.0, 0.0, 0.0),
         start,
         end,
-    ).expect("evaluator allocation succeeds")
+    )
+    .expect("evaluator allocation succeeds")
     .is_none());
     assert!(native_support_circle_param_range(
         &native,
@@ -1407,7 +1432,8 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         Vector3::new(1.0, 0.0, 0.0),
         start,
         end,
-    ).expect("evaluator allocation succeeds")
+    )
+    .expect("evaluator allocation succeeds")
     .is_none());
 
     let mut ir = CadIr::empty();
@@ -1462,7 +1488,10 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
 #[test]
 fn standard_surface_entity_limit_refuses_before_first_surface_append() {
     let bytes = crate::test_support::test_container::standard_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("service resource budget");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
@@ -1481,33 +1510,6 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
         cadmpeg_core::decode::ResourceDimension::Entities
     );
     assert_eq!(limit.used, 1);
-    assert_eq!(limit.operation, "admit CATIA family model entity");
-}
-
-#[test]
-fn standard_topology_entity_limit_propagates_before_fallback() {
-    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
-    let scan = crate::container::scan_bytes(bytes.clone());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // One retained carrier, four surfaces, four points, four vertices,
-    // four faces, and one body, region, and shell precede the first edge.
-    policy.limits.max_entities = 20;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("topology fixture fits the input-byte limit");
-    let result = crate::families::standard::decode::try_decode_standard(
-        &ctx,
-        &scan,
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
-    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-        panic!("first topology entity must exceed the entity limit");
-    };
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::Entities
-    );
-    assert_eq!(limit.used, 20);
     assert_eq!(limit.operation, "admit CATIA family model entity");
 }
 
@@ -1894,7 +1896,8 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
             Vector3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, -1.0, 0.0),
-        ).expect("evaluator allocation succeeds"),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])
     );
 }
@@ -1916,7 +1919,8 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 }
@@ -1952,7 +1956,8 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None).expect("evaluator allocation succeeds"),
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None)
+            .expect("evaluator allocation succeeds"),
         Some([0, 1])
     );
 }

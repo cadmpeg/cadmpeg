@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -555,10 +555,11 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Shell)
             {
-                shells.extend(self.append_shell(ir, &region_id, child, transform, reversed)?);
+                shells.extend(self.append_shell(ctx, ir, &region_id, child, transform, reversed)?);
             }
         } else {
             shells.extend(self.append_shell_shape(
+                ctx,
                 ir,
                 &region_id,
                 shape_index,
@@ -587,6 +588,7 @@ impl<'a> Builder<'a> {
 
     fn append_shell(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         region: &RegionId,
         shell_use: &TextShapeUse,
@@ -597,6 +599,7 @@ impl<'a> Builder<'a> {
             .compose(self.tables.location(shell_use.location)?)
             .map_err(location_transform_error)?;
         self.append_shell_shape(
+            ctx,
             ir,
             region,
             shell_use.shape,
@@ -607,6 +610,7 @@ impl<'a> Builder<'a> {
 
     fn append_shell_shape(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         region: &RegionId,
         shape_index: usize,
@@ -625,7 +629,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face)
                 .collect::<Vec<_>>();
-            let components = self.face_components(&face_uses, transform)?;
+            let components = self.face_components(ctx, &face_uses, transform)?;
             let mut shell_ids = Vec::with_capacity(components.len());
             for (component_index, component) in components.iter().enumerate() {
                 let component_id = if component_index == 0 {
@@ -750,6 +754,7 @@ impl<'a> Builder<'a> {
 
     fn face_components(
         &self,
+        ctx: &DecodeContext<'_>,
         face_uses: &[&TextShapeUse],
         parent: Transform,
     ) -> Result<Vec<Vec<usize>>, CodecError> {
@@ -805,7 +810,7 @@ impl<'a> Builder<'a> {
             connectivity.push(keys);
         }
 
-        connected_components(&connectivity)
+        connected_components(ctx, &connectivity)
     }
 
     fn append_face(
@@ -1632,8 +1637,11 @@ fn normalize_pcurve_parameter_range(
     Some(range)
 }
 
-fn connected_components(connectivity: &[HashSet<String>]) -> Result<Vec<Vec<usize>>, CodecError> {
-    let mut assigned = alloc_filled(
+fn connected_components(
+    ctx: &DecodeContext<'_>,
+    connectivity: &[HashSet<String>],
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut assigned = ctx.alloc_filled(
         connectivity.len(),
         false,
         "freecad connected-component assignment",

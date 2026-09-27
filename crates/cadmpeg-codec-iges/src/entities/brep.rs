@@ -8,6 +8,7 @@ use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
@@ -286,7 +287,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
-) -> ProjectionOutcome {
+) -> Result<ProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -895,6 +896,7 @@ pub(super) fn project(
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
+                                    let error = error.non_resource()?;
                                     losses.push(entity_loss(
                                         entry,
                                         format!(
@@ -982,6 +984,7 @@ pub(super) fn project(
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {
+                                let error = error.non_resource()?;
                                 losses.push(entity_loss(
                                     entry,
                                     format!("a loop edge-use pcurve states no carrier: {error}"),
@@ -1292,7 +1295,7 @@ pub(super) fn project(
         decoded.extend(vertex_ids.keys().map(|key| key.0));
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

@@ -122,6 +122,7 @@ pub(super) fn encode_design_bulkstream(
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
+            None,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,

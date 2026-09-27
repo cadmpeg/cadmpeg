@@ -211,6 +211,7 @@ pub(super) fn linear_extrusion_extent_and_direction(
 }
 
 pub(in super::super) fn schema_feature_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
@@ -488,7 +489,7 @@ pub(in super::super) fn schema_feature_definition(
             source_carriers,
             feature_id,
         ));
-        let radius = round_constant_radius(scan, ir, source_carriers, feature_id)?
+        let radius = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map_or_else(
                 || {
@@ -588,12 +589,13 @@ pub(in super::super) fn schema_feature_definition(
         let extent = feature_revolution_extent(scan, feature_id);
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(
+            ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
             extent.as_ref(),
-        );
+        )?;
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         let profile = profile.and_then(|profile| profile.planar().cloned());
         let solid = sweep_solid(output_kind);
@@ -876,9 +878,14 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     if schema_class.and_then(schema_operation_kind).is_none() {
-        if let Some(definition) =
-            named_or_referenced_feature_definition(scan, ir, source_carriers, feature_id, kind)?
-        {
+        if let Some(definition) = named_or_referenced_feature_definition(
+            ctx,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            kind,
+        )? {
             return Ok(definition);
         }
         if let Some(definition) =

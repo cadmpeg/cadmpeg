@@ -78,6 +78,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir, source_carriers);
     let solved_vertices = solved_topological_vertices(
+        ctx,
         scan,
         ir,
         &carriers,

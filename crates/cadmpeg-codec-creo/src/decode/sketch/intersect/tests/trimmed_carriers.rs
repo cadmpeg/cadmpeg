@@ -17,13 +17,18 @@ fn trimmed_section_segment_geometry(
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     let missing_line = saved_section_missing_line_geometry(definition);
-    trimmed_section_segment_geometry_with_missing_line(
-        definition,
-        points,
-        trim_vertices,
-        segment,
-        missing_line.as_ref(),
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, definition)?;
+        Ok::<_, cadmpeg_core::CodecError>(trimmed_section_segment_geometry_with_missing_line(
+            definition,
+            points,
+            &radii,
+            trim_vertices,
+            segment,
+            missing_line.as_ref(),
+        ))
+    })
+    .expect("test section geometry")
 }
 
 #[test]
@@ -322,7 +327,15 @@ fn arc_carriers_use_trim_vertices() {
             let vertices = BTreeMap::from([(1, endpoints[0]), (2, endpoints[1])]);
             let geometry =
                 trimmed_section_segment_geometry(&scaled, &BTreeMap::new(), &vertices, &segment);
-            let resolved = resolved_trim_vertex_coordinates(&scaled, &BTreeMap::new());
+            let resolved = crate::decode::with_test_decode_ctx(|ctx| {
+                let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &scaled)?;
+                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                    &scaled,
+                    &BTreeMap::new(),
+                    &radii,
+                ))
+            })
+            .expect("test section geometry");
             if factor == 1.0 {
                 assert!(geometry.is_some(), "radius {radius}");
                 assert_eq!(resolved, vertices);
@@ -376,7 +389,8 @@ fn arc_carriers_use_trim_vertices() {
     assert_eq!(
         trimmed_section_segment_geometry(
             &var_arc,
-            &resolved_section_points(&var_arc),
+            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &var_arc))
+                .expect("test section solve"),
             &trim_vertices,
             &var_segment,
         ),

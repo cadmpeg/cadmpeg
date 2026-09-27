@@ -32,7 +32,7 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     )
     .expect("valid line");
 
-    elevate_nurbs_to_degree(&mut curve, interval, 3, None).expect("elevation lanes pair");
+    elevate_nurbs_to_degree(None, &mut curve, interval, 3, None).expect("elevation lanes pair");
     assert_eq!(curve.knots().first(), Some(&interval[0]));
     assert_eq!(curve.knots().last(), Some(&interval[1]));
     assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
@@ -69,6 +69,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
             < 0.001
     );
     concatenate_nurbs(
+        None,
         vec![
             (first, [0.0, 3.141_592_560_240_814_3], ()),
             (second, [0.0, 3.141_592_746_938_772], ()),
@@ -181,6 +182,7 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
     .expect("valid child");
 
     let error = concatenate_nurbs(
+        None,
         vec![(first, [0.0, 1.5], ()), (second, [0.0, 1.0], ())],
         Some(0.001),
     )
@@ -206,6 +208,7 @@ fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
         .unwrap()
     };
     let joined = concatenate_nurbs(
+        None,
         vec![
             (segment(0., 1e200), [0., 1.], ()),
             (segment(1., 1e-200), [0., 1.], ()),

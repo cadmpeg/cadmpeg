@@ -5,6 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use std::ops::Range;
 
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::scalar::NonNegativeReal;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{DecodedCurve, GeometryError};
@@ -20,7 +21,7 @@ pub(crate) struct Detail {
     pub(crate) source_range: Range<usize>,
     pub(crate) view_range: Range<usize>,
     pub(crate) boundary: DecodedCurve,
-    pub(crate) page_per_model_ratio: f64,
+    pub(crate) page_per_model_ratio: NonNegativeReal,
 }
 
 fn anonymous<'a>(
@@ -84,12 +85,12 @@ pub(crate) fn decode(
     boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
-    if !page_per_model_ratio.is_finite() || page_per_model_ratio < 0.0 {
-        return Err(GeometryError::malformed(
-            outer.position().saturating_sub(8),
+    let page_per_model_ratio = NonNegativeReal::new(page_per_model_ratio).ok_or_else(|| {
+        GeometryError::malformed(
+            outer.position() - 8,
             "detail page-to-model ratio is invalid",
-        ));
-    }
+        )
+    })?;
     outer.skip_remaining()?;
     Ok(Detail {
         source_range: range,
@@ -162,6 +163,40 @@ mod tests {
         bytes
     }
 
+    fn detail_with_ratio(ratio: f64) -> Vec<u8> {
+        let mut content = anonymous(2, &[7, 8, 9]);
+        content.extend(anonymous(4, &boundary()));
+        content.extend(ratio.to_le_bytes());
+        anonymous(4, &content)
+    }
+
+    #[test]
+    fn negative_detail_ratio_is_refused_at_its_source_offset() {
+        let bytes = detail_with_ratio(-0.5);
+        let offset = bytes
+            .windows(8)
+            .position(|window| window == (-0.5_f64).to_le_bytes())
+            .expect("ratio in fixture");
+        let error = decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect_err("negative ratio");
+        assert!(
+            matches!(error, crate::curves::GeometryError::Malformed(crate::chunks::FramingError::Structural { offset: actual, message }) if actual == offset && message == "detail page-to-model ratio is invalid")
+        );
+    }
+
+    #[test]
+    fn nonfinite_detail_ratio_is_refused_at_its_source_offset() {
+        let bytes = detail_with_ratio(f64::NAN);
+        let offset = bytes
+            .windows(8)
+            .position(|window| window == f64::NAN.to_le_bytes())
+            .expect("ratio in fixture");
+        let error =
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect_err("nonfinite ratio");
+        assert!(
+            matches!(error, crate::curves::GeometryError::Malformed(crate::chunks::FramingError::Structural { offset: actual, message }) if actual == offset && message == "detail page-to-model ratio is invalid")
+        );
+    }
+
     #[test]
     fn decodes_boundary_and_bounds_native_view_state() {
         let view = anonymous(2, &[7, 8, 9]);
@@ -176,7 +211,7 @@ mod tests {
 
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
-        assert_eq!(detail.page_per_model_ratio, 0.5);
+        assert_eq!(detail.page_per_model_ratio.get(), 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) =
             detail.boundary.reported_geometry()
@@ -198,7 +233,7 @@ mod tests {
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
 
-        assert_eq!(detail.page_per_model_ratio, 0.0);
+        assert_eq!(detail.page_per_model_ratio.get(), 0.0);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
     }
 
