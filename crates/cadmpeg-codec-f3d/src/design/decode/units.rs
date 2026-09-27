@@ -9,7 +9,6 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -39,10 +38,18 @@ const LENGTH_UNIT_NAMES: [&str; 5] = ["millimeter", "centimeter", "meter", "inch
 ///
 /// A stored key, name, or namespace is graphic ASCII; a label is display text,
 /// so the space is admissible alongside it.
-fn ascii_at(bytes: &[u8], at: usize) -> Option<(String, usize)> {
-    lp_ascii_filtered(bytes, at, 0..=256, |byte| {
-        byte.is_ascii_graphic() || *byte == b' '
-    })
+fn ascii_at(bytes: &[u8], at: usize) -> Option<(&str, usize)> {
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if length > 256 {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    let raw = bytes.get(start..end)?;
+    if !raw.iter().all(|byte| byte.is_ascii_graphic() || *byte == b' ') {
+        return None;
+    }
+    Some((std::str::from_utf8(raw).ok()?, end))
 }
 
 /// Read the `u32` field at `at` and check it equals `expected`, returning the
@@ -67,11 +74,11 @@ fn reference_at(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 /// Read a `u32 expected` count followed by that many reference slots.
-fn references(bytes: &[u8], at: usize, expected: u32) -> Option<Vec<u32>> {
-    let mut position = expect_u32(bytes, at, expected)?;
-    let mut out = Vec::new();
-    for _ in 0..expected {
-        out.push(reference_at(bytes, position)?);
+fn references<const N: usize>(bytes: &[u8], at: usize) -> Option<[u32; N]> {
+    let mut position = expect_u32(bytes, at, u32::try_from(N).ok()?)?;
+    let mut out = [0; N];
+    for slot in &mut out {
+        *slot = reference_at(bytes, position)?;
         position = position.checked_add(REFERENCE_LEN)?;
     }
     Some(out)
@@ -81,7 +88,7 @@ fn references(bytes: &[u8], at: usize, expected: u32) -> Option<Vec<u32>> {
 /// references. The record stores the key, a label, byte `01`, the name
 /// `<key>UnitSystemName`, the `NaFusion` namespace, four zero bytes, and the
 /// counted entry references.
-fn unit_system(bytes: &[u8], at: usize) -> Option<(String, Vec<u32>)> {
+fn unit_system(bytes: &[u8], at: usize) -> Option<(&str, [u32; UNIT_ENTRY_COUNT as usize])> {
     let (key, position) = ascii_at(bytes, at)?;
     let (_label, position) = ascii_at(bytes, position)?;
     (bytes.get(position) == Some(&1)).then_some(())?;
@@ -90,13 +97,13 @@ fn unit_system(bytes: &[u8], at: usize) -> Option<(String, Vec<u32>)> {
     let (namespace, position) = ascii_at(bytes, position)?;
     (namespace == SYSTEM_NAMESPACE).then_some(())?;
     let position = expect_zero_quad(bytes, position)?;
-    Some((key, references(bytes, position, UNIT_ENTRY_COUNT)?))
+    Some((key, references(bytes, position)?))
 }
 
 /// The property name and unit name of one unit-entry record. The record stores
 /// a key, a label, byte `01`, the property name, the `NsCommonData` namespace,
 /// four zero bytes, and the UTF-16 unit name.
-fn unit_entry(bytes: &[u8], at: usize) -> Option<(String, String)> {
+fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
     let (_key, position) = ascii_at(bytes, at)?;
     let (_label, position) = ascii_at(bytes, position)?;
     (bytes.get(position) == Some(&1)).then_some(())?;
@@ -104,7 +111,20 @@ fn unit_entry(bytes: &[u8], at: usize) -> Option<(String, String)> {
     let (namespace, position) = ascii_at(bytes, position)?;
     (namespace == ENTRY_NAMESPACE).then_some(())?;
     let position = expect_zero_quad(bytes, position)?;
-    let (value, _) = lp_utf16_bounded(bytes, position, 0..=64)?;
+    let count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
+    if count > 64 {
+        return None;
+    }
+    let start = position.checked_add(4)?;
+    let end = count.checked_mul(2).and_then(|size| start.checked_add(size))?;
+    let raw = bytes.get(start..end)?;
+    let value = LENGTH_UNIT_NAMES.iter().copied().find(|name| {
+        name.len() == count
+            && raw
+                .chunks_exact(2)
+                .zip(name.as_bytes())
+                .all(|(unit, byte)| unit == [*byte, 0])
+    })?;
     Some((property, value))
 }
 
@@ -135,7 +155,7 @@ fn decode_modeling_length_unit(
             .filter_map(|at| at.checked_add(HEADER_LEN))
     };
     for count_at in collection_counts(bytes) {
-        let Some(systems) = references(bytes, count_at, UNIT_SYSTEM_COUNT) else {
+        let Some(systems) = references::<{ UNIT_SYSTEM_COUNT as usize }>(bytes, count_at) else {
             continue;
         };
         for system in systems {
@@ -151,10 +171,8 @@ fn decode_modeling_length_unit(
                         let Some((property, value)) = unit_entry(bytes, entry_at) else {
                             continue;
                         };
-                        if property == MODELING_LENGTH_PROPERTY
-                            && LENGTH_UNIT_NAMES.contains(&value.as_str())
-                        {
-                            return Ok(Some(value));
+                        if property == MODELING_LENGTH_PROPERTY {
+                            return Ok(Some(value.to_owned()));
                         }
                     }
                 }
