@@ -2,7 +2,7 @@
 //! SOLIDWORKS native feature-history records.
 #![deny(clippy::disallowed_methods)]
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
@@ -35,14 +35,62 @@ const SLDPRT_ARENA_NAMES: &[&str] = &[
 
 type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
 
-#[allow(clippy::needless_pass_by_value)]
-fn emit_owned<T: Serialize>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: Vec<T>,
-    row: &SldprtFamilyRow,
-    namespace: &mut cadmpeg_ir::NativeNamespace,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    namespace.set_arena(ctx, row.arena, &records)
+struct HistoryArenaView<'a>(&'a FeatureHistory);
+
+impl Serialize for HistoryArenaView<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &self.0.id)?;
+        if self.0.part_name.is_some() {
+            map.serialize_entry("part_name", &self.0.part_name)?;
+        }
+        if !self.0.properties.is_empty() {
+            map.serialize_entry("properties", &self.0.properties)?;
+        }
+        if !self.0.content.is_empty() {
+            map.serialize_entry("content", &self.0.content)?;
+        }
+        map.serialize_entry("configurations", &[] as &[()])?;
+        map.serialize_entry("features", &[] as &[()])?;
+        map.end()
+    }
+}
+
+struct LanePayload<'a>(&'a [u8]);
+
+impl Serialize for LanePayload<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_ir::bytes::serialize(self.0, serializer)
+    }
+}
+
+struct LaneArenaView<'a>(&'a FeatureInputLane);
+
+impl Serialize for LaneArenaView<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &self.0.id)?;
+        if self.0.configuration.is_some() {
+            map.serialize_entry("configuration", &self.0.configuration)?;
+        }
+        map.serialize_entry("native_payload", &LanePayload(&self.0.native_payload))?;
+        for field in [
+            "classes",
+            "names",
+            "scalars",
+            "relation_bindings",
+            "relation_instances",
+            "body_selections",
+            "edge_selections",
+            "surface_selections",
+            "generated_surface_identities",
+            "references",
+            "sketch_entities",
+        ] {
+            map.serialize_entry(field, &[] as &[()])?;
+        }
+        map.end()
+    }
 }
 
 macro_rules! lane_family {
@@ -52,15 +100,13 @@ macro_rules! lane_family {
             exactness: (),
             phase: Phase::ArenaOnly,
             emit: |ctx, model, row, namespace| {
-                emit_owned(
+                namespace.set_arena_from(
                     ctx,
+                    row.arena,
                     model
                         .feature_input_lanes
                         .iter()
-                        .flat_map(|lane| lane.$field.clone())
-                        .collect(),
-                    row,
-                    namespace,
+                        .flat_map(|lane| lane.$field.iter()),
                 )
             },
             len: |model| {
@@ -81,20 +127,10 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            emit_owned(
+            namespace.set_arena_from(
                 ctx,
-                model
-                    .feature_histories
-                    .iter()
-                    .cloned()
-                    .map(|mut history| {
-                        history.configurations.clear();
-                        history.features.clear();
-                        history
-                    })
-                    .collect(),
-                row,
-                namespace,
+                row.arena,
+                model.feature_histories.iter().map(HistoryArenaView),
             )
         },
         len: |model| model.feature_histories.len(),
@@ -105,7 +141,7 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            emit_owned(ctx, model.pmi_dimensions.clone(), row, namespace)
+            namespace.set_arena(ctx, row.arena, &model.pmi_dimensions)
         },
         len: |model| model.pmi_dimensions.len(),
         counts_toward_emptiness: true,
@@ -115,15 +151,13 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            emit_owned(
+            namespace.set_arena_from(
                 ctx,
+                row.arena,
                 model
                     .feature_histories
                     .iter()
-                    .flat_map(|history| history.configurations.clone())
-                    .collect(),
-                row,
-                namespace,
+                    .flat_map(|history| history.configurations.iter()),
             )
         },
         len: |model| {
@@ -140,15 +174,13 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            emit_owned(
+            namespace.set_arena_from(
                 ctx,
+                row.arena,
                 model
                     .feature_histories
                     .iter()
-                    .flat_map(|history| history.features.clone())
-                    .collect(),
-                row,
-                namespace,
+                    .flat_map(|history| history.features.iter()),
             )
         },
         len: |model| {
@@ -165,29 +197,10 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         exactness: (),
         phase: Phase::ArenaOnly,
         emit: |ctx, model, row, namespace| {
-            emit_owned(
+            namespace.set_arena_from(
                 ctx,
-                model
-                    .feature_input_lanes
-                    .iter()
-                    .cloned()
-                    .map(|mut lane| {
-                        lane.classes.clear();
-                        lane.names.clear();
-                        lane.scalars.clear();
-                        lane.relation_bindings.clear();
-                        lane.relation_instances.clear();
-                        lane.body_selections.clear();
-                        lane.edge_selections.clear();
-                        lane.surface_selections.clear();
-                        lane.generated_surface_identities.clear();
-                        lane.references.clear();
-                        lane.sketch_entities.clear();
-                        lane
-                    })
-                    .collect(),
-                row,
-                namespace,
+                row.arena,
+                model.feature_input_lanes.iter().map(LaneArenaView),
             )
         },
         len: |model| model.feature_input_lanes.len(),
