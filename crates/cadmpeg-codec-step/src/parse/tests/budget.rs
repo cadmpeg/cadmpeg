@@ -124,6 +124,16 @@ parser_vector_limit_test!(
     "step_parse_reference_pending"
 );
 parser_vector_limit_test!(
+    entity_index_name_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_entity_index_names"
+);
+parser_vector_limit_test!(
+    entity_index_id_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_entity_index_ids"
+);
+parser_vector_limit_test!(
     reference_id_vector_refuses_collection_limit,
     VECTOR_SOURCE,
     "step_parse_reference_ids"
