@@ -285,7 +285,7 @@ pub(crate) fn inspect(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     losses.extend(parse.record_losses());
-    let mut summary = card::summarize(&parse.scan, primary);
+    let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
     append_summary_notes(
         ctx,
