@@ -3,8 +3,22 @@
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+
+pub(crate) fn insert_hash_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<Option<V>, CodecError> {
+    if !items.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
+    }
+    Ok(items.insert(key, value))
+}
 
 pub(crate) fn collection_vec<T>(
     ctx: &DecodeContext<'_>,
@@ -232,4 +246,20 @@ pub(crate) fn collection_allocation_failed(
         additional: count,
         operation,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn charged_hash_index_refuses_at_caller_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within policy");
+        let mut index = std::collections::HashMap::new();
+        assert!(matches!(super::insert_hash_map(&ctx, &mut index, "key", 1_u8, "fcstd test index"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "fcstd test index"));
+    }
 }
