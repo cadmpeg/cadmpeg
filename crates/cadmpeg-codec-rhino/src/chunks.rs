@@ -688,6 +688,7 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
 
 /// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
 pub(crate) fn warn_checksum(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     label: &str,
@@ -697,10 +698,11 @@ pub(crate) fn warn_checksum(
         verify_checksum(data, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{label} CRC mismatch at offset {}", chunk.header_start),
-        );
+            format_args!("{label} CRC mismatch at offset {}", chunk.header_start),
+        )?;
     }
     Ok(())
 }

@@ -247,6 +247,39 @@ fn definition_member_uuids_refuse_collection_limit_without_opaque_fallback() {
     });
 }
 
+#[test]
+fn malformed_definition_diagnostic_and_index_refuse_collection_limits() {
+    let record = Record::short(0x2000_807b, 0..0, 0);
+    for (limit, operation) in [
+        (0, "Rhino instance definition diagnostics"),
+        (1, "Rhino opaque instance definition indexes"),
+    ] {
+        with_collection_limit(limit, |ctx| {
+            let refusal = crate::instances::parse_definitions(
+                ctx,
+                &[],
+                std::slice::from_ref(&record),
+                ArchiveVersion::V5,
+                0x1000_0021,
+            )
+            .expect_err("diagnostic and index exceed the collection limit");
+            assert!(
+                matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(item) if item.operation == operation)
+            );
+        });
+    }
+    let parsed = crate::instances::parse_definitions(
+        &cadmpeg_test_support::service_decode_context(),
+        &[],
+        &[record],
+        ArchiveVersion::V5,
+        0x1000_0021,
+    )
+    .expect("service profile admits malformed definition report");
+    assert_eq!(parsed.scan.diagnostics().len(), 1);
+    assert_eq!(parsed.opaque_records.len(), 1);
+}
+
 fn v5_definition_with_path(linked: bool) -> Vec<u8> {
     let archive = ArchiveVersion::V5;
     let payload = v5_definition_payload(archive, 6, [7; 16], &[], linked);
