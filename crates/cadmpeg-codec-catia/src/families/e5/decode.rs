@@ -178,7 +178,7 @@ pub(in crate::families) fn try_decode_e5(
                 "vertex_05_08_01",
                 Exactness::ByteExact,
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.points, "catia_e5_model_points") {
                 return Some(Err(error));
             }
             ir.model
@@ -195,7 +195,7 @@ pub(in crate::families) fn try_decode_e5(
                 Exactness::ByteExact,
             );
             annotations.derived(&vertex_id, "point").ok()?;
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.vertices, "catia_e5_model_vertices") {
                 return Some(Err(error));
             }
             ir.model.vertices.push(Vertex {
@@ -217,7 +217,7 @@ pub(in crate::families) fn try_decode_e5(
                 "circle_carrier",
                 Exactness::ByteExact,
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves") {
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
@@ -246,7 +246,7 @@ pub(in crate::families) fn try_decode_e5(
                     Exactness::ByteExact
                 },
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_e5_model_surfaces") {
                 return Some(Err(error));
             }
             ir.model.surfaces.push(Surface {
@@ -274,7 +274,7 @@ pub(in crate::families) fn try_decode_e5(
                 Exactness::ByteExact,
             );
             annotations.derived(&surface_id, "geometry").ok()?;
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_e5_model_surfaces") {
                 return Some(Err(error));
             }
             ir.model.surfaces.push(Surface {
@@ -298,7 +298,7 @@ pub(in crate::families) fn try_decode_e5(
                 .ok()?
                 .derived(&procedural_id, "definition")
                 .ok()?;
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_e5_model_procedural_surfaces") {
                 return Some(Err(error));
             }
             let definition = match jet.definition(ctx) {
@@ -1002,7 +1002,7 @@ fn attach_e5_free_vertices(
             Exactness::Inferred,
         );
     }
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.bodies, "catia_e5_model_bodies")?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
@@ -1012,13 +1012,13 @@ fn attach_e5_free_vertices(
         color: None,
         visible: None,
     });
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.regions, "catia_e5_model_regions")?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.shells, "catia_e5_model_shells")?;
     ir.model.shells.push(
         match Shell::new(
             shell_id,
@@ -1739,7 +1739,7 @@ fn emit_e5_curves_and_edges(
         annotations
             .derived(&id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves")?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: geometry.clone(),
@@ -1765,7 +1765,7 @@ fn emit_e5_curves_and_edges(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_curves, "catia_e5_model_procedural_curves")?;
         let _attached = ir.model.add_procedural_curve(
             curve,
             ProceduralCurve::new(
@@ -1800,7 +1800,7 @@ fn emit_e5_curves_and_edges(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_curves, "catia_e5_model_procedural_curves")?;
         let _attached = ir.model.add_procedural_curve(
             curve,
             ProceduralCurve::new(
@@ -1850,7 +1850,7 @@ fn emit_e5_curves_and_edges(
                 .derived(&id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.edges, "catia_e5_model_edges")?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -1889,7 +1889,7 @@ fn emit_e5_pcurves(
         annotations
             .derived(&id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.pcurves, "catia_e5_model_pcurves")?;
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
@@ -1949,7 +1949,7 @@ fn emit_e5_bodies(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&body_id, "regions")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.bodies, "catia_e5_model_bodies")?;
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind: plan.kind,
@@ -1978,7 +1978,7 @@ fn emit_e5_bodies(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&region_id, "shells")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.regions, "catia_e5_model_regions")?;
             ir.model.regions.push(Region {
                 id: region_id.clone(),
                 body: body_id.clone(),
@@ -1997,7 +1997,7 @@ fn emit_e5_bodies(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&shell_id, "faces")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.shells, "catia_e5_model_shells")?;
             ir.model.shells.push(
                 match Shell::new(
                     shell_id,
@@ -2073,7 +2073,7 @@ fn emit_e5_faces_loops_coedges(
                 return Ok(false);
             }
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.faces, "catia_e5_model_faces")?;
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
@@ -2144,7 +2144,7 @@ fn emit_e5_faces_loops_coedges(
             else {
                 return Ok(false);
             };
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.loops, "catia_e5_model_loops")?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
@@ -2183,7 +2183,7 @@ fn emit_e5_faces_loops_coedges(
                     .entry(edge_ref)
                     .or_default()
                     .push(arena_index);
-                admission.charge()?;
+                admission.reserve_entity(&mut ir.model.coedges, "catia_e5_model_coedges")?;
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
