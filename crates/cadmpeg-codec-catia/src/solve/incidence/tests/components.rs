@@ -1506,7 +1506,7 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
     ));
 
     let mut refused = HashSet::new();
-    for limit in 0..128 {
+    for limit in 0..256 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
@@ -1535,9 +1535,75 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
         "catia compact boundary edges",
         "catia compact boundary selected edges",
         "catia compact boundary edge points",
+        "catia_compact_boundary_candidate_pair",
+        "catia_compact_boundary_candidate_rows",
+        "catia_compact_boundary_oriented_edges",
+        "catia_compact_boundary_oriented_signature",
+        "catia_compact_boundary_signatures",
+        "catia_compact_boundary_next_states",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
+}
+
+#[test]
+fn compact_boundary_advance_charges_existing_oriented_edges() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let use_ = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: edge,
+        end: (edge + 1) % 2,
+        reversed: Some(false),
+    };
+    let domain = MeshFaceBoundaryDomain::DeferredValidation(
+        crate::solve::missing_edge::MeshDeferredFaceBoundary {
+            cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(use_(0), 1), (use_(1), 1)],
+            }],
+            missing_edges: Vec::new(),
+        },
+    );
+    catia_test_context!(service_ctx);
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let initial = vec![(quotient, HashSet::from([0]))];
+    let mut refused = HashSet::new();
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(10_000);
+        match crate::solve::incidence::advance_compact_boundary_domains(
+            &ctx,
+            [&domain],
+            &choices,
+            &[Some([0, 1]), Some([0, 1])],
+            None,
+            initial.clone(),
+            &budget,
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)) => break,
+            Ok(_) => panic!("closed compact boundary must advance"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    assert!(refused.contains("catia_compact_boundary_oriented_copy"));
 }
 
 #[test]

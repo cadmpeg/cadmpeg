@@ -1587,22 +1587,6 @@ impl MeshQuotient {
         (root_count, domain_cardinality)
     }
 
-    pub(super) fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
-        let mut components = Vec::new();
-        for node in 0..self.union.len() {
-            if self.union.find(node) != node {
-                continue;
-            }
-            let mut members = self.members(node).to_vec();
-            members.sort_unstable();
-            let mut domain = self.domains[node].iter().copied().collect::<Vec<_>>();
-            domain.sort_unstable();
-            components.push((members, domain));
-        }
-        components.sort_unstable();
-        components
-    }
-
     pub(super) fn signature_charged(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -1640,6 +1624,7 @@ impl MeshQuotient {
             .count()
     }
 
+    #[cfg(test)]
     pub(crate) fn merge(&mut self, left: usize, right: usize) -> Option<usize> {
         let left = self.union.find(left);
         let right = self.union.find(right);
@@ -8983,7 +8968,7 @@ impl MeshSelectionSearch<'_, '_> {
                 if quotient.union.find(left) == quotient.union.find(right) {
                     continue;
                 }
-                let Some(root) = quotient.merge(left, right) else {
+                let Some(root) = quotient.merge_charged(self.ctx, left, right)? else {
                     return Ok(false);
                 };
                 if !quotient.propagate_component_edge_domains(
@@ -9175,7 +9160,7 @@ impl MeshSelectionSearch<'_, '_> {
         changed_edges: &HashSet<usize>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<Option<MeshQuotient>, CodecError> {
-        let mut measured = quotient.clone();
+        let mut measured = quotient.clone_charged(self.ctx)?;
         if !self.has_exact_singleton_endpoint_domains()
             && !self.propagate_forced_face_equations_from(
                 &mut measured,
@@ -9320,7 +9305,7 @@ impl MeshSelectionSearch<'_, '_> {
             self.outcome.exhaust();
             return Ok(());
         }
-        let mut measured = quotient.clone();
+        let mut measured = quotient.clone_charged(self.ctx)?;
         if !measured.merge_singleton_coordinate_roots(self.ctx, self.edge_candidates)? {
             return Ok(());
         }
@@ -9328,8 +9313,13 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            let signature = self.selection_state_signature(&measured, true);
-            if !self.visited_states.insert(signature) {
+            let signature = self.selection_state_signature(&measured, true)?;
+            if !crate::resource::insert_set(
+                self.ctx,
+                &mut self.visited_states,
+                signature,
+                "catia_selection_state_memo",
+            )? {
                 return Ok(());
             }
         }
@@ -9527,14 +9517,34 @@ impl MeshSelectionSearch<'_, '_> {
         &self,
         quotient: &MeshQuotient,
         prepared: bool,
-    ) -> MeshSelectionStateSignature {
-        let mut quotient = quotient.clone();
-        (
+    ) -> Result<MeshSelectionStateSignature, CodecError> {
+        let mut quotient = quotient.clone_charged(self.ctx)?;
+        let mut selected = Vec::new();
+        for choice in &self.selected {
+            let copy = match choice {
+                Some((assignment, directions)) => Some((
+                    *assignment,
+                    copy_mesh_boundary_directions(self.ctx, directions)?,
+                )),
+                None => None,
+            };
+            crate::resource::push(
+                self.ctx,
+                &mut selected,
+                copy,
+                "catia_selection_signature_faces",
+            )?;
+        }
+        Ok((
             prepared,
-            self.selected.clone(),
-            quotient.signature(),
-            self.fixed_edge_orientations.clone(),
-        )
+            selected,
+            quotient.signature_charged(self.ctx)?,
+            crate::resource::copy_slice(
+                self.ctx,
+                &self.fixed_edge_orientations,
+                "catia_selection_signature_edge_orientations",
+            )?,
+        ))
     }
 
     fn search_from_state(
@@ -9552,8 +9562,13 @@ impl MeshSelectionSearch<'_, '_> {
             return Ok(());
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
-            let signature = self.selection_state_signature(quotient, prepared);
-            if !self.visited_states.insert(signature) {
+            let signature = self.selection_state_signature(quotient, prepared)?;
+            if !crate::resource::insert_set(
+                self.ctx,
+                &mut self.visited_states,
+                signature,
+                "catia_selection_state_memo",
+            )? {
                 return Ok(());
             }
         }
@@ -9567,7 +9582,7 @@ impl MeshSelectionSearch<'_, '_> {
         budget: &WorkBudget<'_>,
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<(), CodecError> {
-        let mut measured = quotient.clone();
+        let mut measured = quotient.clone_charged(self.ctx)?;
         if !prepared {
             if !self.has_exact_singleton_endpoint_domains()
                 && !self.propagate_forced_face_equations_from(
@@ -10477,8 +10492,14 @@ fn resolve_singleton_mesh_selection(
     for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
         for (port, vertex) in [(0, start), (1, end)] {
             let node = edge * 2 + port;
-            if let Some(previous) = port_by_vertex.insert(vertex, node) {
-                if quotient.merge(previous, node).is_none() {
+            if let Some(previous) = crate::resource::insert_map(
+                ctx,
+                &mut port_by_vertex,
+                vertex,
+                node,
+                "catia_mesh_port_by_vertex",
+            )? {
+                if quotient.merge_charged(ctx, previous, node)?.is_none() {
                     return Ok(None);
                 }
             }
