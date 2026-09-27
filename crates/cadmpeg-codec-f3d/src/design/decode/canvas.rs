@@ -14,7 +14,7 @@ use crate::records::{
     },
     feature::scope::DesignParameterScope,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -39,6 +39,7 @@ pub(crate) fn decode_canvas_images(
 /// Project uniquely bound Canvas images into neutral raster resources and
 /// model-space reference-image features.
 pub(crate) fn project_canvas_images(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     images: &[DesignCanvasImage],
@@ -60,7 +61,7 @@ pub(crate) fn project_canvas_images(
         };
         let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
         let [minimum, maximum] = image.geometry().boundary.extents();
-        let Some(asset) = embedded_image_asset(scan, image.asset_name())? else {
+        let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
         let asset_id = asset.id.clone();

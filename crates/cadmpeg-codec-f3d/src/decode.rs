@@ -2463,6 +2463,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.subds,
         )?;
         let canvas_assets = crate::design::decode::canvas::project_canvas_images(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &self.native.design_canvas_images,
@@ -2470,6 +2471,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         extend_unique_assets(&mut self.ir.model.assets, canvas_assets)?;
         let decal_assets = crate::design::decode::decal::project_decal_images(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &self.native.design_decal_images,
