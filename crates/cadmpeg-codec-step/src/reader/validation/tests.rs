@@ -10,6 +10,71 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::StepCodec;
 
+const VALIDATION_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);ENDSEC;END-ISO-10303-21;";
+
+fn validation_limit_result(
+    retained_limit: Option<u64>,
+    collection_limit: Option<u64>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (exchange, _) = crate::parse::parse(VALIDATION_LIMIT_SOURCE)
+        .expect("valid validation-property exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    if let Some(limit) = collection_limit {
+        policy.limits.max_collection_items = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits selected policy");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+    super::decode(&exchange, &geometry.value, &mut ir, &ctx)?;
+    Ok(())
+}
+
+#[test]
+fn validation_property_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(Some(1), None),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn validation_property_description_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(Some("geometric validation property".len() as u64), None),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn validation_property_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(None, Some(0)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_validation_properties"
+    ));
+}
+
 #[test]
 fn complex_validation_measure_carrier_is_decoded() {
     let source = String::from_utf8(
