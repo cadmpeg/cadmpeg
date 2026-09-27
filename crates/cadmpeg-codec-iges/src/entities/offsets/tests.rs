@@ -5,7 +5,9 @@ use std::io::Cursor;
 
 use super::SourceParameterMap;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -27,6 +29,48 @@ use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::Param
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
+
+fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected offset collection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("offset collection refusal was not reached: {operation}");
+}
+
+#[test]
+fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
+    let linear = linear_offset_line_file(1);
+    for operation in [
+        "iges linear-offset controls",
+        "iges linear-offset knots",
+        "iges offset neutral point slots",
+        "iges offset neutral vertex slots",
+        "iges offset neutral curve slots",
+        "iges offset neutral edge slots",
+        "iges offset wire edge slots",
+    ] {
+        assert_offset_collection_refusal(&linear, operation);
+    }
+    let function = function_offset_line_file();
+    for operation in ["iges function-offset controls", "iges function-offset knots"] {
+        assert_offset_collection_refusal(&function, operation);
+    }
+}
 
 #[test]
 fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {
