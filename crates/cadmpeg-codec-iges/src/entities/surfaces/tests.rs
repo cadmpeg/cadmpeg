@@ -275,7 +275,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 }
 
 #[test]
-fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
+fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
     let first = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -299,6 +299,18 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::ruled_surface_carrier(&first, &second, Some(&ctx))
+        .err()
+        .expect("two unit weights exceed one admitted collection item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
+    ));
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
@@ -1594,7 +1606,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     }
     .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(true)
     );
 
@@ -1609,7 +1621,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         })
         .unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
+        homogeneous_curve_boundary_matches(None, &first, &scaled, [0.0, 1.0], 0.0).unwrap(),
         Some(false)
     );
 }
@@ -1726,7 +1738,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
     let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
     let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
     assert_eq!(
-        homogeneous_curve_boundary_matches(&a, &b, [0., 2.], 0.),
+        homogeneous_curve_boundary_matches(None, &a, &b, [0., 2.], 0.).unwrap(),
         Some(false)
     );
     for weight in [1., 1e-200, 1e200] {
@@ -1747,11 +1759,11 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         )
         .unwrap();
         assert_eq!(
-            homogeneous_curve_boundary_matches(&a, &b, [0., 1.], 0.001),
+            homogeneous_curve_boundary_matches(None, &a, &b, [0., 1.], 0.001).unwrap(),
             Some(false)
         );
         assert_eq!(
-            homogeneous_curve_boundary_matches(&a, &a, [0., 1.], 0.),
+            homogeneous_curve_boundary_matches(None, &a, &a, [0., 1.], 0.).unwrap(),
             Some(true)
         );
     }
@@ -1784,7 +1796,9 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         false,
     )
     .unwrap();
-    let pairs = super::aligned_homogeneous_spans(&first, &second).unwrap();
+    let pairs = super::aligned_homogeneous_spans(None, &first, &second)
+        .unwrap()
+        .unwrap();
     assert_eq!(pairs.len(), 2);
     for (index, (a, b)) in pairs.into_iter().enumerate() {
         assert_eq!(a.controls.len(), 2);
