@@ -2,7 +2,7 @@
 //! Rhino appearance, grouping, and lighting presentation records.
 
 use crate::loss::Diagnostics;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -5094,12 +5094,26 @@ pub(crate) fn install(
     let mut text_styles = Vec::new();
     let mut layers = Vec::new();
     let mut object_presentation = Vec::new();
-    let mut object_id_counts = BTreeMap::<Uuid, usize>::new();
+    let mut object_id_counts = HashMap::<Uuid, usize>::new();
+    let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = object.identity() {
-            *object_id_counts.entry(identity.object_id).or_default() += 1;
+            if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
+                *count += 1;
+            } else {
+                object_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(Uuid, usize)>(),
+                ))?;
+                crate::wire::reserve_hash_map(
+                    ctx,
+                    &mut object_id_counts,
+                    1,
+                    "Rhino object identity counts",
+                )?;
+                object_id_counts.insert(identity.object_id, 1);
+            }
         }
     }
     for table in &scan.tables {
@@ -5584,17 +5598,32 @@ pub(crate) fn install(
             }
         }
     }
-    let mut group_members = BTreeMap::<i32, Vec<String>>::new();
+    let mut group_members = HashMap::<i32, Vec<String>>::new();
+    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
-                group_members
-                    .entry(*group)
-                    .or_default()
-                    .push(format!("rhino:object:record#{source_order:06}"));
+                if !group_members.contains_key(group) {
+                    group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(i32, Vec<String>)>(),
+                    ))?;
+                    crate::wire::reserve_hash_map(
+                        ctx,
+                        &mut group_members,
+                        1,
+                        "Rhino group member keys",
+                    )?;
+                }
+                let members = group_members.entry(*group).or_default();
+                crate::wire::reserve_collection(ctx, members, 1, "Rhino group member links")?;
+                members.push(crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:object:record#{source_order:06}"),
+                    "Rhino group member link",
+                )?);
             }
         }
         if object.class_uuid == LIGHT {
@@ -5634,13 +5663,6 @@ pub(crate) fn install(
         }
         if let Some(attributes) = object.attributes.parsed() {
             let identity = &object.identity;
-            let key = if identity.object_id.is_nil()
-                || object_id_counts.get(&identity.object_id).copied() != Some(1)
-            {
-                format!("record-{source_order:06}")
-            } else {
-                identity.object_id.to_string()
-            };
             let attributes_presentation = object_attributes_presentation(
                 ctx,
                 scan.data,
@@ -5652,28 +5674,62 @@ pub(crate) fn install(
                 identity.object_id,
                 &mut losses,
             )?;
+            let mut links =
+                crate::wire::admitted_collection(ctx, 1, "Rhino object presentation links")?;
+            links.push(crate::wire::admitted_format(
+                ctx,
+                format_args!("rhino:object:record#{source_order:06}"),
+                "Rhino object presentation link",
+            )?);
+            crate::wire::reserve_collection(
+                ctx,
+                &mut object_presentation,
+                1,
+                "Rhino object presentation records",
+            )?;
             object_presentation.push(ObjectPresentationRecord {
-                id: format!("rhino:presentation:object#{key}"),
+                id: if identity.object_id.is_nil()
+                    || object_id_counts.get(&identity.object_id).copied() != Some(1)
+                {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("rhino:presentation:object#record-{source_order:06}"),
+                        "Rhino object presentation ID",
+                    )?
+                } else {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("rhino:presentation:object#{}", identity.object_id),
+                        "Rhino object presentation ID",
+                    )?
+                },
                 source_offset: object.range.start as u64,
                 attributes: attributes_presentation,
-                links: vec![format!("rhino:object:record#{source_order:06}")],
+                links,
             });
         }
     }
-    let mut layer_id_counts = BTreeMap::<Uuid, usize>::new();
+    let mut layer_id_counts = HashMap::<Uuid, usize>::new();
+    let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
     for layer in &scan.metadata.layers {
         if let Some(id) = layer.id {
-            *layer_id_counts.entry(id).or_default() += 1;
+            if let Some(count) = layer_id_counts.get_mut(&id) {
+                *count += 1;
+            } else {
+                layer_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(Uuid, usize)>(),
+                ))?;
+                crate::wire::reserve_hash_map(
+                    ctx,
+                    &mut layer_id_counts,
+                    1,
+                    "Rhino layer identity counts",
+                )?;
+                layer_id_counts.insert(id, 1);
+            }
         }
     }
     for layer in &scan.metadata.layers {
-        let key = layer
-            .id
-            .filter(|id| layer_id_counts.get(id).copied() == Some(1))
-            .map_or_else(
-                || format!("index-{}-offset-{}", layer.index, layer.source.range.start),
-                |id| id.to_string(),
-            );
         let rendering = match rendering_attributes(
             ctx,
             scan.data,
@@ -5691,14 +5747,62 @@ pub(crate) fn install(
                 RenderingAttributesPresentation::default()
             }
         };
+        let mut per_viewport_settings = crate::wire::admitted_collection(
+            ctx,
+            layer.per_viewport_settings.len(),
+            "Rhino layer presentation viewport settings",
+        )?;
+        per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
+        crate::wire::reserve_collection(ctx, &mut layers, 1, "Rhino layer presentation records")?;
         layers.push(LayerPresentationRecord {
-            id: format!("rhino:presentation:layer#{key}"),
+            id: if let Some(id) = layer
+                .id
+                .filter(|id| layer_id_counts.get(id).copied() == Some(1))
+            {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!("rhino:presentation:layer#{id}"),
+                    "Rhino layer presentation ID",
+                )?
+            } else {
+                crate::wire::admitted_format(
+                    ctx,
+                    format_args!(
+                        "rhino:presentation:layer#index-{}-offset-{}",
+                        layer.index, layer.source.range.start
+                    ),
+                    "Rhino layer presentation ID",
+                )?
+            },
             source_offset: layer.source.range.start as u64,
             archive_index: layer.index,
-            source_uuid: layer.id.map(|id| id.to_string()),
+            source_uuid: layer
+                .id
+                .map(|id| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino layer presentation source UUID",
+                    )
+                })
+                .transpose()?,
             hierarchy: layer.hierarchy,
-            name: layer.name.clone(),
-            description: layer.description.clone(),
+            name: crate::wire::copy_retained_string(
+                ctx,
+                &layer.name,
+                "Rhino layer presentation name",
+            )?,
+            description: layer
+                .description
+                .as_deref()
+                .map(|description| {
+                    crate::wire::copy_retained_string(
+                        ctx,
+                        description,
+                        "Rhino layer presentation description",
+                    )
+                })
+                .transpose()?,
             iges_level: layer.iges_level,
             visible: layer.visible,
             locked: layer.locked,
@@ -5709,16 +5813,38 @@ pub(crate) fn install(
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())
-                .map(|id| id.to_string()),
+                .map(|id| {
+                    crate::wire::admitted_format(
+                        ctx,
+                        format_args!("{id}"),
+                        "Rhino layer presentation display material UUID",
+                    )
+                })
+                .transpose()?,
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             visible_in_new_details: layer.visible_in_new_details,
             rendering_materials: rendering.materials,
-            per_viewport_settings: layer.per_viewport_settings.clone(),
+            per_viewport_settings,
         });
     }
-    let mut group_index_counts = BTreeMap::<i32, usize>::new();
+    let mut group_index_counts = Vec::<(i32, usize)>::new();
+    let mut group_index_workspace = ctx.reserve_scoped(0, "Rhino group index workspace")?;
     for group in &groups {
-        *group_index_counts.entry(group.archive_index).or_default() += 1;
+        match group_index_counts.binary_search_by_key(&group.archive_index, |(index, _)| *index) {
+            Ok(position) => group_index_counts[position].1 += 1,
+            Err(position) => {
+                group_index_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(i32, usize)>(),
+                ))?;
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut group_index_counts,
+                    1,
+                    "Rhino group index counts",
+                )?;
+                group_index_counts.insert(position, (group.archive_index, 1));
+            }
+        }
     }
     for (index, count) in &group_index_counts {
         if *count > 1 {
@@ -5734,7 +5860,12 @@ pub(crate) fn install(
         )));
     }
     for group in &mut groups {
-        group.links = if group_index_counts.get(&group.archive_index) == Some(&1) {
+        group.links = if group_index_counts
+            .binary_search_by_key(&group.archive_index, |(index, _)| *index)
+            .ok()
+            .and_then(|position| group_index_counts.get(position).map(|(_, count)| *count))
+            == Some(1)
+        {
             group_members
                 .remove(&group.archive_index)
                 .unwrap_or_default()
