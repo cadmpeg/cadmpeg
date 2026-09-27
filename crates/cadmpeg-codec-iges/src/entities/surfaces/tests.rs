@@ -193,6 +193,19 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
         assert!(found, "same-basis refusal was not reached: {operation}");
     }
 }
+
+#[test]
+fn revolution_angular_basis_refuses_knot_and_control_lanes() {
+    let bytes = surface_of_revolution_file();
+    for operation in [
+        "iges revolution angular knots",
+        "iges revolution angular controls",
+    ] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+    let service = crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert!(!service.ir().model.surfaces.is_empty());
+}
 fn type128_surface_with_closure(
     global: &[u8],
     closed_u: i64,
@@ -300,7 +313,8 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
 
 #[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
-    let basis = angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13)
+    let basis = angular_basis(0.0, std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13, None)
+        .unwrap()
         .expect("a near-full finite sweep has an exact rational basis");
 
     assert_eq!(basis.controls.len(), 9);
