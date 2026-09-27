@@ -264,7 +264,19 @@ fn global_excess_fields_are_counted_without_retaining_values() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 26;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let result = crate::global::parse(&scan, &ctx);
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 26
+                && limit.additional == 1
+                && limit.operation == "iges global loss notes"
+    ));
 
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 27;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let (_, losses) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses
         .iter()
