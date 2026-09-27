@@ -100,21 +100,21 @@ fn pending_occurrence_refuses_caller_collection_limit() {
 
 const PRODUCT_STRING_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=APPLICATION_CONTEXT('mechanical design');#2=PRODUCT_CONTEXT('',#1,'mechanical');#3=PRODUCT('P','Part name','',(#2));#4=PRODUCT_DEFINITION_FORMATION('','',#3);#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');#6=PRODUCT_DEFINITION('part','Description',#4,#5);#7=PRODUCT('C','Child name','',(#2));#8=PRODUCT_DEFINITION_FORMATION('','',#7);#9=PRODUCT_DEFINITION('child','',#8,#5);#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','Child instance','',#6,#9,$);ENDSEC;END-ISO-10303-21;";
 
-fn product_collection_refuses(operation: &str) {
+fn product_collection_refuses_source(source: &[u8], operation: &str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(PRODUCT_STRING_LIMIT_SOURCE)
+    let (exchange, diagnostics) = crate::parse::parse(source)
         .expect("valid product exchange");
     let refused = (0..=1024).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(PRODUCT_STRING_LIMIT_SOURCE, &arena, &policy)
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits collection policy");
         matches!(
             crate::reader::decode_exchange(
-                PRODUCT_STRING_LIMIT_SOURCE,
+                source,
                 exchange.clone(),
                 &diagnostics,
                 &ctx,
@@ -126,6 +126,10 @@ fn product_collection_refuses(operation: &str) {
         )
     });
     assert!(refused, "no collection limit refused {operation}");
+}
+
+fn product_collection_refuses(operation: &str) {
+    product_collection_refuses_source(PRODUCT_STRING_LIMIT_SOURCE, operation);
 }
 
 #[test]
@@ -156,6 +160,38 @@ fn product_definition_descriptions_refuse_collection_limit() {
 #[test]
 fn product_definition_counts_refuse_collection_limit() {
     product_collection_refuses("step_product_definition_counts");
+}
+
+#[test]
+fn product_definition_prototypes_refuse_collection_limit() {
+    product_collection_refuses("step_product_definition_prototypes");
+}
+
+#[test]
+fn product_shape_prototypes_refuse_collection_limit() {
+    let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
+        "ENDSEC;END-ISO-10303-21;",
+        "#11=PRODUCT_DEFINITION_SHAPE('','',#6);ENDSEC;END-ISO-10303-21;",
+    );
+    product_collection_refuses_source(source.as_bytes(), "step_product_shape_prototypes");
+}
+
+#[test]
+fn product_typed_claims_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits collection policy");
+    assert!(matches!(
+        super::claim_product_typed(&mut std::collections::HashSet::new(), 1, Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_product_typed_claims"
+    ));
 }
 
 #[test]
