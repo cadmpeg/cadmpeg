@@ -174,7 +174,7 @@ pub(crate) fn parse(
         } = payload;
         reserve_vec_items(ctx, &mut maps, 1, "FreeCAD element map records")?;
         maps.push(ElementMapRecord {
-            id: crate::native::native_child_id("element-map", &property.id, "map"),
+            id: crate::native::native_child_id_charged(ctx, "element-map", &property.id, "map")?,
             property: retained_string(ctx, &property.id, "FreeCAD element map property")?,
             version,
             hasher_index,
@@ -1525,6 +1525,16 @@ mod tests {
             maps[0].maps[0].groups[1].names[1][0].resolved.as_deref(),
             Some("FaceStable")
         );
+    }
+
+    #[test]
+    fn element_map_identity_refuses_at_retained_limit() {
+        let property = test_property("Part::PropertyPartShape",
+            r#"<Property><Part ElementMap="1.0"/><ElementMap count="1"><Element key="FaceStable" value="Face1"/></ElementMap></Property>"#);
+        crate::test_support::assert_retained_refusal_at(b"<Document/>",
+            "FreeCAD native child identity", |ctx| {
+                parse(ctx, b"<Document/>", 1, std::slice::from_ref(&property), &[])
+            });
     }
 
     #[test]

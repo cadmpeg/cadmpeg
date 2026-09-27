@@ -1357,8 +1357,8 @@ fn append_native_provider(
         }
         reserve_vec_items(ctx, properties, 1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
-            id: crate::native::native_child_id("gui-property", &id, property_name),
-            owner: id.clone(),
+            id: crate::native::native_child_id_charged(ctx, "gui-property", &id, property_name)?,
+            owner: copy_xml_text(Some(ctx), &id, "FCStd GUI property owner")?,
             name: copy_xml_text(Some(ctx), property_name, "FCStd GUI property name")?,
             type_name: copy_xml_text(Some(ctx), type_name, "FCStd GUI property type")?,
             status: property

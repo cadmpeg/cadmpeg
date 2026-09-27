@@ -7,6 +7,17 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn gui_property_identity_refuses_at_retained_limit() {
+    let text = r#"<ViewProvider name="Model"><Properties Count="1"><Property name="Visible" type="App::PropertyBool"><Bool value="true"/></Property></Properties></ViewProvider>"#;
+    let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
+    crate::test_support::assert_retained_refusal_at(text.as_bytes(),
+        "FreeCAD native child identity", |ctx| {
+            super::super::append_native_provider(ctx, text, xml.root_element(), 0, None,
+                &mut Vec::new(), &mut Vec::new())
+        });
+}
+
+#[test]
 fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><Camera settings=""/></Document>"#;

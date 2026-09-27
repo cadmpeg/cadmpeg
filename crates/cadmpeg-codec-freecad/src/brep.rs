@@ -2324,7 +2324,7 @@ pub(crate) fn parse_payloads(
         };
         reserve_vec_items(ctx, &mut payloads, 1, "FreeCAD shape payload records")?;
         payloads.push(ShapePayloadRecord {
-            id: crate::native::native_child_id("shape-payload", &property.id, &name),
+            id: crate::native::native_child_id_charged(ctx, "shape-payload", &property.id, &name)?,
             property: retained_string(ctx, &property.id, "FreeCAD shape payload property")?,
             entry: retained_string(ctx, &entry.id, "FreeCAD shape payload entry")?,
             payload,
@@ -2388,8 +2388,8 @@ pub(crate) fn carrier_census(
             let triangulations = facts.triangulations.len();
             let tshapes = &facts.tshapes;
             let mut record = crate::native::CarrierCensusRecord {
-                id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
-                payload: payload.id.clone(),
+                id: crate::native::native_child_id_charged(ctx, "carrier-census", &payload.id, "families")?,
+                payload: retained_string(ctx, &payload.id, "FreeCAD carrier census payload")?,
                 form: match payload.payload.form() {
                     ShapePayloadForm::Text => crate::native::CarrierCensusForm::Text,
                     ShapePayloadForm::Binary => crate::native::CarrierCensusForm::Binary,
@@ -6472,6 +6472,41 @@ pub(crate) mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.operation == "FreeCAD carrier census families"
         ));
+    }
+
+    #[test]
+    fn carrier_census_identity_refuses_at_retained_limit() {
+        let payload = one_curve_payload();
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity",
+            |ctx| super::carrier_census(ctx, std::slice::from_ref(&payload)));
+    }
+
+    #[test]
+    fn shape_payload_identity_refuses_at_retained_limit() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(), links: Vec::new(), side_entries: Vec::new(), dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text(
+                "<Property><Part file=\"empty.brp\"/></Property>".into(), 0,
+            ).expect("valid test XML"),
+        };
+        let entry = EntryRecord {
+            id: crate::native::native_id("entry", "empty.brp"),
+            name: "empty.brp".into(),
+            role: cadmpeg_core::container::ContainerRole::Brep,
+            referenced_by: Vec::new(),
+            data: Vec::new(),
+        };
+        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity",
+            |ctx| parse_payloads(ctx, std::slice::from_ref(&property), std::slice::from_ref(&entry)));
     }
 
     #[test]

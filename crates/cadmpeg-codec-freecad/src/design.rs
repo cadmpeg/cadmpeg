@@ -6829,23 +6829,21 @@ fn is_design_object(kind: &str) -> bool {
 }
 
 pub(crate) fn census(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     features: &[Feature],
 ) -> Result<Vec<crate::native::DesignCensusRecord>, CodecError> {
-    let features = features
-        .iter()
-        .filter_map(|feature| {
-            feature
-                .native_ref
-                .as_deref()
-                .map(|native_ref| (native_ref, feature))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut census = objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-        .map(|object| {
-            let feature = features.get(object.id.as_str()).ok_or_else(|| {
+    let mut features_by_native = HashMap::new();
+    for feature in features {
+        if let Some(native_ref) = feature.native_ref.as_deref() {
+            insert_hash_map(ctx, &mut features_by_native, native_ref, feature,
+                "FreeCAD design census feature index")?;
+        }
+    }
+    let count = objects.iter().filter(|object| is_design_object(&object.type_name)).count();
+    let mut census = collection_vec(ctx, count, "FreeCAD design census records")?;
+    for object in objects.iter().filter(|object| is_design_object(&object.type_name)) {
+            let feature = features_by_native.get(object.id.as_str()).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "design object {} has no neutral history projection",
                     object.id
@@ -6869,18 +6867,17 @@ pub(crate) fn census(
                         "design feature {} has no semantic family tag",
                         feature.id
                     ))
-                })?
-                .to_owned();
-            Ok(crate::native::DesignCensusRecord {
-                id: crate::native::native_child_id("design-census", &object.id, "projection"),
-                object: object.id.clone(),
-                type_name: object.type_name.clone(),
-                feature: feature.id.as_str().to_owned(),
+                })?;
+            let semantic_kind = retained_string(ctx, semantic_kind, "FreeCAD design census semantic kind")?;
+            census.push(crate::native::DesignCensusRecord {
+                id: crate::native::native_child_id_charged(ctx, "design-census", &object.id, "projection")?,
+                object: retained_string(ctx, &object.id, "FreeCAD design census object")?,
+                type_name: retained_string(ctx, &object.type_name, "FreeCAD design census type")?,
+                feature: retained_string(ctx, feature.id.as_str(), "FreeCAD design census feature")?,
                 semantic_kind,
                 post_processed,
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            });
+    }
     census.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(census)
 }
