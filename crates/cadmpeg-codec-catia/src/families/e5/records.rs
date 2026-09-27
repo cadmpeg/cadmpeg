@@ -165,49 +165,29 @@ fn e5_records(data: &[u8]) -> impl Iterator<Item = E5Record> + '_ {
 /// Read the complete ordered E5 `05 08 01` coordinate roster matching the
 /// referenced vertex population. The roster may be split into multiple runs;
 /// marker-like bytes inside framed payloads are not vertex rows.
-#[must_use]
-pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<FinitePoint3> {
+pub(super) fn e5_vertices(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    vertex_count: usize,
+) -> Result<Vec<FinitePoint3>, CodecError> {
     if vertex_count == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let records = e5_records(data);
-    let mut runs = Vec::new();
+    let mut vertices = Vec::new();
     let mut region_start = 0usize;
-    for record in records {
-        runs.extend(vertex_runs(&data[region_start..record.pos]));
+    for record in e5_records(data) {
+        for vertex in scan_vertex_records(&data[region_start..record.pos]) {
+            crate::resource::push(ctx, &mut vertices, vertex, "catia_e5_vertex_roster")?;
+        }
         region_start = record.end();
     }
-    runs.extend(vertex_runs(&data[region_start..]));
-    let Some(run_count) = runs
-        .iter()
-        .try_fold(0usize, |count, run| count.checked_add(run.len()))
-    else {
-        return Vec::new();
-    };
-    if run_count != vertex_count {
-        return Vec::new();
+    for vertex in scan_vertex_records(&data[region_start..]) {
+        crate::resource::push(ctx, &mut vertices, vertex, "catia_e5_vertex_roster")?;
     }
-    runs.into_iter().flatten().collect()
-}
-
-fn vertex_runs(bytes: &[u8]) -> Vec<Vec<FinitePoint3>> {
-    let mut runs = Vec::new();
-    let mut position = 0usize;
-    while position + 15 <= bytes.len() {
-        if bytes[position..position + 3] != [0x05, 0x08, 0x01] {
-            position += 1;
-            continue;
-        }
-        let start = position;
-        while position + 15 <= bytes.len() && bytes[position..position + 3] == [0x05, 0x08, 0x01] {
-            position += 15;
-        }
-        let vertices = scan_vertex_records(&bytes[start..position]);
-        if !vertices.is_empty() {
-            runs.push(vertices);
-        }
+    if vertices.len() != vertex_count {
+        return Ok(Vec::new());
     }
-    runs
+    Ok(vertices)
 }
 
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.

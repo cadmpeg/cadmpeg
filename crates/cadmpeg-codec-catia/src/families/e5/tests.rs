@@ -419,6 +419,7 @@ fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
 
 #[test]
 fn e5_vertices_exclude_marker_like_record_payload_bytes() {
+    e5_test_context!(ctx);
     let mut false_vertex = vec![0x05, 0x08, 0x01];
     for value in [90.0f32, 91.0, 92.0] {
         false_vertex.extend_from_slice(&le_f32(value));
@@ -431,13 +432,14 @@ fn e5_vertices_exclude_marker_like_record_payload_bytes() {
     }
     append_e5_record(&mut stream, 0xfe, 2, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 1);
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 1).expect("service resource budget");
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
 }
 
 #[test]
 fn e5_vertices_reject_multiple_matching_coordinate_runs() {
+    e5_test_context!(ctx);
     let mut stream = Vec::new();
     for (record_id, coordinate) in [(1, 1.0f32), (2, 2.0)] {
         append_e5_record(&mut stream, 0xfe, record_id, &[]);
@@ -448,11 +450,12 @@ fn e5_vertices_reject_multiple_matching_coordinate_runs() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    assert!(crate::families::e5::records::e5_vertices(&stream, 1).is_empty());
+    assert!(crate::families::e5::records::e5_vertices(&ctx, &stream, 1).expect("service resource budget").is_empty());
 }
 
 #[test]
 fn e5_vertices_concatenate_a_complete_split_roster() {
+    e5_test_context!(ctx);
     let mut stream = Vec::new();
     for (record_id, coordinates) in [(1, [1.0f32, 2.0]), (2, [3.0, 4.0])] {
         append_e5_record(&mut stream, 0xfe, record_id, &[]);
@@ -465,11 +468,27 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&stream, 4);
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 4).expect("service resource budget");
     assert_eq!(
         vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
     );
+}
+
+#[test]
+fn e5_vertex_roster_refuses_before_second_point() {
+    let mut stream = Vec::new();
+    for coordinate in [1.0_f32, 2.0] {
+        stream.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [coordinate, 0.0, 0.0] {
+            stream.extend_from_slice(&le_f32(value));
+        }
+    }
+    assert!(matches!(
+        crate::test_support::with_collection_limit(1, |ctx| crate::families::e5::records::e5_vertices(ctx, &stream, 2)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_vertex_roster"
+    ));
 }
 
 #[test]
@@ -707,6 +726,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
 
 #[test]
 fn decode_e5_stream_binds_file_level_vertex_run() {
+    e5_test_context!(ctx);
     let mut stream = e5_torus_topology_stream();
     let vertex_start = stream
         .windows(3)
@@ -727,8 +747,8 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
 
     let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
     assert!(!record_range.contains(&vertex_file_start));
-    assert!(crate::families::e5::records::e5_vertices(&file[record_range], 4).is_empty());
-    assert_eq!(crate::families::e5::records::e5_vertices(&file, 4).len(), 4);
+    assert!(crate::families::e5::records::e5_vertices(&ctx, &file[record_range], 4).expect("service resource budget").is_empty());
+    assert_eq!(crate::families::e5::records::e5_vertices(&ctx, &file, 4).expect("service resource budget").len(), 4);
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
     })
