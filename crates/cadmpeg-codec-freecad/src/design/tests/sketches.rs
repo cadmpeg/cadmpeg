@@ -27,6 +27,20 @@ fn counted_sketch_records_refuse_at_caller_limit() {
 }
 
 #[test]
+fn external_geometry_reference_refuses_at_retained_limit() {
+    let xml = roxmltree::Document::parse("<Geometry ref=\"Part.Face1\"/>")
+        .expect("valid external geometry XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::super::external_geometry_metadata(&ctx, xml.root_element(), 3),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd external geometry reference"));
+}
+
+#[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),

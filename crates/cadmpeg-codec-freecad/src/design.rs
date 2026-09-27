@@ -1307,24 +1307,24 @@ fn validate_sketch_carrier(
 }
 
 fn external_geometry_metadata(
+    ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
     ordinal: usize,
 ) -> Result<(Option<String>, bool), CodecError> {
-    let extensions = node
+    let mut extensions = node
         .children()
         .filter(|child| child.has_tag_name("GeoExtensions"))
         .flat_map(|container| container.children())
         .filter(|child| {
             child.has_tag_name("GeoExtension")
                 && child.attribute("type") == Some("Sketcher::ExternalGeometryExtension")
-        })
-        .collect::<Vec<_>>();
-    if extensions.len() > 1 {
+        });
+    let extension = extensions.next();
+    if extensions.next().is_some() {
         return Err(malformed(format!(
             "sketch ExternalGeo Geometry record {ordinal} has multiple ExternalGeometryExtension values"
         )));
     }
-    let extension = extensions.first().copied();
     let extension_ref = extension.and_then(|extension| extension.attribute("Ref"));
     let geometry_ref = node.attribute("ref");
     if let (Some(extension_ref), Some(geometry_ref)) = (extension_ref, geometry_ref) {
@@ -1334,9 +1334,10 @@ fn external_geometry_metadata(
             )));
         }
     }
-    let reference = extension_ref
-        .or(geometry_ref)
-        .and_then(|value| (!value.is_empty()).then(|| value.to_owned()));
+    let reference = extension_ref.or(geometry_ref)
+        .filter(|value| !value.is_empty())
+        .map(|value| retained_string(ctx, value, "fcstd external geometry reference"))
+        .transpose()?;
 
     let extension_flags = extension
         .and_then(|extension| extension.attribute("Flags"))
@@ -1370,6 +1371,7 @@ fn external_geometry_metadata(
 }
 
 fn validate_external_geo_prefix(
+    ctx: &DecodeContext<'_>,
     records: &[roxmltree::Node<'_, '_>],
     owner: &str,
 ) -> Result<(), CodecError> {
@@ -1394,7 +1396,7 @@ fn validate_external_geo_prefix(
                 index + 1
             )));
         }
-        let (reference, _) = external_geometry_metadata(node, index + 1)?;
+        let (reference, _) = external_geometry_metadata(ctx, node, index + 1)?;
         if reference.is_some() {
             return Err(malformed(format!(
                 "{owner} reserved ExternalGeo record {} has an external reference",
@@ -1405,26 +1407,28 @@ fn validate_external_geo_prefix(
     Ok(())
 }
 
-fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
-    let object = crate::native::id_key(reference.object()?);
-    let subelement = reference.subelements().first()?;
-    Some(format!("{object}.{subelement}"))
+fn external_link_key(ctx: &DecodeContext<'_>, reference: &crate::native::LinkTarget) -> Result<Option<String>, CodecError> {
+    let Some(object) = reference.object() else { return Ok(None); };
+    let Some(subelement) = reference.subelements().first() else { return Ok(None); };
+    Ok(Some(crate::resource::retained_join(ctx, &[crate::native::id_key(object), subelement.as_str()], ".", "fcstd external link key")?))
 }
 
 fn external_link_indices(
+    ctx: &DecodeContext<'_>,
     references: Option<&PropertyRecord>,
 ) -> Result<HashMap<String, usize>, CodecError> {
     let mut indices = HashMap::new();
     if let Some(references) = references {
         for (index, reference) in references.links().iter().enumerate() {
-            let Some(key) = reference.as_ref().and_then(external_link_key) else {
+            let Some(key) = reference.as_ref().map(|reference| external_link_key(ctx, reference)).transpose()?.flatten() else {
                 continue;
             };
-            if indices.insert(key.clone(), index).is_some() {
+            if indices.contains_key(&key) {
                 return Err(malformed(format!(
                     "sketch ExternalGeometry links contain duplicate key {key}"
                 )));
             }
+            insert_hash_map(ctx, &mut indices, key, index, "fcstd external link index")?;
         }
     }
     Ok(indices)
@@ -1511,7 +1515,7 @@ fn parse_sketch(
         })?;
         let records =
             direct_counted_records(ctx, &xml, "GeometryList", "Geometry", &external_geometry.id)?;
-        validate_external_geo_prefix(&records, &external_geometry.id)?;
+        validate_external_geo_prefix(ctx, &records, &external_geometry.id)?;
         let references = property(properties, "ExternalGeometry");
         if let Some(references) = references {
             if references.type_name != "App::PropertyLinkSubList" {
@@ -1521,13 +1525,13 @@ fn parse_sketch(
                 )));
             }
         }
-        let link_indices = external_link_indices(references)?;
+        let link_indices = external_link_indices(ctx, references)?;
         for (external_index, node) in records
             .into_iter()
             .skip(EXTERNAL_GEO_AXIS_COUNT)
             .enumerate()
         {
-            let (cache_reference, missing) = external_geometry_metadata(node, external_index + 3)?;
+            let (cache_reference, missing) = external_geometry_metadata(ctx, node, external_index + 3)?;
             let reference_index = cache_reference
                 .as_deref()
                 .and_then(|cache_reference| link_indices.get(cache_reference).copied());
