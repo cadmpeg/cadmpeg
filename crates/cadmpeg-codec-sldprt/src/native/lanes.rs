@@ -11,9 +11,11 @@ pub(super) fn admit(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
-        let expected_classes =
-            crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
-        if lane.classes != expected_classes {
+        if !crate::resolved_features::names::class_declarations_match(
+            &lane.native_payload,
+            &lane.id,
+            &lane.classes,
+        ) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input class index does not match its native payload".into(),
             ));
@@ -22,35 +24,24 @@ pub(super) fn admit(
         // payload bytes at `offset`. A rename is a write-side input, never an
         // edit of a stored lane, so any disagreement here is a false statement
         // about the payload and is refused.
-        let expected_names =
-            crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
-        if lane.names.len() != expected_names.len()
-            || lane
-                .names
-                .iter()
-                .zip(&expected_names)
-                .any(|(actual, expected)| {
-                    actual.id != expected.id
-                        || actual.parent != expected.parent
-                        || actual.ordinal != expected.ordinal
-                        || actual.offset != expected.offset
-                        || actual.object_id != expected.object_id
-                })
-        {
+        if !crate::resolved_features::names::object_names_structure_match(
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        ) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
         }
         if let Some((index, actual, expected)) =
-            lane.names.iter().zip(&expected_names).enumerate().find_map(
-                |(index, (actual, expected))| {
-                    (actual.value != expected.value).then_some((index, actual, expected))
-                },
+            crate::resolved_features::names::first_object_name_value_mismatch(
+                &lane.native_payload,
+                &lane.names,
             )
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-                lane.id, actual.value, expected.value
+                lane.id, actual.value, expected
             )));
         }
         let mut entities = lane.sketch_entities.iter();
