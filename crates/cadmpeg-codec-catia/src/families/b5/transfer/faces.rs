@@ -36,16 +36,28 @@ pub(super) fn ownership_plan(
     ctx: &DecodeContext<'_>,
     graph: &B5Graph,
 ) -> Result<Option<OwnershipPlan>, CodecError> {
-    charge_collection(ctx, graph.faces.len(), "catia b5 face ownership ids")?;
     let mut face_ids = HashSet::new();
+    crate::resource::reserve_set(
+        ctx,
+        &mut face_ids,
+        graph.faces.len(),
+        "catia b5 face ownership ids",
+    )?;
     let mut loop_owners = HashMap::<u32, usize>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
         if !face_ids.insert(face.object_id) || face.loops.is_empty() {
             return Ok(None);
         }
         for loop_id in &face.loops {
-            charge_collection(ctx, 1, "catia b5 loop owners")?;
-            if loop_owners.insert(*loop_id, face_index).is_some() {
+            if crate::resource::insert_map(
+                ctx,
+                &mut loop_owners,
+                *loop_id,
+                face_index,
+                "catia b5 loop owners",
+            )?
+            .is_some()
+            {
                 return Ok(None);
             }
         }
@@ -58,8 +70,8 @@ pub(super) fn ownership_plan(
         return Ok(None);
     }
 
-    charge_collection(ctx, graph.faces.len(), "catia b5 ownership union parents")?;
-    let mut parents = UnionFind::new(graph.faces.len());
+    let mut parents =
+        UnionFind::charged(ctx, graph.faces.len(), "catia b5 ownership union parents")?;
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
     for (loop_id, loop_) in &graph.loops {
@@ -69,27 +81,43 @@ pub(super) fn ownership_plan(
             if !graph.vertices.edges().contains_key(&edge) {
                 return Ok(None);
             }
-            if !edge_uses.contains_key(&edge) {
-                charge_collection(ctx, 1, "catia b5 ownership edge uses")?;
+            if let Some(count) = edge_uses.get_mut(&edge) {
+                *count += 1;
+            } else {
+                crate::resource::insert_map(
+                    ctx,
+                    &mut edge_uses,
+                    edge,
+                    1,
+                    "catia b5 ownership edge uses",
+                )?;
             }
-            if !first_face_by_edge.contains_key(&edge) {
-                charge_collection(ctx, 1, "catia b5 ownership first faces")?;
-            }
-            *edge_uses.entry(edge).or_default() += 1;
-            if let Some(other_face) = first_face_by_edge.insert(edge, face) {
+            if let Some(other_face) = crate::resource::insert_map(
+                ctx,
+                &mut first_face_by_edge,
+                edge,
+                face,
+                "catia b5 ownership first faces",
+            )? {
                 parents.union(face, other_face);
             }
         }
     }
 
-    charge_collection(
+    let mut labels = HashMap::<usize, usize>::new();
+    crate::resource::reserve_map(
         ctx,
+        &mut labels,
         graph.faces.len(),
         "catia b5 ownership component labels",
     )?;
-    charge_collection(ctx, graph.faces.len(), "catia b5 face components")?;
-    let mut labels = HashMap::<usize, usize>::new();
-    let mut face_components = Vec::with_capacity(graph.faces.len());
+    let mut face_components = Vec::new();
+    crate::resource::reserve_vec(
+        ctx,
+        &mut face_components,
+        graph.faces.len(),
+        "catia b5 face components",
+    )?;
     for face in 0..graph.faces.len() {
         let root = parents.find(face);
         let next = labels.len();
