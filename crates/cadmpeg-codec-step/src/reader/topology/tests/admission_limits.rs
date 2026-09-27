@@ -92,3 +92,18 @@ fn topology_commit_error_text_refuses_retained_limit() {
                 && refusal.operation == "step_topology_commit_error_text"
     ));
 }
+
+#[test]
+fn decoded_topology_pcurves_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::insert_topology_set(&mut std::collections::BTreeSet::new(), 1u64, &ctx, "step_decoded_topology_pcurves"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_decoded_topology_pcurves"
+    ));
+}
