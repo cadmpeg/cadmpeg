@@ -35,7 +35,7 @@ pub(super) fn exact_work_plane_frame(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             let frame_length = paired.checked_sub(start)?;
@@ -200,17 +200,16 @@ pub(super) fn exact_work_plane_frame(
             else {
                 continue;
             };
-            candidates.push(ScopePlacementFrame {
+            if candidate.replace(ScopePlacementFrame {
                 transform,
                 transform_offset: matrix_at as u64,
                 reference,
-            });
+            }).is_some() {
+                return None;
+            }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    candidate
 }
 
 pub(super) fn exact_work_axis_construction(
@@ -419,7 +418,7 @@ pub(super) fn exact_joint_origin_frame(
     {
         return None;
     }
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in scope.reference_members().values() {
         for (start, paired) in records.frames(*record_index) {
             if paired.checked_sub(start)? == joint_origin_class_337_266::LEN
@@ -440,11 +439,13 @@ pub(super) fn exact_joint_origin_frame(
                 if let Ok(transform) =
                     crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
                 {
-                    candidates.push(ScopePlacementFrame {
+                    if candidate.replace(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + joint_origin_class_337_266::MATRIX) as u64,
                         reference: None,
-                    });
+                    }).is_some() {
+                        return None;
+                    }
                 }
                 continue;
             }
@@ -462,11 +463,13 @@ pub(super) fn exact_joint_origin_frame(
                 if let Ok(transform) =
                     crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
                 {
-                    candidates.push(ScopePlacementFrame {
+                    if candidate.replace(ScopePlacementFrame {
                         transform,
                         transform_offset: (start + 49) as u64,
                         reference: None,
-                    });
+                    }).is_some() {
+                        return None;
+                    }
                 }
                 continue;
             }
@@ -487,15 +490,14 @@ pub(super) fn exact_joint_origin_frame(
             else {
                 continue;
             };
-            candidates.push(ScopePlacementFrame {
+            if candidate.replace(ScopePlacementFrame {
                 transform,
                 transform_offset: (start + 60) as u64,
                 reference: Some((reference, (start + 46) as u64)),
-            });
+            }).is_some() {
+                return None;
+            }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    candidate
 }
