@@ -26,6 +26,7 @@ use crate::native::{
     copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
+use crate::resource::{collection_vec, reserve_vec_items};
 
 use schema::Admission as GuiSchemaAdmission;
 
@@ -1200,7 +1201,7 @@ fn append_native_provider(
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
     let id = provider_native_id(&provider_identity_key(name));
-    ctx.charge_collection_items(1, "FCStd GUI provider records")?;
+    reserve_vec_items(ctx, providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
         object: object
@@ -1224,11 +1225,11 @@ fn append_native_provider(
         .children()
         .filter(|node| node.has_tag_name("Property"))
         .count();
-    ctx.charge_collection_items(property_nodes as u64, "FCStd GUI provider property nodes")?;
-    let property_nodes = container
+    let mut nodes = collection_vec(ctx, property_nodes, "FCStd GUI provider property nodes")?;
+    nodes.extend(container
         .children()
-        .filter(|node| node.has_tag_name("Property"))
-        .collect::<Vec<_>>();
+        .filter(|node| node.has_tag_name("Property")));
+    let property_nodes = nodes;
     let declared = container
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -1243,12 +1244,13 @@ fn append_native_provider(
             property_nodes.len()
         )));
     }
-    let mut property_names = HashSet::new();
     for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
             CodecError::malformed(format_args!("ViewProvider {name} property has no name"))
         })?;
-        if !property_names.insert(property_name) {
+        ctx.charge_work(property_order as u64, "FCStd GUI duplicate property scan")?;
+        if properties.iter().rev().take(property_order)
+            .any(|record| record.owner == id && record.name == property_name) {
             return Err(CodecError::Malformed(
                 "ViewProvider has duplicate property names".into(),
             ));
@@ -1263,13 +1265,11 @@ fn append_native_provider(
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .count();
-        ctx.charge_collection_items(value_count as u64, "FCStd GUI property values")?;
-        let values = property
-            .descendants()
+        let mut values = collection_vec(ctx, value_count, "FCStd GUI property values")?;
+        for (value_order, value) in property.descendants()
             .filter(|value| value.is_element() && *value != property)
-            .enumerate()
-            .map(|(value_order, value)| -> Result<ValueRecord, CodecError> {
-                Ok(ValueRecord {
+            .enumerate() {
+            values.push(ValueRecord {
                     tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
                     order: value_order,
                     attributes: value
@@ -1291,10 +1291,10 @@ fn append_native_provider(
                         .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
                         .transpose()?,
                     raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
-                })
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        let side_entries = values
+                });
+        }
+        let mut side_entries = Vec::new();
+        for value in values
             .iter()
             .flat_map(|value| value.attributes.iter())
             .filter(|(attribute, _)| {
@@ -1302,13 +1302,11 @@ fn append_native_provider(
                     && !crate::persistence::is_xlink_type(type_name)
             })
             .map(|(_, value)| value.as_str())
-            .filter(|value| !value.is_empty())
-            .map(|value| {
-                ctx.charge_collection_items(1, "FCStd GUI side entry references")?;
-                copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        ctx.charge_collection_items(1, "FCStd GUI property records")?;
+            .filter(|value| !value.is_empty()) {
+            reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
+            side_entries.push(copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")?);
+        }
+        reserve_vec_items(ctx, properties, 1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
             id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
