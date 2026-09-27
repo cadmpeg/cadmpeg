@@ -907,6 +907,44 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 }
 
 #[test]
+fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes.windows(3).position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 4;
+    bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+            ctx, &bytes, &[[0, 0]; 4], None, false,
+        )
+    };
+    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    let mut operations = std::collections::HashSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..512 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+                limit = error.used + error.additional;
+            }
+            Ok(Some(_)) => {
+                completed = true;
+                break;
+            }
+            outcome => panic!("unexpected gap assignment outcome: {outcome:?}"),
+        }
+    }
+    assert!(completed, "adaptive limit reaches the service outcome");
+    for operation in ["catia_gap_placed_edges", "catia_gap_complete_assignments"] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
     catia_test_context!(ctx);
     let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();

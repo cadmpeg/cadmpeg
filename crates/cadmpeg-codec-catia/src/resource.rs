@@ -145,6 +145,25 @@ pub(crate) fn copy_retained_rows<T: Clone>(
     Ok(copy)
 }
 
+pub(crate) fn copy_retained_set<T: Copy + Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    values: &HashSet<T>,
+    operation: &'static str,
+) -> Result<HashSet<T>, CodecError> {
+    let Some(bytes) = values.len()
+        .checked_mul(std::mem::size_of::<T>().max(1))
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
+        .and_then(|bytes| u64::try_from(bytes).ok())
+    else {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    };
+    ctx.charge_retained(bytes, operation)?;
+    let mut copy = HashSet::new();
+    reserve_set(ctx, &mut copy, values.len(), operation)?;
+    copy.extend(values.iter().copied());
+    Ok(copy)
+}
+
 pub(crate) fn copy_knot_vector(
     ctx: &DecodeContext<'_>,
     knots: &cadmpeg_ir::geometry::nurbs::KnotVector,

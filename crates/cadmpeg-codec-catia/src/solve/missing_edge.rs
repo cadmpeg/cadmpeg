@@ -2255,6 +2255,7 @@ fn standard_mesh_missing_edge_assignment_domains(
 
     #[allow(clippy::too_many_arguments)]
     fn enumerate_face(
+        ctx: &DecodeContext<'_>,
         face: usize,
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
@@ -2264,8 +2265,9 @@ fn standard_mesh_missing_edge_assignment_domains(
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
         remaining_states: &mut usize,
-    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
-        struct Search<'a> {
+    ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+        struct Search<'a, 'ctx> {
+            ctx: &'a DecodeContext<'ctx>,
             face: usize,
             gaps: &'a [MeshBoundaryGap],
             cycle_lengths: &'a [usize],
@@ -2285,7 +2287,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
-        impl Search<'_> {
+        impl Search<'_, '_> {
             #[allow(clippy::too_many_arguments)]
             fn walk(
                 &mut self,
@@ -2296,19 +2298,20 @@ fn standard_mesh_missing_edge_assignment_domains(
                 current_points: Option<Arc<HashSet<usize>>>,
                 gap_placed_start: usize,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
-            ) -> Option<()> {
-                let mut points = current_points
-                    .as_ref()
-                    .map(|points| points.iter().copied().collect::<Vec<_>>())
-                    .unwrap_or_default();
+            ) -> Result<Option<()>, CodecError> {
+                let mut points = Vec::new();
+                if let Some(current) = current_points.as_ref() {
+                    crate::resource::reserve_vec(self.ctx, &mut points, current.len(), "catia_gap_state_points")?;
+                    points.extend(current.iter().copied());
+                }
                 points.sort_unstable();
                 let has_flexible = placed.len() > gap_placed_start;
                 let state = (gap, offset, used, current_port, points, has_flexible);
                 if self.dead_states.contains(&state) {
-                    return Some(());
+                    return Ok(Some(()));
                 }
                 let before = self.assignments;
-                self.walk_state(
+                let Some(()) = self.walk_state(
                     gap,
                     offset,
                     used,
@@ -2316,11 +2319,17 @@ fn standard_mesh_missing_edge_assignment_domains(
                     current_points,
                     gap_placed_start,
                     placed,
-                )?;
+                )? else {
+                    return Ok(None);
+                };
                 if self.assignments == before {
-                    self.dead_states.insert(state);
+                    let bytes = state.4.len().checked_mul(std::mem::size_of::<usize>())
+                        .and_then(|bytes| u64::try_from(bytes).ok())
+                        .ok_or_else(|| self.ctx.refuse_codec_limit("catia_gap_dead_state_points", u64::MAX, u64::MAX))?;
+                    self.ctx.charge_retained(bytes, "catia_gap_dead_state_points")?;
+                    crate::resource::insert_set(self.ctx, &mut self.dead_states, state, "catia_gap_dead_states")?;
                 }
-                Some(())
+                Ok(Some(()))
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -2333,21 +2342,30 @@ fn standard_mesh_missing_edge_assignment_domains(
                 current_points: Option<Arc<HashSet<usize>>>,
                 gap_placed_start: usize,
                 placed: &mut Vec<MeshEdgePlacementCandidate>,
-            ) -> Option<()> {
-                *self.remaining_states = self.remaining_states.checked_sub(1)?;
-                self.states = self.states.checked_add(1)?;
+            ) -> Result<Option<()>, CodecError> {
+                let _depth = self.ctx.enter_nested("catia_gap_assignment_depth")?;
+                self.ctx.charge_work(1, "catia_gap_assignment_work")?;
+                let Some(remaining) = self.remaining_states.checked_sub(1) else {
+                    return Ok(None);
+                };
+                *self.remaining_states = remaining;
+                let Some(states) = self.states.checked_add(1) else {
+                    return Ok(None);
+                };
+                self.states = states;
                 if self.states > MAX_SEARCH_STATES_PER_FACE {
-                    return None;
+                    return Ok(None);
                 }
                 if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
-                    return None;
+                    return Ok(None);
                 }
                 if gap == self.gaps.len() {
                     if used.count_ones() as usize == self.missing.len() {
                         self.assignments += 1;
-                        self.complete.push(placed.clone());
+                        let copy = crate::resource::copy_retained_slice(self.ctx, placed, "catia_gap_complete_placement_copy")?;
+                        crate::resource::push(self.ctx, &mut self.complete, copy, "catia_gap_complete_assignments")?;
                     }
-                    return Some(());
+                    return Ok(Some(()));
                 }
                 let target = self.gaps[gap].length;
                 let can_expand_gap = self.canonical_gap_partitions
@@ -2374,26 +2392,33 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 .get(&(self.face, next.cycle, next.start))
                                 .copied()
                         });
-                        let next_points = self.gaps.get(gap + 1).and_then(|next| {
-                            self.corner_points
-                                .get(&(self.face, next.cycle, next.start))
-                                .cloned()
-                                .map(Arc::new)
-                        });
-                        let saved = placed[gap_placed_start..].to_vec();
+                        let next_points = if let Some(source) = self.gaps.get(gap + 1).and_then(|next| {
+                            self.corner_points.get(&(self.face, next.cycle, next.start))
+                        }) {
+                            Some(Arc::new(crate::resource::copy_retained_set(self.ctx, source, "catia_gap_next_corner_points")?))
+                        } else {
+                            None
+                        };
+                        let saved = crate::resource::copy_slice(self.ctx, &placed[gap_placed_start..], "catia_gap_saved_placements")?;
                         if offset < target {
                             let slack = target - offset;
                             let Some(flexible) = placed.get_mut(gap_placed_start) else {
-                                return Some(());
+                                return Ok(Some(()));
                             };
-                            flexible.segment_count = flexible.segment_count.checked_add(slack)?;
+                            let Some(count) = flexible.segment_count.checked_add(slack) else {
+                                return Ok(None);
+                            };
+                            flexible.segment_count = count;
                             let mut at = value.start;
                             for placement in &mut placed[gap_placed_start..] {
                                 placement.start = at % self.cycle_lengths[value.cycle];
-                                at = at.checked_add(placement.segment_count)?;
+                                let Some(next) = at.checked_add(placement.segment_count) else {
+                                    return Ok(None);
+                                };
+                                at = next;
                             }
                         }
-                        self.walk(
+                        let Some(()) = self.walk(
                             gap + 1,
                             0,
                             used,
@@ -2401,14 +2426,16 @@ fn standard_mesh_missing_edge_assignment_domains(
                             next_points,
                             placed.len(),
                             placed,
-                        )?;
+                        )? else {
+                            return Ok(None);
+                        };
                         placed.truncate(gap_placed_start);
                         placed.extend(saved);
                         if offset == target {
-                            return Some(());
+                            return Ok(Some(()));
                         }
                     } else if offset == target {
-                        return Some(());
+                        return Ok(Some(()));
                     }
                 }
                 for rank in 0..self.missing.len() {
@@ -2436,42 +2463,57 @@ fn standard_mesh_missing_edge_assignment_domains(
                             })
                             .flatten()
                     });
-                    let spans: Box<dyn Iterator<Item = usize>> = if let Some(span) = canonical_span
-                    {
-                        Box::new(std::iter::once(span))
-                    } else {
-                        Box::new(1..=remaining)
-                    };
-                    for segment_count in spans.filter(|span| *span > 0 && *span <= remaining) {
+                    let first_span = canonical_span.unwrap_or(1);
+                    let last_span = canonical_span.unwrap_or(remaining);
+                    for segment_count in first_span..=last_span {
+                        if segment_count == 0 || segment_count > remaining {
+                            continue;
+                        }
                         let mut next_ports = match (self.edge_ports, current_port) {
                             (Some(edge_ports), Some(current)) if edge_ports[edge][0] == current => {
-                                vec![Some(edge_ports[edge][1])]
+                                self.ctx.alloc_filled(1, Some(edge_ports[edge][1]), "catia_gap_next_ports")?
                             }
                             (Some(edge_ports), Some(current)) if edge_ports[edge][1] == current => {
-                                vec![Some(edge_ports[edge][0])]
+                                self.ctx.alloc_filled(1, Some(edge_ports[edge][0]), "catia_gap_next_ports")?
                             }
                             (Some(_), Some(_)) => continue,
-                            (Some(edge_ports), None) => edge_ports[edge].map(Some).to_vec(),
-                            (None, _) => vec![None],
+                            (Some(edge_ports), None) => {
+                                let mut ports = self.ctx.alloc_filled(1, Some(edge_ports[edge][0]), "catia_gap_next_ports")?;
+                                crate::resource::push(self.ctx, &mut ports, Some(edge_ports[edge][1]), "catia_gap_next_ports")?;
+                                ports
+                            }
+                            (None, _) => self.ctx.alloc_filled(1, None, "catia_gap_next_ports")?,
                         };
                         next_ports.sort_unstable();
                         next_ports.dedup();
-                        let next_points = self.edge_points.and_then(|edge_points| {
-                            (!edge_points[edge].is_empty()).then(|| match &current_points {
-                                None => edge_points[edge].clone(),
+                        let next_points = if let Some(edge_points) = self.edge_points.filter(|points| !points[edge].is_empty()) {
+                            match &current_points {
+                                None => Some(Arc::clone(&edge_points[edge])),
                                 Some(current) => {
                                     let mut next = HashSet::new();
                                     if let Some(transitions) = self.point_transitions {
                                         for point in current.iter() {
                                             if let Some(points) = transitions[edge].get(point) {
-                                                next.extend(points.iter().copied());
+                                                for &point in points.iter() {
+                                                    if !next.contains(&point) {
+                                                        let bytes = u64::try_from(std::mem::size_of::<usize>())
+                                                            .map_err(|_| self.ctx.refuse_codec_limit("catia_gap_transition_points", u64::MAX, u64::MAX))?;
+                                                        self.ctx.charge_retained(bytes, "catia_gap_transition_points")?;
+                                                        crate::resource::insert_set(self.ctx, &mut next, point, "catia_gap_transition_points")?;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    Arc::new(next)
+                                    let bytes = u64::try_from(std::mem::size_of::<HashSet<usize>>())
+                                        .map_err(|_| self.ctx.refuse_codec_limit("catia_gap_transition_set", u64::MAX, u64::MAX))?;
+                                    self.ctx.charge_retained(bytes, "catia_gap_transition_set")?;
+                                    Some(Arc::new(next))
                                 }
-                            })
-                        });
+                            }
+                        } else {
+                            None
+                        };
                         if next_points.as_ref().is_some_and(|points| points.is_empty()) {
                             continue;
                         }
@@ -2483,9 +2525,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 % self.cycle_lengths[self.gaps[gap].cycle],
                             segment_count,
                         };
-                        placed.push(value);
+                        crate::resource::push(self.ctx, placed, value, "catia_gap_placed_edges")?;
                         for next_port in next_ports {
-                            self.walk(
+                            let Some(()) = self.walk(
                                 gap,
                                 offset + segment_count,
                                 used | (1 << rank),
@@ -2493,22 +2535,25 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 next_points.clone(),
                                 gap_placed_start,
                                 placed,
-                            )?;
+                            )? else {
+                                return Ok(None);
+                            };
                         }
                         placed.pop();
                     }
                 }
                 drop(current_points);
-                Some(())
+                Ok(Some(()))
             }
         }
 
         let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
         if missing.len() > u64::BITS as usize {
-            return None;
+            return Ok(None);
         }
         let (edge_points, point_transitions) = endpoint_constraints.unzip();
         let mut search = Search {
+            ctx,
             face,
             gaps,
             cycle_lengths,
@@ -2535,15 +2580,18 @@ fn standard_mesh_missing_edge_assignment_domains(
         let first_port = gaps
             .first()
             .and_then(|gap| corner_ports.get(&(face, gap.cycle, gap.start)).copied());
-        let first_points = gaps
-            .first()
-            .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)).cloned())
-            .map(Arc::new);
-        search.walk(0, 0, 0, first_port, first_points, 0, &mut Vec::new())?;
-        if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
-            return None;
+        let first_points = if let Some(source) = gaps.first().and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start))) {
+            Some(Arc::new(crate::resource::copy_retained_set(ctx, source, "catia_gap_initial_corner_points")?))
+        } else {
+            None
+        };
+        if search.walk(0, 0, 0, first_port, first_points, 0, &mut Vec::new())?.is_none() {
+            return Ok(None);
         }
-        Some(search.complete)
+        if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
+            return Ok(None);
+        }
+        Ok(Some(search.complete))
     }
 
     fn endpoint_trail_assignments(
@@ -2573,13 +2621,23 @@ fn standard_mesh_missing_edge_assignment_domains(
         let mut at_point = HashMap::<usize, Vec<usize>>::new();
         for &edge in missing {
             for point in edge_points[edge]? {
-                at_point.entry(point).or_default().push(edge);
+                if let Err(error) = crate::resource::admit_map_entry(ctx, &mut at_point, &point, "catia_trail_point_entries") {
+                    return Some(Err(error));
+                }
+                if let Err(error) = crate::resource::push(ctx, at_point.entry(point).or_default(), edge, "catia_trail_point_edges") {
+                    return Some(Err(error));
+                }
             }
         }
         if at_point.values().any(|edges| edges.len() > 2) {
             return None;
         }
-        let mut unseen = missing.iter().copied().collect::<HashSet<_>>();
+        let mut unseen = HashSet::new();
+        for &edge in missing {
+            if let Err(error) = crate::resource::insert_set(ctx, &mut unseen, edge, "catia_trail_unseen_edges") {
+                return Some(Err(error));
+            }
+        }
         let mut trails = Vec::<EndpointTrail>::new();
         while !unseen.is_empty() {
             let first = unseen
@@ -2604,7 +2662,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if !unseen.remove(&edge) {
                     break;
                 }
-                trail.push(edge);
+                if let Err(error) = crate::resource::push(ctx, &mut trail, edge, "catia_trail_edges") {
+                    return Some(Err(error));
+                }
                 let endpoints = edge_points[edge]?;
                 point = if endpoints[0] == point {
                     endpoints[1]
@@ -2625,11 +2685,13 @@ fn standard_mesh_missing_edge_assignment_domains(
             if point == start && (gaps.len() != 1 || trail.len() != missing.len()) {
                 return None;
             }
-            trails.push(EndpointTrail {
+            if let Err(error) = crate::resource::push(ctx, &mut trails, EndpointTrail {
                 edges: trail,
                 start,
                 end: point,
-            });
+            }, "catia_trail_rows") {
+                return Some(Err(error));
+            }
         }
         if gaps.len() > 1 {
             if trails.len() != gaps.len() {
@@ -2637,43 +2699,44 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
             let mut available = trails;
             available.sort_by_key(|trail| trail.edges.iter().copied().min());
-            let mut placements = Vec::with_capacity(missing.len());
+            let mut placements = Vec::new();
+            if let Err(error) = crate::resource::reserve_vec(ctx, &mut placements, missing.len(), "catia_trail_placements") {
+                return Some(Err(error));
+            }
             for gap in gaps {
-                let candidates = available
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(index, trail)| {
-                        [false, true].map(move |reversed| (index, trail, reversed))
-                    })
-                    .filter_map(|(index, trail, reversed)| {
+                let mut candidates = Vec::new();
+                for (index, trail) in available.iter().enumerate() {
+                    for reversed in [false, true] {
                         let trail_start = if reversed { trail.end } else { trail.start };
                         let trail_end = if reversed { trail.start } else { trail.end };
                         let gap_end = (gap.start + gap.length) % cycle_lengths[gap.cycle];
-                        if !corner_points
-                            .get(&(face, gap.cycle, gap.start))?
-                            .contains(&trail_start)
-                            || !corner_points
-                                .get(&(face, gap.cycle, gap_end))?
-                                .contains(&trail_end)
-                        {
-                            return None;
+                        let Some(start_points) = corner_points.get(&(face, gap.cycle, gap.start)) else {
+                            continue;
+                        };
+                        let Some(end_points) = corner_points.get(&(face, gap.cycle, gap_end)) else {
+                            continue;
+                        };
+                        if !start_points.contains(&trail_start) || !end_points.contains(&trail_end) {
+                            continue;
                         }
                         let span = trail.edges.len();
-                        (span <= gap.length).then_some((index, span, reversed))
-                    })
-                    .collect::<Vec<_>>();
+                        if span <= gap.length {
+                            if let Err(error) = crate::resource::push(ctx, &mut candidates, (index, span, reversed), "catia_trail_gap_candidates") {
+                                return Some(Err(error));
+                            }
+                        }
+                    }
+                }
                 let [(trail_index, minimum_span, reversed)] = candidates.as_slice() else {
                     return None;
                 };
                 let (trail_index, minimum_span, reversed) =
                     (*trail_index, *minimum_span, *reversed);
                 let trail = available.remove(trail_index);
-                let edges: Box<dyn Iterator<Item = usize>> = if reversed {
-                    Box::new(trail.edges.into_iter().rev())
-                } else {
-                    Box::new(trail.edges.into_iter())
-                };
-                let edges = edges.collect::<Vec<_>>();
+                let mut edges = trail.edges;
+                if reversed {
+                    edges.reverse();
+                }
                 let slack = gap.length - minimum_span;
                 let mut offset = 0usize;
                 for (index, edge) in edges.into_iter().enumerate() {
@@ -2691,7 +2754,11 @@ fn standard_mesh_missing_edge_assignment_domains(
                     offset = offset.checked_add(segment_count)?;
                 }
             }
-            return Some(Ok(vec![placements]));
+            let mut rows = Vec::new();
+            if let Err(error) = crate::resource::push(ctx, &mut rows, placements, "catia_trail_placement_rows") {
+                return Some(Err(error));
+            }
+            return Some(Ok(rows));
         }
         let [gap] = gaps else {
             return None;
@@ -2708,36 +2775,41 @@ fn standard_mesh_missing_edge_assignment_domains(
         if trails.len() > u64::BITS as usize {
             return None;
         }
-        let orders = match bounded_oriented_trail_orders(
-            ctx,
-            &trails
-                .iter()
-                .map(|trail| trail.edges.clone())
-                .collect::<Vec<_>>(),
-            MAX_ASSIGNMENTS_PER_FACE,
-        ) {
+        let mut trail_edges = Vec::new();
+        if let Err(error) = crate::resource::reserve_vec(ctx, &mut trail_edges, trails.len(), "catia_trail_order_input_rows") {
+            return Some(Err(error));
+        }
+        for trail in &trails {
+            let copy = match crate::resource::copy_retained_slice(ctx, &trail.edges, "catia_trail_order_input_edges") {
+                Ok(copy) => copy,
+                Err(error) => return Some(Err(error)),
+            };
+            trail_edges.push(copy);
+        }
+        let orders = match bounded_oriented_trail_orders(ctx, &trail_edges, MAX_ASSIGNMENTS_PER_FACE) {
             Ok(Some(orders)) => orders,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        Some(Ok(
-            orders
-                .into_iter()
-                .map(|order| {
-                    order
-                        .into_iter()
-                        .enumerate()
-                        .map(|(offset, edge)| MeshEdgePlacementCandidate {
-                            edge,
-                            face,
-                            cycle: gap.cycle,
-                            start: offset,
-                            segment_count: 1,
-                        })
-                        .collect()
-                })
-                .collect(),
-        ))
+        let mut assignments = Vec::new();
+        if let Err(error) = crate::resource::reserve_vec(ctx, &mut assignments, orders.len(), "catia_trail_assignment_rows") {
+            return Some(Err(error));
+        }
+        for order in orders {
+            let mut placements = Vec::new();
+            if let Err(error) = crate::resource::reserve_vec(ctx, &mut placements, order.len(), "catia_trail_assignment_placements") {
+                return Some(Err(error));
+            }
+            placements.extend(order.into_iter().enumerate().map(|(offset, edge)| MeshEdgePlacementCandidate {
+                edge,
+                face,
+                cycle: gap.cycle,
+                start: offset,
+                segment_count: 1,
+            }));
+            assignments.push(placements);
+        }
+        Some(Ok(assignments))
         })().transpose()
     }
 
@@ -2768,22 +2840,25 @@ fn standard_mesh_missing_edge_assignment_domains(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-        Some(Ok(orders
-            .into_iter()
-            .map(|order| {
-                order
-                    .into_iter()
-                    .enumerate()
-                    .map(|(offset, edge)| MeshEdgePlacementCandidate {
-                        edge,
-                        face,
-                        cycle: 0,
-                        start: offset,
-                        segment_count: 1,
-                    })
-                    .collect()
-            })
-            .collect()))
+        let mut assignments = Vec::new();
+        if let Err(error) = crate::resource::reserve_vec(ctx, &mut assignments, orders.len(), "catia_cycle_assignment_rows") {
+            return Some(Err(error));
+        }
+        for order in orders {
+            let mut placements = Vec::new();
+            if let Err(error) = crate::resource::reserve_vec(ctx, &mut placements, order.len(), "catia_cycle_assignment_placements") {
+                return Some(Err(error));
+            }
+            placements.extend(order.into_iter().enumerate().map(|(offset, edge)| MeshEdgePlacementCandidate {
+                edge,
+                face,
+                cycle: 0,
+                start: offset,
+                segment_count: 1,
+            }));
+            assignments.push(placements);
+        }
+        Some(Ok(assignments))
         })().transpose()
     }
 
@@ -2791,28 +2866,44 @@ fn standard_mesh_missing_edge_assignment_domains(
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
         return Ok(None);
     }
-    let edge_point_domains = edge_candidates.map(|candidates| {
-        candidates
-            .iter()
-            .map(|pairs| Arc::new(pairs.iter().flatten().copied().collect::<HashSet<_>>()))
-            .collect::<Vec<_>>()
-    });
-    let edge_point_transitions = edge_candidates.map(|candidates| {
-        candidates
-            .iter()
-            .map(|pairs| {
-                let mut transitions = HashMap::<usize, HashSet<usize>>::new();
-                for [left, right] in pairs {
-                    transitions.entry(*left).or_default().insert(*right);
-                    transitions.entry(*right).or_default().insert(*left);
+    let admit_set_retention = |set: &HashSet<usize>, operation| -> Result<(), CodecError> {
+        let bytes = set.len().checked_mul(std::mem::size_of::<usize>())
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_retained(bytes, operation)
+    };
+    let mut edge_point_domains = None;
+    let mut edge_point_transitions = None;
+    if let Some(candidates) = edge_candidates {
+        let mut domains = Vec::new();
+        let mut transition_rows = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut domains, candidates.len(), "catia_mesh_edge_point_domain_rows")?;
+        crate::resource::reserve_vec(ctx, &mut transition_rows, candidates.len(), "catia_mesh_edge_transition_rows")?;
+        for pairs in candidates {
+            let mut points = HashSet::new();
+            let mut transitions = HashMap::<usize, HashSet<usize>>::new();
+            for &[left, right] in pairs {
+                for point in [left, right] {
+                    crate::resource::insert_set(ctx, &mut points, point, "catia_mesh_edge_point_domain_values")?;
                 }
-                transitions
-                    .into_iter()
-                    .map(|(point, targets)| (point, Arc::new(targets)))
-                    .collect()
-            })
-            .collect::<Vec<_>>()
-    });
+                for (from, to) in [(left, right), (right, left)] {
+                    crate::resource::admit_map_entry(ctx, &mut transitions, &from, "catia_mesh_edge_transition_points")?;
+                    crate::resource::insert_set(ctx, transitions.entry(from).or_default(), to, "catia_mesh_edge_transition_targets")?;
+                }
+            }
+            admit_set_retention(&points, "catia_mesh_edge_point_domain_retained")?;
+            domains.push(Arc::new(points));
+            let mut retained_transitions = HashMap::new();
+            for (point, targets) in transitions {
+                admit_set_retention(&targets, "catia_mesh_edge_transition_retained")?;
+                crate::resource::insert_map(ctx, &mut retained_transitions, point, Arc::new(targets), "catia_mesh_edge_transition_map")?;
+            }
+            transition_rows.push(retained_transitions);
+        }
+        edge_point_domains = Some(domains);
+        edge_point_transitions = Some(transition_rows);
+    }
     let endpoint_constraints = edge_point_domains
         .as_deref()
         .zip(edge_point_transitions.as_deref());
@@ -2822,16 +2913,16 @@ fn standard_mesh_missing_edge_assignment_domains(
         .iter()
         .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun);
     let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
-    let singleton_edge_points = edge_candidates.map(|candidates| {
-        candidates
-            .iter()
-            .map(|domain| {
-                <[[usize; 2]; 1]>::try_from(domain.as_slice())
-                    .ok()
-                    .map(|[pair]| pair)
-            })
-            .collect::<Vec<_>>()
-    });
+    let singleton_edge_points = if let Some(candidates) = edge_candidates {
+        let mut singleton = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut singleton, candidates.len(), "catia_mesh_singleton_edge_points")?;
+        singleton.extend(candidates.iter().map(|domain| {
+            <[[usize; 2]; 1]>::try_from(domain.as_slice()).ok().map(|[pair]| pair)
+        }));
+        Some(singleton)
+    } else {
+        None
+    };
     let edge_runs = &context.edge_runs;
     let mut remaining_states = MAX_SEARCH_STATES;
     let mut corner_ports = HashMap::<MeshCorner, u32>::new();
@@ -2847,24 +2938,26 @@ fn standard_mesh_missing_edge_assignment_domains(
                 ports
             };
             for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
-                match corner_ports.insert((run.face, run.cycle, corner), port) {
+                match crate::resource::insert_map(ctx, &mut corner_ports, (run.face, run.cycle, corner), port, "catia_mesh_corner_ports")? {
                     Some(stored) if stored != port => return Ok(None),
                     Some(_) | None => {}
                 }
             }
         }
         if let Some(candidates) = edge_candidates {
-            let points = candidates[run.edge]
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<HashSet<_>>();
+            let mut points = HashSet::new();
+            for &point in candidates[run.edge].iter().flatten() {
+                crate::resource::insert_set(ctx, &mut points, point, "catia_mesh_corner_candidate_points")?;
+            }
             if !points.is_empty() {
                 for corner in [run.start, end] {
-                    corner_points
-                        .entry((run.face, run.cycle, corner))
-                        .and_modify(|stored| stored.retain(|point| points.contains(point)))
-                        .or_insert_with(|| points.clone());
+                    let key = (run.face, run.cycle, corner);
+                    if let Some(stored) = corner_points.get_mut(&key) {
+                        stored.retain(|point| points.contains(point));
+                    } else {
+                        let copied = crate::resource::copy_retained_set(ctx, &points, "catia_mesh_corner_point_copy")?;
+                        crate::resource::insert_map(ctx, &mut corner_points, key, copied, "catia_mesh_corner_point_entries")?;
+                    }
                 }
             }
         }
@@ -2921,56 +3014,36 @@ fn standard_mesh_missing_edge_assignment_domains(
         } else {
             None
         };
-        let assignments = cycle_assignments.or(trail_assignments)
-            .or_else(|| {
-                enumerate_face(
-                    face.face,
-                    &face.gaps,
-                    cycle_lengths,
-                    &face.missing_edges,
-                    edge_rows,
-                    context.analysis.fixed_complete_row_spans,
-                    (
-                        placement_ports,
-                        &corner_ports,
-                        endpoint_constraints,
-                        &corner_points,
-                    ),
-                    canonicalize_spans,
-                    &mut remaining_states,
-                )
-            })
-            .or_else(|| {
-                enumerate_face(
-                    face.face,
-                    &face.gaps,
-                    cycle_lengths,
-                    &face.missing_edges,
-                    edge_rows,
-                    context.analysis.fixed_complete_row_spans,
-                    (None, &HashMap::new(), endpoint_constraints, &corner_points),
-                    canonicalize_spans,
-                    &mut remaining_states,
-                )
-            })
-            .or_else(|| {
-                enumerate_face(
-                    face.face,
-                    &face.gaps,
-                    cycle_lengths,
-                    &face.missing_edges,
-                    edge_rows,
-                    context.analysis.fixed_complete_row_spans,
-                    (None, &HashMap::new(), None, &MeshCornerPoints::new()),
-                    canonicalize_spans,
-                    &mut remaining_states,
-                )
-            });
-        let domain = assignments
-            .map(MeshFaceAssignmentDomain::Ordered)
-            .or_else(|| {
-                defer_validation.then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
-            });
+        let mut assignments = cycle_assignments.or(trail_assignments);
+        if assignments.is_none() {
+            assignments = enumerate_face(ctx, face.face, &face.gaps, cycle_lengths, &face.missing_edges,
+                edge_rows, context.analysis.fixed_complete_row_spans,
+                (placement_ports, &corner_ports, endpoint_constraints, &corner_points),
+                canonicalize_spans, &mut remaining_states)?;
+        }
+        if assignments.is_none() {
+            assignments = enumerate_face(ctx, face.face, &face.gaps, cycle_lengths, &face.missing_edges,
+                edge_rows, context.analysis.fixed_complete_row_spans,
+                (None, &HashMap::new(), endpoint_constraints, &corner_points),
+                canonicalize_spans, &mut remaining_states)?;
+        }
+        if assignments.is_none() {
+            assignments = enumerate_face(ctx, face.face, &face.gaps, cycle_lengths, &face.missing_edges,
+                edge_rows, context.analysis.fixed_complete_row_spans,
+                (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                canonicalize_spans, &mut remaining_states)?;
+        }
+        let domain = if let Some(assignments) = assignments {
+            Some(MeshFaceAssignmentDomain::Ordered(assignments))
+        } else if defer_validation {
+            Some(MeshFaceAssignmentDomain::DeferredValidation(MeshFaceCoverage {
+                face: face.face,
+                gaps: crate::resource::copy_retained_slice(ctx, &face.gaps, "catia_mesh_deferred_face_gaps")?,
+                missing_edges: crate::resource::copy_retained_slice(ctx, &face.missing_edges, "catia_mesh_deferred_face_missing_edges")?,
+            }))
+        } else {
+            None
+        };
         let Some(domain) = domain else {
             return Ok(None);
         };
