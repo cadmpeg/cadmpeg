@@ -3,7 +3,7 @@
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::{copy_optional_identity, reserve_admitted_vec, reserve_optional_vec_growth, reserve_vec};
+use crate::decode_resource::{copy_optional_identity, reserve_admitted_vec, reserve_optional_vec, reserve_optional_vec_growth, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -768,7 +768,11 @@ fn trim_nurbs_to_interval(
     else {
         return Ok(None);
     };
-    let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+    let weights = weights.map(|weights| {
+        let mut converted = reserve_optional_vec(ctx, weights.len(), "iges composite trimmed weight conversion")?;
+        converted.extend(weights.into_iter().map(cadmpeg_ir::scalar::NonZeroReal::from));
+        Ok::<_, CodecError>(converted)
+    }).transpose()?;
     Ok(Some(NurbsCurve::from_checked_lanes(
         curve.degree(),
         trimmed_knots,
@@ -812,10 +816,8 @@ fn trim_nurbs_lanes(
     let Some(mut homogeneous) = homogeneous_control_points(ctx, curve)? else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(curve.knots().len() as u64, "iges composite trim knot copy")?;
-    }
-    let mut knots = curve.knots().to_vec();
+    let mut knots = reserve_optional_vec(ctx, curve.knots().len(), "iges composite trim knot copy")?;
+    knots.extend_from_slice(curve.knots());
     for value in [start, end] {
         let Some(target_multiplicity) = degree.checked_add(1) else {
             return Ok(None);
@@ -850,15 +852,10 @@ fn trim_nurbs_lanes(
     ) else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            homogeneous_slice.len() as u64,
-            "iges composite trimmed controls",
-        )?;
-        ctx.charge_collection_items(knot_slice.len() as u64, "iges composite trimmed knots")?;
-    }
-    let trimmed_homogeneous = homogeneous_slice.to_vec();
-    let trimmed_knots = knot_slice.to_vec();
+    let mut trimmed_homogeneous = reserve_optional_vec(ctx, homogeneous_slice.len(), "iges composite trimmed controls")?;
+    trimmed_homogeneous.extend_from_slice(homogeneous_slice);
+    let mut trimmed_knots = reserve_optional_vec(ctx, knot_slice.len(), "iges composite trimmed knots")?;
+    trimmed_knots.extend_from_slice(knot_slice);
     let Some(expected_knots) = trimmed_homogeneous
         .len()
         .checked_add(degree)
@@ -1178,22 +1175,15 @@ fn elevate_nurbs_to_degree(
     // point, so no second pass over the net can observe one.
     let mut homogeneous =
         homogeneous_control_points(ctx, curve).map_err(DegreeElevationError::Allocation)?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            curve.knots().len() as u64,
-            "iges composite elevation knot copy",
-        )
+    let mut knots = reserve_optional_vec(ctx, curve.knots().len(), "iges composite elevation knot copy")
         .map_err(DegreeElevationError::Allocation)?;
-    }
-    let mut knots = curve.knots().to_vec();
+    knots.extend_from_slice(curve.knots());
     let mut internal_values = Vec::new();
     for &knot in &knots {
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
         {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "iges composite internal knot values")
-                    .map_err(DegreeElevationError::Allocation)?;
-            }
+            reserve_optional_vec_growth(ctx, &mut internal_values, 1, "iges composite internal knot values")
+                .map_err(DegreeElevationError::Allocation)?;
             internal_values.push(knot);
         }
     }
@@ -1284,13 +1274,18 @@ fn elevate_nurbs_to_degree(
             None => alloc_filled(target_knot_count, start, "iges composite elevated knots"),
         }
         .map_err(DegreeElevationError::Allocation)?;
-        let end_knots = match ctx {
-            Some(ctx) => ctx.alloc_filled(target_knot_count, end, "iges composite elevated knots"),
-            None => alloc_filled(target_knot_count, end, "iges composite elevated knots"),
-        }
-        .map_err(DegreeElevationError::Allocation)?;
-        piece_knots.extend(end_knots);
-        let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+        reserve_optional_vec_growth(ctx, &mut piece_knots, target_knot_count, "iges composite elevated knot suffix")
+            .map_err(DegreeElevationError::Allocation)?;
+        let complete_knot_count = piece_knots.len().checked_add(target_knot_count)
+            .ok_or_else(|| DegreeElevationError::Allocation(refuse_local_limit("iges composite elevated knot suffix", u64::MAX, 1)))?;
+        piece_knots.resize(complete_knot_count, end);
+        let weights = weights.map(|weights| {
+            let mut converted = reserve_optional_vec(ctx, weights.len(), "iges composite elevated weight conversion")?;
+            converted.extend(weights.into_iter().map(cadmpeg_ir::scalar::NonZeroReal::from));
+            Ok::<_, CodecError>(converted)
+        }).transpose().map_err(DegreeElevationError::Allocation)?;
+        reserve_optional_vec_growth(ctx, &mut pieces, 1, "iges composite elevated span")
+            .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
             target_degree as u32,
             piece_knots,
@@ -1298,10 +1293,6 @@ fn elevate_nurbs_to_degree(
             weights,
             false,
         )?;
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "iges composite elevated span")
-                .map_err(DegreeElevationError::Allocation)?;
-        }
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
