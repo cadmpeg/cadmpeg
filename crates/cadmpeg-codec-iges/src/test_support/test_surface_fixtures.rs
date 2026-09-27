@@ -576,14 +576,34 @@ pub(crate) fn placed_surface_of_revolution_file() -> Vec<u8> {
 }
 
 pub(crate) fn placed_hyperbola_surface_of_revolution_file() -> Vec<u8> {
+    placed_exact_revolution_file(
+        "104",
+        b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+        b"124,1,0,0,10,0,1,0,20,0,0,1,30;",
+        b"120,1,3,0,1.5707963267948966;",
+    )
+}
+
+pub(crate) fn placed_overflow_surface_of_revolution_file() -> Vec<u8> {
+    placed_exact_revolution_file(
+        "126",
+        b"126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,9D307,0,0,0,1,0,0,1;",
+        b"124,1,0,0,9D307,0,1,0,0,0,0,1,0;",
+        b"120,1,3,1.5707963267948966,3.141592653589793;",
+    )
+}
+
+fn placed_exact_revolution_file(
+    generatrix_type: &str,
+    generatrix: &[u8],
+    transform: &[u8],
+    revolution: &[u8],
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let axis = b"110,0,0,0,0,0,1;";
-    let hyperbola = b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;";
-    let transform = b"124,1,0,0,10,0,1,0,20,0,0,1,30;";
-    let revolution = b"120,1,3,0,1.5707963267948966;";
     let records: [(u32, &str, &str, &str, &str, &[u8]); 4] = [
         (1, "110", "0", "AXIS", "00010000", axis),
-        (3, "104", "0", "HYPERBOL", "00010000", hyperbola),
+        (3, generatrix_type, "0", "GENERATX", "00010000", generatrix),
         (5, "124", "0", "PLACE", "00010000", transform),
         (7, "120", "5", "REVOLVE", "00000000", revolution),
     ];
