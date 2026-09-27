@@ -697,11 +697,8 @@ pub(super) struct DisplayJtTopologyPacketSequence {
 }
 
 /// Polygon connectivity reconstructed from one JT topological dual mesh.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtPolygonMeshWire",
-    into = "DisplayJtPolygonMeshWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtPolygonMeshWire")]
 pub(super) struct DisplayJtPolygonMesh {
     /// Globally unique polygon-mesh identity.
     pub(super) id: String,
@@ -713,6 +710,94 @@ pub(super) struct DisplayJtPolygonMesh {
     polygons: Vec<Polygon>,
     /// Absolute source offset of the topology packet sequence.
     pub(super) source_offset: u64,
+}
+
+struct PolygonVertices<'a>(&'a [Polygon]);
+struct PolygonAttributes<'a>(&'a [Polygon]);
+struct PolygonVertexRow<'a>(&'a [(u32, Option<u32>)]);
+struct PolygonAttributeRow<'a>(&'a [(u32, Option<u32>)]);
+
+impl Serialize for PolygonVertices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            rows.serialize_element(&PolygonVertexRow(&polygon.corners))?;
+        }
+        rows.end()
+    }
+}
+
+impl Serialize for PolygonAttributes<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            rows.serialize_element(&PolygonAttributeRow(&polygon.corners))?;
+        }
+        rows.end()
+    }
+}
+
+impl Serialize for PolygonVertexRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for (vertex, _) in self.0 {
+            values.serialize_element(vertex)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for PolygonAttributeRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for (_, attribute) in self.0 {
+            values.serialize_element(attribute)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for DisplayJtPolygonMesh {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // The group and flag columns stream below so no column buffer is built.
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("DisplayJtPolygonMeshWire", 8)?;
+        wire.serialize_field("id", &self.id)?;
+        wire.serialize_field("topology", &self.topology)?;
+        wire.serialize_field("coordinate_header", &self.coordinate_header)?;
+        wire.serialize_field("polygons", &PolygonVertices(&self.polygons))?;
+        wire.serialize_field(
+            "vertex_attribute_indices",
+            &PolygonAttributes(&self.polygons),
+        )?;
+        wire.serialize_field("polygon_groups", &PolygonGroups(&self.polygons))?;
+        wire.serialize_field("polygon_flags", &PolygonFlags(&self.polygons))?;
+        wire.serialize_field("source_offset", &self.source_offset)?;
+        wire.end()
+    }
+}
+
+struct PolygonGroups<'a>(&'a [Polygon]);
+struct PolygonFlags<'a>(&'a [Polygon]);
+
+impl Serialize for PolygonGroups<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            values.serialize_element(&polygon.group)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for PolygonFlags<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            values.serialize_element(&polygon.flags)?;
+        }
+        values.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -762,6 +847,7 @@ impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
     fn from(value: DisplayJtPolygonMesh) -> Self {
         let mut polygons = Vec::with_capacity(value.polygons.len());
@@ -1184,11 +1270,8 @@ impl From<JtTransformMatrix> for [[f32; 4]; 4] {
 }
 
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtTriStripShapeNodeWire",
-    into = "DisplayJtTriStripShapeNodeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtTriStripShapeNodeWire")]
 pub(super) struct DisplayJtTriStripShapeNode {
     /// Globally unique shape-node identity.
     pub(super) id: String,
@@ -1226,6 +1309,57 @@ pub(super) struct DisplayJtTriStripShapeNode {
     color_quantization_bits: u8,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DisplayJtTriStripShapeNodeRef<'a> {
+    id: &'a str,
+    base_node: &'a str,
+    object_id: u32,
+    reserved_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    memory_byte_len: u32,
+    compression_level: f32,
+    vertex_version: u16,
+    vertex_bindings: u64,
+    vertex_quantization_bits: u8,
+    normal_quantization_factor: u8,
+    texture_quantization_bits: u8,
+    color_quantization_bits: u8,
+    version_2_vertex_bindings: Option<u64>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtTriStripShapeNode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (vertex_version, version_2_vertex_bindings) = self.vertex_version.into_wire();
+        DisplayJtTriStripShapeNodeRef {
+            id: &self.id,
+            base_node: &self.base_node,
+            object_id: self.object_id,
+            reserved_bounds: self.reserved_bounds.get(),
+            untransformed_bounds: self.untransformed_bounds.get(),
+            area: self.area.get(),
+            vertex_count_range: self.vertex_count_range,
+            node_count_range: self.node_count_range,
+            polygon_count_range: self.polygon_count_range,
+            memory_byte_len: self.memory_byte_len,
+            compression_level: self.compression_level.get(),
+            vertex_version,
+            vertex_bindings: self.vertex_bindings,
+            vertex_quantization_bits: self.vertex_quantization_bits,
+            normal_quantization_factor: self.normal_quantization_factor,
+            texture_quantization_bits: self.texture_quantization_bits,
+            color_quantization_bits: self.color_quantization_bits,
+            version_2_vertex_bindings,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1279,6 +1413,7 @@ impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
     fn from(value: DisplayJtTriStripShapeNode) -> Self {
         let (vertex_version, version_2_vertex_bindings) = value.vertex_version.into_wire();
@@ -1740,11 +1875,8 @@ pub(super) struct DisplayJtGeometricTransformAttribute {
 }
 
 /// One JT material attribute attached to logical scene nodes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtMaterialAttributeWire",
-    into = "DisplayJtMaterialAttributeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtMaterialAttributeWire")]
 pub(super) struct DisplayJtMaterialAttribute {
     /// Globally unique material-attribute identity.
     pub(super) id: String,
@@ -1772,6 +1904,48 @@ pub(super) struct DisplayJtMaterialAttribute {
     shininess: JtShininess,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DisplayJtMaterialAttributeRef<'a> {
+    id: &'a str,
+    element: &'a str,
+    object_id: u32,
+    state_flags: u8,
+    field_inhibit_flags: u32,
+    version: u16,
+    data_flags: u16,
+    ambient: [f32; 4],
+    diffuse: [f32; 4],
+    specular: [f32; 4],
+    emission: [f32; 4],
+    shininess: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reflectivity: Option<f32>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtMaterialAttribute {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (version, reflectivity) = self.version.into_wire();
+        DisplayJtMaterialAttributeRef {
+            id: &self.id,
+            element: &self.element,
+            object_id: self.object_id,
+            state_flags: self.state_flags,
+            field_inhibit_flags: self.field_inhibit_flags,
+            version,
+            data_flags: self.data_flags,
+            ambient: self.ambient.map(UnitBinary32::get),
+            diffuse: self.diffuse.map(UnitBinary32::get),
+            specular: self.specular.map(UnitBinary32::get),
+            emission: self.emission.map(UnitBinary32::get),
+            shininess: self.shininess.get(),
+            reflectivity,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1817,6 +1991,7 @@ impl TryFrom<DisplayJtMaterialAttributeWire> for DisplayJtMaterialAttribute {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
     fn from(value: DisplayJtMaterialAttribute) -> Self {
         let (version, reflectivity) = value.version.into_wire();
@@ -1849,11 +2024,8 @@ enum DisplayJtPartitionBounds {
 }
 
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtPartitionNodeWire",
-    into = "DisplayJtPartitionNodeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtPartitionNodeWire")]
 pub(super) struct DisplayJtPartitionNode {
     /// Globally unique partition-node identity.
     pub(super) id: String,
@@ -1883,6 +2055,54 @@ pub(super) struct DisplayJtPartitionNode {
     pub(super) source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct DisplayJtPartitionNodeRef<'a> {
+    id: &'a str,
+    base_node: &'a str,
+    object_id: u32,
+    group_version: u16,
+    child_object_ids: &'a [u32],
+    partition_flags: u32,
+    file_name_code_units: Utf16CodeUnits<'a>,
+    file_name: &'a str,
+    transformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    untransformed_bounds: Option<[[f32; 3]; 2]>,
+    reserved_bounds: Option<[[f32; 3]; 2]>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtPartitionNode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (partition_flags, untransformed_bounds, reserved_bounds) = match self.bounds {
+            DisplayJtPartitionBounds::Reserved(bounds) => (0, None, Some(bounds.get())),
+            DisplayJtPartitionBounds::Untransformed(bounds) => (1, Some(bounds.get()), None),
+        };
+        DisplayJtPartitionNodeRef {
+            id: &self.id,
+            base_node: &self.base_node,
+            object_id: self.object_id,
+            group_version: self.group_version,
+            child_object_ids: &self.child_object_ids,
+            partition_flags,
+            file_name_code_units: Utf16CodeUnits(&self.file_name),
+            file_name: &self.file_name,
+            transformed_bounds: self.transformed_bounds.get(),
+            area: self.area.get(),
+            vertex_count_range: self.vertex_count_range,
+            node_count_range: self.node_count_range,
+            polygon_count_range: self.polygon_count_range,
+            untransformed_bounds,
+            reserved_bounds,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct DisplayJtPartitionNodeWire {
     id: String,
@@ -1903,6 +2123,7 @@ struct DisplayJtPartitionNodeWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
     fn from(value: DisplayJtPartitionNode) -> Self {
         let (partition_flags, untransformed_bounds, reserved_bounds) = match value.bounds {
@@ -5634,6 +5855,7 @@ mod tests {
     const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
     mod framing;
+    mod wires;
 
     fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
         values.map(|value| FiniteBinary32::new(value).expect("fixture values are finite"))
