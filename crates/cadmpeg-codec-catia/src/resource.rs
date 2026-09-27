@@ -167,6 +167,14 @@ pub(crate) fn copy_id<T>(
     construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
+    construct(copy_retained_str(ctx, value, operation)?).map_err(CodecError::malformed)
+}
+
+pub(crate) fn copy_retained_str(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     let bytes = u64::try_from(value.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
@@ -174,7 +182,7 @@ pub(crate) fn copy_id<T>(
     text.try_reserve(value.len())
         .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
     text.push_str(value);
-    construct(text).map_err(CodecError::malformed)
+    Ok(text)
 }
 
 pub(crate) fn format_usize_id(

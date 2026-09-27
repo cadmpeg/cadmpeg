@@ -1706,6 +1706,37 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
 }
 
 #[test]
+fn native_edge_node_storage_refuses_collection_and_retained_limits() {
+    let bytes = b2_edge_node_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut operations = std::collections::HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            operations.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_native_edge_frames",
+        "catia_native_consolidated_edge_nodes",
+    ] {
+        assert!(operations.contains(operation), "missing charge for {operation}");
+    }
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        if refusal.operation == "catia_native_edge_node_id"));
+    let nodes = crate::test_support::with_service_context(|ctx| {
+        super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+    })
+    .expect("service context admits the edge node");
+    assert_eq!(nodes.len(), 1);
+}
+
+#[test]
 fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     let bytes = b2_edge_node_stream();
     let native = crate::native::CatiaNative::decode(&bytes);
