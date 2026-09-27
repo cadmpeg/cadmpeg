@@ -228,6 +228,66 @@ fn incidence_component_order_charges_outgoing_and_local_arrays() {
 }
 
 #[test]
+fn incidence_component_search_charges_face_and_component_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+    use std::ops::ControlFlow;
+
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let mut operations = BTreeSet::new();
+    let mut limit = 0;
+    let mut completed = false;
+    for _ in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match crate::solve::incidence::visit_component_incidence_pair_solutions(
+            &ctx,
+            &choices,
+            &edge_faces,
+            1,
+            4,
+            None,
+            None,
+            None,
+            &|_| Ok(true),
+            &mut |_| Ok(ControlFlow::Break(())),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+                let next = error.used + error.additional;
+                assert!(next > limit, "a refusal must advance the collection cap");
+                limit = next;
+            }
+            Ok(crate::solve::incidence::IncidenceSolve::Solved(1)) => {
+                completed = true;
+                break;
+            }
+            Ok(outcome) => panic!("independent edge choices must solve, got {outcome:?}"),
+            Err(error) => panic!("unexpected component refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "adaptive caps must admit the independent edge fixture"
+    );
+    for operation in [
+        "catia incidence active edges",
+        "catia incidence point support edges",
+        "catia incidence face edges",
+        "catia incidence fixed edges",
+        "catia incidence face degrees",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn incidence_components_reject_prerequisite_cycles() {
     catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], vec![[1, 1]]];

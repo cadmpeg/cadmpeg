@@ -390,6 +390,44 @@ fn endpoint_degree_closure_refuses_face_degree_collection_limit() {
 }
 
 #[test]
+fn endpoint_degree_closure_charges_branch_search_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("endpoint closure fixture must remain viable"),
+            Err(error) => panic!("unexpected endpoint closure refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "collection limit 64 must admit the closure fixture"
+    );
+    assert!(operations.contains("catia missing-edge branch assignment"));
+    assert!(operations.contains("catia missing-edge used branches"));
+}
+
+#[test]
 fn endpoint_degree_closure_retains_one_face_incidences() {
     catia_test_context!(ctx);
     let edge_faces = [[0, 1], [0, 0], [1, 1], [0, 1]];
