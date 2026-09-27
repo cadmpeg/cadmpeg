@@ -1307,7 +1307,7 @@ pub(crate) fn decode_sketch_relations(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let stream_types = stream_types_by_class_tag(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(ctx, &types, &entry.name)?;
         let scope = ids::native_scope(&entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
         for record in records

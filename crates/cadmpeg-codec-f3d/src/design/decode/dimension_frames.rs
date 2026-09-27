@@ -1458,7 +1458,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream = ids::native_scope(&entry.name);
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_entity(ctx, &types, &entry.name)?;
         let presentation_classes = stream_types
             .iter()
             .filter_map(|(class_tag, (type_guid, _version))| {

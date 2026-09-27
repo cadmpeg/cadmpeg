@@ -589,44 +589,88 @@ pub(super) fn typed_primary_frames<'a>(
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
 pub(super) fn stream_types_by_entity<'a>(
+    ctx: &DecodeContext<'_>,
     types: &'a [SegmentType],
     bulk_entry_name: &str,
-) -> HashMap<u64, (&'a str, u32)> {
-    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
-        return HashMap::new();
-    };
-    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
-    types
-        .iter()
-        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
-        .flat_map(|design_type| {
-            design_type.entities.values().map(|entity_id| {
-                (
-                    *entity_id,
-                    (design_type.type_guid.as_str(), design_type.version),
-                )
-            })
+) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
+    let mut by_entity = HashMap::new();
+    for design_type in types.iter().filter(|design_type| {
+        native_stream(&design_type.id).is_some_and(|scope| {
+            meta_scope_matches_bulk(scope, bulk_entry_name)
         })
-        .collect()
+    }) {
+        for &entity_id in design_type.entities.values() {
+            if !by_entity.contains_key(&entity_id) {
+                ctx.charge_collection_items(1, "f3d stream types by entity")?;
+                by_entity.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d stream entity types allocation", 0, 1)
+                })?;
+            }
+            by_entity.insert(entity_id, (design_type.type_guid.as_str(), design_type.version));
+        }
+    }
+    Ok(by_entity)
 }
 
 /// Complete type-table row keyed by the segment-local dynamic class tag.
 pub(super) fn stream_types_by_class_tag<'a>(
+    ctx: &DecodeContext<'_>,
     types: &'a [SegmentType],
     bulk_entry_name: &str,
-) -> HashMap<u32, &'a SegmentType> {
-    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
-        return HashMap::new();
-    };
-    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
-    types
+) -> Result<HashMap<u32, &'a SegmentType>, CodecError> {
+    let mut by_class_tag = HashMap::new();
+    for (ordinal, design_type) in types
         .iter()
-        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
-        .enumerate()
-        .filter_map(|(ordinal, design_type)| {
-            Some((u32::try_from(ordinal).ok()?.checked_add(256)?, design_type))
+        .filter(|design_type| {
+            native_stream(&design_type.id).is_some_and(|scope| {
+                meta_scope_matches_bulk(scope, bulk_entry_name)
+            })
         })
-        .collect()
+        .enumerate()
+    {
+        let Some(class_tag) = u32::try_from(ordinal).ok().and_then(|ordinal| ordinal.checked_add(256)) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "f3d stream types by class tag")?;
+        by_class_tag.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d stream class types allocation", 0, 1)
+        })?;
+        by_class_tag.insert(class_tag, design_type);
+    }
+    Ok(by_class_tag)
+}
+
+/// Compare an encoded native MetaStream scope with the BulkStream's sibling
+/// name without materializing either name.
+fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
+    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
+        return false;
+    };
+    let Some(encoded) = scope
+        .strip_prefix("f3d:")
+        .and_then(|scope| scope.strip_suffix("MetaStream.dat"))
+    else {
+        return false;
+    };
+    let mut observed = encoded.bytes();
+    for character in prefix.chars() {
+        let mut buffer = [0; 4];
+        let bytes = character.encode_utf8(&mut buffer).as_bytes();
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            for byte in bytes {
+                if observed.next() != Some(b'%')
+                    || observed.next() != Some(HEX[usize::from(byte >> 4)])
+                    || observed.next() != Some(HEX[usize::from(byte & 0x0f)])
+                {
+                    return false;
+                }
+            }
+        } else if !bytes.iter().all(|byte| observed.next() == Some(*byte)) {
+            return false;
+        }
+    }
+    observed.next().is_none()
 }
 
 fn local_reference(
