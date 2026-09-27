@@ -6,9 +6,9 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let headers =
-        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
             &bytes, &records,
-        )
+        ).unwrap()
         .into_iter()
         .filter(|header| header.record_index == 1_400)
         .collect::<Vec<_>>();
@@ -68,10 +68,10 @@ fn copy_paste_bodies_refuses_operand_and_body_limits() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    )
+    ).unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
@@ -110,10 +110,10 @@ fn design_scope_reference_vectors_refuse_each_limit() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    )
+    ).unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
@@ -162,10 +162,10 @@ fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
     let (bytes, _) =
         crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+    let header = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(&cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
-    )
+    ).unwrap()
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
@@ -198,4 +198,35 @@ fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
                 if failure.dimension == dimension && failure.operation == operation
         ));
     }
+}
+
+#[test]
+fn design_scope_candidate_headers_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, _) =
+        crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+        &ctx, &bytes, &records,
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Design scope candidate headers"
+    ));
+    assert!(
+        !crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+        )
+        .unwrap()
+        .is_empty()
+    );
 }

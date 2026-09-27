@@ -87,7 +87,7 @@ pub(crate) fn decode_parameter_scopes(
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types = crate::design::decode::meta::stream_types_by_entity(ctx, types, &entry.name)?;
         let stream_scope_start = out.len();
-        for header in parameter_scope_candidate_headers(bytes, &records) {
+        for header in parameter_scope_candidate_headers(ctx, bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope(
                 ctx,
                 bytes,
@@ -610,25 +610,36 @@ pub(in crate::design::decode) fn payload_prologue(
 /// delimited by two headers carrying its record index, so the last header of an
 /// index opens nothing.
 pub(super) fn parameter_scope_candidate_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-) -> Vec<RecordFrame> {
-    records
-        .records()
-        .flat_map(|(record_index, offsets)| {
-            offsets[..offsets.len().saturating_sub(1)]
-                .iter()
-                .filter_map(move |at| {
-                    let (class_tag, _) =
-                        lp_ascii_filtered(bytes, *at, 0..=2000, u8::is_ascii_graphic)?;
-                    Some(RecordFrame {
-                        record_index,
-                        class_tag: class_tag.try_into().ok()?,
-                        byte_offset: *at as u64,
-                    })
-                })
-        })
-        .collect()
+) -> Result<Vec<RecordFrame>, CodecError> {
+    let mut headers = Vec::new();
+    for (record_index, offsets) in records.records() {
+        for at in &offsets[..offsets.len().saturating_sub(1)] {
+            let Some((class_tag, _)) =
+                lp_ascii_filtered(bytes, *at, 3..=3, u8::is_ascii_digit)
+            else {
+                continue;
+            };
+            let Ok(class_tag) = class_tag.try_into() else {
+                continue;
+            };
+            let byte_offset = u64::try_from(*at).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Design scope header offset", 0, 1)
+            })?;
+            ctx.charge_collection_items(1, "f3d Design scope candidate headers")?;
+            headers.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Design scope candidate headers allocation", 0, 1)
+            })?;
+            headers.push(RecordFrame {
+                record_index,
+                class_tag,
+                byte_offset,
+            });
+        }
+    }
+    Ok(headers)
 }
 
 pub(crate) fn parameter_scope_tail_length_is_valid(
