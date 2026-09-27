@@ -760,7 +760,7 @@ impl NativeModel {
             (!segment_stream_links.is_empty()).then_some(&linked_deltas),
         )?;
         let deltas_events =
-            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
+            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses(ctx)?);
         let parasolid_group_records =
             parasolid_group_records(streams, &delta_pairs, &deltas_events.records);
         let parasolid_group_members = parasolid_group_members(streams, &delta_pairs, parsed);
