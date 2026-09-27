@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, Fraction, PositiveReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -126,11 +126,11 @@ struct ViewportUserdataScan {
 
 #[derive(Debug, Serialize)]
 struct ConstructionPlane {
-    plane_origin_mm: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
-    plane_z_axis: [f64; 3],
-    plane_equation_mm: [f64; 4],
+    plane_origin_mm: crate::settings::CoordinateLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_z_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_equation_mm: crate::settings::CoordinateLane<4>,
     grid_spacing_mm: FiniteReal,
     snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
@@ -181,10 +181,10 @@ struct Viewport {
 struct WindowPosition {
     version: [u8; 2],
     maximized: bool,
-    left: f64,
-    right: f64,
-    top: f64,
-    bottom: f64,
+    left: Fraction,
+    right: Fraction,
+    top: Fraction,
+    bottom: Fraction,
     floating_viewport: u8,
 }
 
@@ -201,9 +201,9 @@ struct TraceImage {
     legacy_file_path: String,
     width_mm: FiniteReal,
     height_mm: FiniteReal,
-    plane_origin_mm: [f64; 3],
-    plane_x_axis: [f64; 3],
-    plane_y_axis: [f64; 3],
+    plane_origin_mm: crate::settings::CoordinateLane<3>,
+    plane_x_axis: cadmpeg_ir::units::FiniteVector<3>,
+    plane_y_axis: cadmpeg_ir::units::FiniteVector<3>,
     grayscale: bool,
     hidden: bool,
     filtered: bool,
@@ -239,8 +239,8 @@ struct ClippingPlane {
 #[derive(Debug, Serialize)]
 struct ViewAttributes {
     view_type: i32,
-    width: f64,
-    height: f64,
+    width: FiniteReal,
+    height: FiniteReal,
     display: Option<String>,
     version: [u8; 2],
     page_settings: Option<PageSettings>,
@@ -265,13 +265,6 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     } else {
         (0.0, false)
     }
-}
-
-fn scale3(value: &mut [f64; 3], scale: MillimeterScale, offset: usize) -> Result<(), FramingError> {
-    for coordinate in value {
-        *coordinate = scaled3_coordinate(*coordinate, scale, offset)?.get();
-    }
-    Ok(())
 }
 
 fn scaled3(
@@ -300,10 +293,12 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    scale3(&mut value.origin, scale, offset)?;
-    value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?
-        .get();
+    value.origin = crate::settings::CoordinateLane::Admitted(
+        scaled3(value.origin.get(), scale, offset)?.into(),
+    );
+    let constant = scaled_coordinate(value.equation[3], scale)
+        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
+    value.equation = value.equation.with_fourth(constant);
     Ok(value)
 }
 
@@ -654,62 +649,72 @@ fn parse_window_position(
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
-    let mut result = WindowPosition {
-        version,
-        maximized: false,
-        left: 0.0,
-        right: 1.0,
-        top: 0.0,
-        bottom: 1.0,
-        floating_viewport: 0,
-    };
+    let mut maximized = false;
+    let (mut left, mut right, mut top, mut bottom) = (0.0, 1.0, 0.0, 1.0);
+    let mut floating_viewport = 0;
     if version[0] == 1 {
-        result.maximized = reader.i32()? != 0;
-        result.left = reader.f64()?;
-        result.right = reader.f64()?;
-        result.top = reader.f64()?;
-        result.bottom = reader.f64()?;
+        maximized = reader.i32()? != 0;
+        left = reader.f64()?;
+        right = reader.f64()?;
+        top = reader.f64()?;
+        bottom = reader.f64()?;
         if version[1] >= 1 {
-            result.floating_viewport = reader.u8()?;
+            floating_viewport = reader.u8()?;
         }
 
-        if result.left.is_nan() || result.right.is_nan() {
-            result.left = 0.0;
-            result.right = 1.0;
+        if left.is_nan() || right.is_nan() {
+            left = 0.0;
+            right = 1.0;
         }
-        if result.left > result.right {
-            std::mem::swap(&mut result.left, &mut result.right);
+        if left > right {
+            std::mem::swap(&mut left, &mut right);
         }
-        if result.left < 0.0 {
-            result.left = 0.0;
+        if left < 0.0 {
+            left = 0.0;
         }
-        if result.right >= 1.0 {
-            result.right = 1.0;
+        if right >= 1.0 {
+            right = 1.0;
         }
-        if result.left >= result.right {
-            result.left = 0.0;
-            result.right = 1.0;
+        if left >= right {
+            left = 0.0;
+            right = 1.0;
         }
-        if result.top.is_nan() || result.bottom.is_nan() {
-            result.top = 0.0;
-            result.bottom = 1.0;
+        if top.is_nan() || bottom.is_nan() {
+            top = 0.0;
+            bottom = 1.0;
         }
-        if result.top > result.bottom {
-            std::mem::swap(&mut result.top, &mut result.bottom);
+        if top > bottom {
+            std::mem::swap(&mut top, &mut bottom);
         }
-        if result.top < 0.0 {
-            result.top = 0.0;
+        if top < 0.0 {
+            top = 0.0;
         }
-        if result.bottom >= 1.0 {
-            result.bottom = 1.0;
+        if bottom >= 1.0 {
+            bottom = 1.0;
         }
-        if result.top >= result.bottom {
-            result.top = 0.0;
-            result.bottom = 1.0;
+        if top >= bottom {
+            top = 0.0;
+            bottom = 1.0;
         }
     }
     reader.skip_remaining()?;
-    Ok(result)
+    let [Some(left), Some(right), Some(top), Some(bottom)] =
+        [left, right, top, bottom].map(Fraction::new)
+    else {
+        return Err(FramingError::structural(
+            body.start,
+            "window position repair is invalid",
+        ));
+    };
+    Ok(WindowPosition {
+        version,
+        maximized,
+        left,
+        right,
+        top,
+        bottom,
+        floating_viewport,
+    })
 }
 
 fn parse_attributes(
@@ -731,12 +736,12 @@ fn parse_attributes(
     let view_type = reader.i32()?;
     let width = reader.f64()?;
     let height = reader.f64()?;
-    if !width.is_finite() || !height.is_finite() {
+    let [Some(width), Some(height)] = [width, height].map(FiniteReal::new) else {
         return Err(FramingError::structural(
             reader.position() - 16,
             "view page size is not finite",
         ));
-    }
+    };
     let _obsolete_parent = uuid(&mut reader)?;
     for _ in 0..6 {
         if !reader.f64()?.is_finite() {
@@ -843,13 +848,13 @@ fn parse_attributes(
                 ));
             }
             let equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
-            let [Some(a), Some(b), Some(c), Some(_)] = equation.map(FiniteReal::new) else {
+            let [Some(a), Some(b), Some(c), Some(source_d)] = equation.map(FiniteReal::new) else {
                 return Err(FramingError::structural(
                     plane.position() - 32,
                     "clipping equation is invalid",
                 ));
             };
-            let d = scaled_coordinate(equation[3], scale).ok_or_else(|| {
+            let d = scaled_coordinate(source_d.get(), scale).ok_or_else(|| {
                 FramingError::structural(plane.position() - 8, "clipping equation is invalid")
             })?;
             let equation = [a, b, c, d];
@@ -1583,6 +1588,7 @@ mod tests {
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
         file_reference, long_chunk, point, short_chunk, utf16_bytes,
     };
+    use cadmpeg_ir::scalar::Fraction;
 
     fn serialized_plane(bytes: &mut Vec<u8>) {
         point(bytes, [0.0, 0.0, 0.0]);
@@ -1628,11 +1634,11 @@ mod tests {
         )
         .expect("construction plane");
 
-        assert_eq!(value.plane_origin_mm, [2.0, -4.0, 6.0]);
-        assert_eq!(value.plane_x_axis, [1.0, 0.0, 0.0]);
+        assert_eq!(value.plane_origin_mm.get(), [2.0, -4.0, 6.0]);
+        assert_eq!(value.plane_x_axis.get(), [1.0, 0.0, 0.0]);
         assert_eq!(value.plane_y_axis, [0.0, 0.0, 1.0]);
         assert_eq!(value.plane_z_axis, [0.0, -1.0, 0.0]);
-        assert_eq!(value.plane_equation_mm, [0.0, -1.0, 0.0, -4.0]);
+        assert_eq!(value.plane_equation_mm.get(), [0.0, -1.0, 0.0, -4.0]);
         assert_eq!(value.grid_spacing_mm, crate::test_support::finite(5.0));
         assert_eq!(value.snap_spacing_mm, crate::test_support::finite(1.5));
         assert_eq!(value.grid_line_count, 42);
@@ -1725,11 +1731,14 @@ mod tests {
         let value = parse_window_position(&body, 0..body.len()).expect("window position");
         assert_eq!(value.version, [1, 2]);
         assert!(value.maximized);
-        assert_eq!(value.left, 0.1);
-        assert_eq!(value.right, 0.9);
-        assert_eq!(value.top, 0.0);
-        assert_eq!(value.bottom, 1.0);
+        assert_eq!(value.left.get(), 0.1);
+        assert_eq!(value.right.get(), 0.9);
+        assert_eq!(value.top.get(), 0.0);
+        assert_eq!(value.bottom.get(), 1.0);
         assert_eq!(value.floating_viewport, 3);
+        let json = serde_json::to_value(&value).expect("window position JSON");
+        assert_eq!(json["left"], 0.1);
+        assert_eq!(json["right"], 0.9);
     }
 
     #[test]
@@ -1741,7 +1750,26 @@ mod tests {
         }
         let value = parse_window_position(&body, 0..body.len()).expect("window position");
         assert_eq!(
-            [value.left, value.right, value.top, value.bottom],
+            [value.left, value.right, value.top, value.bottom].map(Fraction::get),
+            [0.0, 1.0, 0.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn window_position_repairs_infinite_coordinates_before_storage() {
+        let mut body = vec![0x10];
+        body.extend(0_i32.to_le_bytes());
+        for value in [
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            body.extend(value.to_le_bytes());
+        }
+        let value = parse_window_position(&body, 0..body.len()).expect("window position");
+        assert_eq!(
+            [value.left, value.right, value.top, value.bottom].map(Fraction::get),
             [0.0, 1.0, 0.0, 1.0]
         );
     }
@@ -1759,7 +1787,7 @@ mod tests {
         assert_eq!(value.version, [2, 0]);
         assert!(!value.maximized);
         assert_eq!(
-            [value.left, value.right, value.top, value.bottom],
+            [value.left, value.right, value.top, value.bottom].map(Fraction::get),
             [0.0, 1.0, 0.0, 1.0]
         );
         assert_eq!(value.floating_viewport, 0);
@@ -2003,6 +2031,8 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("view attributes");
+        assert_eq!(value.width.get(), 100.0);
+        assert_eq!(value.height.get(), 200.0);
         assert_eq!(value.clipping_planes.len(), 1);
         assert_eq!(
             value.clipping_planes[0].depth_mm,
@@ -2419,8 +2449,8 @@ mod tests {
     fn sample_attributes() -> ViewAttributes {
         ViewAttributes {
             view_type: 1,
-            width: 210.0,
-            height: 297.0,
+            width: crate::test_support::finite(210.0),
+            height: crate::test_support::finite(297.0),
             display: Some("display-uuid".to_string()),
             version: [1, 2],
             page_settings: None,

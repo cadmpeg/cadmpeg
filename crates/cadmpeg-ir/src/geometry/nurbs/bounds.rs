@@ -5,29 +5,32 @@ use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
 
 /// Global rational curve speed bound about `origin` over the active knot domain.
-/// Common weight scaling is removed before products are formed.
+/// Common weight scaling is removed before products are formed. Absent
+/// weights are read as 1.0 without allocating a weight array.
 pub fn speed_bound<const N: usize>(
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
-    weights: &[f64],
+    weights: Option<&[f64]>,
     origin: [f64; N],
 ) -> Option<FiniteReal> {
     let order = usize::try_from(degree).ok()?;
     if points.len() <= order
-        || weights.len() != points.len()
+        || weights.is_some_and(|weights| weights.len() != points.len())
         || knots.len() != points.len().checked_add(order)?.checked_add(1)?
         || knots.iter().chain(origin.iter()).any(|v| !v.is_finite())
         || knots.windows(2).any(|p| p[0] > p[1])
-        || weights.iter().any(|w| !w.is_finite() || *w <= 0.0)
+        || weights.is_some_and(|weights| weights.iter().any(|w| !w.is_finite() || *w <= 0.0))
         || points.iter().flatten().any(|v| !v.is_finite())
     {
         return None;
     }
-    let scale = weights.iter().copied().fold(0.0_f64, f64::max);
-    let minimum = weights
-        .iter()
-        .map(|w| w / scale)
+    let weight_at = |index: usize| weights.map_or(1.0, |weights| weights[index]);
+    let scale = weights.map_or(1.0, |weights| {
+        weights.iter().copied().fold(0.0_f64, f64::max)
+    });
+    let minimum = (0..points.len())
+        .map(|index| weight_at(index) / scale)
         .fold(f64::INFINITY, f64::min);
     if minimum <= 0.0 {
         return None;
@@ -37,7 +40,7 @@ pub fn speed_bound<const N: usize>(
     let mut weight_speed = 0.0_f64;
     let mut previous: Option<[f64; N]> = None;
     for (index, point) in points.iter().enumerate() {
-        let weight = weights[index] / scale;
+        let weight = weight_at(index) / scale;
         let relative: [f64; N] = std::array::from_fn(|axis| point[axis] - origin[axis]);
         let weighted: [f64; N] = std::array::from_fn(|axis| weight * relative[axis]);
         if relative.iter().chain(&weighted).any(|v| !v.is_finite())
@@ -73,7 +76,7 @@ pub fn speed_bound<const N: usize>(
                     .fold(0.0_f64, |r, (b, a)| r.hypot(b - a));
                 numerator_speed = numerator_speed.max(derivative(delta)?);
                 weight_speed =
-                    weight_speed.max(derivative((weight - weights[index - 1] / scale).abs())?);
+                    weight_speed.max(derivative((weight - weight_at(index - 1) / scale).abs())?);
             }
         }
         previous = Some(weighted);
@@ -95,6 +98,16 @@ pub fn speed_bound<const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::speed_bound;
+
+    #[test]
+    fn implicit_unit_weights_match_explicit_unit_weights() {
+        let knots = [0.0, 0.0, 1.0, 1.0];
+        let points = [[0.0, 0.0], [1.0, 0.0]];
+        let implicit = speed_bound(1, &knots, &points, None, [0.25, 0.0]);
+        let explicit = speed_bound(1, &knots, &points, Some(&[1.0, 1.0]), [0.25, 0.0]);
+        assert_eq!(implicit, explicit);
+    }
+
     #[test]
     fn numerical_followup_speed_bound_ignores_common_weight_scale() {
         for w in [1.0, 1e-200, 1e200, 1e308, f64::from_bits(1)] {
@@ -103,7 +116,7 @@ mod tests {
                     1,
                     &[0., 0., 1., 1.],
                     &[[0., 0.], [1., 0.]],
-                    &[w, w],
+                    Some(&[w, w]),
                     [0., 0.]
                 )
                 .map(crate::scalar::FiniteReal::get),
@@ -118,7 +131,7 @@ mod tests {
             1,
             &[-1e308, -1e308, 1e308, 1e308],
             &[[0., 0.], [1., 0.]],
-            &[1., 1.],
+            Some(&[1., 1.]),
             [0., 0.],
         )
         .unwrap()
@@ -132,7 +145,7 @@ mod tests {
                 1,
                 &[0., 0., 1., 1.],
                 &[[-1e308, 0.], [1e308, 0.]],
-                &[1., 1.],
+                Some(&[1., 1.]),
                 [0., 0.]
             ),
             None

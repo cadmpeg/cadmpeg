@@ -5,12 +5,13 @@ use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::OrthonormalFrame3;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
@@ -655,30 +656,21 @@ fn scale_decoded_curve(
         }
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let scaled = nurbs
-                    .control_points()
-                    .into_iter()
-                    .map(|point| {
-                        scale_ir_point(point.get(), scale).ok_or_else(|| {
-                            GeometryError::malformed(offset, "scaled plane-space curve is invalid")
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut scaled = scaled.into_iter();
                 nurbs
-                    .edit_control_points(|point| {
-                        if let Some(value) = scaled.next() {
-                            *point = value;
-                        }
-                        Ok(())
+                    .map_control_points(|point| {
+                        point.scaled(scale.positive()).ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                                "scaled plane-space curve is invalid".to_string(),
+                            )
+                        })
                     })
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center().get();
                 let radius = circle_curve.radius().get();
-                let center = scale_ir_point(center, scale)
-                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                let center = circle_curve
+                    .center()
+                    .scaled(scale.positive())
                     .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -699,10 +691,10 @@ fn scale_decoded_curve(
                 );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = line_curve.origin().get();
                 let direction = line_curve.direction();
-                let origin = scale_ir_point(origin, scale)
-                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                let origin = line_curve
+                    .origin()
+                    .scaled(scale.positive())
                     .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -712,16 +704,16 @@ fn scale_decoded_curve(
                 *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = degenerate_curve.point().get();
-                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
-                    scale_ir_point(point, scale).ok_or_else(|| {
+                let point = degenerate_curve
+                    .point()
+                    .scaled(scale.positive())
+                    .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",
                         )
-                    })?,
-                )
-                .map_err(|message| GeometryError::malformed(offset, message))?;
+                    })?;
+                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {
                 return Err(GeometryError::malformed(
@@ -740,17 +732,9 @@ fn scale_decoded_curve(
     Ok(())
 }
 
-fn scale_ir_point(value: Point3, scale: MillimeterScale) -> Option<Point3> {
-    let point = Point3::new(
-        value.x * scale.value(),
-        value.y * scale.value(),
-        value.z * scale.value(),
-    );
-    (point.is_finite()).then_some(point)
-}
-
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
 pub(crate) fn exact_nurbs(
+    ctx: &DecodeContext<'_>,
     curve: &DecodedCurve,
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
@@ -758,10 +742,10 @@ pub(crate) fn exact_nurbs(
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center().get();
+                let center = circle_curve.center();
                 let axis = circle_curve.frame().axis().as_raw();
                 let ref_direction = circle_curve.frame().reference().as_raw();
-                let radius = circle_curve.radius().get();
+                let radius = circle_curve.radius();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
                     center,
@@ -789,12 +773,12 @@ pub(crate) fn exact_nurbs(
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
-                    exact_nurbs(child, offset)?,
+                    exact_nurbs(ctx, child, offset)?,
                     target,
                     offset,
                 )?);
             }
-            Ok(join_nurbs_segments(segments, offset)?.curve)
+            Ok(join_nurbs_segments(ctx, segments, offset)?.curve)
         }
     }
 }
@@ -818,7 +802,7 @@ pub(crate) fn remap_nurbs_domain(
             .ok_or_else(|| error(offset, "curve knot vector is invalid"))?,
         curve.knots()[end_index],
     ];
-    if !source[0].is_finite() || !source[1].is_finite() || source[0] >= source[1] {
+    if source[0] >= source[1] {
         return Err(error(offset, "curve domain is invalid"));
     }
     if target[0] >= target[1] {
@@ -885,14 +869,20 @@ fn elevate_bezier(mut values: Vec<Homogeneous>, target: usize) -> Vec<Homogeneou
 }
 
 fn insert_knot_once(
+    ctx: &DecodeContext<'_>,
     knots: &mut Vec<f64>,
     points: &mut Vec<Homogeneous>,
     degree: usize,
     value: f64,
-) -> Result<(), ()> {
+    offset: usize,
+    failure: &'static str,
+) -> Result<(), GeometryError> {
     let n = points.len() - 1;
     // Endpoint clamping can select a span beyond the last control point.
-    let k = knots.iter().rposition(|knot| *knot <= value).ok_or(())?;
+    let k = knots
+        .iter()
+        .rposition(|knot| *knot <= value)
+        .ok_or_else(|| error(offset, failure))?;
     let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
     if multiplicity > degree
@@ -900,20 +890,22 @@ fn insert_knot_once(
         || k - degree > n
         || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
     {
-        return Err(());
+        return Err(error(offset, failure));
     }
-    let mut output = alloc_filled(
-        points.len().checked_add(1).ok_or(())?,
+    let mut output = ctx.alloc_filled(
+        points
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| error(offset, failure))?,
         points[0],
         "Rhino polycurve knot insertion points",
-    )
-    .map_err(|_| ())?;
+    )?;
     output[..=k - degree].copy_from_slice(&points[..=k - degree]);
     output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
     for index in k - degree + 1..=k - multiplicity {
         let denominator = knots[index + degree] - knots[index];
         if denominator <= 0.0 || !denominator.is_finite() {
-            return Err(());
+            return Err(error(offset, failure));
         }
         let alpha = (value - knots[index]) / denominator;
         output[index] = points[index - 1].blend(points[index], alpha);
@@ -924,6 +916,7 @@ fn insert_knot_once(
 }
 
 fn elevate_to_degree(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     target: usize,
     offset: usize,
@@ -935,17 +928,11 @@ fn elevate_to_degree(
     }
     let mut weights = match curve.pole_rows().weights() {
         Some(weights) => weights,
-        None => alloc_filled(
+        None => ctx.alloc_filled(
             curve.control_points().len(),
             1.0,
             "Rhino polycurve segment weights",
-        )
-        .map_err(|error| {
-            GeometryError::malformed(
-                offset,
-                format!("polycurve weight allocation refused: {error}"),
-            )
-        })?,
+        )?,
     };
     let rational = weights.iter().any(|weight| *weight != 1.0);
     let control_points = curve.control_points();
@@ -979,8 +966,15 @@ fn elevate_to_degree(
     let domain = [knots[degree], knots[knots.len() - degree - 1]];
     for endpoint in domain {
         while knots.iter().filter(|value| **value == endpoint).count() < degree + 1 {
-            insert_knot_once(&mut knots, &mut points, degree, endpoint)
-                .map_err(|()| error(offset, "polycurve endpoint clamping failed"))?;
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                endpoint,
+                offset,
+                "polycurve endpoint clamping failed",
+            )?;
         }
     }
     let mut internal = knots
@@ -991,8 +985,15 @@ fn elevate_to_degree(
     internal.dedup();
     for knot in internal {
         while knots.iter().filter(|value| **value == knot).count() < degree {
-            insert_knot_once(&mut knots, &mut points, degree, knot)
-                .map_err(|()| error(offset, "polycurve knot insertion failed"))?;
+            insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                degree,
+                knot,
+                offset,
+                "polycurve knot insertion failed",
+            )?;
         }
     }
     let spans = (degree..points.len())
@@ -1006,14 +1007,13 @@ fn elevate_to_degree(
         return Err(error(offset, "polycurve segment has no nonempty span"));
     }
     let mut elevated = Vec::new();
-    let mut elevated_knots = alloc_filled(
+    let mut elevated_knots = ctx.alloc_filled(
         target
             .checked_add(1)
             .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
         domain[0],
         "Rhino polycurve elevated knots",
-    )
-    .map_err(|cause| GeometryError::malformed(offset, cause.to_string()))?;
+    )?;
     for (index, span) in spans.into_iter().enumerate() {
         let bezier = elevate_bezier(points[span - degree..=span].to_vec(), target);
         let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
@@ -1052,6 +1052,7 @@ fn elevate_to_degree(
 }
 
 pub(crate) fn join_nurbs_segments(
+    ctx: &DecodeContext<'_>,
     mut segments: Vec<NurbsCurve>,
     offset: usize,
 ) -> Result<NurbsJoin, GeometryError> {
@@ -1069,7 +1070,7 @@ pub(crate) fn join_nurbs_segments(
     }
     segments = segments
         .iter()
-        .map(|segment| elevate_to_degree(segment, target, offset))
+        .map(|segment| elevate_to_degree(ctx, segment, target, offset))
         .collect::<Result<_, _>>()?;
     if segments.len() == 1 {
         return Ok(NurbsJoin {
@@ -1516,7 +1517,16 @@ fn read_polyline(
     let mut parameters = Vec::with_capacity(parameter_count);
     for _ in 0..parameter_count {
         let value = reader.f64()?;
-        if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
+        let Some(value) = FiniteReal::new(value) else {
+            return Err(error(
+                reader.position(),
+                "polyline parameters are not increasing",
+            ));
+        };
+        if parameters
+            .last()
+            .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
+        {
             return Err(error(
                 reader.position(),
                 "polyline parameters are not increasing",
@@ -1536,7 +1546,9 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    NurbsCurve::from_lanes(1, knots, points, None, false)
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::from_finite_lanes(knots)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::from_checked_lanes(1, knots, points, None, false)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1569,13 +1581,16 @@ fn read_arc(
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     circle.center,
-                    circle.axis,
-                    circle.xaxis,
+                    OrthonormalFrame3::new(circle.axis, circle.xaxis).ok_or_else(|| {
+                        error(
+                            reader.position(),
+                            "CircleCurve.axis/ref_direction must form an orthonormal frame",
+                        )
+                    })?,
                     circle.radius,
-                )
-                .map_err(|message| error(reader.position(), message))?,
+                ),
             )),
             warnings,
         ));
@@ -1594,11 +1609,13 @@ fn read_arc(
 
 #[derive(Debug, Clone, Copy)]
 struct Circle {
-    center: Point3,
+    center: FinitePoint3,
+    // The source circle uses a stricter unit and orthogonality tolerance than
+    // the IR frame. These axes keep their source values until frame assembly.
     axis: Vector3,
     xaxis: Vector3,
     yaxis: Vector3,
-    radius: f64,
+    radius: PositiveLength,
 }
 
 fn read_circle(
@@ -1610,16 +1627,15 @@ fn read_circle(
     let zero = native_point(reader)?;
     let half_pi = native_point(reader)?;
     let at_pi = native_point(reader)?;
-    let scaled_radius = radius * scale.value();
-    if !radius.is_finite() || radius <= 0.0 || !scaled_radius.is_finite() || scaled_radius <= 0.0 {
-        return Err(error(reader.position(), "circle radius is invalid"));
-    }
-    let xaxis = vector(native.xaxis);
-    let yaxis = vector(native.yaxis);
-    let axis = vector(native.zaxis);
-    let center = crate::wire::scaled_point(native.origin, scale)
-        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?
-        .get();
+    let radius = PositiveReal::new(radius)
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
+    let scaled_radius = PositiveLength::new(radius.get() * scale.value())
+        .ok_or_else(|| error(reader.position(), "circle radius is invalid"))?;
+    let xaxis = vector(native.xaxis.get());
+    let yaxis = vector(native.yaxis.get());
+    let axis = vector(native.zaxis.get());
+    let center = crate::wire::scaled_point(native.origin.get(), scale)
+        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
     let norm_axis = axis.norm();
@@ -1633,9 +1649,24 @@ fn read_circle(
         && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && crate::wire::close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
-        && close_native_point(zero.0.get(), native.origin, native.xaxis, radius)
-        && close_native_point(half_pi.0.get(), native.origin, native.yaxis, radius)
-        && close_native_point(at_pi.0.get(), native.origin, negate(native.xaxis), radius))
+        && close_native_point(
+            zero.0.get(),
+            native.origin.get(),
+            native.xaxis.get(),
+            radius.get(),
+        )
+        && close_native_point(
+            half_pi.0.get(),
+            native.origin.get(),
+            native.yaxis.get(),
+            radius.get(),
+        )
+        && close_native_point(
+            at_pi.0.get(),
+            native.origin.get(),
+            negate(native.xaxis.get()),
+            radius.get(),
+        ))
     {
         return Err(error(reader.position(), "circle plane axes are invalid"));
     }
@@ -1843,10 +1874,12 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.xaxis.y * angle.cos() + circle.yaxis.y * angle.sin(),
         circle.xaxis.z * angle.cos() + circle.yaxis.z * angle.sin(),
     );
+    let center = circle.center.get();
+    let radius = circle.radius.get();
     Point3::new(
-        circle.center.x + radial.x * circle.radius * radial_scale,
-        circle.center.y + radial.y * circle.radius * radial_scale,
-        circle.center.z + radial.z * circle.radius * radial_scale,
+        center.x + radial.x * radius * radial_scale,
+        center.y + radial.y * radius * radial_scale,
+        center.z + radial.z * radius * radial_scale,
     )
 }
 
@@ -1917,7 +1950,9 @@ mod tests {
         ];
         for curve in cases {
             for degree in [2, 3] {
-                let elevated = super::elevate_to_degree(&curve, degree, 0).unwrap();
+                let elevated =
+                    with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, degree, 0))
+                        .unwrap();
                 let start = curve.knots()[curve.degree() as usize];
                 let end = curve.knots()[curve.control_points().len()];
                 assert_eq!(elevated.knots()[degree], start);
@@ -1963,7 +1998,9 @@ mod tests {
             false,
         )
         .unwrap();
-        let joined = super::join_nurbs_segments(vec![first, second], 0).unwrap();
+        let joined =
+            with_test_context(|ctx| super::join_nurbs_segments(ctx, vec![first, second], 0))
+                .unwrap();
         let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
         assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
     }
@@ -1985,7 +2022,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
-        let joined = super::join_nurbs_segments(vec![remapped.clone(), remapped], 0).unwrap();
+        let joined = with_test_context(|ctx| {
+            super::join_nurbs_segments(ctx, vec![remapped.clone(), remapped], 0)
+        })
+        .unwrap();
         assert!(joined
             .curve
             .control_points()
@@ -2001,9 +2041,12 @@ mod tests {
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
     use crate::settings::MillimeterScale;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+    use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
 
@@ -2013,6 +2056,96 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test context input fits service profile");
         f(&ctx)
+    }
+
+    fn with_collection_limit<R>(
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test context input fits service profile");
+        f(&ctx)
+    }
+
+    #[test]
+    fn polycurve_knot_insertion_refuses_collection_limit() {
+        let mut knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let mut points = vec![super::Homogeneous([1.0; 4]); 3];
+        let error = with_collection_limit(3, |ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+        })
+        .expect_err("four output points exceed three collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve knot insertion points"
+        ));
+        with_test_context(|ctx| {
+            super::insert_knot_once(
+                ctx,
+                &mut knots,
+                &mut points,
+                2,
+                0.5,
+                0,
+                "polycurve knot insertion failed",
+            )
+            .expect("service profile admits knot insertion");
+        });
+        assert_eq!(points.len(), 4);
+    }
+
+    #[test]
+    fn polycurve_segment_weights_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two weights exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve segment weights"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits segment weights");
+    }
+
+    #[test]
+    fn polycurve_elevated_knots_refuse_collection_limit() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            Some(vec![1.0, 1.0]),
+            false,
+        )
+        .expect("valid rational line");
+        let error = with_collection_limit(1, |ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect_err("two initial knots exceed one collection item");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino polycurve elevated knots"
+        ));
+        with_test_context(|ctx| super::elevate_to_degree(ctx, &curve, 1, 0))
+            .expect("service profile admits elevated knots");
     }
 
     fn read_cloud(
@@ -2178,12 +2311,42 @@ mod tests {
 
     fn unit_circle() -> Circle {
         Circle {
-            center: Point3::new(2.0, -1.0, 3.0),
+            center: FinitePoint3::new(Point3::new(2.0, -1.0, 3.0)).expect("finite center"),
             axis: Vector3::new(0.0, 0.0, 1.0),
             xaxis: Vector3::new(1.0, 0.0, 0.0),
             yaxis: Vector3::new(0.0, 1.0, 0.0),
-            radius: 4.0,
+            radius: PositiveLength::new(4.0).expect("positive radius"),
         }
+    }
+
+    #[test]
+    fn source_circle_keeps_checked_center_and_radius() {
+        let values = [
+            1.0_f64, 2.0, 3.0, // plane origin
+            1.0, 0.0, 0.0, // x axis
+            0.0, 1.0, 0.0, // y axis
+            0.0, 0.0, 1.0, // z axis
+            0.0, 0.0, 1.0, -3.0, // plane equation
+            2.0,  // radius
+            3.0, 2.0, 3.0, // zero angle
+            1.0, 4.0, 3.0, // quarter turn
+            -1.0, 2.0, 3.0, // half turn
+        ];
+        let mut bytes = values
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let circle = super::read_circle(&mut reader, crate::test_support::millimeter_scale(2.0))
+            .expect("valid circle");
+        assert_eq!(circle.center.get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius.get(), 4.0);
+
+        bytes[128..136].copy_from_slice(&0.0_f64.to_le_bytes());
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("circle reader");
+        let error = super::read_circle(&mut reader, MillimeterScale::IDENTITY)
+            .expect_err("zero circle radius");
+        assert!(error.to_string().contains("circle radius is invalid"));
     }
 
     #[test]
@@ -2282,6 +2445,29 @@ mod tests {
     }
 
     #[test]
+    fn bounded_polyline_refuses_nonfinite_and_decreasing_parameters_at_source() {
+        for (parameters, refused_offset) in [([f64::NAN, 12.0], 65), ([10.0, 9.0], 73)] {
+            let mut bytes = vec![0x10];
+            bytes.extend(2_i32.to_le_bytes());
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(2_i32.to_le_bytes());
+            for value in parameters {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(3_i32.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let result = read_polyline(&mut reader, MillimeterScale::IDENTITY, None);
+            assert!(matches!(
+                result,
+                Err(GeometryError::Malformed(FramingError::Structural { offset, message }))
+                    if offset == refused_offset && message == "polyline parameters are not increasing"
+            ));
+        }
+    }
+
+    #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
         let curve = NurbsCurve::from_lanes(
             1,
@@ -2312,6 +2498,73 @@ mod tests {
             unreachable!("test retains the NURBS curve carrier");
         };
         assert_eq!(curve.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn plane_space_circle_scaling_keeps_admitted_center_and_frame() {
+        let center = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite center");
+        let circle = CircleCurve::new(
+            center,
+            OrthonormalFrame3::IDENTITY,
+            PositiveLength::new(2.0).expect("positive radius"),
+        );
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled circle");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+            ..
+        } = decoded
+        else {
+            panic!("circle remains solved");
+        };
+        assert_eq!(circle.center().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(circle.radius().get(), 4.0);
+        assert_eq!(*circle.frame(), OrthonormalFrame3::IDENTITY);
+    }
+
+    #[test]
+    fn plane_space_line_scaling_keeps_admitted_origin_and_direction() {
+        let origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite origin");
+        let line = LineCurve::new(origin, UnitVector3::Z_AXIS);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled line");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+            ..
+        } = decoded
+        else {
+            panic!("line remains solved");
+        };
+        assert_eq!(line.origin().get(), Point3::new(2.0, 4.0, 6.0));
+        assert_eq!(line.direction(), UnitVector3::Z_AXIS);
+    }
+
+    #[test]
+    fn plane_space_degenerate_scaling_keeps_admitted_point() {
+        let point = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite point");
+        let curve = DegenerateCurve::new(point);
+        let mut decoded = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            Diagnostics::new(),
+        );
+        scale_decoded_curve(&mut decoded, crate::test_support::millimeter_scale(2.0), 17)
+            .expect("scaled degenerate curve");
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(curve)),
+            ..
+        } = decoded
+        else {
+            panic!("degenerate curve remains solved");
+        };
+        assert_eq!(curve.point().get(), Point3::new(2.0, 4.0, 6.0));
     }
 
     #[test]
@@ -2360,16 +2613,17 @@ mod tests {
         let decoded = DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    circle.center,
+                    circle.center.get(),
                     circle.axis,
                     circle.xaxis,
-                    circle.radius,
+                    circle.radius.get(),
                 )
                 .unwrap(),
             )),
             Diagnostics::new(),
         );
-        let nurbs = exact_nurbs(&decoded, 0).expect("required invariant");
+        let nurbs =
+            with_test_context(|ctx| exact_nurbs(ctx, &decoded, 0)).expect("required invariant");
         assert_eq!(nurbs.degree(), 2);
         assert_eq!(nurbs.control_points().len(), 9);
         assert_eq!(nurbs.knots().len(), 12);
@@ -2404,7 +2658,8 @@ mod tests {
             end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
-        let converted = exact_nurbs(&nested, 0).expect("required invariant");
+        let converted =
+            with_test_context(|ctx| exact_nurbs(ctx, &nested, 0)).expect("required invariant");
         assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
     }
@@ -2431,7 +2686,8 @@ mod tests {
             false,
         )
         .expect("valid test quadratic");
-        let joined = join_nurbs_segments(vec![line, quadratic], 0).expect("join");
+        let joined = with_test_context(|ctx| join_nurbs_segments(ctx, vec![line, quadratic], 0))
+            .expect("join");
         assert_eq!(joined.curve.degree(), 2);
         assert_eq!(
             joined.curve.knots().as_slice(),
@@ -2455,8 +2711,12 @@ mod tests {
             .unwrap()
         };
         for degree in [1, 2] {
-            let normalized = super::elevate_to_degree(&line(1.), degree, 0).unwrap();
-            let rescaled = super::elevate_to_degree(&line(1e200), degree, 0).unwrap();
+            let normalized =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1.), degree, 0))
+                    .unwrap();
+            let rescaled =
+                with_test_context(|ctx| super::elevate_to_degree(ctx, &line(1e200), degree, 0))
+                    .unwrap();
             for (a, b) in normalized
                 .control_points()
                 .iter()

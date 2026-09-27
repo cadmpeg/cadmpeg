@@ -7,8 +7,9 @@ use crate::loss::Diagnostics;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{
@@ -19,7 +20,7 @@ use crate::curves::{error, GeometryError};
 use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
 };
-use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
+use crate::settings::{bbox, interval, BoundingBox, CoordinateLane, Interval, Point3};
 use crate::wire::{uuid, Uuid};
 
 /// `ON_Brep` class UUID.
@@ -47,6 +48,39 @@ const MAX_BREP_ITEMS: usize = 1 << 20;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
+
+/// A Brep tolerance admitted with both exact source unset sentinels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum BrepTolerance {
+    Unset,
+    NonNegative(NonNegativeReal),
+}
+
+impl BrepTolerance {
+    pub(crate) fn new(value: f64) -> Option<Self> {
+        if value == ON_UNSET_VALUE || value == ON_UNSET_POSITIVE_VALUE {
+            Some(Self::Unset)
+        } else {
+            NonNegativeReal::new(value).map(Self::NonNegative)
+        }
+    }
+
+    pub(crate) fn positive(self) -> Option<PositiveReal> {
+        match self {
+            Self::NonNegative(value) => value.positive(),
+            Self::Unset => None,
+        }
+    }
+
+    pub(crate) fn fit(self) -> Option<cadmpeg_ir::geometry::FitTolerance> {
+        match self {
+            Self::NonNegative(value) => value
+                .positive()
+                .map(|_| cadmpeg_ir::geometry::FitTolerance::from(value)),
+            Self::Unset => None,
+        }
+    }
+}
 const ON_BREP_FACE_SIDE: Uuid = Uuid::from_canonical([
     0x30, 0x93, 0x03, 0x70, 0x0d, 0x5b, 0x4e, 0xe4, 0x80, 0x83, 0xbd, 0x63, 0x5c, 0x73, 0x98, 0xa4,
 ]);
@@ -115,7 +149,7 @@ pub(crate) struct RawBrepVertex {
     /// legacy Brep computes it as the mean of the curve endpoints merged into
     /// the vertex, and a non-finite coordinate carries through to the point,
     /// where the Brep validator owns it.
-    pub(crate) point: [f64; 3],
+    pub(crate) point: CoordinateLane<3>,
     /// Incident edge indexes.
     pub(crate) edges: Vec<i32>,
     /// Vertex tolerance.
@@ -415,14 +449,16 @@ pub(crate) struct RawBrep {
 }
 
 /// One vertex's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedVertex {
     /// Incident edge positions.
     pub(crate) edges: Vec<usize>,
+    /// Admitted source tolerance.
+    pub(crate) tolerance: BrepTolerance,
 }
 
 /// One edge's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedEdge {
     /// C3 child slot position.
     pub(crate) curve: usize,
@@ -430,10 +466,12 @@ pub(crate) struct ResolvedEdge {
     pub(crate) vertices: [usize; 2],
     /// Trim positions using this edge.
     pub(crate) trims: Vec<usize>,
+    /// Admitted source tolerance.
+    pub(crate) tolerance: BrepTolerance,
 }
 
 /// One trim's references, resolved to array positions by validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedTrim {
     /// C2 child slot position, absent on a point-on-surface trim.
     pub(crate) curve: Option<usize>,
@@ -443,6 +481,8 @@ pub(crate) struct ResolvedTrim {
     pub(crate) vertices: [usize; 2],
     /// Owning loop position.
     pub(crate) loop_index: usize,
+    /// Admitted two-dimensional and three-dimensional source tolerances.
+    pub(crate) tolerances: [BrepTolerance; 2],
 }
 
 /// One loop's references, resolved to array positions by validation.
@@ -473,7 +513,7 @@ pub(crate) struct ResolvedFaceSide {
 }
 
 /// Every B-rep reference, resolved to an array position by validation.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct ResolvedBrep {
     /// Resolved vertex references, positionally aligned with the raw vertices.
     pub(crate) vertices: Vec<ResolvedVertex>,
@@ -539,8 +579,8 @@ impl ValidatedRawBrep {
         let mut resolved = ResolvedBrep::default();
         for vertex in &raw.vertices {
             let edges = slots(&vertex.edges, raw.edges.len(), "vertex edge")?;
-            finite_tolerance(vertex.tolerance, "vertex tolerance")?;
-            resolved.vertices.push(ResolvedVertex { edges });
+            let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+            resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
         for (index, edge) in raw.edges.iter().enumerate() {
             let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
@@ -554,7 +594,7 @@ impl ValidatedRawBrep {
             unique(&edge.trims, "edge trim")?;
             ordered_interval(edge.proxy_domain, "edge proxy domain")?;
             ordered_interval(edge.domain, "edge domain")?;
-            finite_tolerance(edge.tolerance, "edge tolerance")?;
+            let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
             for trim in &trims {
                 if position(raw.trims[*trim].edge) != Some(index) {
                     return Err(error(
@@ -567,6 +607,7 @@ impl ValidatedRawBrep {
                 curve,
                 vertices,
                 trims,
+                tolerance,
             });
         }
         for (trim_index, trim) in raw.trims.iter().enumerate() {
@@ -604,7 +645,11 @@ impl ValidatedRawBrep {
             }
             ordered_interval(trim.proxy_domain, "trim proxy domain")?;
             ordered_interval(trim.domain, "trim domain")?;
-            for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
+            let tolerances = [
+                finite_tolerance(trim.tolerances[0], "trim tolerance")?,
+                finite_tolerance(trim.tolerances[1], "trim tolerance")?,
+            ];
+            for tolerance in trim.legacy_tolerances {
                 finite_tolerance(tolerance, "trim tolerance")?;
             }
             let edge = if matches!(
@@ -632,6 +677,7 @@ impl ValidatedRawBrep {
                 edge,
                 vertices,
                 loop_index,
+                tolerances,
             });
         }
         validate_edge_incidences(&raw, &resolved)?;
@@ -909,9 +955,10 @@ pub(crate) fn parse(
     let (faces, _) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
     let (render_meshes, analysis_meshes) = if minor >= 1 {
-        let (render, _) = read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        let (render, _) =
+            read_mesh_sides(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?;
         let (analysis, _) =
-            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+            read_mesh_sides(ctx, bytes, &mut reader, archive, faces.len(), &mut warnings)?;
         (render, analysis)
     } else {
         (Vec::new(), Vec::new())
@@ -1026,7 +1073,7 @@ impl LegacyVertex {
                 *coordinate =
                     scaled_mean(self.point_sum[axis], self.point_count)? * self.point_scale[axis];
             }
-            self.vertex.point = point;
+            self.vertex.point = CoordinateLane::Derived(point);
         }
         Some(self.vertex)
     }
@@ -1356,7 +1403,7 @@ fn parse_legacy_major2(
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
                         index,
-                        point: [0.0; 3],
+                        point: CoordinateLane::Derived([0.0; 3]),
                         edges: Vec::new(),
                         tolerance: 0.0,
                         source_range: 0..0,
@@ -1682,7 +1729,7 @@ fn legacy_vertex(
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
-        .find(|(_, value)| value.vertex.point == point)
+        .find(|(_, value)| value.vertex.point.get() == point)
     {
         return Ok(index);
     }
@@ -1692,7 +1739,7 @@ fn legacy_vertex(
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
             index: stored_index,
-            point,
+            point: CoordinateLane::Derived(point),
             edges: Vec::new(),
             tolerance: 0.0,
             source_range: 0..0,
@@ -1875,7 +1922,7 @@ fn read_vertices(
         let tolerance = child.f64()?;
         result.push(RawBrepVertex {
             index,
-            point: point.0.get(),
+            point: CoordinateLane::Admitted(point.0),
             edges,
             tolerance,
             source_range: start..child.position(),
@@ -2138,6 +2185,7 @@ fn read_faces(
 }
 
 fn read_mesh_sides(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -2147,13 +2195,14 @@ fn read_mesh_sides(
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
     let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
-        let mut result = Vec::with_capacity(face_count);
+        let mut result = ctx.alloc_filled(face_count, None, "Rhino Brep mesh cache slots")?;
         let mut children = Vec::new();
-        for _ in 0..face_count {
+        for slot in &mut result {
             let present = child.bool()?;
             let mesh = if present {
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
+                ctx.charge_collection_items(1, "Rhino Brep mesh cache child ranges")?;
                 children.push(object.range());
                 let class =
                     parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings);
@@ -2187,30 +2236,22 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            result.push(mesh);
+            *slot = mesh;
         }
         finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
         Ok(result) => Ok(result),
+        Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
+            let degraded = ctx.alloc_filled(face_count, None, "Rhino Brep degraded mesh slots")?;
             reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push_coded(
                 crate::loss::RhinoLossCode::BrepMeshCacheDegraded,
                 format!("Brep mesh cache degraded: {error}"),
             );
-            Ok((
-                alloc_filled(face_count, None, "Rhino Brep degraded mesh slots").map_err(
-                    |allocation| {
-                        GeometryError::malformed(
-                            chunk.range().start,
-                            format!("Brep degraded mesh allocation refused: {allocation}"),
-                        )
-                    },
-                )?,
-                chunk.range(),
-            ))
+            Ok((degraded, chunk.range()))
         }
     }
 }
@@ -2780,14 +2821,9 @@ fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     Ok(())
 }
 
-fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
-    if !(value == ON_UNSET_VALUE
-        || value == ON_UNSET_POSITIVE_VALUE
-        || value.is_finite() && value >= 0.0)
-    {
-        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
-    }
-    Ok(())
+fn finite_tolerance(value: f64, label: &str) -> Result<BrepTolerance, GeometryError> {
+    BrepTolerance::new(value)
+        .ok_or_else(|| GeometryError::unpositioned(format!("{label} is invalid")))
 }
 
 fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
@@ -2920,7 +2956,7 @@ mod tests {
             }
             let vertex = vertices.pop().unwrap().into_vertex().unwrap();
             assert_eq!(
-                vertex.point,
+                vertex.point.get(),
                 [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
             );
         }
@@ -2952,6 +2988,17 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("test input fits service profile");
         super::parse(&ctx, bytes, range, archive, writer_version, userdata)
+    }
+
+    fn with_test_context<R>(
+        bytes: &[u8],
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("test input fits service profile");
+        f(&ctx)
     }
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
@@ -3262,11 +3309,14 @@ mod tests {
             .enumerate()
             .map(|(index, edges)| RawBrepVertex {
                 index: i32::try_from(index).expect("index"),
-                point: [
-                    f64::from((index == 1) as u8),
-                    f64::from((index == 2) as u8),
-                    0.0,
-                ],
+                point: super::CoordinateLane::Admitted(
+                    crate::test_support::point3([
+                        f64::from((index == 1) as u8),
+                        f64::from((index == 2) as u8),
+                        0.0,
+                    ])
+                    .0,
+                ),
                 edges: edges.into_iter().collect(),
                 tolerance: 0.0,
                 source_range: 0..0,
@@ -3497,7 +3547,7 @@ mod tests {
             },
             vertices: vec![RawBrepVertex {
                 index: 0,
-                point: [0.0, 0.0, 0.0],
+                point: super::CoordinateLane::Admitted(crate::test_support::point3([0.0; 3]).0),
                 edges: Vec::new(),
                 tolerance: 0.0,
                 source_range: 0..0,
@@ -3735,13 +3785,17 @@ mod tests {
     /// The one-trim fixture resolved the way validation resolves it.
     fn degenerate_trim_resolved(curve: Option<usize>) -> ResolvedBrep {
         ResolvedBrep {
-            vertices: vec![ResolvedVertex { edges: Vec::new() }],
+            vertices: vec![ResolvedVertex {
+                edges: Vec::new(),
+                tolerance: super::BrepTolerance::new(0.0).expect("valid source tolerance"),
+            }],
             edges: Vec::new(),
             trims: vec![ResolvedTrim {
                 curve,
                 edge: None,
                 vertices: [0, 0],
                 loop_index: 0,
+                tolerances: [super::BrepTolerance::new(0.0).expect("valid source tolerance"); 2],
             }],
             loops: vec![ResolvedLoop {
                 trims: vec![0],
@@ -3775,11 +3829,106 @@ mod tests {
         let bytes = anonymous(&[1]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("degraded cache");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("degraded cache");
         assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn degraded_mesh_slots_refuse_collection_limit_without_warning() {
+        let bytes = anonymous(&[1]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one degraded mesh slot exceeds the remaining collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep degraded mesh slots"
+        ));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn parsed_mesh_slots_refuse_collection_limit_without_warning() {
+        let bytes = anonymous(&[0]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one parsed mesh slot exceeds zero collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep mesh cache slots"
+        ));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn mesh_child_ranges_refuse_collection_limit_without_warning() {
+        let presence = [1_u8];
+        let wrapper = mesh_class_wrapper_with_userdata();
+        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+        let mut warnings = Diagnostics::new();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service profile");
+        let error = read_mesh_sides(
+            &ctx,
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
+        .expect_err("one child range exceeds the remaining collection items");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino Brep mesh cache child ranges"
+        ));
+        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -3802,8 +3951,17 @@ mod tests {
         let bytes = anonymous(&[0]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("empty cache slot");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
         assert!(slots[0].is_none());
         assert!(warnings.is_empty());
@@ -3817,8 +3975,17 @@ mod tests {
         let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
-            .expect("mesh cache with userdata");
+        let (slots, _) = with_test_context(&bytes, |ctx| {
+            read_mesh_sides(
+                ctx,
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                1,
+                &mut warnings,
+            )
+        })
+        .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
         assert!(slots[0].is_some(), "warnings: {warnings:?}");
         assert_eq!(slots[0].as_ref().unwrap().userdata.len(), 1);
