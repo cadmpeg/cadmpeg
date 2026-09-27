@@ -380,11 +380,12 @@ fn parse_trace_image(
         let mut warnings = Diagnostics::new();
         let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
+            ctx,
             losses,
             warnings,
             source_offset,
             "VIEW/TRACE_IMAGE/FILE_REFERENCE",
-        );
+        )?;
         let (value, range) = parsed?;
         (Some(value), Some(range))
     } else {
@@ -433,11 +434,12 @@ fn parse_wallpaper(
         let mut warnings = Diagnostics::new();
         let parsed = image_reference(ctx, data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
+            ctx,
             losses,
             warnings,
             source_offset,
             "VIEW/WALLPAPER/FILE_REFERENCE",
-        );
+        )?;
         let (value, range) = parsed?;
         (Some(value), Some(range))
     } else {
@@ -456,23 +458,20 @@ fn parse_wallpaper(
 }
 
 fn append_file_reference_diagnostics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     diagnostics: Diagnostics,
     source_offset: usize,
-    tag: &str,
-) {
+    tag: &'static str,
+) -> Result<(), FramingError> {
     for diagnostic in diagnostics {
         let code = diagnostic
             .code
             .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-        losses.push(
-            code.note(format!(
-                "file reference at offset {}: {}",
-                source_offset, diagnostic.message
-            ))
-            .with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
-        );
+        push_view_loss(ctx, losses, code, source_offset, tag,
+            format_args!("file reference at offset {}: {}", source_offset, diagnostic.message))?;
     }
+    Ok(())
 }
 
 fn located_presentation_loss(
@@ -507,14 +506,22 @@ fn push_list_loss(
     Ok(())
 }
 
-fn located_integrity_loss(
+fn push_view_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    code: crate::loss::RhinoLossCode,
     offset: usize,
-    tag: impl Into<String>,
-    message: impl Into<String>,
-) -> LossNote {
-    crate::loss::RhinoLossCode::IntegrityFailure
-        .note(message.into())
-        .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
+    tag: &'static str,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    crate::wire::reserve_collection(ctx, losses, 1, "Rhino view losses")?;
+    let loss = crate::wire::admitted_loss(ctx, code, message, "Rhino view loss message")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(tag.len()),
+        "Rhino view loss tag",
+    )?;
+    losses.push(loss.with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag)));
+    Ok(())
 }
 
 fn view_checksum_tag(typecode: u32) -> &'static str {
@@ -1087,16 +1094,9 @@ fn scan_viewport_userdata(
                     let code = warning
                         .code
                         .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
-                    losses.push(
-                        code.note(format!(
-                            "viewport userdata at offset {}: {}",
-                            child.header_start, warning.message
-                        ))
-                        .with_provenance(
-                            SourceProvenance::root("rhino", child.header_start as u64)
-                                .with_tag("VIEW/VIEWPORT_USERDATA"),
-                        ),
-                    );
+                    push_view_loss(ctx, losses, code, child.header_start,
+                        "VIEW/VIEWPORT_USERDATA",
+                        format_args!("viewport userdata at offset {}: {}", child.header_start, warning.message))?;
                 }
                 parsed?;
                 has_untyped_content = true;
@@ -1168,11 +1168,11 @@ fn parse_view(
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
-                losses.push(located_integrity_loss(
+                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
                     child.header_start,
                     view_checksum_tag(child.typecode),
-                    warning,
-                ));
+                    format_args!("{warning}"),
+                )?;
             }
         }
         match child.typecode {
@@ -1186,13 +1186,14 @@ fn parse_view(
                         return Err(FramingError::Resource(limit));
                     }
                     Err(error) => {
-                        let message = format!("viewport retained: {error}");
-                        parse_warnings.push(message.clone());
-                        losses.push(located_presentation_loss(
+                        let message = crate::wire::admitted_format(ctx, format_args!("viewport retained: {error}"), "Rhino view parse warning")?;
+                        crate::wire::reserve_collection(ctx, &mut parse_warnings, 1, "Rhino view parse warnings")?;
+                        parse_warnings.push(crate::wire::copy_retained_string(ctx, &message, "Rhino view parse warning copy")?);
+                        push_view_loss(ctx, losses, crate::loss::RhinoLossCode::PresentationRecordDropped,
                             child.header_start,
                             "VIEW/VIEWPORT",
-                            message,
-                        ));
+                            format_args!("{message}"),
+                        )?;
                     }
                 }
             }
@@ -1203,11 +1204,11 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
-                    losses.push(located_integrity_loss(
+                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/TRACE_IMAGE",
-                        warning,
-                    ));
+                        format_args!("{warning}"),
+                    )?;
                 }
                 trace_image = Some(value);
             }
@@ -1229,11 +1230,11 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, nested_children)?
                 {
-                    losses.push(located_integrity_loss(
+                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/WALLPAPER",
-                        warning,
-                    ));
+                        format_args!("{warning}"),
+                    )?;
                 }
                 wallpaper = Some(value);
             }
@@ -1270,70 +1271,43 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    losses.push(located_integrity_loss(
+                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
                         child.header_start,
                         "VIEW/ATTRIBUTES",
-                        warning,
-                    ));
+                        format_args!("{warning}"),
+                    )?;
                 }
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
                 if child.short() {
-                    losses.push(
-                        crate::loss::RhinoLossCode::ViewportUserdataDropped
-                            .note(format!(
-                                "viewport userdata at offset {} must be a long chunk",
-                                child.header_start
-                            ))
-                            .with_provenance(
-                                SourceProvenance::root("rhino", child.header_start as u64)
-                                    .with_tag("VIEW/VIEWPORT_USERDATA"),
-                            ),
-                    );
+                    push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                        child.header_start, "VIEW/VIEWPORT_USERDATA",
+                        format_args!("viewport userdata at offset {} must be a long chunk", child.header_start))?;
                 } else {
                     match scan_viewport_userdata(ctx, data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
                             {
-                                losses.push(located_integrity_loss(
+                                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
                                     child.header_start,
                                     "VIEW/VIEWPORT_USERDATA",
-                                    warning,
-                                ));
+                                    format_args!("{warning}"),
+                                )?;
                             }
                             if scan.has_untyped_content {
-                                losses.push(
-                                    crate::loss::RhinoLossCode::ViewportUserdataDropped
-                                        .note(format!(
-                                            "viewport userdata at offset {} has no typed CADIR owner",
-                                            child.header_start
-                                        ))
-                                        .with_provenance(
-                                            SourceProvenance::root(
-                                                "rhino",
-                                                child.header_start as u64,
-                                            )
-                                            .with_tag("VIEW/VIEWPORT_USERDATA"),
-                                        ),
-                                );
+                                push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                                    child.header_start, "VIEW/VIEWPORT_USERDATA",
+                                    format_args!("viewport userdata at offset {} has no typed CADIR owner", child.header_start))?;
                             }
                         }
                         Err(FramingError::Resource(limit)) => {
                             return Err(FramingError::Resource(limit));
                         }
-                        Err(error) => losses.push(
-                            crate::loss::RhinoLossCode::ViewportUserdataDropped
-                                .note(format!(
-                                    "viewport userdata at offset {} could not be framed: {error}",
-                                    child.header_start
-                                ))
-                                .with_provenance(
-                                    SourceProvenance::root("rhino", child.header_start as u64)
-                                        .with_tag("VIEW/VIEWPORT_USERDATA"),
-                                ),
-                        ),
+                        Err(error) => push_view_loss(ctx, losses, crate::loss::RhinoLossCode::ViewportUserdataDropped,
+                            child.header_start, "VIEW/VIEWPORT_USERDATA",
+                            format_args!("viewport userdata at offset {} could not be framed: {error}", child.header_start))?,
                     }
                 }
             }
@@ -1384,11 +1358,11 @@ fn parse_view(
         _ => None,
     };
     if let Some(warning) = checksum_warning {
-        losses.push(located_integrity_loss(
+        push_view_loss(ctx, losses, crate::loss::RhinoLossCode::IntegrityFailure,
             record.header_start,
             "VIEW/RECORD",
-            warning,
-        ));
+            format_args!("{warning}"),
+        )?;
     }
     Ok(ViewRecord {
         id: crate::wire::admitted_format(
@@ -1618,6 +1592,10 @@ fn retain_unbound_view_record(
         ),
         "Rhino unbound view loss message",
     )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(message.len()),
+        "Rhino unbound view loss message",
+    )?;
     losses.push(located_presentation_loss(record.range.start, tag, message));
     crate::wire::reserve_collection(ctx, opaque_records, 1, "Rhino opaque view records")?;
     opaque_records.push(OpaqueRecord {
@@ -1678,13 +1656,17 @@ pub(crate) fn install(
                             1,
                             "Rhino view setting losses",
                         )?;
-                        losses.push(located_presentation_loss(
-                            record.range.start,
-                            "VIEW/NAMED_CPLANES",
-                            format!(
-                                "named construction-plane list at offset {} was omitted after parsing failed: {error}",
-                                record.range.start
-                            ),
+                        let loss = crate::wire::admitted_loss(ctx,
+                            crate::loss::RhinoLossCode::PresentationRecordDropped,
+                            format_args!("named construction-plane list at offset {} was omitted after parsing failed: {error}", record.range.start),
+                            "Rhino view setting loss message")?;
+                        ctx.charge_retained(
+                            cadmpeg_core::decode::u64_from_index("VIEW/NAMED_CPLANES".len()),
+                            "Rhino view setting loss tag",
+                        )?;
+                        losses.push(loss.with_provenance(
+                            SourceProvenance::root("rhino", record.range.start as u64)
+                                .with_tag("VIEW/NAMED_CPLANES"),
                         ));
                         crate::wire::reserve_collection(
                             ctx,
@@ -2884,6 +2866,40 @@ mod tests {
                 .and_then(|provenance| provenance.tag.as_deref()),
             Some("VIEW/RECORD")
         );
+    }
+
+    #[test]
+    fn view_record_crc_loss_refuses_collection_limit() {
+        let archive = ArchiveVersion::V5;
+        let end_marker = short_chunk(archive, super::TCODE_ENDOFTABLE, 0);
+        let end_marker_range = 0..end_marker.len();
+        let mut view = crc_chunk_excluding(
+            archive,
+            super::VIEW_RECORD,
+            &end_marker,
+            std::slice::from_ref(&end_marker_range),
+        );
+        let crc_offset = view.len() - 1;
+        view[crc_offset] ^= 1;
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(view);
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
+        let error = with_collection_limit(&body, 2, |ctx| {
+            parse_list(
+                ctx,
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+            )
+            .expect_err("the view loss exceeds two child collection items")
+        });
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino view losses"
+        ));
     }
 
     #[test]
