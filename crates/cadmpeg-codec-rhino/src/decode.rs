@@ -6581,19 +6581,27 @@ pub(crate) fn seal_for_test(
 
 /// Admits an archive tolerance with a recorded default repair.
 pub(crate) fn admitted_tolerance<T: Copy + Into<f64>>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     admitted: Option<T>,
     value: f64,
     default: T,
     field: &str,
     losses: &mut Vec<LossNote>,
-) -> T {
-    admitted.unwrap_or_else(|| {
-        losses.push(RhinoLossCode::RedundantFieldRepaired.note(format!(
-            "{field} tolerance {value} replaced with default {}",
-            default.into()
-        )));
-        default
-    })
+) -> Result<T, cadmpeg_core::CodecError> {
+    let Some(value_admitted) = admitted else {
+        crate::wire::reserve_collection(ctx, losses, 1, "Rhino V1 tolerance losses")?;
+        losses.push(crate::wire::admitted_loss(
+            ctx,
+            RhinoLossCode::RedundantFieldRepaired,
+            format_args!(
+                "{field} tolerance {value} replaced with default {}",
+                default.into()
+            ),
+            "Rhino V1 tolerance loss text",
+        )?);
+        return Ok(default);
+    };
+    Ok(value_admitted)
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {

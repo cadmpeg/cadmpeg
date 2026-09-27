@@ -30,6 +30,7 @@ use serde::Serialize;
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
+use crate::wire::{admitted_format, admitted_loss, reserve_collection};
 use crate::settings::MillimeterScale;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -567,7 +568,6 @@ fn retain_v1_record(
     let range = chunk.range();
     let bytes = &data[range.clone()];
     ctx.charge_entities(1, "Rhino V1 source record")?;
-    ctx.charge_collection_items(1, "Rhino V1 source records")?;
     let retained_end = retained_bytes.checked_add(bytes.len()).filter(|end| {
         bytes.len() <= crate::decode::RETAINED_RECORD_CAP
             && *end <= crate::decode::RETAINED_DOCUMENT_CAP
@@ -600,6 +600,40 @@ fn retain_v1_record(
             Vec::new(),
         ),
     })
+}
+
+fn push_v1_record(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<UnknownRecord>,
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    retained_bytes: &mut usize,
+) -> Result<(), CodecError> {
+    reserve_collection(ctx, records, 1, "Rhino V1 source records")?;
+    records.push(retain_v1_record(ctx, data, chunk, retained_bytes)?);
+    Ok(())
+}
+
+fn count_v1_omission(
+    ctx: &DecodeContext<'_>,
+    omitted: &mut BTreeMap<u32, usize>,
+    typecode: u32,
+) -> Result<(), CodecError> {
+    if !omitted.contains_key(&typecode) {
+        ctx.charge_collection_items(1, "Rhino V1 omitted typecodes")?;
+    }
+    *omitted.entry(typecode).or_default() += 1;
+    Ok(())
+}
+
+fn push_v1_diagnostic(
+    ctx: &DecodeContext<'_>,
+    diagnostics: &mut Vec<String>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    reserve_collection(ctx, diagnostics, 1, "Rhino V1 diagnostics")?;
+    diagnostics.push(admitted_format(ctx, message, "Rhino V1 diagnostic message")?);
+    Ok(())
 }
 
 fn child_with_type(
@@ -3048,24 +3082,26 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             };
             let linear = reader.f64().map_err(malformed)? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
+                ctx,
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
                 linear,
                 CadIr::empty().tolerances.linear,
                 "linear",
                 &mut tolerance_losses,
-            );
+            )?;
             let _relative_tolerance = reader.f64().map_err(malformed)?;
             let angular = reader.f64().map_err(malformed)?;
             ir.tolerances.angular = crate::decode::admitted_tolerance(
+                ctx,
                 cadmpeg_ir::scalar::PositiveAngle::new(angular),
                 angular,
                 CadIr::empty().tolerances.angular,
                 "angular",
                 &mut tolerance_losses,
-            );
+            )?;
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
-            *omitted.entry(chunk.typecode).or_default() += 1;
-            opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(malformed)?;
@@ -3142,7 +3178,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 color: None,
                 visible: None,
             });
-            typed_source_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
             decoded += 1;
         } else if matches!(
             chunk.typecode,
@@ -3159,7 +3195,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             match v1_direct_record(ctx, data, &chunk, scale) {
                 Ok(record) => {
                     ctx.charge_entities(1, "Rhino V1 direct record")?;
-                    admit_v1_values::<V1DirectRecord>(ctx, 1, "Rhino V1 direct record storage")?;
+                    ctx.charge_retained(
+                        u64::try_from(std::mem::size_of::<V1DirectRecord>()).map_err(|_| {
+                            CodecError::NotImplemented("Rhino V1 direct record exceeds address space".to_string())
+                        })?,
+                        "Rhino V1 direct record storage",
+                    )?;
+                    reserve_collection(ctx, &mut direct_records, 1, "Rhino V1 direct records")?;
                     if matches!(
                         chunk.typecode,
                         TCODE_TEXT_BLOCK
@@ -3177,18 +3219,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         decoded_nurbs_breps += 1;
                     }
                     direct_records.push(record);
-                    typed_source_records.push(retain_v1_record(
-                        ctx,
-                        data,
-                        &chunk,
-                        &mut retained_bytes,
-                    )?);
+                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 direct record at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 direct record at offset {offset}: {error}"))?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
@@ -3319,18 +3356,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         });
                         decoded_curves += 1;
                     }
-                    typed_source_records.push(retain_v1_record(
-                        ctx,
-                        data,
-                        &chunk,
-                        &mut retained_bytes,
-                    )?);
+                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 curve at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 curve at offset {offset}: {error}"))?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
@@ -3344,19 +3376,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )
             }) {
                 Ok(()) => {
-                    typed_source_records.push(retain_v1_record(
-                        ctx,
-                        data,
-                        &chunk,
-                        &mut retained_bytes,
-                    )?);
+                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
                     decoded_breps += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 Brep at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 Brep at offset {offset}: {error}"))?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short() {
@@ -3371,24 +3398,19 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
                     admit_v1_values::<Tessellation>(ctx, 1, "Rhino V1 mesh storage")?;
                     ir.model.tessellations.push(mesh);
-                    typed_source_records.push(retain_v1_record(
-                        ctx,
-                        data,
-                        &chunk,
-                        &mut retained_bytes,
-                    )?);
+                    push_v1_record(ctx, &mut typed_source_records, data, &chunk, &mut retained_bytes)?;
                     decoded_meshes += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 mesh at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(ctx, &mut diagnostics, format_args!("V1 mesh at offset {offset}: {error}"))?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else {
-            *omitted.entry(chunk.typecode).or_default() += 1;
-            opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
         }
         offset = chunk.next_offset();
     }
@@ -3409,22 +3431,72 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         .iter()
         .filter(|record| record.data().is_some())
         .count();
-    let losses = omitted
-        .into_iter()
-        .map(|(typecode, count)| {
-            if is_v1_presentation_setting(typecode) {
-                RhinoLossCode::PresentationRecordDropped.note(format!(
-                    "V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"
-                ))
-            } else {
-                RhinoLossCode::ObjectFamilyNotTransferred.note(format!(
-                    "V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"
-                ))
-            }
-        })
-        .chain(tolerance_losses)
-        .collect();
+    let mut losses = Vec::new();
+    for (typecode, count) in omitted {
+        reserve_collection(ctx, &mut losses, 1, "Rhino V1 report losses")?;
+        losses.push(if is_v1_presentation_setting(typecode) {
+            admitted_loss(
+                ctx,
+                RhinoLossCode::PresentationRecordDropped,
+                format_args!("V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"),
+                "Rhino V1 report loss text",
+            )?
+        } else {
+            admitted_loss(
+                ctx,
+                RhinoLossCode::ObjectFamilyNotTransferred,
+                format_args!("V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"),
+                "Rhino V1 report loss text",
+            )?
+        });
+    }
+    reserve_collection(ctx, &mut losses, tolerance_losses.len(), "Rhino V1 report losses")?;
+    losses.append(&mut tolerance_losses);
+    let mut notes = Vec::new();
+    reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
+    notes.push(admitted_format(ctx, format_args!(
+        "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
+    ), "Rhino V1 report note text")?);
+    if !direct_records.is_empty() {
+        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(admitted_format(ctx, format_args!(
+            "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
+        ), "Rhino V1 report note text")?);
+    }
+    if opaque_count > 0 {
+        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(admitted_format(ctx, format_args!(
+            "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
+        ), "Rhino V1 report note text")?);
+    }
+    if typed_source_count > 0 {
+        reserve_collection(ctx, &mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(admitted_format(ctx, format_args!(
+            "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
+        ), "Rhino V1 report note text")?);
+    }
+    reserve_collection(ctx, &mut notes, diagnostics.len(), "Rhino V1 report notes")?;
+    notes.extend(diagnostics);
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+    for (key, count) in [
+        (crate::coverage::LEGACY_V1_POINTS, decoded),
+        (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
+        (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
+        (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
+        (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
+        (crate::coverage::LEGACY_V1_NURBS_CURVES, decoded_nurbs_curves),
+        (crate::coverage::LEGACY_V1_NURBS_SURFACES, decoded_nurbs_surfaces),
+        (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
+    ] {
+        ctx.charge_collection_items(1, "Rhino V1 coverage entries")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(key.as_str().len()), "Rhino V1 coverage keys")?;
+        coverage.record(key, count);
+    }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    for _ in opaque_records.iter().chain(&typed_source_records) {
+        ctx.charge_collection_items(2, "Rhino V1 source fidelity indexes")?;
+        ctx.charge_retained(5, "Rhino V1 source fidelity owners")?;
+    }
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
@@ -3433,42 +3505,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ir,
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
-            coverage: [
-                (crate::coverage::LEGACY_V1_POINTS, decoded),
-                (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
-                (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
-                (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
-                (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
-                (crate::coverage::LEGACY_V1_NURBS_CURVES, decoded_nurbs_curves),
-                (
-                    crate::coverage::LEGACY_V1_NURBS_SURFACES,
-                    decoded_nurbs_surfaces,
-                ),
-                (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
-            ]
-            .into_iter()
-            .collect(),
+            coverage,
             losses,
-            notes: std::iter::once(format!(
-            "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
-        ))
-        .chain((!direct_records.is_empty()).then(|| {
-            format!(
-                "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
-            )
-        }))
-        .chain((opaque_count > 0).then(|| {
-            format!(
-                "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
-            )
-        }))
-        .chain((typed_source_count > 0).then(|| {
-            format!(
-                "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
-            )
-        }))
-        .chain(diagnostics)
-        .collect(),
+            notes,
             transfer_ledger: TransferLedger::default(),
         },
         source_fidelity,
@@ -3582,6 +3621,58 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn v1_omitted_typecode_refuses_collection_limit() {
+        let mut data = archive(&[]);
+        data.extend(chunk(0x1234_5678, b"unsupported"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("V1 input fits service input limit");
+        assert!(matches!(
+            super::decode_v1(&ctx, &data),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V1 omitted typecodes"
+        ));
+        assert_eq!(decode_v1(&data).expect("service profile admits the record").body.losses.len(), 1);
+    }
+
+    #[test]
+    fn v1_malformed_direct_diagnostic_refuses_collection_limit() {
+        let mut data = archive(&[]);
+        data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("V1 input fits service input limit");
+        assert!(matches!(
+            super::decode_v1(&ctx, &data),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V1 diagnostics"
+        ));
+        assert_eq!(decode_v1(&data).expect("service profile admits the diagnostic").body.notes.len(), 3);
+    }
+
+    #[test]
+    fn v1_report_notes_and_coverage_refuse_collection_limit() {
+        let data = archive(&[]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        for (limit, operation) in [(1, "Rhino V1 report notes"), (2, "Rhino V1 coverage entries")] {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                .expect("V1 input fits service input limit");
+            assert!(matches!(
+                super::decode_v1(&ctx, &data),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation
+            ));
+        }
+        assert_eq!(decode_v1(&data).expect("service profile admits the report").body.coverage.len(), 8);
     }
 
     #[test]
