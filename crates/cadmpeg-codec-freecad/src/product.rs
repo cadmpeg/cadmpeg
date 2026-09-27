@@ -55,11 +55,11 @@ pub(crate) fn transfer(
         owned.extend_from_slice(source);
         let group = sole_named_property(ctx, "product", &owned, "Group")?;
         let members = group.map(|property| {
-            linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "Group")?)
+            linked_object_names(ctx, link_list(ctx, property, "App::PropertyLinkList", "Group")?)
         }).transpose()?.unwrap_or_default();
         let linked = sole_named_property(ctx, "product", &owned, "LinkedObject")?;
         let prototype_link = linked
-            .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
+            .map(|property| single_link(ctx, property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?
             .flatten();
         let placement = selected_placement(ctx, &owned)?;
@@ -85,7 +85,7 @@ pub(crate) fn transfer(
         let element_visibility = bool_list(ctx, &owned, "VisibilityList")?;
         let element_objects = sole_named_property(ctx, "product", &owned, "ElementList")?
             .map(|property| {
-                linked_object_names(ctx, link_list(property, "App::PropertyLinkList", "ElementList")?)
+                linked_object_names(ctx, link_list(ctx, property, "App::PropertyLinkList", "ElementList")?)
             })
             .transpose()?
             .unwrap_or_default();
@@ -655,7 +655,7 @@ fn parse_placement_list(
     let Some(property) = sole_named_property(ctx, "product", properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
-    let Some(view) = side_bytes(
+    let Some(view) = side_bytes(ctx,
         property,
         "App::PropertyPlacementList",
         "PlacementList",
@@ -684,7 +684,7 @@ fn parse_vector_list(
     let Some(property) = sole_named_property(ctx, "product", properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
-    let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
+    let Some(view) = side_bytes(ctx, property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
     let positions = list_layout::<3>(view, "ScaleList")?;
@@ -698,77 +698,93 @@ fn parse_vector_list(
 }
 
 fn side_bytes<'a>(
+    ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_type: &str,
     name: &str,
     entries: &BTreeMap<String, View<'a>>,
 ) -> Result<Option<View<'a>>, CodecError> {
-    require_root(property, expected_type, name, name)?;
+    require_root(ctx, property, expected_type, name, name)?;
     if property.side_entries().len() > 1 {
-        return Err(malformed(format!(
-            "product property {} has multiple {name} side entries",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has multiple {name} side entries", property.id),
+            "fcstd product side entry count",
+        )?));
     }
     let Some(entry) = property.side_entries().first() else {
         return Ok(None);
     };
-    entries.get(entry).copied().map(Some).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{property_id} references missing {entry}",
-            property_id = property.id
-        ))
-    })
+    let Some(view) = entries.get(entry).copied() else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("{property_id} references missing {entry}", property_id = property.id),
+            "fcstd product missing side entry",
+        )?));
+    };
+    Ok(Some(view))
 }
 
 fn single_link<'a>(
+    ctx: &DecodeContext<'_>,
     property: &'a PropertyRecord,
     expected_type: &str,
     root: &str,
     name: &str,
 ) -> Result<Option<&'a crate::native::LinkTarget>, CodecError> {
-    require_root(property, expected_type, name, root)?;
+    require_root(ctx, property, expected_type, name, root)?;
     if property.links().len() != 1 {
-        return Err(malformed(format!(
-            "product property {} requires one {name} target, found {}",
-            property.id,
-            property.links().len()
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!(
+                "product property {} requires one {name} target, found {}",
+                property.id,
+                property.links().len()
+            ),
+            "fcstd product link target count",
+        )?));
     }
     Ok(property.links()[0].as_ref())
 }
 
 fn link_list<'a>(
+    ctx: &DecodeContext<'_>,
     property: &'a PropertyRecord,
     expected_type: &str,
     name: &str,
 ) -> Result<&'a [Option<crate::native::LinkTarget>], CodecError> {
-    require_root(property, expected_type, name, "LinkList")?;
+    require_root(ctx, property, expected_type, name, "LinkList")?;
     if property
         .values()
         .iter()
         .skip(1)
         .any(|value| value.tag != "Link")
     {
-        return Err(malformed(format!(
-            "product property {} has a non-Link child in {name}",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has a non-Link child in {name}", property.id),
+            "fcstd product link list child",
+        )?));
     }
     Ok(property.links())
 }
 
 fn require_root(
+    ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
     expected_type: &str,
     name: &str,
     root: &str,
 ) -> Result<(), CodecError> {
     if property.type_name != expected_type {
-        return Err(malformed(format!(
-            "product property {} has runtime type {}, expected {expected_type} for {name}",
-            property.id, property.type_name
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!(
+                "product property {} has runtime type {}, expected {expected_type} for {name}",
+                property.id, property.type_name
+            ),
+            "fcstd product runtime type",
+        )?));
     }
     if property.values().first().map(|value| value.tag.as_str()) != Some(root)
         || property
@@ -778,26 +794,29 @@ fn require_root(
             .count()
             != 1
     {
-        return Err(malformed(format!(
-            "product property {} requires one {root} value for {name}",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} requires one {root} value for {name}", property.id),
+            "fcstd product root value",
+        )?));
     }
     Ok(())
 }
 
 fn single_value<'a>(
+    ctx: &DecodeContext<'_>,
     property: &'a PropertyRecord,
     expected_type: &str,
     name: &str,
     root: &str,
 ) -> Result<&'a crate::native::ValueRecord, CodecError> {
-    require_root(property, expected_type, name, root)?;
+    require_root(ctx, property, expected_type, name, root)?;
     if property.values().len() != 1 {
-        return Err(malformed(format!(
-            "product property {} has multiple values for {name}",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has multiple values for {name}", property.id),
+            "fcstd product value count",
+        )?));
     }
     Ok(&property.values()[0])
 }
@@ -951,38 +970,44 @@ fn bool_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: 
     let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
-    let value = single_value(property, "App::PropertyBool", name, "Bool")?;
-    let value = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
-            "product property {} has no Bool value",
-            property.id
-        ))
-    })?;
-    parse_bool(value).map(Some).ok_or_else(|| {
-        malformed(format!(
-            "product property {} has an invalid Bool value",
-            property.id
-        ))
-    })
+    let value = single_value(ctx, property, "App::PropertyBool", name, "Bool")?;
+    let Some(value) = value.attributes.get("value") else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has no Bool value", property.id),
+            "fcstd product missing boolean",
+        )?));
+    };
+    let Some(value) = parse_bool(value) else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has an invalid Bool value", property.id),
+            "fcstd product invalid boolean",
+        )?));
+    };
+    Ok(Some(value))
 }
 
 fn integer_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
     let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
-    let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
-    let value = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
-            "product property {} has no Integer value",
-            property.id
-        ))
-    })?;
-    value.parse().map(Some).map_err(|_| {
-        malformed(format!(
-            "product property {} has an invalid Integer value",
-            property.id
-        ))
-    })
+    let value = single_value(ctx, property, "App::PropertyIntegerConstraint", name, "Integer")?;
+    let Some(value) = value.attributes.get("value") else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has no Integer value", property.id),
+            "fcstd product missing integer",
+        )?));
+    };
+    match value.parse() {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has an invalid Integer value", property.id),
+            "fcstd product invalid integer",
+        )?)),
+    }
 }
 
 fn copy_on_change_property(
@@ -992,25 +1017,27 @@ fn copy_on_change_property(
     let Some(property) = sole_named_property(ctx, "product", properties, "LinkCopyOnChange")? else {
         return Ok(None);
     };
-    let value = single_value(
+    let value = single_value(ctx,
         property,
         "App::PropertyEnumeration",
         "LinkCopyOnChange",
         "Integer",
     )?;
-    let raw = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
-            "product property {} has no enumeration value",
-            property.id
-        ))
-    })?;
+    let Some(raw) = value.attributes.get("value") else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has no enumeration value", property.id),
+            "fcstd product missing enumeration",
+        )?));
+    };
     NativeCopyOnChangePolicy::from_raw(retained_string(ctx, raw, "fcstd copy on change policy")?)
         .map(Some)
-        .map_err(|_| {
-            malformed(format!(
-                "product property {} has an invalid enumeration Integer value",
-                property.id
-            ))
+        .or_else(|_| {
+            Err(CodecError::Malformed(retained_format(
+                ctx,
+                format_args!("product property {} has an invalid enumeration Integer value", property.id),
+                "fcstd product invalid enumeration",
+            )?))
         })
 }
 
@@ -1024,7 +1051,7 @@ fn linked_target(
     let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(None);
     };
-    let link = single_link(property, expected_type, root, name)?;
+    let link = single_link(ctx, property, expected_type, root, name)?;
     link.map(|link| link.clone_with_context(ctx)).transpose()
 }
 
@@ -1055,37 +1082,39 @@ fn neutral_link_target(
 
 fn scale_property(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FiniteVector<3>>, CodecError> {
     if let Some(property) = sole_named_property(ctx, "product", properties, "ScaleVector")? {
-        return vector_property(property).map(Some);
+        return vector_property(ctx, property).map(Some);
     }
     let Some(property) = sole_named_property(ctx, "product", properties, "Scale")? else {
         return Ok(None);
     };
-    let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
-    let value = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
-            "product property {} has no Float value",
-            property.id
-        ))
-    })?;
-    let value = parse_finite(value, property, "Scale")?;
+    let value = single_value(ctx, property, "App::PropertyFloat", "Scale", "Float")?;
+    let Some(value) = value.attributes.get("value") else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has no Float value", property.id),
+            "fcstd product missing scale",
+        )?));
+    };
+    let value = parse_finite(ctx, value, property, "Scale")?;
     Ok(Some([value; 3].into()))
 }
 
-fn vector_property(property: &PropertyRecord) -> Result<FiniteVector<3>, CodecError> {
-    let value = single_value(
+fn vector_property(ctx: &DecodeContext<'_>, property: &PropertyRecord) -> Result<FiniteVector<3>, CodecError> {
+    let value = single_value(ctx,
         property,
         "App::PropertyVector",
         "ScaleVector",
         "PropertyVector",
     )?;
     let component = |name: &str| {
-        let value = value.attributes.get(name).ok_or_else(|| {
-            malformed(format!(
-                "product property {} has no {name} vector component",
-                property.id
-            ))
-        })?;
-        parse_finite(value, property, "ScaleVector")
+        let Some(value) = value.attributes.get(name) else {
+            return Err(CodecError::Malformed(retained_format(
+                ctx,
+                format_args!("product property {} has no {name} vector component", property.id),
+                "fcstd product missing scale component",
+            )?));
+        };
+        parse_finite(ctx, value, property, "ScaleVector")
     };
     Ok([
         component("valueX")?,
@@ -1096,38 +1125,43 @@ fn vector_property(property: &PropertyRecord) -> Result<FiniteVector<3>, CodecEr
 }
 
 fn parse_finite(
+    ctx: &DecodeContext<'_>,
     value: &str,
     property: &PropertyRecord,
     name: &str,
 ) -> Result<FiniteReal, CodecError> {
-    value
+    let Some(value) = value
         .parse::<f64>()
         .ok()
         .and_then(FiniteReal::new)
-        .ok_or_else(|| {
-            malformed(format!(
-                "product property {} has an invalid finite value for {name}",
-                property.id
-            ))
-        })
+    else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has an invalid finite value for {name}", property.id),
+            "fcstd product invalid finite scale",
+        )?));
+    };
+    Ok(value)
 }
 
 fn bool_list(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
     let Some(property) = sole_named_property(ctx, "product", properties, name)? else {
         return Ok(Vec::new());
     };
-    let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;
-    let encoded = value.attributes.get("value").ok_or_else(|| {
-        malformed(format!(
-            "product property {} has no BoolList value",
-            property.id
-        ))
-    })?;
+    let value = single_value(ctx, property, "App::PropertyBoolList", name, "BoolList")?;
+    let Some(encoded) = value.attributes.get("value") else {
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has no BoolList value", property.id),
+            "fcstd product missing visibility list",
+        )?));
+    };
     if encoded.bytes().any(|byte| !matches!(byte, b'0' | b'1')) {
-        return Err(malformed(format!(
-            "product property {} has an invalid BoolList bit string",
-            property.id
-        )));
+        return Err(CodecError::Malformed(retained_format(
+            ctx,
+            format_args!("product property {} has an invalid BoolList bit string", property.id),
+            "fcstd product invalid visibility list",
+        )?));
     }
     // FreeCAD writes the most-significant bit first: the rightmost source bit
     // belongs to element zero. The raw XML remains on the property record;
