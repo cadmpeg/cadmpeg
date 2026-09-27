@@ -2514,16 +2514,17 @@ fn build_one(
                 kind!("face"),
                 IdentityKey::from(face_step).with_tail(&face_suffix),
             ));
-            let name = face_info.name.as_ref().and_then(|value| {
-                super::decode_text(
+            let name = face_info.name.as_ref().map(|value| {
+                super::decode_text_charged(
                     exchange,
                     value,
                     losses,
                     face_step,
                     "face name",
                     StepLossCode::MetadataStringInvalid,
+                    Some(ctx),
                 )
-            });
+            }).transpose()?.flatten();
             let mut loop_ids = vec![];
             for bound_step in face_info.bounds {
                 let br = require_carrier(
