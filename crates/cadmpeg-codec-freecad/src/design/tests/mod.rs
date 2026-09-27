@@ -658,6 +658,45 @@ fn design_spreadsheet_value_diagnostic_refuses_at_retained_limit() {
 }
 
 #[test]
+fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Sheet".into(),
+        name: "Sheet".into(),
+        type_name: "Spreadsheet::Sheet".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let property = crate::native::PropertyRecord {
+        id: "cells-property".into(),
+        owner: object.id.clone(),
+        name: "cells".into(),
+        type_name: "Spreadsheet::PropertySheet".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\" alias=\"Length\"/></Cells></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    for operation in [
+        "fcstd spreadsheet cell properties",
+        "fcstd spreadsheet distinct parameter IDs",
+        "fcstd spreadsheet distinct addresses",
+    ] {
+        crate::test_support::assert_collection_refusal_at(
+            &[], operation,
+            |ctx| super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property]),
+        );
+    }
+}
+
+#[test]
 fn design_sketch_carrier_diagnostic_refuses_at_retained_limit() {
     let xml = roxmltree::Document::parse("<Wrong/>").expect("valid XML");
     crate::test_support::assert_retained_refusal_at(

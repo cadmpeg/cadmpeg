@@ -788,10 +788,12 @@ fn append_spreadsheet(
         })?;
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
-        let mut retained = BTreeMap::from([(
+        let mut retained = BTreeMap::new();
+        ctx.charge_collection_items(1, "fcstd spreadsheet cell properties")?;
+        retained.insert(
             cadmpeg_core::nonblank_literal!("address"),
             retained_string(ctx, address, "fcstd spreadsheet address")?,
-        )]);
+        );
         for attribute in [
             cadmpeg_core::nonblank_literal!("alias"),
             cadmpeg_core::nonblank_literal!("alignment"),
@@ -803,6 +805,7 @@ fn append_spreadsheet(
             cadmpeg_core::nonblank_literal!("colSpan"),
         ] {
             if let Some(value) = cell.attribute(attribute.as_str()) {
+                ctx.charge_collection_items(1, "fcstd spreadsheet cell properties")?;
                 retained.insert(attribute, retained_string(ctx, value, "fcstd spreadsheet cell attribute")?);
             }
         }
@@ -853,30 +856,36 @@ fn append_spreadsheet(
             native_ref: Some(retained_string(ctx, &property.id, "fcstd spreadsheet parameter native reference")?),
         });
     }
+    let column_widths = spreadsheet_dimensions(
+        ctx,
+        properties,
+        "Spreadsheet::PropertyColumnWidths",
+        "columnWidths",
+        "ColumnInfo",
+        "Column",
+        "width",
+    )?;
+    let row_heights = spreadsheet_dimensions(
+        ctx,
+        properties,
+        "Spreadsheet::PropertyRowHeights",
+        "rowHeights",
+        "RowInfo",
+        "Row",
+        "height",
+    )?;
+    ctx.charge_collection_items(cell_ids.len() as u64, "fcstd spreadsheet distinct parameter IDs")?;
+    ctx.charge_collection_items(cell_ids.len() as u64, "fcstd spreadsheet distinct addresses")?;
+    ctx.charge_collection_items(column_widths.len() as u64, "fcstd spreadsheet distinct column widths")?;
+    ctx.charge_collection_items(row_heights.len() as u64, "fcstd spreadsheet distinct row heights")?;
     Spreadsheet::new(
         SpreadsheetId::mint(design_identity_text(
             ctx, "spreadsheet", object, format_args!(""), "fcstd spreadsheet identity",
         )?).map_err(CodecError::malformed)?,
         feature_id(ctx, object)?,
         cell_ids,
-        spreadsheet_dimensions(
-            ctx,
-            properties,
-            "Spreadsheet::PropertyColumnWidths",
-            "columnWidths",
-            "ColumnInfo",
-            "Column",
-            "width",
-        )?,
-        spreadsheet_dimensions(
-            ctx,
-            properties,
-            "Spreadsheet::PropertyRowHeights",
-            "rowHeights",
-            "RowInfo",
-            "Row",
-            "height",
-        )?,
+        column_widths,
+        row_heights,
         merged_ranges,
         Some(retained_string(ctx, &object.id, "fcstd spreadsheet native reference")?),
     )
