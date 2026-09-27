@@ -2692,6 +2692,12 @@ fn operation_state_group_table_before_counter_map(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "nx operation-state group candidates")?;
         }
+        reserve_group_vec(
+            ctx,
+            &mut candidates,
+            1,
+            "nx operation-state group candidates",
+        )?;
         candidates.push((at, end));
     }
     candidates.sort_by_key(|(start, end)| (*end, *start));
@@ -2743,7 +2749,13 @@ fn operation_state_group_table_before_counter_map(
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(terminal.length as u64, "nx operation-state group path")?;
     }
-    let mut path = Vec::with_capacity(terminal.length);
+    let mut path = Vec::new();
+    reserve_group_vec(
+        ctx,
+        &mut path,
+        terminal.length,
+        "nx operation-state group path",
+    )?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
         path.push(candidate_index);
@@ -2756,19 +2768,38 @@ fn operation_state_group_table_before_counter_map(
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(path.len() as u64, "nx operation-state groups")?;
     }
-    let groups = path
-        .into_iter()
-        .map(|candidate| {
+    let mut groups = Vec::new();
+    reserve_group_vec(ctx, &mut groups, path.len(), "nx operation-state groups")?;
+    for candidate in path {
+        let Some(group) =
             operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(groups) = groups else {
-        return Ok(None);
-    };
+        else {
+            return Ok(None);
+        };
+        groups.push(group);
+    }
     let Some(trailing) = bytes.get(candidates[last].1..map_start) else {
         return Ok(None);
     };
     Ok(OperationStateGroupTable::new(groups, trailing))
+}
+
+fn reserve_group_vec<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    values.try_reserve_exact(additional).map_err(|_| match ctx {
+        Some(ctx) => {
+            ctx.refuse_codec_limit(operation, 0, u64::try_from(additional).unwrap_or(u64::MAX))
+        }
+        None => cadmpeg_core::decode::refuse_local_limit(
+            operation,
+            u64::try_from(additional).unwrap_or(u64::MAX),
+            u64::try_from(additional).unwrap_or(u64::MAX),
+        ),
+    })
 }
 
 /// Decode a complete bounded `m_rollForwardStates` group table.
@@ -3808,36 +3839,73 @@ pub(crate) fn offset_store_control_class_ordinals(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<u32>>, cadmpeg_core::CodecError> {
-    let Some(values) = offset_store_control_values(bytes) else {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return Ok(None);
+    }
+    let value_at = |index: usize| {
+        let start = index.checked_mul(4)?;
+        let end = start.checked_add(4)?;
+        let word = bytes.get(start..end)?;
+        (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]).value())
     };
-    let values = values
-        .into_iter()
-        .map(ControlWord24::value)
-        .collect::<Vec<_>>();
-    let mut suffix_minima =
-        ctx.alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima")?;
-    for index in (0..values.len().saturating_sub(1)).rev() {
-        suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
+    let count = bytes.len() / 4;
+    let count_u64 = u64::try_from(count).unwrap_or(u64::MAX);
+    ctx.charge_work(count_u64, "nx offset-store control validation")?;
+    if (0..count).any(|index| value_at(index).is_none()) {
+        return Ok(None);
+    }
+    let scratch_bytes = count_u64
+        .checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx offset-store suffix minima", 0, count_u64))?;
+    let _suffix_reservation = ctx.reserve_scoped(scratch_bytes, "nx offset-store suffix minima")?;
+    let mut suffix_minima = ctx.alloc_filled(count, u32::MAX, "nx offset-store suffix minima")?;
+    ctx.charge_work(count_u64, "nx offset-store suffix scan")?;
+    for index in (0..count - 1).rev() {
+        let Some(next) = value_at(index + 1) else {
+            return Ok(None);
+        };
+        suffix_minima[index] = suffix_minima[index + 1].min(next);
     }
     let mut identities = BTreeSet::new();
     let mut maximum_identity = 0;
     let mut boundary = None;
-    for index in 0..values.len().saturating_sub(1) {
-        let identity = values[index];
-        if !identities.insert(identity) {
+    ctx.charge_work(count_u64, "nx offset-store identity scan")?;
+    for (index, minimum) in suffix_minima.iter().take(count - 1).enumerate() {
+        let Some(identity) = value_at(index) else {
+            return Ok(None);
+        };
+        if identities.contains(&identity) {
             break;
         }
+        ctx.charge_collection_items(1, "nx offset-store class identities")?;
+        identities.insert(identity);
         maximum_identity = maximum_identity.max(identity);
-        if maximum_identity < suffix_minima[index] && boundary.replace(index + 1).is_some() {
+        if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);
         }
     }
     let Some(boundary) = boundary else {
         return Ok(None);
     };
-    ctx.charge_collection_items(boundary as u64, "nx offset-store class ordinals")?;
-    Ok(Some(values[..boundary].to_vec()))
+    ctx.charge_collection_items(
+        u64::try_from(boundary).unwrap_or(u64::MAX),
+        "nx offset-store class ordinals",
+    )?;
+    let mut ordinals = Vec::new();
+    ordinals.try_reserve_exact(boundary).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx offset-store class ordinals",
+            0,
+            u64::try_from(boundary).unwrap_or(u64::MAX),
+        )
+    })?;
+    for index in 0..boundary {
+        let Some(identity) = value_at(index) else {
+            return Ok(None);
+        };
+        ordinals.push(identity);
+    }
+    Ok(Some(ordinals))
 }
 
 fn joined_control_byte(control: &[u8], first_record: &[u8], offset: usize) -> Option<u8> {

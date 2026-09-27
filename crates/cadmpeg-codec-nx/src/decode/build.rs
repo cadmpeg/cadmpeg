@@ -187,21 +187,29 @@ pub(super) fn try_decode_geometry(
     let terminal_lineage =
         rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
             .then(|| crate::native::model::extract_segment_lineage(&scan.container, &scan.streams));
-    let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
-    let terminal_preselection = terminal_lineage
-        .as_ref()
-        .and_then(|lineage| {
-            crate::native::model::terminal_feature_body_ids(
-                &emitted_body_ids,
-                &lineage.bindings,
-                &lineage.statuses,
-            )
-        })
+    let mut emitted_body_ids = BTreeSet::new();
+    for body in body_node_ids.keys() {
+        ctx.charge_collection_items(1, "nx emitted terminal body index")?;
+        ctx.charge_retained(
+            u64::try_from(body.as_str().len()).unwrap_or(u64::MAX),
+            "nx emitted terminal body identity",
+        )?;
+        emitted_body_ids.insert(body.clone());
+    }
+    let terminal_preselection = match terminal_lineage.as_ref() {
+        Some(lineage) => crate::native::model::terminal_feature_body_ids(
+            ctx,
+            &emitted_body_ids,
+            &lineage.bindings,
+            &lineage.statuses,
+        )?
         .filter(|selected| selected.len() < body_node_ids.len())
         .and_then(|selected| {
             rmfastload_stream_indices(&selected)
                 .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
-        });
+        }),
+        None => None,
+    };
     let preselection = rmfastload_preselection.or(terminal_preselection);
     let chart_count = scan
         .streams
@@ -230,19 +238,15 @@ pub(super) fn try_decode_geometry(
     let support_budget = ctx.work_budget(support_uv_limit as u64);
     let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
     let adaptive_geometry_budget =
-        GeometryWorkBudget::from_work_budget(ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64));
-    let completion_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64),
-    );
-    let support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64),
-    );
-    let coupled_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64),
-    );
-    let serialized_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64),
-    );
+        GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK as u64);
+    let completion_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64);
+    let support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64);
+    let coupled_support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
+    let serialized_support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
@@ -1199,7 +1203,7 @@ pub(super) fn try_decode_geometry(
         select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
+        active_body_selection = select_terminal_feature_bodies(ctx, &mut ir, &model)?;
     }
     classify_body_kinds(&mut ir);
     match crate::native::attach_annotations(
@@ -1246,6 +1250,8 @@ pub(super) fn try_decode_geometry(
         transfer_limit,
         support_uv_limit,
     };
+    let adaptive_geometry_exhausted = adaptive_geometry_budget.exhausted();
+    ctx.charge_work(0, "nx geometry work completion")?;
     let mut report = build_geometry_report(
         scan,
         parsed.unmatched_tombstone_counts(),
@@ -1256,7 +1262,7 @@ pub(super) fn try_decode_geometry(
         ir.model.tessellations.len(),
         &model,
         completion_budget,
-        adaptive_geometry_budget.exhausted(),
+        adaptive_geometry_exhausted,
         dialect_losses,
         notes,
     );
@@ -1642,29 +1648,40 @@ pub(super) fn select_active_body(
 }
 
 fn select_terminal_feature_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
-) -> bool {
+) -> Result<bool, CodecError> {
     if ir.model.bodies.len() <= 1 {
-        return false;
+        return Ok(false);
     }
-    let emitted = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut emitted = BTreeSet::new();
+    for body in &ir.model.bodies {
+        ctx.charge_collection_items(1, "nx terminal body selection index")?;
+        ctx.charge_retained(
+            u64::try_from(body.id.as_str().len()).unwrap_or(u64::MAX),
+            "nx terminal body selection identity",
+        )?;
+        emitted.insert(body.id.clone());
+    }
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
     let Some(selected) = crate::native::model::terminal_feature_body_ids(
+        ctx,
         &emitted,
         &model.segments.segment_body_bindings,
         &model.segments.segment_body_lineage_statuses,
-    ) else {
-        return false;
+    )?
+    else {
+        return Ok(false);
     };
-    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
+    Ok(apply_preselected_active_body_selection(
+        ir,
+        &selected,
+        "terminal_feature_body_lineage",
+        None,
+    ))
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
