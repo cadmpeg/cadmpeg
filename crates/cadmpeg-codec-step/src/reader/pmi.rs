@@ -2104,11 +2104,11 @@ fn characteristic_values(
                     .and_then(|partial| partial.parameters.get(1))
                     .and_then(ValueExt::list)
             });
-        let values = if let Some(items) = representation_items {
-            characteristic_measure_values(items.iter(), exchange, &mut measurements, ctx)?
-        } else {
-            characteristic_measure_values(record_values(record), exchange, &mut measurements, ctx)?
-        };
+        let parameters = representation_items.map_or(
+            MeasureParameters::Record(record),
+            MeasureParameters::Items,
+        );
+        let values = characteristic_measure_values(parameters, exchange, &mut measurements, ctx)?;
         let mut named_count = 0usize;
         let mut named_first = None;
         for (name, value) in &values {
@@ -2150,15 +2150,40 @@ fn characteristic_values(
     Ok(result)
 }
 
-fn characteristic_measure_values<'a>(
-    parameters: impl IntoIterator<Item = &'a Value>,
+enum MeasureParameters<'a> {
+    Items(&'a [Value]),
+    Record(&'a RawRecord),
+}
+
+impl MeasureParameters<'_> {
+    fn visit(
+        &self,
+        mut visitor: impl FnMut(&Value) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        match self {
+            Self::Items(items) => {
+                for value in *items {
+                    visitor(value)?;
+                }
+            }
+            Self::Record(record) => {
+                for value in record_values(record) {
+                    visitor(value)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn characteristic_measure_values(
+    parameters: MeasureParameters<'_>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
-    let parameters = parameters.into_iter().collect::<Vec<_>>();
     let mut measure_ids = BTreeSet::new();
-    for parameter in &parameters {
+    parameters.visit(|parameter| {
         collect_measure_ids(
             parameter,
             exchange,
@@ -2166,8 +2191,9 @@ fn characteristic_measure_values<'a>(
             0,
             measurements.graph_limit,
             &mut measure_ids,
-        );
-    }
+            ctx,
+        )
+    })?;
     let mut values = Vec::new();
     for id in measure_ids {
         if let Some(value) = measure(&Value::Reference(id), exchange, measurements) {
@@ -2188,7 +2214,7 @@ fn characteristic_measure_values<'a>(
         }
     }
     if values.is_empty() {
-        for parameter in &parameters {
+        parameters.visit(|parameter| {
             if let Some(value) = measure(parameter, exchange, measurements) {
                 if let Some(ctx) = ctx {
                     ctx.charge_collection_items(1, "step_pmi_measure_values")?;
@@ -2199,7 +2225,8 @@ fn characteristic_measure_values<'a>(
                 })?;
                 values.push((None, value));
             }
-        }
+            Ok(())
+        })?;
     }
     Ok(values)
 }
@@ -2211,18 +2238,23 @@ fn collect_measure_ids(
     depth: usize,
     graph_limit: usize,
     measure_ids: &mut BTreeSet<u64>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     if depth >= graph_limit {
-        return;
+        return Ok(());
     }
+    let _nested = ctx
+        .map(|ctx| ctx.enter_nested("step_pmi_measure_id_walk"))
+        .transpose()?;
     match value {
         Value::Reference(id) => {
-            if !active.insert(*id) {
-                return;
+            if active.contains(id) {
+                return Ok(());
             }
+            insert_pmi_set(active, *id, ctx, "step_pmi_measure_active_ids")?;
             if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
-                    measure_ids.insert(*id);
+                    insert_pmi_set(measure_ids, *id, ctx, "step_pmi_measure_ids")?;
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
@@ -2233,7 +2265,8 @@ fn collect_measure_ids(
                                 depth + 1,
                                 graph_limit,
                                 measure_ids,
-                            );
+                                ctx,
+                            )?;
                         }
                     }
                 }
@@ -2242,14 +2275,15 @@ fn collect_measure_ids(
         }
         Value::List(values) => {
             for value in values {
-                collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids);
+                collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids, ctx)?;
             }
         }
         Value::Typed(_, value) => {
-            collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids);
+            collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids, ctx)?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn measure_item_name(

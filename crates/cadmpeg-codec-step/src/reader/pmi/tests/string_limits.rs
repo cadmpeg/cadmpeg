@@ -173,7 +173,7 @@ fn characteristic_measure_values_refuse_collection_limit() {
     let value = crate::parse::Value::Real(1.0);
     assert!(matches!(
         super::super::characteristic_measure_values(
-            std::iter::once(&value),
+            super::super::MeasureParameters::Items(std::slice::from_ref(&value)),
             &exchange,
             &mut measurements,
             Some(&ctx),
