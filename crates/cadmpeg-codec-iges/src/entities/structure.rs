@@ -1470,7 +1470,7 @@ fn linear_nurbs_is_simple_closed(
     {
         return Ok(false);
     }
-    let Some(projected) = plane_coordinates(&points, plane) else {
+    let Some(projected) = plane_coordinates(&points, plane, ctx)? else {
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(&projected))
@@ -1596,17 +1596,20 @@ fn bounded_plane_curve_is_simple(
                 }),
                 "iges plane polyline points",
             )?;
-            Ok(points.is_some_and(|points| {
-                points.len() >= 3
+            let Some(points) = points else {
+                return Ok(false);
+            };
+            if !(points.len() >= 3
                     && points_coincident(
                         points[0],
                         *points.last().unwrap_or(&points[0]),
                         context.resolution,
                     )
-                    && !polyline_has_forbidden_duplicate(&points, context.resolution)
-                    && plane_coordinates(&points, context.plane)
-                        .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected))
-            }))
+                    && !polyline_has_forbidden_duplicate(&points, context.resolution)) {
+                return Ok(false);
+            }
+            Ok(plane_coordinates(&points, context.plane, context.ctx)?
+                .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected)))
         }
     }
 }

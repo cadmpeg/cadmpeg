@@ -13,8 +13,27 @@ use cadmpeg_ir::math::Vector3;
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
     consumed_support_sequences, enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane,
+    plane_coordinates,
     validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
+
+#[test]
+fn plane_coordinates_refuse_collection_limit_before_projection_array() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::math::Point3;
+    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let plane = (points[0], Vector3::new(0.0, 0.0, 1.0));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = plane_coordinates(&points, plane, &ctx).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges plane coordinates"));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(plane_coordinates(&points, plane, &ctx).unwrap(), Some(vec![[0.0, 0.0], [0.0, -1.0]]));
+}
 
 #[test]
 fn consumed_support_indexes_refuse_collection_limits_before_insert() {
