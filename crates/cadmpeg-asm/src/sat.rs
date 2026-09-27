@@ -24,6 +24,7 @@ use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
@@ -157,7 +158,7 @@ fn copy_sat_string(
     ctx: &DecodeContext<'_>,
     value: &str,
     operation: &'static str,
-) -> Result<String, StreamFailure> {
+) -> Result<String, CodecError> {
     let amount = u64::try_from(value.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     let mut copy = String::new();
@@ -814,6 +815,60 @@ impl<'a, 'c, 'p> Cur<'a, 'c, 'p> {
         out.push(token);
     }
 
+    fn push_text_token(&mut self, out: &mut Vec<Token>, value: &str, string: bool) {
+        if self.resource.is_some() {
+            return;
+        }
+        let copy = if let Some(ctx) = self.ctx {
+            let requested = match u64::try_from(value.len()) {
+                Ok(requested) => requested,
+                Err(_) => {
+                    self.resource = Some(ctx.refuse_codec_limit(
+                        "retain SAT typed string",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                    return;
+                }
+            };
+            if let Err(error) = ctx.charge_retained(requested, "retain SAT typed string") {
+                self.resource = Some(error);
+                return;
+            }
+            match copy_sat_string(ctx, value, "SAT typed string") {
+                Ok(copy) => copy,
+                Err(error) => {
+                    self.resource = Some(error);
+                    return;
+                }
+            }
+        } else {
+            value.to_owned()
+        };
+        self.push_token(out, if string { Token::Str(copy) } else { Token::Ident(copy) });
+    }
+
+    /// Type a field by its written shape when no record grammar matches.
+    fn push_lexical_token(&mut self, out: &mut Vec<Token>, prim: &Prim) {
+        match prim {
+            Prim::Integer(value) => self.push_token(out, Token::Long(*value)),
+            Prim::Real(value) => self.push_token(out, Token::Double(*value)),
+            Prim::Ref(index) => self.push_token(out, Token::Ref(*index)),
+            Prim::Str(value) => self.push_text_token(out, value, true),
+            Prim::Open => self.push_token(out, Token::SubtypeOpen),
+            Prim::Close => self.push_token(out, Token::SubtypeClose),
+            Prim::Word(word) => match word.as_str() {
+                "forward" | "single" | "forward_v" | "I" | "F" | "out" => {
+                    self.push_token(out, Token::False);
+                }
+                "reversed" | "double" | "reverse_v" | "T" | "in" => {
+                    self.push_token(out, Token::True);
+                }
+                _ => self.push_text_token(out, word, false),
+            },
+        }
+    }
+
     fn length(&mut self, value: f64) -> Option<f64> {
         match length_cm(value, self.scale) {
             Some(converted) => Some(converted),
@@ -1008,7 +1063,7 @@ fn take_slot(cur: &mut Cur<'_, '_, '_>, slot: Slot, out: &mut Vec<Token>) -> Opt
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
-                push_token!(cur, out, Token::Str(value.clone()));
+                cur.push_text_token(out, value, true);
                 Some(())
             }
             _ => None,
@@ -1555,7 +1610,7 @@ fn type_subtype_tabled(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Optio
         out.truncate(out_mark);
         return None;
     };
-    push_token!(cur, out, Token::Ident(name.to_string()));
+    cur.push_text_token(out, name, false);
     let matched = match name {
         "ref" => cur.long().map(|index| push_token!(cur, out, Token::Long(index))),
         "exp_par_cur" | "exppc" => exp_par_cur_tail(cur, out),
@@ -1611,7 +1666,7 @@ fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()>
     let mut depth = 0usize;
     loop {
         let prim = cur.bump()?;
-        push_token!(cur, out, lexical_token(prim));
+        cur.push_lexical_token(out, prim);
         match prim {
             Prim::Open => depth += 1,
             Prim::Close => {
@@ -1622,27 +1677,6 @@ fn fallback_scope(cur: &mut Cur<'_, '_, '_>, out: &mut Vec<Token>) -> Option<()>
             }
             _ => {}
         }
-    }
-}
-
-/// Type one field by lexical form alone. Numbers follow their written shape
-/// (`.`/`e`/`E` selects `DOUBLE`); the unambiguous boolean words map onto
-/// `TRUE`/`FALSE`; every other word is a payload identifier. The bound word
-/// `F` is `TRUE` in a range slot and `FALSE` in a logical slot; without a
-/// grammar the logical reading is used.
-fn lexical_token(prim: &Prim) -> Token {
-    match prim {
-        Prim::Integer(value) => Token::Long(*value),
-        Prim::Real(value) => Token::Double(*value),
-        Prim::Ref(index) => Token::Ref(*index),
-        Prim::Str(value) => Token::Str(value.clone()),
-        Prim::Open => Token::SubtypeOpen,
-        Prim::Close => Token::SubtypeClose,
-        Prim::Word(word) => match word.as_str() {
-            "forward" | "single" | "forward_v" | "I" | "F" | "out" => Token::False,
-            "reversed" | "double" | "reverse_v" | "T" | "in" => Token::True,
-            _ => Token::Ident(word.clone()),
-        },
     }
 }
 
@@ -1752,17 +1786,20 @@ fn type_record(
             return Ok(tokens);
         }
     }
+    let mut cur = Cur {
+        prims,
+        pos: 0,
+        scale,
+        failure: None,
+        resource: None,
+        ctx: Some(ctx),
+    };
     let mut tokens = Vec::new();
-    let requested = u64::try_from(prims.len()).map_err(|_| {
-        TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", u64::MAX, u64::MAX))
-    })?;
-    ctx.charge_collection_items(requested, "type SAT tokens")
-        .map_err(TypedRecordFailure::Resource)?;
-    tokens.try_reserve(prims.len()).map_err(|_| {
-        TypedRecordFailure::Resource(ctx.refuse_codec_limit("type SAT tokens", 0, requested))
-    })?;
     for prim in prims {
-        tokens.push(lexical_token(prim));
+        cur.push_lexical_token(&mut tokens, prim);
+    }
+    if let Some(error) = cur.resource {
+        return Err(TypedRecordFailure::Resource(error));
     }
     Ok(tokens)
 }
@@ -1942,6 +1979,27 @@ mod tests {
             };
             assert_eq!(refusal.dimension, dimension);
             assert_eq!(refusal.operation, operation);
+        }
+    }
+
+    #[test]
+    fn sat_typed_string_copies_refuse_retained_limit() {
+        for (body, limit) in [
+            ("mystery @3 abc #\n", 73),
+            ("asmheader $-1 -1 @3 abc #\n", 75),
+        ] {
+            let source = asm_stream(body);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("typed string limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(refusal)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.operation, "retain SAT typed string");
         }
     }
 
