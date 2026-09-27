@@ -18,6 +18,83 @@ use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
+fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
+    let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[10],"designObjects":[{"id":10,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[11]}]},{"id":11,"relativePath":"model.f3d","contentType":"f3d","references":[]}] }]}}"#;
+    f3z_archive_with_design_description(
+        "drawing.f2d",
+        &[("drawing.f2d", b"drawing"), ("model.f3d", b"model")],
+        description,
+    )
+}
+
+#[test]
+fn f3z_model_root_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = f3z_archive("model.f3d", &[("model.f3d", b"model")]);
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = ("model.f3d".len() - 1) as u64;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z model root"));
+}
+
+#[test]
+fn f3z_model_candidate_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = drawing_archive_for_root_limit_tests();
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z model candidates"));
+}
+
+#[test]
+fn f3z_derived_model_match_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = drawing_archive_for_root_limit_tests();
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "match F3Z derived model reference"));
+}
+
+#[test]
+fn f3z_drawing_root_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = drawing_archive_for_root_limit_tests();
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = ("model.f3d".len() * 2 + "drawing.f2d".len() - 1) as u64;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z drawing root"));
+}
+
 #[test]
 fn f3z_archive_merges_identity_occurrences() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
