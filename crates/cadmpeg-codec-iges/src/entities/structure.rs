@@ -6,6 +6,7 @@ use super::geometry::{
     curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
     planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
 };
+use crate::decode_resource::{collect_optional_vec, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -13,7 +14,9 @@ use crate::parameter::{
     TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
@@ -1399,27 +1402,37 @@ fn polyline_has_forbidden_duplicate(points: &[Point3], resolution: f64) -> bool 
 fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
-) -> Option<Vec<Point3>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     if nurbs
         .weights()
         .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
     {
-        return None;
+        return Ok(None);
     }
-    linear_nurbs_parameters(
+    let Some(parameters) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
         nurbs.pole_count(),
         nurbs.periodic(),
         parameter_range,
-    )?
-    .into_iter()
-    .map(|parameter| {
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter)
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
-    })
-    .collect()
+    ) else {
+        return Ok(None);
+    };
+    let mut points = reserve_vec(
+        ctx,
+        parameters.clone().count(),
+        "iges plane NURBS boundary points",
+    )?;
+    for parameter in parameters {
+        let Some(point) =
+            finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter))?
+        else {
+            return Ok(None);
+        };
+        points.push(point.get());
+    }
+    Ok(Some(points))
 }
 
 fn linear_nurbs_is_simple_closed(
@@ -1428,29 +1441,33 @@ fn linear_nurbs_is_simple_closed(
     plane: (Point3, Vector3),
     resolution: f64,
     transform: Transform,
-) -> bool {
-    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).and_then(|points| {
-        points
-            .into_iter()
-            .map(|point| {
-                transform
-                    .apply_point(point)
-                    .map(cadmpeg_ir::features::FinitePoint3::get)
-            })
-            .collect::<Option<Vec<_>>>()
-    }) else {
-        return false;
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range, ctx)? else {
+        return Ok(false);
+    };
+    let Some(points) = collect_optional_vec(
+        ctx,
+        points.into_iter().map(|point| {
+            transform
+                .apply_point(point)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
+        }),
+        "iges transformed plane boundary points",
+    )?
+    else {
+        return Ok(false);
     };
     if points.len() < 3
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
         || polyline_has_forbidden_duplicate(&points, resolution)
     {
-        return false;
+        return Ok(false);
     }
     let Some(projected) = plane_coordinates(&points, plane) else {
-        return false;
+        return Ok(false);
     };
-    !planar_polyline_has_self_intersection(&projected)
+    Ok(!planar_polyline_has_self_intersection(&projected))
 }
 
 fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f64; 2]) -> bool {
@@ -1465,77 +1482,91 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
 }
 
 #[derive(Clone, Copy)]
-struct PlaneBoundarySimplicity<'a> {
-    index: &'a ModelIndex<'a>,
+struct PlaneBoundarySimplicity<'ir, 'ctx> {
+    index: &'ir ModelIndex<'ir>,
     plane: (Point3, Vector3),
     resolution: f64,
     transform: Transform,
+    ctx: &'ctx DecodeContext<'ctx>,
 }
 
 fn bounded_plane_curve_is_simple(
     geometry: &SolvedCurveGeometry,
-    context: PlaneBoundarySimplicity<'_>,
+    context: PlaneBoundarySimplicity<'_, '_>,
     source_is_certified_simple: bool,
     parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
-) -> bool {
+) -> Result<bool, CodecError> {
     match geometry {
-        SolvedCurveGeometry::Degenerate(_) => false,
-        SolvedCurveGeometry::Line(_) => false,
-        SolvedCurveGeometry::Parabola(_) => false,
-        SolvedCurveGeometry::Hyperbola(_) => false,
-        SolvedCurveGeometry::Unknown { .. } => false,
+        SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Line(_)
+        | SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Unknown { .. } => Ok(false),
         SolvedCurveGeometry::Composite {
             segments,
             self_intersect,
         } => {
-            self_intersect == &Some(false)
-                && segments.iter().all(|segment| {
-                    let Some(curve) = context.index.curves(segment.curve.as_str()) else {
-                        return false;
-                    };
-                    if !active.insert(segment.curve.clone()) {
-                        return false;
-                    }
-                    let Some(geometry) = curve.geometry.solved() else {
-                        return false;
-                    };
-                    let valid =
-                        bounded_plane_curve_is_simple(geometry, context, false, None, active);
+            if self_intersect != &Some(false) {
+                return Ok(false);
+            }
+            for segment in segments {
+                let Some(curve) = context.index.curves(segment.curve.as_str()) else {
+                    return Ok(false);
+                };
+                if active.contains(&segment.curve) {
+                    return Ok(false);
+                }
+                context
+                    .ctx
+                    .charge_collection_items(1, "iges plane boundary active curve")?;
+                active.insert(segment.curve.clone());
+                let Some(geometry) = curve.geometry.solved() else {
                     active.remove(&segment.curve);
-                    valid
-                })
+                    return Ok(false);
+                };
+                let valid = bounded_plane_curve_is_simple(geometry, context, false, None, active);
+                active.remove(&segment.curve);
+                if !valid? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
         }
-        SolvedCurveGeometry::Transformed(placed) => context
-            .transform
-            .compose(*placed.transform())
-            .is_ok_and(|transform| {
-                bounded_plane_curve_is_simple(
-                    placed.basis(),
-                    PlaneBoundarySimplicity {
-                        transform,
-                        ..context
-                    },
-                    source_is_certified_simple,
-                    parameter_range,
-                    active,
-                )
-            }),
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => parameter_range
+        SolvedCurveGeometry::Transformed(placed) => {
+            let Ok(transform) = context.transform.compose(*placed.transform()) else {
+                return Ok(false);
+            };
+            bounded_plane_curve_is_simple(
+                placed.basis(),
+                PlaneBoundarySimplicity {
+                    transform,
+                    ..context
+                },
+                source_is_certified_simple,
+                parameter_range,
+                active,
+            )
+        }
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(parameter_range
             .is_some_and(|range| {
                 analytic_curve_is_simple_closed(&CurveGeometry::Solved(geometry.clone()), range)
-            }),
+            })),
         SolvedCurveGeometry::Nurbs(nurbs) => {
-            source_is_certified_simple
-                || parameter_range.is_some_and(|range| {
-                    linear_nurbs_is_simple_closed(
-                        nurbs,
-                        range,
-                        context.plane,
-                        context.resolution,
-                        context.transform,
-                    )
-                })
+            if source_is_certified_simple {
+                return Ok(true);
+            }
+            let Some(range) = parameter_range else {
+                return Ok(false);
+            };
+            linear_nurbs_is_simple_closed(
+                nurbs,
+                range,
+                context.plane,
+                context.resolution,
+                context.transform,
+                context.ctx,
+            )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
@@ -1546,33 +1577,34 @@ fn bounded_plane_curve_is_simple(
                         && last.map(cadmpeg_ir::scalar::FiniteReal::get) == Some(range[1])
                 })
             });
-            let points = polyline
-                .points()
-                .map(|point| {
+            if !active_range_matches {
+                return Ok(false);
+            }
+            let points = collect_optional_vec(
+                context.ctx,
+                polyline.points().map(|point| {
                     context
                         .transform
                         .apply_point(point.get())
                         .map(cadmpeg_ir::features::FinitePoint3::get)
-                })
-                .collect::<Option<Vec<_>>>();
-            active_range_matches
-                && points.is_some_and(|points| {
-                    points.len() >= 3
-                        && points_coincident(
-                            points[0],
-                            *points.last().unwrap_or(&points[0]),
-                            context.resolution,
-                        )
-                        && !polyline_has_forbidden_duplicate(&points, context.resolution)
-                        && plane_coordinates(&points, context.plane).is_some_and(|projected| {
-                            !planar_polyline_has_self_intersection(&projected)
-                        })
-                })
+                }),
+                "iges plane polyline points",
+            )?;
+            Ok(points.is_some_and(|points| {
+                points.len() >= 3
+                    && points_coincident(
+                        points[0],
+                        *points.last().unwrap_or(&points[0]),
+                        context.resolution,
+                    )
+                    && !polyline_has_forbidden_duplicate(&points, context.resolution)
+                    && plane_coordinates(&points, context.plane)
+                        .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected))
+            }))
         }
     }
 }
 
-#[derive(Clone, Copy)]
 enum PlaneBoundaryError {
     MissingEdge,
     MissingCurve,
@@ -1582,11 +1614,12 @@ enum PlaneBoundaryError {
     MissingStart,
     MissingEnd,
     NotClosed,
+    Resource(CodecError),
 }
 
 impl PlaneBoundaryError {
-    fn message(self) -> &'static str {
-        match self {
+    fn message(self) -> Result<&'static str, CodecError> {
+        Ok(match self {
             Self::MissingEdge => "plane boundary curve was not projected as a bounded edge",
             Self::MissingCurve => "plane boundary edge has no curve carrier",
             Self::MissingCurveCarrier => "plane boundary edge curve carrier is missing",
@@ -1597,11 +1630,12 @@ impl PlaneBoundaryError {
             Self::MissingStart => "plane boundary start vertex is missing",
             Self::MissingEnd => "plane boundary end vertex is missing",
             Self::NotClosed => "plane boundary curve is not closed",
-        }
+            Self::Resource(error) => return Err(error),
+        })
     }
 
-    fn legacy_message(self) -> &'static str {
-        match self {
+    fn legacy_message(self) -> Result<&'static str, CodecError> {
+        Ok(match self {
             Self::MissingEdge => "legacy single-parent plane boundary was not projected",
             Self::MissingCurve | Self::MissingCurveCarrier => {
                 "legacy single-parent plane boundary carrier is invalid"
@@ -1613,7 +1647,14 @@ impl PlaneBoundaryError {
             Self::MissingStart => "legacy single-parent boundary start vertex is missing",
             Self::MissingEnd => "legacy single-parent boundary end vertex is missing",
             Self::NotClosed => "legacy single-parent plane boundary is not closed",
-        }
+            Self::Resource(error) => return Err(error),
+        })
+    }
+}
+
+impl From<CodecError> for PlaneBoundaryError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
     }
 }
 
@@ -1623,6 +1664,7 @@ fn plane_boundary_edge(
     boundary_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     resolution: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Edge, PlaneBoundaryError> {
     let source_edge = index
         .edges(&format!("iges:model:edge#D{boundary_sequence}"))
@@ -1640,6 +1682,7 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
+    ctx.charge_collection_items(1, "iges plane boundary active curve")?;
     if !active.insert(curve_id.clone())
         || !bounded_plane_curve_is_simple(
             geometry,
@@ -1648,13 +1691,14 @@ fn plane_boundary_edge(
                 plane,
                 resolution,
                 transform: Transform::identity(),
+                ctx,
             },
             source_is_certified_simple,
             source_edge
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             &mut active,
-        )
+        )?
     {
         return Err(PlaneBoundaryError::NotSimple);
     }
@@ -1764,6 +1808,32 @@ fn plane_face_draft(
     Ok(candidate)
 }
 
+enum LegacyPlaneError {
+    Invalid(&'static str),
+    Resource(CodecError),
+}
+
+impl From<&'static str> for LegacyPlaneError {
+    fn from(message: &'static str) -> Self {
+        Self::Invalid(message)
+    }
+}
+
+impl From<CodecError> for LegacyPlaneError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+impl LegacyPlaneError {
+    fn non_resource(self) -> Result<&'static str, CodecError> {
+        match self {
+            Self::Invalid(message) => Ok(message),
+            Self::Resource(error) => Err(error),
+        }
+    }
+}
+
 fn legacy_single_parent_face(
     ir: &CadIr,
     entry: &DirectoryEntry,
@@ -1771,8 +1841,9 @@ fn legacy_single_parent_face(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<Option<(ModelDraft, Vec<u32>)>, &'static str> {
+) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
     };
@@ -1783,13 +1854,13 @@ fn legacy_single_parent_face(
         return Ok(None);
     }
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
-        return Err("legacy single-parent plane hole has no children");
+        return Err("legacy single-parent plane hole has no children".into());
     };
     let Some(children) = (0..child_count)
         .map(|offset| existing_pointer(record, 4 + offset, entries))
         .collect::<Option<Vec<_>>>()
     else {
-        return Err("legacy single-parent plane hole has an invalid child pointer");
+        return Err("legacy single-parent plane hole has an invalid child pointer".into());
     };
     if children.iter().any(|sequence| {
         entries
@@ -1804,7 +1875,8 @@ fn legacy_single_parent_face(
             .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
     }) {
         return Err(
-            "legacy single-parent plane hole requires negative, physically dependent Type 108 children",
+            "legacy single-parent plane hole requires negative, physically dependent Type 108 children"
+                .into(),
         );
     }
 
@@ -1830,10 +1902,14 @@ fn legacy_single_parent_face(
         let plane = plane_carrier(&index, plane_sequence)
             .ok_or("legacy single-parent child plane was not projected")?;
         if !planes_are_coplanar(parent_plane, plane, resolution) {
-            return Err("legacy single-parent plane boundaries are not coplanar");
+            return Err("legacy single-parent plane boundaries are not coplanar".into());
         }
-        let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution)
-            .map_err(PlaneBoundaryError::legacy_message)?;
+        let mut edge =
+            plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution, ctx)
+                .map_err(|error| match error.legacy_message() {
+                    Ok(message) => LegacyPlaneError::Invalid(message),
+                    Err(resource) => LegacyPlaneError::Resource(resource),
+                })?;
         let edge_id = crate::ids::edge(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
@@ -2070,9 +2146,9 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> (ProjectionOutcome, BTreeMap<u32, PlacementRejection>) {
+) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -2596,14 +2672,14 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             if entry.form == 9 {
                 match legacy_single_parent_face(
-                    ir, entry, record, &entries, &records, global, sequences,
+                    ir, entry, record, &entries, &records, global, ctx, sequences,
                 ) {
                     Ok(Some((candidate, plane_sequences))) => {
                         legacy_plane_sequences.extend(plane_sequences);
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
-                    Err(reason) => losses.push(entity_loss(entry, reason)),
+                    Err(reason) => losses.push(entity_loss(entry, reason.non_resource()?)),
                 }
             }
         } else {
@@ -2638,6 +2714,7 @@ pub(super) fn project(
                 boundary_sequence,
                 &entries,
                 global.minimum_resolution_mm(),
+                ctx,
             ) {
                 Ok(mut edge) => {
                     edge.id = crate::ids::edge(&crate::ids::Stem::word_directory(
@@ -2662,7 +2739,7 @@ pub(super) fn project(
                         Err(reason) => losses.push(entity_loss(entry, reason)),
                     }
                 }
-                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+                Err(reason) => losses.push(entity_loss(entry, reason.message()?)),
             },
             -1 => match plane_boundary_edge(
                 &index,
@@ -2670,12 +2747,13 @@ pub(super) fn project(
                 boundary_sequence,
                 &entries,
                 global.minimum_resolution_mm(),
+                ctx,
             ) {
                 Ok(_) => losses.push(entity_loss(
                     entry,
                     "negative bounded plane requires an enclosing positive plane face",
                 )),
-                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+                Err(reason) => losses.push(entity_loss(entry, reason.message()?)),
             },
             _ => {}
         }
@@ -2789,7 +2867,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         let fields_valid = if entry.entity_type == 412 {
@@ -2888,7 +2966,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         if position_valid
@@ -2957,7 +3035,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
@@ -3036,7 +3114,7 @@ pub(super) fn project(
                             global.length_factor_mm(),
                             global.real_precision(),
                             &mut BTreeSet::new(),
-                            ctx,
+                            Some(ctx),
                         )
                         .is_ok()
                 });
@@ -3057,7 +3135,7 @@ pub(super) fn project(
             global.length_factor_mm(),
             global.real_precision(),
             &mut BTreeSet::new(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
@@ -3111,7 +3189,7 @@ pub(super) fn project(
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))
         {
             definition_fields_valid.insert(entry.sequence);
         }
@@ -3139,7 +3217,7 @@ pub(super) fn project(
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         if !placement_valid {
@@ -3236,7 +3314,7 @@ pub(super) fn project(
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))
         {
             network_definition_fields_valid.insert(entry.sequence);
         }
@@ -3280,7 +3358,7 @@ pub(super) fn project(
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            ctx,
+            Some(ctx),
         )
         .is_ok();
         if !placement_valid {
@@ -3431,7 +3509,7 @@ pub(super) fn project(
         }
     }
 
-    (ProjectionOutcome { decoded, losses }, placement_rejections)
+    Ok((ProjectionOutcome { decoded, losses }, placement_rejections))
 }
 
 #[cfg(test)]

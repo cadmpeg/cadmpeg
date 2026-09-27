@@ -7,9 +7,50 @@ use crate::test_support::test_owned::{
     owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
 use crate::test_support::test_surface_fixtures::bounded_plane_entity_file;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::math::Point3;
 
 const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
 const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+#[test]
+fn plane_nurbs_boundary_points_refuse_collection_limit() {
+    let nurbs = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], &ctx);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 5
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let points = super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(points.len(), 5);
+    assert_eq!(points[0], points[4]);
+}
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     result
@@ -65,7 +106,8 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .unwrap();
         assert_eq!(coedge.edge.as_str(), "iges:model:edge#bounded-plane-D1");
         assert!(!has_entity_projection_loss(&result), "{expected_version}");
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "{expected_version}: {:#?}",
@@ -125,7 +167,8 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -217,7 +260,8 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

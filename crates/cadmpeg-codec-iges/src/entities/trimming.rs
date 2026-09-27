@@ -735,7 +735,11 @@ fn linear_model_nurbs_points(
     ) else {
         return Ok(None);
     };
-    let mut points = reserve_vec(ctx, parameters.len(), "iges linear model boundary points")?;
+    let mut points = reserve_vec(
+        ctx,
+        parameters.clone().count(),
+        "iges linear model boundary points",
+    )?;
     for parameter in parameters {
         let Some(point) =
             finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter))?
@@ -772,7 +776,7 @@ fn linear_pcurve_points(
     };
     let mut points = reserve_vec(
         ctx,
-        parameters.len(),
+        parameters.clone().count(),
         "iges linear parameter boundary points",
     )?;
     for parameter in parameters {

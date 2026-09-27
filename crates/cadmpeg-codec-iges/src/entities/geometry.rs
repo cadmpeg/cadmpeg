@@ -114,7 +114,7 @@ pub(super) fn linear_nurbs_parameters(
     control_count: usize,
     periodic: bool,
     range: [f64; 2],
-) -> Option<Vec<f64>> {
+) -> Option<impl Iterator<Item = f64> + Clone + '_> {
     let degree = usize::try_from(degree).ok()?;
     let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
     if periodic
@@ -139,15 +139,24 @@ pub(super) fn linear_nurbs_parameters(
     {
         return None;
     }
-    let mut parameters = vec![range[0]];
-    for knot in knots.iter().copied() {
-        if knot > range[0] && knot < range[1] && parameters.last().is_none_or(|last| *last != knot)
-        {
-            parameters.push(knot);
-        }
-    }
-    parameters.push(range[1]);
-    Some(parameters)
+    let interior = knots
+        .iter()
+        .copied()
+        .filter(move |knot| *knot > range[0] && *knot < range[1])
+        .scan(range[0], |previous, knot| {
+            if *previous == knot {
+                Some(None)
+            } else {
+                *previous = knot;
+                Some(Some(knot))
+            }
+        })
+        .flatten();
+    Some(
+        std::iter::once(range[0])
+            .chain(interior)
+            .chain(std::iter::once(range[1])),
+    )
 }
 
 fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
@@ -2293,9 +2302,9 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
-        Some(ctx),
+        ctx,
         &mut sequences,
-    );
+    )?;
     structure_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
     super::presentation::project(
