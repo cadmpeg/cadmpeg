@@ -8,7 +8,7 @@ use crate::records::sketch_placement::{
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{
-    f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at, Reference,
+    f64s_at, lp_ascii_filtered, take_reference, utf16le_at, Reference,
 };
 use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
@@ -29,6 +29,7 @@ use crate::records::{
 };
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{DecodeContext, View};
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -417,8 +418,10 @@ fn decode_sketch_visibilities_in_stream(
             entity_id,
             end: header_end,
             ..
-        }) = parse_settled_entity_header(&bytes[..frame.end], frame.start)
-            .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
+        }) = (match parse_settled_entity_header(ctx, &bytes[..frame.end], frame.start)? {
+            Some(header) => Some(header),
+            None => parse_genesis_entity_header(ctx, &bytes[..frame.end], frame.start)?,
+        })
         else {
             return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} has an invalid entity header",
@@ -861,24 +864,34 @@ pub(crate) fn decode_lost_edge_references(
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.
-pub(super) fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
-    let entity_suffix = View::u64_le_at(bytes, start + 7)?;
-    if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
-        return None;
-    }
-    let (optional_slot_present, string_offset) = match bytes.get(start + 20)? {
-        0 => (false, start + 21),
-        1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
-        _ => return None,
+pub(super) fn parse_settled_entity_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<NamedEntityHeader>, CodecError> {
+    let Some(entity_suffix) = View::u64_le_at(bytes, start + 7) else {
+        return Ok(None);
     };
-    let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
-    let entity_id = crate::records::identity::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+    if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
+        return Ok(None);
+    }
+    let (optional_slot_present, string_offset) = match bytes.get(start + 20) {
+        Some(0) => (false, start + 21),
+        Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
+        _ => return Ok(None),
+    };
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256)? else {
+        return Ok(None);
+    };
+    let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
+        return Ok(None);
+    };
+    Ok((entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
         entity_id,
         entity_id_offset: string_offset + 4,
         optional_slot_present,
         end,
-    })
+    }))
 }
 
 /// An admitted entity identity and its source header locations.
@@ -894,10 +907,16 @@ pub(super) struct NamedEntityHeader {
 /// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
 /// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
 /// numeric suffix equals the record index.
-pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
-    let entity_suffix = u64::from(View::u32_le_at(bytes, start + 7)?);
+pub(super) fn parse_genesis_entity_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<NamedEntityHeader>, CodecError> {
+    let Some(entity_suffix) = View::u32_le_at(bytes, start + 7).map(u64::from) else {
+        return Ok(None);
+    };
     if entity_suffix == 0 {
-        return None;
+        return Ok(None);
     }
     let mut cursor = start + 11;
     while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
@@ -907,25 +926,36 @@ pub(super) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<
         || bytes.get(cursor) != Some(&1)
         || View::u32_le_at(bytes, cursor + 1) != Some(1)
     {
-        return None;
+        return Ok(None);
     }
-    let (key, after_key) = lp_ascii_filtered(bytes, cursor + 5, 0..=2000, u8::is_ascii_graphic)?;
-    if key != "EntityGenesis" {
-        return None;
-    }
-    let (meta_type, after_type) =
-        lp_ascii_filtered(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
-    if meta_type != "IntrinsicMetaTypeuint64" {
-        return None;
-    }
-    let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
-    let entity_id = crate::records::identity::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+    let Some(after_key) = lp_ascii_matches(bytes, cursor + 5, b"EntityGenesis") else {
+        return Ok(None);
+    };
+    let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
+        return Ok(None);
+    };
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(ctx, bytes, after_type + 8, 1..=256)? else {
+        return Ok(None);
+    };
+    let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
+        return Ok(None);
+    };
+    Ok((entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
         entity_id,
         entity_id_offset: after_type + 12,
         optional_slot_present: false,
         end,
-    })
+    }))
+}
+
+fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if count != expected.len() {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(count)?;
+    (bytes.get(start..end) == Some(expected)).then_some(end)
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -1113,14 +1143,17 @@ pub(crate) fn decode_entity_headers(
         for header in &indexed_offsets {
             let start = header.offset;
             let class_tag = header.class_tag.clone();
-            let settled = parse_settled_entity_header(bytes, start);
+            let settled = parse_settled_entity_header(ctx, bytes, start)?;
             let genesis_form = settled.is_none();
             let Some(NamedEntityHeader {
                 entity_id,
                 optional_slot_present,
                 end,
                 ..
-            }) = settled.or_else(|| parse_genesis_entity_header(bytes, start))
+            }) = (match settled {
+                Some(header) => Some(header),
+                None => parse_genesis_entity_header(ctx, bytes, start)?,
+            })
             else {
                 continue;
             };

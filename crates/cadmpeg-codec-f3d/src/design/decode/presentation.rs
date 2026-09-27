@@ -5,10 +5,10 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::ops::RangeInclusive;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
 use crate::design::decode::meta::typed_primary_frames;
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
@@ -23,57 +23,6 @@ use crate::design::presentation::{
 use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
-
-fn lp_utf16_bounded_charged(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-    bounds: RangeInclusive<usize>,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some(count) = View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok()) else {
-        return Ok(None);
-    };
-    if !bounds.contains(&count) {
-        return Ok(None);
-    }
-    let Some(start) = at.checked_add(4) else {
-        return Ok(None);
-    };
-    let Some(end) = count.checked_mul(2).and_then(|bytes| start.checked_add(bytes)) else {
-        return Ok(None);
-    };
-    let Some(raw) = bytes.get(start..end) else {
-        return Ok(None);
-    };
-    let mut view = View::over_retained(raw);
-    let mut utf8_len = 0usize;
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        utf8_len = utf8_len.checked_add(character.len_utf8()).ok_or_else(|| {
-            ctx.refuse_codec_limit("f3d presentation UTF-16 length", 0, 1)
-        })?;
-    }
-    ctx.charge_retained(
-        u64::try_from(utf8_len).map_err(|_| {
-            ctx.refuse_codec_limit("f3d presentation UTF-16 length", 0, 1)
-        })?,
-        "f3d presentation UTF-16 text",
-    )?;
-    let mut text = String::new();
-    text.try_reserve(utf8_len).map_err(|_| {
-        ctx.refuse_codec_limit("f3d presentation UTF-16 allocation", 0, 1)
-    })?;
-    let mut view = View::over_retained(raw);
-    for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-        let Ok(character) = decoded else {
-            return Ok(None);
-        };
-        text.push(character);
-    }
-    Ok(Some((text, end)))
-}
 
 /// One typed browser-node record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,8 +179,10 @@ pub(crate) fn body_presentations(
             )));
         }
         let framed_bytes = &bytes[..frame.end];
-        let named_header = parse_settled_entity_header(framed_bytes, frame.start)
-            .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
+        let named_header = match parse_settled_entity_header(ctx, framed_bytes, frame.start)? {
+            Some(header) => Some(header),
+            None => parse_genesis_entity_header(ctx, framed_bytes, frame.start)?,
+        };
         let (entity_suffix, owner, material) = if let Some(NamedEntityHeader {
             entity_id,
             entity_id_offset,
@@ -757,21 +708,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+        let error = crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
             .err().unwrap();
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "f3d presentation UTF-16 text"
+                    && limit.operation == "f3d Design UTF-16 text"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let decoded = super::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
+        let decoded = crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &bytes, 0, 1..=256)
             .unwrap().unwrap();
         assert_eq!(decoded.0, text);
         assert_eq!(decoded.1, bytes.len());
 
         let invalid = [1, 0, 0, 0, 0, 0xd8];
-        assert!(super::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
+        assert!(crate::design::decode::text::lp_utf16_bounded_charged(&ctx, &invalid, 0, 1..=256)
             .unwrap().is_none());
     }
 
