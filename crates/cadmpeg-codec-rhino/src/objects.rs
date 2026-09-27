@@ -2,6 +2,7 @@
 //! Rhino object-record identity and framing.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::decode::DecodeContext;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
@@ -500,17 +501,30 @@ pub(crate) fn parse_class_wrapper(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<ClassDescriptor, FramingError> {
-    parse_class_wrapper_with_userdata(bytes, body, archive, warnings)
-        .map(|(descriptor, _)| descriptor)
+    scan_class_wrapper(bytes, body, archive, warnings, None)
 }
 
 /// Parses a class wrapper and retains its ordered class-userdata descriptors.
 pub(crate) fn parse_class_wrapper_with_userdata(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     body: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
+    let mut userdata = Vec::new();
+    let descriptor =
+        scan_class_wrapper(bytes, body, archive, warnings, Some((ctx, &mut userdata)))?;
+    Ok((descriptor, userdata))
+}
+
+fn scan_class_wrapper(
+    bytes: &[u8],
+    body: Range<usize>,
+    archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
+    mut retained: Option<(&DecodeContext<'_>, &mut Vec<UserdataDescriptor>)>,
+) -> Result<ClassDescriptor, FramingError> {
     let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
     let uuid_chunk = chunk_at(
@@ -533,13 +547,10 @@ pub(crate) fn parse_class_wrapper_with_userdata(
                 "null class wrapper has trailing bytes",
             ));
         }
-        return Ok((
-            ClassDescriptor {
-                class_uuid,
-                class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
-            },
-            Vec::new(),
-        ));
+        return Ok(ClassDescriptor {
+            class_uuid,
+            class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
+        });
     }
     let data_chunk = chunk_at(
         bytes,
@@ -554,12 +565,16 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     // so it must not report a checksum result for this mixed payload.
     let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
-    let mut userdata = Vec::new();
     while offset < wrapper.body().end {
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
+            if let Some((ctx, values)) = retained.as_mut() {
+                crate::chunks::reserve_admitted_vec(ctx, values, 1, "Rhino class userdata")?;
+                values.push(parse_userdata(bytes, &item, archive, warnings)?);
+            } else {
+                parse_userdata(bytes, &item, archive, warnings)?;
+            }
             offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
@@ -574,13 +589,10 @@ pub(crate) fn parse_class_wrapper_with_userdata(
             "class wrapper has trailing bytes",
         ));
     }
-    Ok((
-        ClassDescriptor {
-            class_uuid,
-            class_data_range: data_chunk.body(),
-        },
-        userdata,
-    ))
+    Ok(ClassDescriptor {
+        class_uuid,
+        class_data_range: data_chunk.body(),
+    })
 }
 
 /// Parses one class-userdata chunk shared by object and render-settings wrappers.

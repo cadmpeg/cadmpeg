@@ -346,6 +346,7 @@ fn geometries(
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
         let mut warnings = Diagnostics::new();
         let (class, userdata) = parse_class_wrapper_with_userdata(
+            ctx,
             nested.backing_bytes(),
             start..wrapper.next_offset(),
             archive,

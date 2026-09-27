@@ -2028,13 +2028,19 @@ fn parse_light_record_attributes(
 }
 
 fn class_data_with_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
-    let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Diagnostics::new())?;
+    let (class, userdata) = parse_class_wrapper_with_userdata(
+        ctx,
+        data,
+        record.body(),
+        archive,
+        &mut Diagnostics::new(),
+    )?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -2042,6 +2048,14 @@ fn class_data_with_userdata(
         ));
     }
     Ok((class.class_data_range, userdata))
+}
+
+fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, CodecError> {
+    match value {
+        Ok(value) => Ok(Some(value)),
+        Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+        Err(_) => Ok(None),
+    }
 }
 
 fn append_file_reference_diagnostics(
@@ -4003,6 +4017,7 @@ fn parse_mapping_crc_cache(data: &[u8], payload_range: Range<usize>) -> Result<(
 }
 
 fn parse_texture_mapping(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -4027,7 +4042,7 @@ fn parse_texture_mapping(
     } else {
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
-            parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
+            parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque =
             userdata
                 .iter()
@@ -4557,9 +4572,13 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
-                if let Ok((range, userdata)) =
-                    class_data_with_userdata(scan.data, record, scan.archive, MATERIAL)
-                {
+                if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
+                    ctx,
+                    scan.data,
+                    record,
+                    scan.archive,
+                    MATERIAL,
+                ))? {
                     let mut material_requires_opaque = false;
                     let legacy_rdk_instance_id =
                         legacy_rdk_material_instance_id(scan.data, &userdata);
@@ -4752,9 +4771,13 @@ pub(crate) fn install(
                 };
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
-                    if let Ok((range, userdata)) =
-                        class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
-                    {
+                    if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
+                        ctx,
+                        scan.data,
+                        record,
+                        scan.archive,
+                        V5_DIMSTYLE,
+                    ))? {
                         let extra =
                             userdata
                                 .iter()
@@ -4842,9 +4865,13 @@ pub(crate) fn install(
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, TEXTURE_MAPPING) {
-                    if let Ok(value) =
-                        parse_texture_mapping(scan.data, range, scan.archive, record.range.start)
-                    {
+                    if let Some(value) = optional_malformed(parse_texture_mapping(
+                        ctx,
+                        scan.data,
+                        range,
+                        scan.archive,
+                        record.range.start,
+                    ))? {
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
                             losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(

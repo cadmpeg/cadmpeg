@@ -4,7 +4,8 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Record;
 use crate::loss::Diagnostics;
 use crate::test_support::test_dump::{
-    anonymous_chunk, definition_record, long_chunk, v6_definition_payload,
+    anonymous_chunk, class_userdata, definition_record, definition_record_with_userdata,
+    long_chunk, v6_definition_payload,
 };
 
 fn with_collection_limit<T>(
@@ -93,4 +94,29 @@ fn definition_checksum_children_refuse_collection_limit_without_degradation() {
             );
         });
     }
+}
+
+#[test]
+fn definition_userdata_refuses_collection_limit_without_opaque_fallback() {
+    let archive = ArchiveVersion::V8;
+    let payload = v6_definition_payload(archive, [7; 16], &[], 0, false, false);
+    let userdata = class_userdata(archive, [2; 16], [3; 16], "source.3dm", false);
+    let data = definition_record_with_userdata(archive, &payload, &userdata);
+    let chunk = chunk_at(&data, 0, data.len(), archive, false).expect("definition record");
+    let record = Record::long(chunk.typecode, chunk.range(), chunk.body());
+    with_collection_limit(0, |ctx| {
+        let error = crate::instances::parse_definitions(
+            ctx,
+            &data,
+            std::slice::from_ref(&record),
+            archive,
+            0x1000_0021,
+        )
+        .expect_err("class userdata exceeds collection limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino class userdata"
+        ));
+    });
 }
