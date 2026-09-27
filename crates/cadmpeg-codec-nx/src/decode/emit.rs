@@ -1733,7 +1733,7 @@ pub(super) fn source_meta(
                 census.inline_schema_declarations.len(),
             )?;
         }
-        for (name, count) in census.full_counts() {
+        for (name, count) in census.full_counts(ctx)? {
             insert_source_attribute(
                 ctx,
                 &mut attributes,
@@ -1741,7 +1741,7 @@ pub(super) fn source_meta(
                 count,
             )?;
         }
-        for (name, count) in census.tombstone_counts() {
+        for (name, count) in census.tombstone_counts(ctx)? {
             insert_source_attribute(
                 ctx,
                 &mut attributes,

@@ -252,7 +252,7 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                for (family, count) in census.full_counts() {
+                for (family, count) in census.full_counts(ctx)? {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
@@ -262,7 +262,7 @@ pub(super) fn summarize(
                         SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
                     )?;
                 }
-                for (family, count) in census.tombstone_counts() {
+                for (family, count) in census.tombstone_counts(ctx)? {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
