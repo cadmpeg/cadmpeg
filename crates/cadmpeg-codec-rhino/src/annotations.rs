@@ -334,6 +334,7 @@ fn plane_horizontal_direction(plane: Plane) -> CoordinateLane<2> {
 }
 
 fn decode_annotation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -356,6 +357,11 @@ fn decode_annotation(
             outer.remaining(),
             1 << 20,
             outer.position(),
+        )?;
+        points = crate::dimensions::admitted_points(
+            ctx,
+            bytes / 16,
+            "Rhino modern annotation leader points",
         )?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
@@ -586,20 +592,55 @@ fn decode_v2_annotation_arrow(
     Ok((tail, head))
 }
 
-fn source_key(identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
-    identity.source_id.rsplit_once('#').map_or_else(
-        || format!("record-{source_order:06}"),
-        |(_, key)| key.to_owned(),
-    )
+fn source_key(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    identity: &crate::objects::SourceIdentity,
+    source_order: usize,
+) -> Result<String, CodecError> {
+    let Some((_, key)) = identity.source_id.rsplit_once('#') else {
+        return Ok(format!("record-{source_order:06}"));
+    };
+    let size = cadmpeg_core::decode::u64_from_index(key.len());
+    ctx.charge_retained(size, "Rhino annotation source key")?;
+    let mut copy = String::new();
+    copy.try_reserve(key.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: size,
+            operation: "Rhino annotation source key",
+        })
+    })?;
+    copy.push_str(key);
+    Ok(copy)
+}
+
+fn record_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    identity: &crate::objects::SourceIdentity,
+    source_order: usize,
+) -> Result<(Vec<String>, String, String), CodecError> {
+    let mut links = Vec::new();
+    reserve_record_slot(ctx, &mut links, "Rhino annotation links")?;
+    links.push(format!("rhino:object:record#{source_order:06}"));
+    Ok((
+        links,
+        source_key(ctx, identity, source_order)?,
+        identity.object_id.to_string(),
+    ))
 }
 
 fn annotation_record_dropped(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     source_id: &str,
     source_offset: usize,
     class_uuid: Uuid,
     error: impl std::fmt::Display,
-) {
+) -> Result<(), CodecError> {
+    reserve_record_slot(ctx, losses, "Rhino annotation loss notes")?;
     losses.push(
         RhinoLossCode::AnnotationRecordDropped
             .note(format!(
@@ -610,6 +651,34 @@ fn annotation_record_dropped(
                     .with_tag(format!("ANNOTATION/source={source_id}/class={class_uuid}")),
             ),
     );
+    Ok(())
+}
+
+fn reserve_record_slot<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    reserve_record_count(ctx, records, 1, operation)
+}
+
+fn reserve_record_count<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &mut Vec<T>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
+    records.try_reserve(count).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: cadmpeg_core::decode::u64_from_index(count),
+            operation,
+        })
+    })
 }
 
 /// Projects every supported general annotation into stable native records.
@@ -633,17 +702,15 @@ pub(crate) fn install(
         let identity = &object.identity;
         let Some(scale) = binding.neutral_scale() else {
             annotation_record_dropped(
+                ctx,
                 &mut losses,
                 &identity.source_id,
                 object.range.start,
                 object.class_uuid,
                 format!("no physical millimetre binding ({})", binding.label()),
-            );
+            )?;
             continue;
         };
-        let link = format!("rhino:object:record#{source_order:06}");
-        let key = source_key(identity, source_order);
-        let source_uuid = identity.object_id.to_string();
         let mut v5_text_extra = None;
         if matches!(
             class,
@@ -660,6 +727,7 @@ pub(crate) fn install(
                 match parse_v5_text_extra(scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(error) => {
+                        reserve_record_slot(ctx, &mut losses, "Rhino annotation loss notes")?;
                         losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format!(
                             "V5 text-extra userdata at offset {} could not be transferred: {error}",
                             extra.range.start
@@ -671,6 +739,7 @@ pub(crate) fn install(
         match class {
             AnnotationClass::Modern { leader } => {
                 let (value, points) = match decode_annotation(
+                    ctx,
                     scan.data,
                     object.class_data_range.clone(),
                     scan.archive,
@@ -678,17 +747,23 @@ pub(crate) fn install(
                     leader,
                 ) {
                     Ok(value) => value,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                     Err(error) => {
                         annotation_record_dropped(
+                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        );
+                        )?;
                         continue;
                     }
                 };
+                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: object.range.start as u64,
@@ -724,7 +799,7 @@ pub(crate) fn install(
                     v2_text: None,
                     v5_text_extra,
                     leader_points: points,
-                    links: vec![link],
+                    links,
                 });
             }
             AnnotationClass::Legacy { leader } => {
@@ -741,15 +816,31 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
+                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        );
+                        )?;
                         continue;
                     }
                 };
+                let mut leader_points = Vec::new();
+                reserve_record_count(
+                    ctx,
+                    &mut leader_points,
+                    value.points.len(),
+                    "Rhino legacy leader projection points",
+                )?;
+                leader_points.extend(
+                    value
+                        .points
+                        .into_iter()
+                        .map(cadmpeg_ir::units::FiniteVector::finite_components),
+                );
+                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: object.range.start as u64,
@@ -783,12 +874,8 @@ pub(crate) fn install(
                     v2_default_text: None,
                     v2_text: None,
                     v5_text_extra,
-                    leader_points: value
-                        .points
-                        .into_iter()
-                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
-                        .collect(),
-                    links: vec![link],
+                    leader_points,
+                    links,
                 });
             }
             AnnotationClass::V2 => {
@@ -805,12 +892,13 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
+                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        );
+                        )?;
                         continue;
                     }
                 };
@@ -829,15 +917,26 @@ pub(crate) fn install(
                 };
                 let rich_text = crate::dimensions::v2_effective_text(&value.base);
                 let leader_points = if is_leader {
-                    value
-                        .base
-                        .points
-                        .into_iter()
-                        .map(cadmpeg_ir::units::FiniteVector::finite_components)
-                        .collect()
+                    let mut points = Vec::new();
+                    reserve_record_count(
+                        ctx,
+                        &mut points,
+                        value.base.points.len(),
+                        "Rhino V2 leader projection points",
+                    )?;
+                    points.extend(
+                        value
+                            .base
+                            .points
+                            .into_iter()
+                            .map(cadmpeg_ir::units::FiniteVector::finite_components),
+                    );
+                    points
                 } else {
                     Vec::new()
                 };
+                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 annotations.push(AnnotationRecord {
                     id: format!("rhino:document:annotation#{key}"),
                     source_offset: object.range.start as u64,
@@ -868,7 +967,7 @@ pub(crate) fn install(
                     v2_text: value.text,
                     v5_text_extra: None,
                     leader_points,
-                    links: vec![link],
+                    links,
                 });
             }
             AnnotationClass::Dot { v2 } => {
@@ -881,21 +980,24 @@ pub(crate) fn install(
                     Ok(value) => value,
                     Err(error) => {
                         annotation_record_dropped(
+                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        );
+                        )?;
                         continue;
                     }
                 };
+                reserve_record_slot(ctx, &mut dots, "Rhino native text dots")?;
+                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 dots.push(TextDotRecord {
                     id: format!("rhino:document:text_dot#{key}"),
                     source_offset: object.range.start as u64,
                     source_uuid,
                     data,
-                    links: vec![link],
+                    links,
                 });
             }
             AnnotationClass::V2Arrow => {
@@ -907,22 +1009,25 @@ pub(crate) fn install(
                     Ok(value) => value,
                     Err(error) => {
                         annotation_record_dropped(
+                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        );
+                        )?;
                         continue;
                     }
                 };
+                reserve_record_slot(ctx, &mut arrows, "Rhino native annotation arrows")?;
+                let (links, key, source_uuid) = record_identity(ctx, identity, source_order)?;
                 arrows.push(AnnotationArrowRecord {
                     id: format!("rhino:document:annotation_arrow#{key}"),
                     source_offset: object.range.start as u64,
                     source_uuid,
                     tail,
                     head,
-                    links: vec![link],
+                    links,
                 });
             }
         }
@@ -960,6 +1065,19 @@ mod tests {
     ) -> R {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("annotation fixture fits the root limit");
+        apply(&ctx)
+    }
+
+    fn with_collection_limit<R>(
+        data: &[u8],
+        max_collection_items: u64,
+        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = max_collection_items;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
             .expect("annotation fixture fits the root limit");
         apply(&ctx)
@@ -1387,6 +1505,178 @@ mod tests {
     }
 
     #[test]
+    fn native_annotation_slot_refuses_collection_limit() {
+        let payload = v2_annotation_payload(7, &[], "text", "default", false);
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_ANNOTATION.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino native annotations"
+        ));
+    }
+
+    #[test]
+    fn native_annotation_link_refuses_collection_limit() {
+        let payload = v2_annotation_payload(7, &[], "text", "default", false);
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_ANNOTATION.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 1, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino annotation links"
+        ));
+    }
+
+    #[test]
+    fn annotation_source_key_refuses_retained_copy_limit() {
+        let payload = v2_annotation_payload(7, &[], "text", "default", false);
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_ANNOTATION.to_wire(),
+            &payload,
+        )]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+                .expect("annotation fixture fits the root limit");
+        let refusal = install(&ctx, &scan, &mut CadIr::empty())
+            .expect_err("source key copy exceeds retained byte limit");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino annotation source key"
+        ));
+    }
+
+    #[test]
+    fn native_text_dot_slot_refuses_collection_limit() {
+        let mut payload = vec![0x1f];
+        for value in [1.25_f64, -2.5, 4.75] {
+            payload.extend(value.to_le_bytes());
+        }
+        payload.extend(utf16_bytes("V2 dot"));
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            V2_TEXT_DOT.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino native text dots"
+        ));
+    }
+
+    #[test]
+    fn native_annotation_arrow_slot_refuses_collection_limit() {
+        let mut payload = vec![0x10];
+        for value in [1.0_f64, 2.0, 3.0, -4.0, 5.0, -6.0] {
+            payload.extend(value.to_le_bytes());
+        }
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            V2_ANNOTATION_ARROW.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino native annotation arrows"
+        ));
+    }
+
+    #[test]
+    fn v2_leader_projection_refuses_collection_limit() {
+        let payload = v2_annotation_payload(6, &[[1.0, 2.0], [3.0, 4.0]], "leader", "", false);
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_LEADER.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 3, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V2 leader projection points"
+        ));
+    }
+
+    #[test]
+    fn legacy_leader_projection_refuses_collection_limit() {
+        let mut fields = 7_i32.to_le_bytes().to_vec();
+        fields.extend(2_i32.to_le_bytes());
+        fields.extend(plane());
+        fields.extend(2_i32.to_le_bytes());
+        for value in [1.0_f64, 2.0, 4.0, 8.0] {
+            fields.extend(value.to_le_bytes());
+        }
+        fields.extend(utf16_bytes("leader"));
+        fields.extend(0_i32.to_le_bytes());
+        fields.extend(12_i32.to_le_bytes());
+        fields.extend(1.5_f64.to_le_bytes());
+        fields.extend(0_i32.to_le_bytes());
+        fields.push(1);
+        fields.extend(utf16_bytes("formula"));
+        fields.extend((-1_i32).to_le_bytes());
+        fields.extend(12_i32.to_le_bytes());
+        let payload = anonymous(0, &anonymous(3, &fields));
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            super::LEGACY_LEADER.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 3, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino legacy leader projection points"
+        ));
+    }
+
+    #[test]
+    fn dropped_annotation_loss_refuses_collection_limit() {
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_ANNOTATION.to_wire(),
+            &[],
+        )]);
+        let mut ir = CadIr::empty();
+        let result = with_collection_limit(scan.data, 0, |ctx| install(ctx, &scan, &mut ir));
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino annotation loss notes"
+        ));
+    }
+
+    #[test]
     fn install_uses_the_legacy_grammar_for_v5_text_objects() {
         let payload = legacy_text_payload();
         let scan = scan_with_objects(&[object_record_with_payload(
@@ -1674,6 +1964,7 @@ mod tests {
     fn modern_text_and_leader_readers_leave_class_data_suffixes_bounded() {
         let text = modern_annotation(false);
         let (text, points) = decode_annotation(
+            &cadmpeg_test_support::service_decode_context(),
             &text,
             0..text.len(),
             ArchiveVersion::V8,
@@ -1688,6 +1979,7 @@ mod tests {
 
         let leader = modern_annotation(true);
         let (leader, points) = decode_annotation(
+            &cadmpeg_test_support::service_decode_context(),
             &leader,
             0..leader.len(),
             ArchiveVersion::V8,
@@ -1706,6 +1998,26 @@ mod tests {
     }
 
     #[test]
+    fn modern_leader_points_refuse_collection_limit() {
+        let leader = modern_annotation(true);
+        let result = with_collection_limit(&leader, 1, |ctx| {
+            decode_annotation(
+                ctx,
+                &leader,
+                0..leader.len(),
+                ArchiveVersion::V8,
+                crate::settings::MillimeterScale::IDENTITY,
+                true,
+            )
+        });
+        assert!(matches!(
+            result,
+            Err(crate::chunks::FramingError::Resource(limit))
+                if limit.operation == "Rhino modern annotation leader points"
+        ));
+    }
+
+    #[test]
     fn modern_text_layout_refuses_nonfinite_rotation_at_source() {
         let mut text = modern_annotation(false);
         let rotation = 0.25_f64.to_le_bytes();
@@ -1715,6 +2027,7 @@ mod tests {
             .expect("text rotation in source bytes");
         text[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
         let result = decode_annotation(
+            &cadmpeg_test_support::service_decode_context(),
             &text,
             0..text.len(),
             ArchiveVersion::V8,

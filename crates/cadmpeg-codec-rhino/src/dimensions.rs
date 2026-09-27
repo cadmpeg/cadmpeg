@@ -11,7 +11,7 @@ use crate::wire::{scaled_coordinate, uuid, Uuid};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveAngle, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
-fn admitted_points<T>(
+pub(crate) fn admitted_points<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     count: usize,
     operation: &'static str,
