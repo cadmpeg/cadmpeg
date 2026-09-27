@@ -2790,7 +2790,7 @@ impl<'a> F3dDecodeSession<'a> {
             },
         )?;
         if matches!(path, SessionPath::Geometry(_)) {
-            crate::history::discard_projection_caches(&mut self.native.asm_histories);
+            crate::history::discard_projection_caches(self.ctx, &mut self.native.asm_histories)?;
         }
         let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
             faces: &self.ir.model.faces,

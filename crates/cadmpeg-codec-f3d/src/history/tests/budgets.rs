@@ -218,6 +218,25 @@ fn history_record_table_refuses_collection_limit() {
 }
 
 #[test]
+fn history_topology_slot_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::history_records::AsmHistoricalTopology;
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let topology = AsmHistoricalTopology {
+        bodies: vec![1],
+        faces: vec![2],
+        ..Default::default()
+    };
+    let error = super::super::topology_entity_slots(&ctx, &topology).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D historical topology slots"));
+}
+
+#[test]
 fn history_archived_count_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
